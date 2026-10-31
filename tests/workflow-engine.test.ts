@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -148,9 +148,9 @@ describe('WorkflowEngine', () => {
   });
 
   it('records an action it cannot run yet as inconclusive and escalates', async () => {
-    const { task, run } = await startTask(flow('  - id: check\n    uses: post-merge-check\n'));
+    const { task, run } = await startTask(flow('  - id: check\n    uses: critic\n'));
     await engine().run(task, run);
-    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'post-merge-check', outcome: 'inconclusive', summary: 'action not yet supported' });
+    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'critic', outcome: 'inconclusive', summary: 'action not yet supported' });
     expect(escalations).toHaveLength(1);
   });
 
@@ -282,6 +282,65 @@ describe('WorkflowEngine', () => {
       expect(git(wt, 'rev-parse', 'HEAD')).toBe(before);
       expect(git(wt, 'status', '--porcelain')).toBe('');
       expect(git(repo, 'branch', '--show-current')).toBe('main');
+    });
+  });
+  describe('post-merge actions', () => {
+    const workflow = (extra = ''): string =>
+      `name: flow\ndescription: test\nsteps:\n  - id: check\n    uses: post-merge-check\n    with:\n      run: "git rev-parse HEAD > ../seen && test -f feat.txt"\n${extra}`;
+
+    it('post-merge-check runs on the merged base in an isolated worktree and leaves the main checkout clean', async () => {
+      git(repo, 'checkout', '-q', '-b', 'feat');
+      writeFileSync(join(repo, 'feat.txt'), 'feat\n');
+      git(repo, 'add', 'feat.txt');
+      git(repo, 'commit', '-q', '-m', 'feat');
+      git(repo, 'checkout', '-q', 'main');
+      git(repo, 'merge', '-q', '--no-ff', 'feat', '-m', 'merge');
+      const { task, run } = await startTask(workflow());
+      await engine().run(task, { ...run, branch: 'feat', baseBranch: 'main' });
+      expect((await stepRows(task.id))[0]).toMatchObject({ action: 'post-merge-check', outcome: 'pass' });
+      expect(git(repo, 'status', '--porcelain')).toBe('');
+      expect(git(repo, 'branch', '--show-current')).toBe('main');
+      expect(git(repo, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree '))).toHaveLength(1);
+    });
+
+    it('post-merge-check fails when the command fails on the merged base', async () => {
+      const { task, run } = await startTask(workflow());
+      await engine().run(task, { ...run, branch: 'feat', baseBranch: 'main' });
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail' });
+      expect(escalations).toHaveLength(1);
+    });
+
+    it('cleanup removes the Ticket worktree directory and its branch', async () => {
+      const wt = join(dir, 'ticket-wt');
+      git(repo, 'worktree', 'add', '-q', '-b', 'harmonic/task-9', wt);
+      const { task, run } = await startTask(`name: flow\ndescription: test\nsteps:\n  - id: ok\n    run: "true"\ncleanup:\n  - id: tidy\n    uses: cleanup\n`);
+      const withTree = engine({ cwdFor: () => wt });
+      expect(existsSync(wt)).toBe(true);
+      await withTree.run(task, { ...run, branch: 'harmonic/task-9', baseBranch: 'main' });
+      expect(existsSync(wt)).toBe(false);
+      expect(git(repo, 'branch', '--list', 'harmonic/task-9')).toBe('');
+      expect(completions).toBe(1);
+    });
+
+    it('close-ticket and comment call the tracker with interpolated text', async () => {
+      const calls: string[] = [];
+      const { task, run } = await startTask(
+        `name: flow\ndescription: test\nsteps:\n  - id: say\n    uses: comment\n    with:\n      body: "title=\${{ ticket.title }} ref=\${{ ticket.ref }}"\n  - id: shut\n    uses: close-ticket\n    with:\n      body: "done \${{ steps.say.outcome }}"\n`,
+      );
+      const ticketTask = { ...task, trackerRef: '7' } as TaskRow;
+      await engine({
+        commentOnTicket: async (_t, body) => { calls.push(`comment:${body}`); return true; },
+        closeTicket: async (_t, body) => { calls.push(`close:${body}`); return true; },
+      }).run(ticketTask, run);
+      expect(calls).toEqual(['comment:title=p ref=7', 'close:done pass']);
+      expect((await stepRows(task.id)).map((r) => r.outcome)).toEqual(['pass', 'pass']);
+    });
+
+    it('close-ticket fails the step when the tracker refuses', async () => {
+      const { task, run } = await startTask(flow('  - id: shut\n    uses: close-ticket\n'));
+      await engine({ closeTicket: async () => false }).run({ ...task, trackerRef: '7' } as TaskRow, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail' });
+      expect(escalations).toHaveLength(1);
     });
   });
 });

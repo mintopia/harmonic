@@ -219,6 +219,8 @@ export class Runner {
             }),
           ),
         ),
+      closeTicket: (task, comment) => this.autoDrive?.closeTicket(task, comment) ?? Promise.resolve(false),
+      commentOnTicket: (task, body) => this.autoDrive?.commentOnTicket(task, body) ?? Promise.resolve(false),
       openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),

@@ -82,6 +82,8 @@ export interface TrackerAdapter {
   release(ticket: TicketRef): Promise<void>;
   /** Close the ticket with a comment; needs only the portable identity, never a full scanned {@link Ticket}. */
   close?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
+  /** Post a comment on the ticket without changing its state. A tracker that cannot comment omits this. */
+  comment?(ticket: TicketRef, body: string): Promise<TrackerLifecycleWrite | void>;
   /** Re-open a ticket closed prematurely, with a comment. A tracker without lifecycle writes omits this. */
   reopen?(ticket: TicketRef, comment: string): Promise<TrackerLifecycleWrite | void>;
 }

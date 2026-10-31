@@ -4,7 +4,7 @@ import { DomainError, type ErrorIssue } from './errors.js';
 
 export const WORKFLOW_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 
-export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close', 'tracker-comment', 'cleanup'] as const;
+export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close-ticket', 'comment', 'cleanup'] as const;
 
 const stepSchema = z
   .object({
@@ -20,6 +20,7 @@ const workflowSchema = z
     name: z.string().regex(WORKFLOW_NAME_PATTERN, 'a name starts with a lowercase letter and holds lowercase letters, digits, - or _ (max 64)'),
     description: z.string(),
     steps: z.array(stepSchema).min(1, 'a workflow needs at least one step'),
+    cleanup: z.array(stepSchema).optional(),
   })
   .strict();
 
@@ -29,10 +30,18 @@ interface Problem {
   key?: true;
 }
 
+export interface WorkflowStepDefinition {
+  id: string;
+  run?: string | undefined;
+  uses?: (typeof WORKFLOW_ACTIONS)[number] | undefined;
+  with?: Record<string, unknown> | undefined;
+}
+
 export interface WorkflowDefinition {
   readonly name: string;
   readonly description: string;
-  readonly steps: readonly { id: string; run?: string | undefined; uses?: (typeof WORKFLOW_ACTIONS)[number] | undefined; with?: Record<string, unknown> | undefined }[];
+  readonly steps: readonly WorkflowStepDefinition[];
+  readonly cleanup?: readonly WorkflowStepDefinition[] | undefined;
 }
 
 /** Parses and validates workflow YAML, throwing a `validation` DomainError whose issues carry 1-based line and column. */
@@ -62,12 +71,14 @@ export function parseWorkflow(text: string): WorkflowDefinition {
 function stepInvariants(wf: z.infer<typeof workflowSchema>): { path: PropertyKey[]; message: string }[] {
   const problems: { path: PropertyKey[]; message: string }[] = [];
   const seen = new Set<string>();
-  wf.steps.forEach((step, i) => {
-    if (seen.has(step.id)) problems.push({ path: ['steps', i, 'id'], message: `duplicate step id: ${step.id}` });
-    seen.add(step.id);
-    if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path: ['steps', i], message: `step ${step.id} needs exactly one of run or uses` });
-    if (step.with !== undefined && step.uses === undefined) problems.push({ path: ['steps', i, 'with'], message: 'with is only valid beside uses' });
-  });
+  for (const list of ['steps', 'cleanup'] as const) {
+    (wf[list] ?? []).forEach((step, i) => {
+      if (seen.has(step.id)) problems.push({ path: [list, i, 'id'], message: `duplicate step id: ${step.id}` });
+      seen.add(step.id);
+      if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path: [list, i], message: `step ${step.id} needs exactly one of run or uses` });
+      if (step.with !== undefined && step.uses === undefined) problems.push({ path: [list, i, 'with'], message: 'with is only valid beside uses' });
+    });
+  }
   return problems;
 }
 

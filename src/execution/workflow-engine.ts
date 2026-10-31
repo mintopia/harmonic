@@ -1,14 +1,17 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
-import { parseWorkflow, type WorkflowDefinition } from '../domain/workflow.js';
+import { parseWorkflow, type WorkflowStepDefinition } from '../domain/workflow.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
 import { errorMessage } from '../error-handling.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
+import { splitTitleBody } from './prompt-template.js';
 
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
 const DEFAULT_RUN_TIMEOUT_SECONDS = 600;
@@ -24,6 +27,8 @@ export interface WorkflowEngineDeps {
   baseBranchFor: (task: TaskRow) => Promise<string>;
   mergeBranch?: (task: TaskRow, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
   openPullRequest?: (task: TaskRow, run: AttemptRow) => Promise<string | null>;
+  closeTicket?: (task: TaskRow, comment: string) => Promise<boolean>;
+  commentOnTicket?: (task: TaskRow, body: string) => Promise<boolean>;
   escalate: (task: TaskRow, run: AttemptRow, reason: string) => Promise<void>;
   complete: (task: TaskRow, run: AttemptRow) => Promise<void>;
   onStepChanged?: (taskId: number) => void;
@@ -37,6 +42,20 @@ interface StepResult {
   exitCode: number | null;
   output: string;
   outputs?: Partial<WorkflowStepOutputs>;
+}
+
+interface StepRecord {
+  outcome: WorkflowStepOutcome;
+  outputs: WorkflowStepOutputs;
+}
+
+interface RunContext {
+  task: TaskRow;
+  run: AttemptRow;
+  ref: string;
+  secrets: string[];
+  passed: Set<string>;
+  results: Map<string, StepRecord>;
 }
 
 interface GitMark {
@@ -61,23 +80,43 @@ export class WorkflowEngine {
     const workflow = parseWorkflow((await this.deps.library.getVersion(name, version)).text);
     const passed = await this.deps.stepRuns.passedStepIds(task.id, ref);
     const secrets = await this.deps.secretValues(task);
-    for (const [position, step] of workflow.steps.entries()) {
+    const results = await this.priorResults(task.id, ref);
+    const ctx: RunContext = { task, run, ref, secrets, passed, results };
+    if (!(await this.runSteps(ctx, workflow.steps, 0, true))) return;
+    await this.deps.complete(task, run);
+    await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, false);
+  }
+
+  /** Runs `steps`; with `escalateOnFailure` a non-pass outcome escalates the Task and stops, otherwise the failure is recorded and the remaining steps still run. Returns whether the Task may continue. */
+  private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, escalateOnFailure: boolean): Promise<boolean> {
+    const { task, run, ref, secrets, passed, results } = ctx;
+    for (const [index, step] of steps.entries()) {
       if (passed.has(step.id)) continue;
       const action = step.run !== undefined ? 'run' : step.uses!;
-      const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action });
+      const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position: firstPosition + index, action });
       this.deps.onStepChanged?.(task.id);
-      const result = await this.execute(task, run, step, secrets);
+      const result = await this.execute(task, run, step, secrets, results);
       const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
       await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
+      results.set(step.id, { outcome: result.outcome, outputs });
       this.deps.onStepChanged?.(task.id);
       if (result.outcome !== 'pass') {
         if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
+        if (!escalateOnFailure) continue;
         const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
         await this.deps.escalate(task, run, `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`);
-        return;
+        return false;
       }
     }
-    await this.deps.complete(task, run);
+    return true;
+  }
+
+  private async priorResults(taskId: number, ref: string): Promise<Map<string, StepRecord>> {
+    const results = new Map<string, StepRecord>();
+    for (const row of await this.deps.stepRuns.listForTask(taskId)) {
+      if (row.workflowRef === ref && row.outcome !== null && row.outputs !== null) results.set(row.stepId, { outcome: row.outcome, outputs: JSON.parse(row.outputs) as WorkflowStepOutputs });
+    }
+    return results;
   }
 
   private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
@@ -115,10 +154,53 @@ export class WorkflowEngine {
     return done('pass', `opened ${url}`, { url, ...(number === null ? {} : { number }) });
   }
 
-  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowDefinition['steps'][number], secrets: string[]): Promise<StepResult> {
+  private async postMergeCheck(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, secrets: string[], results: Map<string, StepRecord>): Promise<StepResult> {
+    const mask = (text: string): string => maskSecrets(text, secrets);
+    const script = step.with?.run;
+    if (typeof script !== 'string' || script === '') return { outcome: 'inconclusive', summary: 'post-merge-check needs with.run', stdout: '', exitCode: null, output: '' };
+    const base = run.baseBranch ?? (await this.deps.baseBranchFor(task));
+    const scratch = await mkdtemp(join(tmpdir(), 'harmonic-post-merge-'));
+    const checkout = join(scratch, 'base');
+    try {
+      await Git.addDetachedWorktree(task.workingDir, checkout, base);
+      const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', interpolate(script, task, results)], env: {}, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
+      const result = await this.deps.spawn.run({ command, cwd: checkout, timeoutMs: this.deps.runTimeoutMs ?? command.timeoutSeconds * 1000, outputCap: OUTPUT_CHAR_CAP });
+      const verdict = exitCodeToVerdict(result);
+      return { outcome: verdict.verdict, summary: mask(verdict.summary), stdout: mask(result.stdout), exitCode: result.code, output: mask(result.output) };
+    } finally {
+      await Git.removeWorktree(task.workingDir, checkout).catch(() => undefined);
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
+  private async cleanup(task: TaskRow, run: AttemptRow): Promise<StepResult> {
+    const done = (outcome: WorkflowStepOutcome, summary: string): StepResult => ({ outcome, summary, stdout: '', exitCode: null, output: '' });
+    const worktree = this.deps.cwdFor(task);
+    if (worktree === task.workingDir) return done('pass', 'the Ticket has no worktree to retire');
+    const removed = await Git.removeWorktreeAndDeleteBranch(task.workingDir, worktree, run.branch, async () => true);
+    return done('pass', removed ? `retired ${worktree}${run.branch ? ` and branch ${run.branch}` : ''}` : 'nothing to retire');
+  }
+
+  private async trackerAction(task: TaskRow, step: WorkflowStepDefinition, results: Map<string, StepRecord>): Promise<StepResult> {
+    const done = (outcome: WorkflowStepOutcome, summary: string): StepResult => ({ outcome, summary, stdout: '', exitCode: null, output: '' });
+    const text = typeof step.with?.body === 'string' ? interpolate(step.with.body, task, results) : '';
+    if (step.uses === 'comment') {
+      if (text === '') return done('inconclusive', 'comment needs with.body');
+      if (!this.deps.commentOnTicket) return done('inconclusive', 'comment is not available');
+      return (await this.deps.commentOnTicket(task, text)) ? done('pass', 'commented on the ticket') : done('inconclusive', 'the ticket could not be commented on: no tracker ticket or the tracker cannot comment');
+    }
+    if (!this.deps.closeTicket) return done('inconclusive', 'close-ticket is not available');
+    if (task.trackerRef == null) return done('pass', 'the Task has no tracker ticket to close');
+    return (await this.deps.closeTicket(task, text)) ? done('pass', 'closed the ticket') : done('fail', 'the tracker refused to close the ticket');
+  }
+
+  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, secrets: string[], results: Map<string, StepRecord>): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await this.rebase(task, mask);
+      if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, secrets, results);
+      if (step.uses === 'cleanup') return await this.cleanup(task, run);
+      if (step.uses === 'comment' || step.uses === 'close-ticket') return await this.trackerAction(task, step, results);
       if (step.uses === 'merge' || step.uses === 'open-pr' || step.uses === 'artifact') return await this.executeBranchAction(task, run, step.uses);
       if (step.run === undefined && step.uses !== 'command') {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
@@ -169,4 +251,25 @@ async function markGit(cwd: string): Promise<GitMark> {
 function pullRequestNumber(url: string): number | null {
   const match = /\/(\d+)\/?$/.exec(new URL(url).pathname);
   return match ? Number(match[1]) : null;
+}
+
+/** Fills `${{ ticket.<field> }}` and `${{ steps.<id>.outcome | steps.<id>.outputs.<key> }}`; anything unknown becomes empty. */
+function interpolate(template: string, task: TaskRow, results: Map<string, StepRecord>): string {
+  return template.replace(/\$\{\{\s*([\w.-]+)\s*\}\}/g, (_match, path: string) => {
+    const [root, ...rest] = path.split('.');
+    if (root === 'ticket') {
+      const field = rest[0];
+      if (field === 'ref') return task.trackerRef == null ? '' : String(task.trackerRef);
+      if (field === 'title') return splitTitleBody(task.prompt).title;
+      return '';
+    }
+    if (root === 'steps' && rest.length >= 2) {
+      const record = results.get(rest[0]!);
+      if (!record) return '';
+      if (rest[1] === 'outcome') return record.outcome;
+      const value = rest[1] === 'outputs' ? (record.outputs as unknown as Record<string, unknown>)[rest[2] ?? ''] : undefined;
+      return value == null ? '' : String(value);
+    }
+    return '';
+  });
 }
