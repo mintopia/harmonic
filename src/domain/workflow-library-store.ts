@@ -16,7 +16,7 @@ export interface WorkflowEntry {
 export interface WorkflowLibraryOptions {
   /** `<name>@<version>` refs that Tickets currently pin; those versions are never pruned. */
   referencedVersions?: () => Promise<ReadonlySet<string>>;
-  /** True when a Model Option code is enabled in the global list or some Workspace; checked on save and import only. */
+  /** True when a Model Option code is enabled in the global list or some Workspace. */
   optionCodeUsable?: (code: string) => boolean | Promise<boolean>;
   /** Fault-injection seam; production always uses the filesystem rename. */
   rename?: (from: string, to: string) => Promise<void>;

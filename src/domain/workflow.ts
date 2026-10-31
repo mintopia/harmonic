@@ -95,7 +95,7 @@ export function parseWorkflow(text: string): WorkflowDefinition {
   return { name: definition.name, description: definition.description, cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
 }
 
-/** Checks every `option:` code against `isUsable`; used on library save and import only, never at load or run. */
+/** Checks every `option:` code against `isUsable`. */
 export async function optionCodeProblems(text: string, isUsable: (code: string) => boolean | Promise<boolean>): Promise<void> {
   const lineCounter = new LineCounter();
   const doc = parseDocument(text, { lineCounter, prettyErrors: false });
