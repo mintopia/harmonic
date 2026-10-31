@@ -43,6 +43,8 @@ import type {
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
+  ModelOptionOverlayEntry,
+  ClassifierEndpoint,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -62,6 +64,22 @@ import type { OperationForest } from './operations-model.js';
 import type { WorktreeInventoryEntry } from './worktree-inventory-model.js';
 
 /** Where a Resolved Prompt is archived: an Attempt by id, or an Epic's Attempt by number (an Epic may have no Attempt row). */
+/** The unsaved classifier settings a Test sends; the server fills the rest from the saved Workspace. */
+export type ClassifierTestSettings = Partial<
+  Pick<
+    Workspace,
+    | 'modelOptions'
+    | 'classifierBackend'
+    | 'classifierTimeoutSeconds'
+    | 'classifierTypesafeModel'
+    | 'classifierTypesafeSecret'
+    | 'classifierHarness'
+    | 'classifierModel'
+    | 'classifierEndpoint'
+  >
+>;
+export type ClassifierTestResult = { outcome: 'chosen' | 'abstained'; optionId: string | null; reason: string; prompt: string | null };
+
 export type ResolvedPromptOwner = { attemptId: number } | { workspaceId: number; epicRef: TrackerRef; attempt: number };
 
 export class ApiError extends Error {
@@ -157,6 +175,10 @@ export const api = {
     request<unknown>('PUT', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`, { value }),
   clearSecret: (workspaceId: number, name: string) =>
     request<unknown>('DELETE', `/api/workspaces/${workspaceId}/secrets/${encodeURIComponent(name)}`),
+  secrets: (workspaceId: number) =>
+    request<{ secrets: Array<{ name: string; set: true; updatedAt: number }>; total: number }>('GET', `/api/workspaces/${workspaceId}/secrets`),
+  testClassifier: (workspaceId: number, settings: ClassifierTestSettings) =>
+    request<ClassifierTestResult>('POST', `/api/workspaces/${workspaceId}/classifier-test`, { settings }),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
   prompts: () => request<{ prompts: Prompt[]; total: number }>('GET', '/api/prompts'),
@@ -312,6 +334,15 @@ export const api = {
       workflow?: string | null;
       workflowLabels?: WorkflowLabelOverlayEntry[] | null;
       workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
+      modelOptions?: ModelOptionOverlayEntry[] | null;
+      classifierEnabled?: boolean | null;
+      classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
+      classifierTimeoutSeconds?: number | null;
+      classifierTypesafeModel?: string | null;
+      classifierTypesafeSecret?: string | null;
+      classifierHarness?: string | null;
+      classifierModel?: string | null;
+      classifierEndpoint?: ClassifierEndpoint | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

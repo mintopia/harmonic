@@ -157,7 +157,7 @@ function PauseResumeButton({ task }: { task: Task }) {
   );
 }
 
-function WhoLine({ harness, model, routedBy }: { harness: string; model: string; routedBy?: string }) {
+function WhoLine({ harness, model, routedBy, classifier }: { harness: string; model: string; routedBy?: string; classifier?: NonNullable<Task['classifier']> }) {
   return (
     <span className="min-w-0 truncate text-small text-muted">
       {providerLabel(harness)} · {formatModelLabel(model)}
@@ -166,6 +166,17 @@ function WhoLine({ harness, model, routedBy }: { harness: string; model: string;
           <span className="sr-only">Routed by </span>
           <span aria-hidden="true">↳ </span>
           <code className="font-data text-[10.5px]">{routedBy}</code>
+        </span>
+      )}
+      {!routedBy && classifier?.kind === 'routed' && (
+        <span className="ml-1.5 rounded-full bg-tool-tint px-[7px] py-px text-[10px] font-semibold text-tool">
+          <span className="sr-only">Routed by </span>
+          <span aria-hidden="true">↳ </span>classifier
+        </span>
+      )}
+      {!routedBy && classifier?.kind === 'abstained' && (
+        <span className="ml-1.5 rounded-full bg-raised px-[7px] py-px text-[10px] font-semibold text-muted">
+          <span className="sr-only">Classifier abstained, </span>default
         </span>
       )}
     </span>
@@ -248,7 +259,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
           {task.origin === 'mirrored' && (
             <span className="shrink-0 rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
           )}
-          <WhoLine harness={task.harness} model={task.model} routedBy={task.routing?.applied ? task.routing.label : undefined} />
+          <WhoLine harness={task.harness} model={task.model} routedBy={task.routing?.applied ? task.routing.label : undefined} classifier={task.classifier ?? undefined} />
         </div>
         {task.escalationReason && (
           <div className="mt-1.5 line-clamp-2 text-[12.5px] text-await" title={task.escalationReason}>

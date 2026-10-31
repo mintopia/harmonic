@@ -40,6 +40,7 @@ import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOu
 import type { InstallMode } from '../upgrade/install-mode.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { StatsWorkerClient } from '../db/stats-reader.js';
+import type { RouteClassifier } from '../domain/route-classifier.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 
 export interface AppOptions {
@@ -95,6 +96,7 @@ export interface AppContext {
   agentMessages: AgentMessageStore;
   sessions: SessionStore;
   runner: Runner;
+  routeClassifier: RouteClassifier;
   conversations: ConversationStore;
   conversationDriver: ConversationDriver;
   permissionRules: PermissionRuleStore;

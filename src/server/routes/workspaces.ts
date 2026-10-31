@@ -5,10 +5,11 @@ import type { TrackingContext } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '../../domain/prompt-fragments.js';
-import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
+import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema, workspaceOverridesSchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
-import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
+import type { ModelOptionOverlayEntry } from '../../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionIssues, modelOptionOverrideSchema, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -29,6 +30,7 @@ import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
 import { parseWorkflowLabelOverlay, workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import { parseWorkspaceWorkflowVars, validateVarOverrides, workspaceWorkflowVarsSchema } from '../../domain/workflow-vars.js';
 import { parseWorkflow } from '../../domain/workflow.js';
+import { parseClassifierEndpoint, parseModelOptionOverlay } from '../../domain/model-options.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -91,6 +93,16 @@ const workspaceSchema = z
     workflow: z.string().nullable().meta({ example: null }),
     workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
     workflowVars: workspaceWorkflowVarsSchema.nullable().meta({ description: 'Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.', example: null }),
+    /** Model Option overlay; null inherits every global Model Option in order, enabled. */
+    modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
+    classifierEnabled: z.boolean().nullable().meta({ example: null }),
+    classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
+    classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
+    classifierTypesafeModel: z.string().nullable().meta({ example: null }),
+    classifierTypesafeSecret: z.string().nullable().meta({ example: null }),
+    classifierHarness: z.string().nullable().meta({ example: null }),
+    classifierModel: z.string().nullable().meta({ example: null }),
+    classifierEndpoint: classifierEndpointSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -136,12 +148,38 @@ const workspaceSchema = z
   })
   .meta({ id: 'Workspace' });
 
+const classifierTestBodySchema = z.object({
+  title: z.string().trim().min(1).default('Fix the flaky retry in the payment webhook handler'),
+  description: z.string().default('The webhook handler retries without backoff and sometimes double-charges. Add backoff and a test.'),
+  labels: z.array(z.string()).default([]),
+  /** Unsaved classifier settings from the form; omitted fields use the saved Workspace. */
+  settings: z
+    .object({
+      modelOptions: workspaceOverridesSchema.shape.modelOptions,
+      classifierBackend: workspaceOverridesSchema.shape.classifierBackend,
+      classifierTimeoutSeconds: workspaceOverridesSchema.shape.classifierTimeoutSeconds,
+      classifierTypesafeModel: workspaceOverridesSchema.shape.classifierTypesafeModel,
+      classifierTypesafeSecret: workspaceOverridesSchema.shape.classifierTypesafeSecret,
+      classifierHarness: workspaceOverridesSchema.shape.classifierHarness,
+      classifierModel: workspaceOverridesSchema.shape.classifierModel,
+      classifierEndpoint: workspaceOverridesSchema.shape.classifierEndpoint,
+    })
+    .optional(),
+});
+
+const classifierTestResponseSchema = z.object({
+  outcome: z.enum(['chosen', 'abstained']).meta({ example: 'chosen' }),
+  optionId: z.string().nullable().meta({ example: 'opus-deep' }),
+  reason: z.string().meta({ example: 'Spans several files and a concurrency concern.' }),
+  prompt: z.string().nullable().describe('The Resolved Prompt the classifier received.'),
+});
+
 const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, color: true }).meta({ id: 'WorkspaceSummary' });
 
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows' | 'routeClassifier'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -150,6 +188,18 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       : r.ok
         ? { ok: true, label: r.label, kind: r.name, source: r.source, code: null, reason: null }
         : { ok: false, label: null, kind: null, source: null, code: r.code, reason: r.reason };
+
+  const assertModelOptionOverlay = (overlay: ModelOptionOverlayEntry[]) => {
+    const taken = new Set(ctx.settingsStore.getGlobal().modelOptions.map((o) => o.id));
+    overlay.forEach((entry, index) => {
+      if (entry.kind !== 'local') return;
+      if (taken.has(entry.modelOption.id)) throw new DomainError('validation', `modelOptions.${index}.modelOption.id: model option id '${entry.modelOption.id}' is already used`);
+      taken.add(entry.modelOption.id);
+    });
+    const locals = overlay.flatMap((entry, index) => (entry.kind === 'local' ? [{ index, option: entry.modelOption }] : []));
+    const [first] = modelOptionIssues(locals.map((l) => l.option), ctx.settingsStore.getGlobal().harnesses);
+    if (first) throw new DomainError('validation', `modelOptions.${locals[first.index]!.index}.modelOption.${first.field}: ${first.message}`);
+  };
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
@@ -163,6 +213,8 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
     workflowVars: parseWorkspaceWorkflowVars(ws.workflowVars),
+    modelOptions: parseModelOptionOverlay(ws.modelOptions),
+    classifierEndpoint: parseClassifierEndpoint(ws.classifierEndpoint),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -286,6 +338,9 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
         }
       }
+      if (req.body.modelOptions) {
+        assertModelOptionOverlay(req.body.modelOptions);
+      }
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {
           if (entry.kind !== 'local') return;
@@ -361,6 +416,49 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       if (!ws.trackerEnabled) throw new DomainError('conflict', `tracking is not enabled for workspace ${ws.id}`);
       await ctx.trackerManager.pollNow(ws.id);
       return { ok: true as const };
+    },
+  );
+  app.post(
+    '/workspaces/:id/classifier-test',
+    {
+      schema: {
+        tags: ['Workspaces'],
+        description:
+          'Run the Route Classifier once against a sample Ticket using the given settings (the saved ones when `settings` is omitted). Nothing is saved and no Cost is recorded on any Ticket.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        body: classifierTestBodySchema,
+        response: {
+          200: classifierTestResponseSchema.describe('What the classifier chose, or why it abstained.'),
+          400: errorResponse('The settings failed validation.'),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const saved = await ctx.workspaces.get(req.params.id);
+      const draft = req.body.settings ?? {};
+      if (draft.modelOptions) assertModelOptionOverlay(draft.modelOptions);
+      const { modelOptions, classifierEndpoint, ...plain } = draft;
+      const workspace: WorkspaceRow = {
+        ...saved,
+        ...(Object.fromEntries(Object.entries(plain).filter(([, v]) => v !== undefined)) as Partial<WorkspaceRow>),
+        ...(modelOptions === undefined ? {} : { modelOptions: modelOptions === null ? null : JSON.stringify(modelOptions) }),
+        ...(classifierEndpoint === undefined ? {} : { classifierEndpoint: classifierEndpoint === null ? null : JSON.stringify(classifierEndpoint) }),
+      };
+      const outcome = await ctx.routeClassifier.classify({
+        workspace,
+        title: req.body.title,
+        description: req.body.description,
+        labels: req.body.labels,
+        attemptNumber: 1,
+      });
+      return {
+        outcome: outcome.kind,
+        optionId: outcome.kind === 'chosen' ? outcome.option.id : null,
+        reason: outcome.reason,
+        prompt: outcome.prompt ?? null,
+      };
     },
   );
 }

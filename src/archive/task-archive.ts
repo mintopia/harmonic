@@ -369,6 +369,21 @@ export class TaskArchive {
     }
   }
 
+  /** Archive the Route Classifier's Resolved Prompt at `<attempt>/routing/classifier/prompt.md`. Best-effort: resolves null (never throws) when the write fails. */
+  async appendRoutingPrompt(task: TaskRow, attemptNumber: number, prompt: string): Promise<{ locator: string; promptIndex: number } | null> {
+    const rel = 'routing/classifier';
+    const dir = this.ensure(task).then((r) => this.makeDir(join(r, 'attempts', String(attemptNumber), rel)));
+    const writer = this.stepWriter(dir, rel, { taskId: task.id, attemptNumber });
+    try {
+      const promptIndex = await writer.appendPrompt(prompt);
+      await writer.close();
+      return promptIndex === null ? null : { locator: writer.promptLocator, promptIndex };
+    } catch (err) {
+      warn('archive: routing prompt failed', err, { attemptNumber });
+      return null;
+    }
+  }
+
   implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {
     return this.stepWriter(this.implementationDir(task, attemptNumber), 'implementation', { taskId: task.id, attemptNumber });
   }

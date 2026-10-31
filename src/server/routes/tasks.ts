@@ -30,7 +30,7 @@ import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
-import { escalationCauseSchema, taskRoutingSchema } from '../../domain/task-routing.js';
+import { escalationCauseSchema, taskClassifierSchema, taskRoutingSchema } from '../../domain/task-routing.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -274,9 +274,15 @@ const taskSchema = taskWithDepsSchema
   .extend({
     /** The prompt's first line, bounded: the card title; the full `prompt` is item-GET-only. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
+    /** Ticket-scoped Model Option overrides (Ticket > Workspace > global); empty when none. */
+    modelOptionOverrides: z.array(z.object({ id: z.string(), harness: z.string(), model: z.string() })).meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
     cost: costSchema.nullable(),
     /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
     routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
+    /** What the Route Classifier did: `routed` chose a Model Option (`optionId`, `reason`), `abstained` fell to the default (`reason` is the cause), `overridden` was skipped because an operator Harness/Model won. Null when it did not decide. */
+    classifier: taskClassifierSchema
+      .nullable()
+      .meta({ example: { kind: 'routed', optionId: 'opus-deep', reason: 'Cross-cutting refactor; needs deep reasoning.' } }),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */

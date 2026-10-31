@@ -6,6 +6,7 @@ import {
   CONVERSATION_STATES,
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
+import { attemptClassifierSchema } from '../domain/task-routing.js';
 import { trackerRef } from '../tracker/adapter.js';
 
 /** A tracker ref path param, branded at the boundary so handlers never cast. */
@@ -61,6 +62,18 @@ export const verifierStatusSchema = z
   })
   .meta({ id: 'VerifierStatus' });
 
+/** The dollar value of Usage, derived on read from the live price table (domain/pricing.ts `Cost`). */
+export const costSchema = z
+  .object({
+    /** Sum over priced models; null when nothing could be priced. */
+    totalUsd: z.number().nullable().meta({ example: 0.52 }),
+    /** $ per model; null for models without a price entry. */
+    byModel: z.record(z.string(), z.number().nullable()).meta({ example: { 'sonnet-5': 0.52 } }),
+    /** True when any tokens in the aggregate could not be priced. */
+    incomplete: z.boolean().meta({ example: false }),
+  })
+  .meta({ id: 'Cost' });
+
 /** One implementation-to-verification iteration and its ordered work rows. */
 export const attemptSchema = z
   .object({
@@ -87,6 +100,15 @@ export const attemptSchema = z
       lastActiveAgeMs: z.number(),
       warmWindowMs: z.number().nullable(),
     }).nullable(),
+    /** The Harness and Model this Attempt started on; null for Attempts that predate the record. */
+    harness: z.string().nullable().meta({ example: 'claude' }),
+    model: z.string().nullable().meta({ example: 'claude-opus-5-5' }),
+    /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
+    classifier: attemptClassifierSchema
+      .nullable()
+      .meta({ example: { kind: 'routed', optionId: 'opus-deep', reason: 'Cross-cutting refactor; needs deep reasoning.' } }),
+    /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+    routing: z.object({ cost: costSchema.nullable(), models: z.array(z.string()) }).nullable(),
     /** One row per verifier category, including skipped and disabled states. */
     verifierStatuses: z.array(verifierStatusSchema),
     steps: z.array(stepSchema),
@@ -151,18 +173,6 @@ export const attemptUsageSchema = z
     source: z.enum(['acp', 'session-log', 'combined']).nullable().meta({ example: 'acp' }),
   })
   .meta({ id: 'AttemptUsage' });
-
-/** The dollar value of Usage, derived on read from the live price table (domain/pricing.ts `Cost`). */
-export const costSchema = z
-  .object({
-    /** Sum over priced models; null when nothing could be priced. */
-    totalUsd: z.number().nullable().meta({ example: 0.52 }),
-    /** $ per model; null for models without a price entry. */
-    byModel: z.record(z.string(), z.number().nullable()).meta({ example: { 'sonnet-5': 0.52 } }),
-    /** True when any tokens in the aggregate could not be priced. */
-    incomplete: z.boolean().meta({ example: false }),
-  })
-  .meta({ id: 'Cost' });
 
 /** One Attempt as a fleet-Timeline span: its lane (harness), outcome, cost, and the window it occupied. */
 export const timelineAttemptSchema = z

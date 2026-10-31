@@ -139,6 +139,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     agentMessages: stores.agentMessages,
     sessions: stores.sessions,
     runner: runtime.runner,
+    routeClassifier: runtime.routeClassifier,
     conversations: stores.conversations,
     conversationDriver: runtime.conversationDriver,
     permissionRules: stores.permissionRules,

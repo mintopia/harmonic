@@ -157,6 +157,15 @@ export const PROMPT_FRAGMENTS = {
     fields: {},
     required: [],
   },
+  routeClassifier: {
+    label: 'Route Classifier instructions',
+    help: 'What the Route Classifier receives to pick a Model Option for a Ticket. Lists every Model Option and the Ticket inputs; keep it asking for a JSON object with an "optionId" and a "reason", or every classification abstains.',
+    fields: {
+      options: 'every Model Option, one per line: its id, description, Harness and model',
+      ticket: "the Ticket inputs as JSON: title, description, labels, attempt number and, on a retry, the previous verdict and failure reason",
+    },
+    required: ['options', 'ticket'],
+  },
   epicFailingVerification: {
     label: 'Failing Epic verification',
     help: 'Section reporting the failed Epic verification to the resolver agent.',

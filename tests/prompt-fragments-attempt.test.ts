@@ -174,6 +174,7 @@ describe('Prompt Fragment validation', () => {
       criticRevisionDiff: ['head', 'base', 'workingTreeNote'],
       criticRevisionAlone: ['head', 'workingTreeNote'],
       criticWorkingTreeNote: ['base'],
+      routeClassifier: ['options', 'ticket'],
       epicFailingVerification: ['reason'],
     });
   });

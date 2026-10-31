@@ -1,6 +1,6 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
-import type { EscalationCause, TaskRouting } from '../../src/domain/task-routing.js';
+import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -134,6 +134,13 @@ export interface Attempt {
     lastActiveAgeMs: number;
     warmWindowMs: number | null;
   } | null;
+  /** The Harness and Model this Attempt started on; null for Attempts that predate the record. */
+  harness: string | null;
+  model: string | null;
+  /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
+  classifier: AttemptClassifier | null;
+  /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+  routing: { cost: Cost | null; models: string[] } | null;
   steps: Step[];
 }
 
@@ -358,6 +365,20 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+export interface ClassifierEndpoint {
+  baseUrl: string;
+  model: string;
+  apiKeySecret: string;
+}
+
+export interface ModelOption {
+  id: string;
+  harness: string;
+  model: string;
+  description: string;
+  disabled?: boolean;
+}
+
 export interface WorkspaceFileEntry {
   name: string;
   path: string;
@@ -491,6 +512,18 @@ export interface Workspace extends PromptFragmentOverrides {
   workflow: string | null;
   workflowLabels: WorkflowLabelOverlayEntry[] | null;
   workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
+  /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
+  modelOptions: ModelOptionOverlayEntry[] | null;
+  classifierEnabled: boolean | null;
+  classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
+  classifierTimeoutSeconds: number | null;
+  classifierTypesafeModel: string | null;
+  classifierTypesafeSecret: string | null;
+  /** Harness and Model the Harness backend runs on; `null` uses the Workspace default. */
+  classifierHarness: string | null;
+  classifierModel: string | null;
+  /** OpenAI-compatible endpoint for the Route Classifier; the API key lives in a Secret named by `apiKeySecret`. */
+  classifierEndpoint: ClassifierEndpoint | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -611,6 +644,11 @@ export type WorkflowLabelOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; workflowLabel: { label: string; workflow: string } };
 
+/** A Workspace Model Option overlay entry; a `global` entry's `ref` is the global option's code. */
+export type ModelOptionOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; modelOption: ModelOption };
+
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */
 export interface BudgetGuardrail {
@@ -644,6 +682,8 @@ export interface Task {
    * every list surface renders, so the Board never processes the full prompt.
    * Present on both list rows and the item GET. */
   summary: string;
+  /** Ticket-scoped Model Option overrides (Ticket > Workspace > global); empty when none. */
+  modelOptionOverrides: { id: string; harness: string; model: string }[];
   /** The owning Workspace. */
   workspaceId: number;
   /** Effective (resolved) Task defaults: a pinned override, else the
@@ -672,6 +712,8 @@ export interface Task {
   };
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
   routing: TaskRouting | null;
+  /** What the Route Classifier did for this Ticket; null when it did not decide. */
+  classifier: TaskClassifier | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;
@@ -1252,6 +1294,7 @@ export interface AppConfig {
   };
   routingLabels: { label: string; harness: string; model: string }[];
   workflowLabels: { label: string; workflow: string }[];
+  modelOptions: ModelOption[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
