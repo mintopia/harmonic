@@ -23,6 +23,8 @@ import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './Ver
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 import { PromptsTab } from './prompts/PromptsTab';
+import { ExecutionTargetsPanel } from './ExecutionTargetsSettings';
+import { WorkspaceExecutionTargets } from './WorkspaceExecutionTargets';
 
 export type Surface = 'global' | 'workspace';
 
@@ -855,6 +857,33 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceDelete ctx={ctx} /> : null),
   },
 
+  {
+    tab: 'execution',
+    surfaces: ['global'],
+    bare: true,
+    wide: true,
+    title: 'Execution Targets',
+    description: '',
+    body: (ctx) => <ExecutionTargetsPanel hostCeiling={ctx.config.autoRunner.maxConcurrentAttempts} />,
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
+    bare: true,
+    wide: true,
+    title: 'Execution Targets',
+    description: '',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <WorkspaceExecutionTargets
+          workspace={ctx.workspace}
+          savedKey={JSON.stringify([ctx.pristineWorkspace.executionTargets, ctx.pristineWorkspace.isolationMode, ctx.pristineWorkspace.codeRepository])}
+          error={ctx.errors.executionTargets}
+          onChange={(executionTargets) => ctx.setWorkspace({ ...ctx.workspace, executionTargets })}
+          onAddRepository={() => ctx.onTab?.('general')}
+        />
+      ) : null,
+  },
   {
     tab: 'execution',
     surfaces: BOTH,

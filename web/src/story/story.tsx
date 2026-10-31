@@ -26,6 +26,8 @@ import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
 import type { MergeStepEvent } from '../merge-progress-model';
 import { HintBanner } from '../components/HintBanner';
+import { ExecutionTargetsPanel } from '../components/ExecutionTargetsSettings';
+import { WorkspaceExecutionTargets } from '../components/WorkspaceExecutionTargets';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
@@ -461,6 +463,22 @@ function SettingsPageStory() {
   );
 }
 
+function ExecutionTargetsStory() {
+  return (
+    <StoryFrame style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
+      <ExecutionTargetsPanel hostCeiling={3} />
+    </StoryFrame>
+  );
+}
+
+function WorkspaceExecutionTargetsStory() {
+  return (
+    <StoryFrame style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
+      <WorkspaceExecutionTargets workspace={storyWorkspaces[0]!} savedKey="" onChange={() => {}} />
+    </StoryFrame>
+  );
+}
+
 function GuardrailStory() {
   return (
     <StoryFrame>
@@ -599,6 +617,8 @@ const STORIES: Record<string, () => JSX.Element> = {
   code: CodeStory,
   dashboard: DashboardStory,
   guardrail: GuardrailStory,
+  'execution-targets': ExecutionTargetsStory,
+  'workspace-execution-targets': WorkspaceExecutionTargetsStory,
   epic: EpicStory,
   'epic-done': EpicStory,
   'epic-resolver': EpicStory,

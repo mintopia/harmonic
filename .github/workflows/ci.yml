@@ -57,3 +57,27 @@ jobs:
 
       - name: Verify packed tarball boots with --omit=dev
         run: scripts/verify-pack-install.sh
+
+  kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: harmonic-kind
+
+      - name: Create the agents namespace and export a standalone kubeconfig
+        run: |
+          kubectl create namespace harmonic-agents
+          kubectl config view --raw --minify --flatten > "$RUNNER_TEMP/kind-kubeconfig"
+          echo "HARMONIC_KIND_KUBECONFIG=$RUNNER_TEMP/kind-kubeconfig" >> "$GITHUB_ENV"
+
+      - run: npm run test:kind

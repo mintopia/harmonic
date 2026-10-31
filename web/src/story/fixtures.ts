@@ -84,6 +84,7 @@ const workspace = {
   epicPreMergeCritics: null,
   routingLabels: null,
   modelOptions: [{ kind: 'local', enabled: true, modelOption: { id: 'deep-dive', harness: 'claude', model: 'claude-opus-5-5', description: 'Workspace-only deep work' } }],
+  executionTargets: null,
   classifierEnabled: null,
   classifierBackend: null,
   classifierTimeoutSeconds: null,

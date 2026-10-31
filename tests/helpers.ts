@@ -356,6 +356,7 @@ export async function startServer(
     installMode?: Parameters<typeof buildApp>[0]['installMode'];
     guardMissing?: boolean | undefined;
     corsOrigins?: CorsPolicy | undefined;
+    kubernetesClientFactory?: Parameters<typeof buildApp>[0]['kubernetesClientFactory'];
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -380,6 +381,7 @@ export async function startServer(
     installMode: opts.installMode,
     guardMissing: opts.guardMissing,
     corsOrigins: opts.corsOrigins,
+    kubernetesClientFactory: opts.kubernetesClientFactory,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });

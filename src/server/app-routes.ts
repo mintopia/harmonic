@@ -26,6 +26,7 @@ import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { worktreeRoutes } from './routes/worktrees.js';
 import { trackerSettingsRoutes } from './routes/tracker-settings.js';
 import { secretRoutes } from './routes/secrets.js';
+import { executionTargetRoutes } from './routes/execution-targets.js';
 import { harnessRoutes } from './routes/harnesses.js';
 import { exportRoutes } from './routes/export.js';
 import { fsRoutes } from './routes/fs.js';
@@ -50,7 +51,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => taskExportRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
-  await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive, routeClassifier: ctx.routeClassifier }), { prefix: '/api' });
+  await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, executionTargets: ctx.executionTargets, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive, routeClassifier: ctx.routeClassifier }), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });
@@ -65,6 +66,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => scheduledJobRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register((fastify) => worktreeRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => secretRoutes(fastify, contexts.persistence), { prefix: '/api' });
+  await app.register((fastify) => executionTargetRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => trackerSettingsRoutes(fastify, contexts.tracking), { prefix: '/api' });
   await app.register(harnessRoutes, { prefix: '/api' });
   await app.register((fastify) => channelRoutes(fastify, contexts.persistence), { prefix: '/api' });
