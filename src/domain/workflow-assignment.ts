@@ -2,6 +2,7 @@ import type { AppConfig } from '../config.js';
 import type { RawTaskRow, WorkflowChosen, WorkspaceRow } from '../db/schema.js';
 import { resolveWorkflowLabels } from './workflow-labels.js';
 import { workflowLabelRef } from './setting-override.js';
+import { BUNDLED_EPIC_WORKFLOW } from './workflow.js';
 
 export type WorkflowAssignment = { name: string; chosen: WorkflowChosen; label?: string; reason?: string };
 
@@ -53,7 +54,7 @@ export function resolveEpicWorkflow(
   if (workspaceChoice != null && exists(workspaceChoice)) return { name: workspaceChoice, chosen: 'workspace' };
   const globalChoice = config.defaults.epicWorkflow;
   if (globalChoice != null && exists(globalChoice)) return { name: globalChoice, chosen: 'global' };
-  return { name: 'epic', chosen: 'global' };
+  return { name: BUNDLED_EPIC_WORKFLOW, chosen: 'global' };
 }
 
 export function workflowInputOf(

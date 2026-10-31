@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
 import { describeWorkflowLabelIssue, workflowLabelIssueMessage, workflowLabelIssues, workflowLabelOverlayIssues, workflowLabelRef, type WorkflowLabelIssue } from '../../../src/domain/setting-override.js';
+import { BUNDLED_EPIC_WORKFLOW } from '../../../src/domain/workflow.js';
 import { api } from '../api';
 import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowLibraryEntry } from '../types';
 import { chip, codeChip, field } from '../ui';
@@ -139,9 +140,6 @@ function DefaultWorkflow({
   );
 }
 
-/** What resolveEpicWorkflow falls back to when no Epic workflow is chosen. */
-const BUNDLED_EPIC = 'epic';
-
 export function EpicWorkflowEditor({
   surface,
   value,
@@ -168,7 +166,7 @@ export function EpicWorkflowEditor({
       }
       library={library}
       value={value}
-      inheritLabel={workspace ? `Use global default · ${globalValue ?? BUNDLED_EPIC}` : `Bundled default · ${BUNDLED_EPIC}${versionSuffix(library, BUNDLED_EPIC)}`}
+      inheritLabel={workspace ? `Use global default · ${globalValue ?? BUNDLED_EPIC_WORKFLOW}` : `Bundled default · ${BUNDLED_EPIC_WORKFLOW}${versionSuffix(library, BUNDLED_EPIC_WORKFLOW)}`}
       onChange={onChange}
     />
   );

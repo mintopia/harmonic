@@ -98,7 +98,6 @@ function DependsOn({ refs }: { refs: TrackerRef[] }) {
   );
 }
 
-/** The Workflow line in the Epic header card: which Epic workflow runs and where it was chosen. */
 export function EpicWorkflowLine({ workflow }: { workflow: Epic['workflow'] }) {
   if (!workflow) return null;
   return (

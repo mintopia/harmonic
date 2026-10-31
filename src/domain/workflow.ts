@@ -9,6 +9,7 @@ export const VAR_NAME_PATTERN = /^[a-z][a-zA-Z0-9_-]{0,63}$/;
 export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close-ticket', 'comment', 'cleanup'] as const;
 
 export const WORKFLOW_SUBJECTS = ['ticket', 'epic'] as const;
+export const BUNDLED_EPIC_WORKFLOW = 'epic';
 export type WorkflowSubject = (typeof WORKFLOW_SUBJECTS)[number];
 
 const stepIdSchema = z.string().regex(WORKFLOW_NAME_PATTERN, 'a step id starts with a lowercase letter and holds lowercase letters, digits, - or _');

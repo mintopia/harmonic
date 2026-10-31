@@ -47,7 +47,6 @@ export interface WorkflowIssue {
 
 export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'bundled' | 'version'> & { text: string };
 
-/** The Epic workflow an Epic runs and which setting chose it. */
 export interface EpicWorkflowRef {
   name: string;
   version: number;
