@@ -1,5 +1,7 @@
+import type { ChildProcess } from 'node:child_process';
 import { Writable } from 'node:stream';
 import { CoreV1Api, Exec, type V1Pod, type V1Status } from '@kubernetes/client-node';
+import { PodProcess } from './pod-process.js';
 import { loadKubeConfig, statusCodeOf, type KubernetesAccess } from './kubernetes-client.js';
 
 export const POD_PASS_ENV = 'HARMONIC_PASS';
@@ -35,11 +37,18 @@ export interface PodExecResult {
   timedOut: boolean;
 }
 
+export interface PodStreamOptions {
+  env?: Record<string, string>;
+  cwd?: string;
+}
+
 export interface PodApi {
   createSecret(namespace: string, name: string, data: Record<string, string>, labels: Record<string, string>): Promise<void>;
   createPod(spec: PodSpecInput): Promise<void>;
   waitForRunning(namespace: string, name: string, timeoutMs: number): Promise<void>;
   exec(namespace: string, pod: string, argv: string[], options: PodExecOptions): Promise<PodExecResult>;
+  /** Attaches to a process's stdio with no in-pod agent; the result has no pid. */
+  execStream(namespace: string, pod: string, argv: string[], options: PodStreamOptions): Promise<ChildProcess>;
   deletePod(namespace: string, name: string): Promise<void>;
   deleteSecret(namespace: string, name: string): Promise<void>;
   listServices(namespace: string, labelSelector: string): Promise<string[]>;
@@ -155,6 +164,14 @@ export const defaultPodApiFactory: PodApiFactory = (access) => {
       });
       clearTimeout(timer);
       return { code: status === undefined ? null : exitCodeOf(status), stdout: stdout.text, stderr: stderr.text, timedOut };
+    },
+    async execStream(namespace, pod, argv, options) {
+      let ws: Awaited<ReturnType<Exec['exec']>> | undefined;
+      const proc = new PodProcess(() => ws?.close());
+      ws = await exec.exec(namespace, pod, 'workflow', wrapExecArgv(argv, options), proc.stdout, proc.stderr, proc.stdin, false, (status) => proc.finish(exitCodeOf(status)));
+      ws.on('close', () => proc.finish(null));
+      ws.on('error', (error) => proc.fail(error instanceof Error ? error : new Error(String(error))));
+      return proc.asChildProcess();
     },
     deletePod: (namespace, name) => ignoreNotFound(core.deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 })),
     deleteSecret: (namespace, name) => ignoreNotFound(core.deleteNamespacedSecret({ name, namespace })),

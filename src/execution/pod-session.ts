@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import type { TaskExecution } from '../db/schema.js';
 import { logger } from '../logger.js';
@@ -79,6 +80,24 @@ export class PodSession {
 
   get podName(): string {
     return this.name;
+  }
+
+  get repoDir(): string {
+    return this.workdir;
+  }
+
+  /** Every value injected into the container for a Harness; callers add these to their mask lists. */
+  get credentialValues(): string[] {
+    return (this.spec.credentials ?? []).map((c) => c.value).filter((value) => value !== '');
+  }
+
+  hasCredential(envName: string): boolean {
+    return (this.spec.credentials ?? []).some((c) => c.envName === envName);
+  }
+
+  /** Starts a Harness in the pod repo dir with its stdio attached; credentials are already in the container env from the per-pod Secret. */
+  spawnHarness(command: string, args: readonly string[], env: Record<string, string> = {}): Promise<ChildProcess> {
+    return this.api.execStream(this.spec.target.namespace, this.name, [command, ...args], { env, cwd: this.workdir });
   }
 
   private get env(): Record<string, string> {
