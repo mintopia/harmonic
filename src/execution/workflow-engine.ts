@@ -7,6 +7,7 @@ import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workfl
 import { maskSecrets } from '../secrets/mask.js';
 import { errorMessage } from '../error-handling.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
+import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
@@ -20,6 +21,8 @@ export interface WorkflowEngineDeps {
   commandById: (task: TaskRow, id: string) => Promise<VerificationCommand | undefined>;
   secretValues: (task: TaskRow) => Promise<string[]>;
   cwdFor: (task: TaskRow) => string;
+  mergeBranch?: (task: TaskRow, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
+  openPullRequest?: (task: TaskRow, run: AttemptRow) => Promise<string | null>;
   escalate: (task: TaskRow, run: AttemptRow, reason: string) => Promise<void>;
   complete: (task: TaskRow, run: AttemptRow) => Promise<void>;
   onStepChanged?: (taskId: number) => void;
@@ -32,6 +35,7 @@ interface StepResult {
   stdout: string;
   exitCode: number | null;
   output: string;
+  outputs?: Partial<WorkflowStepOutputs>;
 }
 
 interface GitMark {
@@ -61,8 +65,8 @@ export class WorkflowEngine {
       const action = step.run !== undefined ? 'run' : step.uses!;
       const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action });
       this.deps.onStepChanged?.(task.id);
-      const result = await this.execute(task, step, secrets);
-      const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode };
+      const result = await this.execute(task, run, step, secrets);
+      const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
       await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
       this.deps.onStepChanged?.(task.id);
       if (result.outcome !== 'pass') {
@@ -74,9 +78,34 @@ export class WorkflowEngine {
     await this.deps.complete(task, run);
   }
 
-  private async execute(task: TaskRow, step: WorkflowDefinition['steps'][number], secrets: string[]): Promise<StepResult> {
+  private async executeBranchAction(task: TaskRow, run: AttemptRow, action: 'merge' | 'open-pr' | 'artifact'): Promise<StepResult> {
+    const done = (outcome: WorkflowStepOutcome, summary: string, outputs?: Partial<WorkflowStepOutputs>): StepResult => ({
+      outcome,
+      summary,
+      stdout: '',
+      exitCode: null,
+      output: '',
+      ...(outputs ? { outputs } : {}),
+    });
+    if (run.branch == null || run.baseBranch == null) return done('inconclusive', 'the Ticket has no branch');
+    if (action === 'artifact') return done('pass', `kept branch ${run.branch} as an artifact`, { branch: run.branch });
+    if (action === 'merge') {
+      if (!this.deps.mergeBranch) return done('inconclusive', 'merge is not available');
+      const merged = await this.deps.mergeBranch(task, run);
+      if (merged.ok) return done('pass', `merged ${run.branch} into ${run.baseBranch}`, { branch: run.branch });
+      return done(merged.reason === 'conflict' ? 'conflict' : 'fail', merged.detail);
+    }
+    if (!this.deps.openPullRequest) return done('inconclusive', 'open-pr is not available');
+    const url = await this.deps.openPullRequest(task, run);
+    if (url === null) return done('inconclusive', 'no pull request was opened: the repository has no forge to open one on');
+    const number = pullRequestNumber(url);
+    return done('pass', `opened ${url}`, { url, ...(number === null ? {} : { number }) });
+  }
+
+  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowDefinition['steps'][number], secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
+      if (step.uses === 'merge' || step.uses === 'open-pr' || step.uses === 'artifact') return await this.executeBranchAction(task, run, step.uses);
       if (step.run === undefined && step.uses !== 'command') {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
       }
@@ -121,4 +150,9 @@ async function markGit(cwd: string): Promise<GitMark> {
     branchOid: branch === 'HEAD' ? null : await Git.revParse(cwd, `refs/heads/${branch}`),
     commits: await Git.commitCount(cwd, 'HEAD'),
   };
+}
+
+function pullRequestNumber(url: string): number | null {
+  const match = /\/(\d+)\/?$/.exec(new URL(url).pathname);
+  return match ? Number(match[1]) : null;
 }

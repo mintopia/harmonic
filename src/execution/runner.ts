@@ -2,6 +2,8 @@ import type { TrackerRef } from '../tracker/adapter.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
+import { mergeIntoBase } from './branch-merge.js';
+import { withBaseCheckoutLock, withRepoLock } from './repo-lock.js';
 import { bestEffort, errorMessage, type FailureReport, type FireAndForget } from '../error-handling.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { AttemptUsageSnapshot } from './usage.js';
@@ -203,6 +205,20 @@ export class Runner {
         return values.filter((value): value is string => value !== null);
       },
       cwdFor: (task) => this.workspaceProvisioner.dispatchCwd(task),
+      mergeBranch: (task, run) =>
+        withBaseCheckoutLock(task.workingDir, () =>
+          withRepoLock(task.workingDir, async () =>
+            mergeIntoBase({
+              repoDir: task.workingDir,
+              baseBranch: run.baseBranch!,
+              branch: run.branch!,
+              expectedOid: await Git.revParse(task.workingDir, run.branch!),
+              mode: 'merge',
+              mutexHeld: true,
+            }),
+          ),
+        ),
+      openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),

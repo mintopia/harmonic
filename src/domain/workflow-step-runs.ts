@@ -5,6 +5,9 @@ import { workflowStepRuns, type WorkflowStepOutcome, type WorkflowStepRunRow } f
 export interface WorkflowStepOutputs {
   stdout: string;
   exitCode: number | null;
+  url?: string;
+  number?: number;
+  branch?: string;
 }
 
 export interface WorkflowStepRunStart {
