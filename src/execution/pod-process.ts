@@ -24,7 +24,6 @@ export class PodProcess extends EventEmitter {
     try {
       this.close();
     } catch {
-      // the attach is already gone
     }
     this.finish(null, typeof signal === 'string' ? signal : 'SIGTERM');
     return true;

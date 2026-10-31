@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// A minimal ACP agent for pod tests: on each prompt it writes agent-<n>.txt in the
-// session cwd, commits it, and echoes the credential env var it was started with.
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';

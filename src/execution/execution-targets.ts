@@ -255,7 +255,6 @@ export class ExecutionTargetService {
     return value === null ? null : { envName: HARNESS_CREDENTIALS[harness].envName, value };
   }
 
-  /** Every set credential whose Harness is configured in Harmonic. */
   async podCredentials(target: string): Promise<PodCredential[]> {
     const found = await Promise.all(HARNESS_IDS.filter((harness) => this.harnessConfigured(harness)).map((harness) => this.credentialFor(target, harness)));
     return found.filter((credential): credential is PodCredential => credential !== null);

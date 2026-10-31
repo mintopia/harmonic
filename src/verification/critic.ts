@@ -59,7 +59,6 @@ export interface CriticDriveRequest {
   continueSessionId?: string;
   /** Deny every permission request that could write, and never switch the harness into its unattended permission mode. */
   readOnly?: boolean;
-  /** Run the Harness inside this pod, attached over a Kubernetes exec; `cwd` is then the pod repo dir. */
   pod?: PodSession;
   /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
   onAgentDurationMs?: (durationMs: number) => Promise<void>;
@@ -115,7 +114,6 @@ function criticSpawnEnv(
   return env;
 }
 
-/** The Harness env for a pod step: no host env, and no HARMONIC_MCP_URL, which names a host-local server the pod cannot reach. */
 function podSpawnEnv(req: CriticDriveRequest): Record<string, string> {
   const adapterEnv = adapterFor(req.harnessId).spawnEnv({ model: req.model, cwd: req.cwd, sessionLogDir: req.harness.sessionLogDir });
   const defined = Object.entries(adapterEnv).filter((entry): entry is [string, string] => entry[1] !== undefined);
