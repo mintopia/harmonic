@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Execution Targets - mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Paper tokens copied from web/src/index.css (light = :root, dark = [data-theme=dark]) */
+:root{
+  color-scheme:light;
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--switch-off:#858983;
+  --ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-hot:#0a6f66;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-tint:#fdeacc;--ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --merged:#0d7734;--merged-tint:#c2f2cd;--fail:#b3253f;--fail-tint:#ffccd6;
+  --tool:#077067;--tool-tint:#b6ece4;--paused:#205f99;--paused-tint:#cde4fb;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+  --shadow-bar:0 16px 44px rgb(27 30 36/.16),0 0 0 1px var(--hairline);
+  --shadow-btn:0 1px 2px rgb(13 114 113/.32);
+  --font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-tint:#51360a;--ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-tint:#0d5531;--fail:#ff5570;--fail-tint:#4d121f;
+  --tool:#2ed3c4;--tool-tint:#0f3e38;--paused:#57b0ff;--paused-tint:#10395c;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 8px 24px rgb(0 0 0/.5),0 0 0 1px var(--edge);
+  --shadow-bar:0 16px 44px rgb(0 0 0/.55),0 0 0 1px var(--edge);
+  --shadow-btn:0 1px 2px rgb(0 0 0/.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:400 14px/1.5 var(--font);font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,.data{font-family:var(--font-data);font-size:13px}
+.page{max-width:1040px;margin:0 auto;padding:24px 24px 80px}
+.topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+.topbar button{font:inherit;font-size:12px;color:var(--muted);background:none;border:1px solid var(--edge);border-radius:3px;padding:4px 10px;cursor:pointer}
+h2.sec{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:700;margin:44px 0 2px}
+h2.sec .tk{font-family:var(--font-data);font-size:12px;letter-spacing:0;font-weight:600;color:var(--accent);background:var(--accent-tint);border-radius:3px;padding:2px 7px;vertical-align:4px;margin-right:6px}
+p.sub{margin:0 0 16px;color:var(--muted)}
+.label{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:600;text-transform:uppercase;color:var(--muted)}
+.card{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+.vlabel{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:20px 0 8px}
+.note{font-size:12px;color:var(--faint);margin-top:8px}
+.dim{color:var(--muted)}
+
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline);margin-bottom:16px;overflow-x:auto}
+.tab{min-height:44px;display:inline-flex;align-items:center;padding:0 4px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{border-color:var(--accent);color:var(--ink)}
+.scope{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.scope .crumb{font-size:12px;color:var(--muted)}
+.scopechip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;background:var(--raised);color:var(--muted)}
+.scopechip.ws{background:var(--accent-tint);color:var(--accent)}
+.section{padding:20px;margin-bottom:12px}
+.section h3{font-size:15px;line-height:1.4;font-weight:600;margin:0}
+.section .desc{margin:2px 0 16px;color:var(--muted)}
+.hr{border:0;border-top:1px solid var(--hairline);margin:20px 0}
+
+/* fields */
+.fl{display:block;margin-bottom:6px}
+.field,.select{width:100%;min-height:44px;border:1px solid var(--edge);background:var(--field);color:var(--ink);border-radius:3px;padding:6px 10px;font:inherit;display:flex;align-items:center;gap:8px}
+.select{justify-content:space-between}
+.select:after{content:"";width:6px;height:6px;border:solid var(--faint);border-width:0 1.5px 1.5px 0;transform:rotate(45deg) translateY(-2px);flex:none}
+.field.focus{border-color:var(--accent)}
+.field.err{border-color:var(--fail)}
+.field.ro{background:var(--sunken);color:var(--muted)}
+.errmsg{margin:4px 0 0;font-size:12px;color:var(--fail);line-height:1.35}
+.help{margin:4px 0 0;font-size:12px;color:var(--faint);line-height:1.4}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px 16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.span2{grid-column:1/-1}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:3px;overflow:hidden}
+.seg span{padding:10px 14px;min-height:44px;display:inline-flex;align-items:center;font-weight:500;color:var(--muted);background:var(--field)}
+.seg span.on{background:var(--accent-tint);color:var(--accent);font-weight:600}
+.switch{position:relative;display:inline-block;height:18px;width:32px;border-radius:999px;background:var(--switch-off);flex:none}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--on-accent)}
+.switch.on{background:var(--accent)}
+.switch.on:after{transform:translateX(14px)}
+.swrow{display:flex;align-items:center;gap:10px}
+.btnghost{display:inline-flex;min-height:44px;align-items:center;gap:8px;border:1px solid var(--edge);background:var(--surface);color:var(--ink);border-radius:3px;padding:8px 14px;font:500 14px var(--font)}
+.btnprimary{display:inline-flex;min-height:44px;align-items:center;border-radius:3px;background:var(--accent);color:var(--on-accent);padding:8px 14px;font:600 14px var(--font);box-shadow:var(--shadow-btn);background-image:linear-gradient(180deg,rgb(255 255 255/.15),rgb(255 255 255/0) 52%,rgb(0 0 0/.09))}
+.btndanger{display:inline-flex;min-height:44px;align-items:center;border-radius:3px;background:var(--fail);color:var(--shell);padding:8px 14px;font:600 14px var(--font)}
+.btnquiet{display:inline-flex;min-height:44px;align-items:center;color:var(--muted);font:500 14px var(--font);padding:0 4px}
+.btnsm{display:inline-flex;min-height:32px;align-items:center;border:1px solid var(--edge);background:var(--surface);color:var(--ink);border-radius:3px;padding:2px 10px;font:500 12px var(--font)}
+.btnsm.fail{color:var(--fail)}
+.addlink{font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0;font-family:inherit}
+.linkbtn{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--edge);border-top-color:var(--accent);animation:sp .9s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* chips */
+.pill{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;border-radius:3px;padding:3px 9px;font-size:11px;font-weight:600}
+.pill.on{background:var(--merged-tint);color:var(--merged)}
+.pill.off{background:var(--raised);color:var(--muted)}
+.pill.working{background:var(--running-tint);color:var(--running)}
+.pill.ready{background:var(--ready-tint);color:var(--ready)}
+.pill.escalated{background:var(--await-tint);color:var(--await)}
+.pill.fail{background:var(--fail-tint);color:var(--fail)}
+.pill.set{background:var(--merged-tint);color:var(--merged)}
+.pill.unset{background:var(--fail-tint);color:var(--fail)}
+.pill.opt{background:var(--raised);color:var(--muted)}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.gchip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;background:var(--raised);color:var(--muted)}
+.tchip{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;background:var(--tool-tint);color:var(--tool);vertical-align:middle}
+.tchip code{font-size:10.5px;font-weight:600}
+.tchip.k8s{background:var(--ready-tint);color:var(--ready)}
+.tchip.local{background:var(--raised);color:var(--muted)}
+.wchip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;background:var(--ready-tint);color:var(--ready);position:relative;cursor:help}
+.wchip .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.wchip.off{background:var(--raised);color:var(--muted)}
+.tip{position:absolute;z-index:5;left:0;top:calc(100% + 8px);width:290px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-bar);border-radius:4px;padding:10px 12px;font-size:12px;line-height:1.45;font-weight:400;text-transform:none;white-space:normal;cursor:default}
+.tip b{font-weight:600}
+.tipreserve{height:74px}
+
+/* target list */
+.tray{display:flex;flex-direction:column;gap:6px;border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:6px}
+.trow{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card);padding:14px 14px;display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(130px,.9fr) minmax(110px,.7fr) minmax(250px,2fr) auto;gap:12px;align-items:center}
+.trow.offrow .nm,.trow.offrow .ns{opacity:.7}
+.nm{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.nm .n{font-family:var(--font-data);font-size:14px;font-weight:600}
+.cc{display:flex;flex-direction:column;gap:4px}
+.cc .t{font-size:13px}
+.meter{height:6px;border-radius:999px;background:var(--raised);overflow:hidden;width:100%;max-width:110px}
+.meter i{display:block;height:100%;background:var(--running)}
+.meter i.full{background:var(--ready)}
+.acts{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.cell-l{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+.img{overflow-wrap:anywhere;font-size:11.5px;line-height:1.35}
+.elhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.hostnote{font-size:12px;color:var(--muted)}
+
+/* results */
+.result{display:flex;gap:10px;align-items:flex-start;border-radius:3px;padding:10px 12px;font-size:13px;margin-top:8px}
+.result svg{flex:none;margin-top:2px}
+.result.ok{background:var(--merged-tint);color:var(--ink)}
+.result.ok svg{color:var(--merged)}
+.result.bad{background:var(--fail-tint);color:var(--ink)}
+.result.bad svg{color:var(--fail)}
+.result.run{background:var(--sunken);border:1px solid var(--hairline)}
+.result b{font-weight:600}
+.result .why{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.result code,.banner code{font-size:12px;background:var(--surface);padding:0 5px;border-radius:3px}
+.testrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.states{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.states .card{padding:14px}
+.formfoot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);margin:20px -20px -20px;padding:12px 20px;flex-wrap:wrap}
+.formfoot .sp{flex:1}
+.secretline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.secretline .nmc{font-size:12px;color:var(--muted)}
+.mask{font-family:var(--font-data);font-size:13px;color:var(--faint);letter-spacing:.1em}
+code.id{background:var(--sunken);border-radius:3px;padding:0 5px;font-size:12px}
+
+/* dialog */
+.scrim{background:var(--sunken);border:1px dashed var(--edge);border-radius:4px;padding:28px 16px;display:flex;justify-content:center}
+.dialog{width:520px;max-width:100%;background:var(--surface);border-radius:6px;box-shadow:var(--shadow-float);padding:20px}
+.dialog h4{margin:0 0 6px;font-size:16px;font-weight:700}
+.dialog p{margin:0 0 10px}
+.dialog ul{margin:0 0 12px;padding-left:18px}
+.dialog li{margin-bottom:4px}
+.dialog .foot{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.warnbox{border-radius:3px;background:var(--fail-tint);color:var(--ink);padding:10px 12px;font-size:13px;margin-bottom:12px}
+.warnbox b{color:var(--fail)}
+
+/* rules */
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rule{border-radius:4px;padding:12px 14px;font-size:13px}
+.rule.allow{background:var(--merged-tint)}
+.rule.deny{background:var(--fail-tint)}
+.rule h5{margin:0 0 6px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700}
+.rule.allow h5{color:var(--merged)}
+.rule.deny h5{color:var(--fail)}
+.rule ul{margin:0;padding-left:16px}
+.rule li{margin-bottom:3px}
+.passline{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.fact{border:1px solid var(--hairline);border-radius:4px;padding:10px 12px;background:var(--sunken)}
+.fact .v{font-weight:600;margin-top:2px}
+
+/* ticket page */
+.tickethead{padding:20px 24px}
+.tickethead h1{margin:0;font-size:26px;font-weight:800;line-height:1.15;letter-spacing:-.03em;max-width:680px}
+.thr{display:flex;gap:16px;align-items:flex-start}
+dl.props{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 24px;margin:16px 0 0}
+dl.props dt{margin:0 0 2px}
+dl.props dd{margin:0}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:24px 1fr;gap:12px;position:relative;padding-bottom:12px}
+.step:not(:last-child):before{content:"";position:absolute;left:11px;top:24px;bottom:0;width:1px;background:var(--edge)}
+.step .mk{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--raised);color:var(--muted)}
+.step.done .mk{background:var(--merged-tint);color:var(--merged)}
+.step.run .mk{background:var(--running-tint);color:var(--running)}
+.step.bad .mk{background:var(--fail-tint);color:var(--fail)}
+.step .hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.step .hd .sn{font-weight:600}
+.step .kind{font-family:var(--font-data);font-size:12px;color:var(--faint)}
+.step .ck{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.step .ck svg{color:var(--merged);flex:none}
+.step .ev{font-size:12px;margin-top:4px;border-radius:3px;padding:6px 10px;background:var(--raised);color:var(--ink)}
+.banner{border-radius:3px;background:var(--await-tint);padding:8px 12px;font-size:12px}
+.banner .hd{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--await)}
+.banner .bd2{margin-top:2px;color:var(--ink);font-size:13px}
+.gate{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);background:var(--surface);padding:12px 14px;box-shadow:var(--shadow-float);margin-top:16px;border-radius:0 0 4px 4px;flex-wrap:wrap}
+.gate .sp{flex:1}
+.hint-inline{font-size:12px;color:var(--muted)}
+.btngo{display:inline-flex;min-height:36px;align-items:center;border-radius:3px;background:var(--await);color:var(--on-await);padding:4px 12px;font:600 13px var(--font)}
+
+/* board */
+.cards{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.cards>div{width:300px;max-width:100%}
+.cardcap{font-size:12px;color:var(--muted);margin:0 0 6px}
+.bcard{position:relative;width:100%;border-radius:4px;background:var(--surface);box-shadow:var(--shadow-card);overflow:hidden}
+.bcard .bar{position:absolute;inset:0 auto 0 0;width:5px}
+.bcard.working .bar{background:var(--running)}
+.bcard.ready .bar{background:var(--ready)}
+.bcard.escalated{background:var(--await-tint)}
+.bcard.escalated .bar{background:var(--await)}
+.bcard .in{padding:16px 16px 14px 20px}
+.bcard .top{display:flex;align-items:center;gap:8px}
+.bd{width:8px;height:8px;border-radius:50%;flex:none}
+.working .bd{background:var(--running)}.ready .bd{background:var(--ready)}.escalated .bd{background:var(--await)}
+.bcard .id{font-family:var(--font-data);font-size:12px;color:var(--faint)}
+.bcard .chip{margin-left:auto;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase}
+.working .chip{background:var(--running-tint);color:var(--running)}
+.ready .chip{background:var(--ready-tint);color:var(--ready)}
+.escalated .chip{background:var(--await-tint);color:var(--await)}
+.bcard .tt{margin-top:8px;font-size:15px;font-weight:600;line-height:1.3}
+.bcard .who{margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bcard .why{margin-top:6px;font-size:12.5px;color:var(--await)}
+.bcard .foot{display:flex;align-items:center;margin-top:12px;font-size:12px;color:var(--muted);gap:8px}
+.bcard .foot .br{font-family:var(--font-data);color:var(--faint)}
+.bcard .foot .go{margin-left:auto}
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl{display:grid;grid-template-columns:70px 1fr;gap:12px;padding:8px 0;border-top:1px solid var(--hairline);font-size:13px}
+.tl:first-child{border-top:0}
+.tl .tm{font-family:var(--font-data);font-size:12px;color:var(--faint)}
+
+/* options */
+.options{display:flex;flex-direction:column;gap:16px}
+.option{display:flex;gap:14px;align-items:flex-start;border:2px solid var(--edge);border-radius:6px;padding:16px;background:var(--canvas);cursor:pointer}
+.option:hover,.option.selected{border-color:var(--accent)}
+.option .letter{flex:none;width:28px;height:28px;border-radius:50%;background:var(--raised);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700}
+.option.selected .letter{background:var(--accent);color:var(--on-accent)}
+.option .content{flex:1;min-width:0}
+.option .content h3{font-size:15px;margin:0 0 2px;font-weight:700}
+.option .content p.d{margin:0 0 12px;color:var(--muted);font-size:13px}
+
+/* v3: forms stack; lists stay rows */
+.fgroup{padding:18px 0;border-top:1px solid var(--hairline)}
+.fgroup:first-of-type{border-top:0;padding-top:0}
+.fgroup h4{margin:0 0 12px;font-size:13px;font-weight:700}
+.stack{display:flex;flex-direction:column;gap:16px;max-width:640px}
+.stack .short .field{max-width:240px}
+.grid2,.cols,.states{grid-template-columns:1fr !important}
+.states .span2{grid-column:auto !important}
+.nm .n{white-space:nowrap}
+.acts{flex-wrap:nowrap}
+.trow .nm{flex-direction:row;align-items:center;gap:10px}
+.tray .cell-l{display:none}
+.tray.cred .cell-l{display:inline;margin:0 8px 0 0}
+.thead{display:grid;gap:14px;padding:4px 14px 0;font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.tbl1 .trow,.tbl1 .thead{grid-template-columns:190px 130px 120px minmax(0,1fr) 190px}
+.tbl1 .trow{padding:10px 14px}
+.tray.tight .trow{padding:10px 14px}
+dl.props{display:flex;flex-wrap:wrap;gap:12px 0;border-top:1px solid var(--hairline);margin-top:16px;padding-top:12px}
+dl.props>div{padding:0 20px;border-left:1px solid var(--hairline)}
+dl.props>div:first-child{padding-left:0;border-left:0}
+.cards>div{width:420px;max-width:100%}
+@media (max-width:760px){.tbl1 .trow,.tbl1 .thead,.trow,.grid2,.grid3,.cols,.states,.rules,.facts{grid-template-columns:1fr}.thead{display:none}dl.props>div{border-left:0;padding:0}.acts{justify-content:flex-start}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="topbar"><button type="button" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">Toggle light / dark</button></div>
+
+<!-- ===================== 1. #931 ===================== -->
+<h2 class="sec" style="margin-top:8px">1. #931 Operators configure Kubernetes Execution Targets</h2>
+<p class="sub">Judge: can an operator add a target, prove it works before enabling it, and see which Workspaces may use it? A failed connection test must say what failed, not just that it failed.</p>
+
+<div class="tabs" role="tablist">
+  <span class="tab">General</span><span class="tab on">Execution</span><span class="tab">Verification</span><span class="tab">Prompts</span><span class="tab">Integrations</span><span class="tab">Security</span><span class="tab">Archive</span>
+</div>
+<div class="scope"><span class="scopechip">Global</span><span class="crumb">Settings &rsaquo; Execution</span></div>
+
+<section class="card section">
+  <h3>Execution Targets</h3>
+  <p class="desc">Where a Task Execution Workflow runs. A workflow or a Step picks one with <code>runs_on</code>. Every Kubernetes target needs a Code Repository on the Workspace, because the remote is the base branch's source of truth.</p>
+  <div class="elhead"><span class="label">Targets</span><button class="addlink" type="button">+ Add Kubernetes target</button></div>
+  <div class="tray tbl1">
+    <div class="thead"><span>Target</span><span>Namespace</span><span>Concurrency</span><span>Default image</span><span></span></div>
+
+    <div class="trow">
+      <div class="nm"><span class="n">local</span><span class="pill on"><span class="dot"></span>built in</span></div>
+      <div>the Harmonic host</div>
+      <div class="cc"><div class="cell-l">Bounded by</div><span class="t">Host Ceiling <b>3</b></span></div>
+      <div class="hostnote">Not editable. Bounded by the Host Ceiling.</div>
+      <div class="acts"></div>
+    </div>
+
+    <div class="trow">
+      <div class="nm"><span class="n">k8s-prod</span><span class="pill on"><span class="dot"></span>enabled</span></div>
+      <div><div class="cell-l">Namespace</div><code>harmonic-agents</code></div>
+      <div class="cc"><div class="cell-l">Concurrency</div><span class="t"><b>2</b>/4 running</span><span class="meter" role="img" aria-label="2 of 4 running"><i style="width:50%"></i></span></div>
+      <div><div class="cell-l">Default image</div><code class="img">ghcr.io/mintopia/harmonic-harnesses:2.19.0</code></div>
+      <div class="acts"><span class="btnsm">Edit</span><span class="btnsm">Disable</span><span class="btnsm fail">Delete</span></div>
+    </div>
+
+    <div class="trow offrow">
+      <div class="nm"><span class="n">k8s-staging</span><span class="pill off"><span class="dot"></span>disabled</span></div>
+      <div class="ns"><div class="cell-l">Namespace</div><code>harmonic-staging</code></div>
+      <div class="cc"><div class="cell-l">Concurrency</div><span class="t"><b>0</b>/1 running</span><span class="meter" role="img" aria-label="0 of 1 running"><i style="width:0"></i></span></div>
+      <div class="ns"><div class="cell-l">Default image</div><code class="img">ghcr.io/mintopia/harmonic-harnesses:2.19.0</code></div>
+      <div class="acts"><span class="btnsm">Edit</span><span class="btnsm">Enable</span><span class="btnsm fail">Delete</span></div>
+    </div>
+  </div>
+  <p class="note">Disabling a target does not stop work already running there. Tickets waiting for it stay <code>ready</code> (see section 5).</p>
+</section>
+
+<div class="vlabel">Target editor &middot; k8s-prod</div>
+<section class="card section">
+  <h3>Edit Kubernetes target</h3>
+  <p class="desc">Changes apply to pods started after you save.</p>
+  <div class="fgroup">
+    <h4>Identity</h4>
+    <div class="stack">
+      <div><span class="label fl">Name</span><div class="field data">k8s-prod</div><p class="help">Used in <code>runs_on</code>. Renaming breaks workflows that name it.</p></div>
+      <div class="swrow"><span class="switch on" role="switch" aria-checked="true" aria-label="Enabled"></span><span>Enabled</span></div>
+    </div>
+  </div>
+  <div class="fgroup">
+    <h4>Cluster access</h4>
+    <div class="stack">
+      <div><span class="label fl">Method</span>
+        <div class="seg" role="radiogroup"><span class="on">Kubeconfig Secret</span><span>In-cluster service account</span></div>
+        <p class="help">Use the service account when Harmonic itself runs in this cluster.</p></div>
+      <div><span class="label fl">Kubeconfig</span>
+        <div class="secretline">
+          <span class="pill set"><span class="dot"></span>set</span>
+          <code class="id">k8s-prod-kubeconfig</code>
+          <span class="nmc">last replaced Oct 12</span>
+        </div>
+        <div class="secretline" style="margin-top:8px"><span class="btnsm">Replace&hellip;</span><span class="btnsm">Clear</span></div>
+        <p class="help">Stored as a Secret and never shown again after you save it.</p></div>
+      <div><span class="label fl">Namespace</span><div class="field data">harmonic-agents</div></div>
+    </div>
+  </div>
+  <div class="fgroup">
+    <h4>Pod</h4>
+    <div class="stack">
+      <div><span class="label fl">Default pod image</span><div class="field data">ghcr.io/mintopia/harmonic-harnesses:2.19.0</div>
+        <p class="help">A workflow or a Step can override it with <code>image:</code>. Credentials baked into an image are refused; supply them as Secrets in Credentials (section 3).</p></div>
+      <div class="short"><span class="label fl">CPU</span><div class="field data">2</div></div>
+      <div class="short"><span class="label fl">Memory</span><div class="field data">4Gi</div></div>
+    </div>
+  </div>
+  <div class="fgroup">
+    <h4>Repository Proxy</h4>
+    <div class="stack">
+      <div><span class="label fl">Repository Proxy URL</span><div class="field data">https://repo-proxy.harmonic-agents.svc.cluster.local</div>
+        <p class="help">One Repository Proxy per cluster. Install it from <code>deploy/kubernetes/repository-proxy.yaml</code>.</p></div>
+    </div>
+  </div>
+  <div class="fgroup">
+    <h4>Concurrency</h4>
+    <div class="stack">
+      <div class="short"><span class="label fl">Concurrency limit</span><div class="field data">4</div><p class="help">Pods at once on this target. Separate from the Host Ceiling, which bounds <code>local</code> only.</p></div>
+    </div>
+  </div>
+  <hr class="hr">
+  <div class="testrow"><span class="btnghost">Test connection</span><span class="hostnote">Lists pods in the namespace using the access above. Nothing is created.</span></div>
+
+  <div class="vlabel">Connection test &middot; the four outcomes</div>
+  <div class="states">
+    <div class="card"><div class="label">Testing</div>
+      <div class="result run" role="status"><span class="spin"></span><span>Connecting to the cluster and listing namespace <code>harmonic-agents</code>&hellip;</span></div></div>
+    <div class="card"><div class="label">Success</div>
+      <div class="result ok" role="status"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 2 2 3.6-4"/></svg><span><b>Connected:</b> listed namespace <code>harmonic-agents</code> (6 pods)<span class="why">Checked just now with Secret <code>k8s-prod-kubeconfig</code>.</span></span></div></div>
+    <div class="card"><div class="label">Failure &middot; bad kubeconfig</div>
+      <div class="result bad" role="alert"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.6v4M8 11v.1"/></svg><span><b>Unauthorized:</b> the kubeconfig Secret <code>k8s-prod-kubeconfig</code> was rejected by the cluster.<span class="why">Replace the Secret with a kubeconfig whose user can list pods in this namespace.</span></span></div></div>
+    <div class="card"><div class="label">Failure &middot; namespace or network</div>
+      <div class="result bad" role="alert"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.6v4M8 11v.1"/></svg><span><b>Namespace not found:</b> <code>harmonic-agents</code> does not exist on this cluster.<span class="why">Or: <b>Cluster unreachable</b> (timed out after 10 s). Check the server address in the kubeconfig and that Harmonic can reach it.</span></span></div></div>
+  </div>
+
+  <div class="formfoot">
+    <span class="btnquiet fail" style="color:var(--fail)">Delete target&hellip;</span><span class="sp"></span>
+    <span class="btnquiet">Cancel</span><span class="btnprimary">Save target</span>
+  </div>
+</section>
+
+<div class="vlabel">Delete confirmation</div>
+<div class="scrim"><div class="dialog" role="alertdialog" aria-label="Delete Execution Target k8s-prod">
+  <h4>Delete Execution Target <code>k8s-prod</code>?</h4>
+  <div class="warnbox"><b>3 Tickets will escalate.</b> 2 are running there and 1 is waiting for it. Each escalates with &ldquo;Execution Target &lsquo;k8s-prod&rsquo; was deleted&rdquo;.</div>
+  <p class="dim">Running pods are stopped and deleted with their per-pod Secret. Workflows with <code>runs_on: k8s-prod</code> fail at save until you change them. Secrets stored for this target are removed.</p>
+  <div class="foot"><span class="btnquiet">Cancel</span><span class="btndanger">Delete k8s-prod</span></div>
+</div></div>
+
+<div class="vlabel">Workspace restriction &middot; Workspace settings</div>
+<div class="scope"><span class="scopechip ws">Workspace</span><span class="crumb">harmonic &rsaquo; Settings &rsaquo; Execution</span></div>
+<section class="card section">
+  <h3>Execution Targets</h3>
+  <p class="desc">Restrict which targets this Workspace may use. <code>local</code> is always available.</p>
+  <div class="tray">
+    <div class="trow" style="grid-template-columns:24px minmax(140px,1fr) 2fr;"><span class="switch on" role="switch" aria-checked="true" aria-label="local"></span><span class="data">local</span><span class="hostnote">Always on</span></div>
+    <div class="trow" style="grid-template-columns:24px minmax(140px,1fr) 2fr;"><span class="switch on" role="switch" aria-checked="true" aria-label="k8s-prod"></span><span class="data">k8s-prod</span><span class="hostnote">Code Repository <code>mintopia/harmonic</code> &middot; Isolation Mode <code>worktree</code></span></div>
+    <div class="trow" style="grid-template-columns:24px minmax(140px,1fr) 2fr;"><span class="switch" role="switch" aria-checked="false" aria-label="k8s-staging"></span><span class="data">k8s-staging</span><span class="hostnote">Disabled globally. Turning it on here has no effect until it is enabled.</span></div>
+  </div>
+  <div class="vlabel">Refusals, shown inline when you turn a target on</div>
+  <div class="states">
+    <div class="card"><div class="label">Workspace without a Code Repository</div>
+      <div class="swrow" style="margin:8px 0 0"><span class="switch on" aria-hidden="true"></span><span class="data">k8s-prod</span></div>
+      <p class="errmsg" role="alert"><code>k8s-prod</code> needs a Code Repository: the remote is the base branch's source of truth. <span class="linkbtn">Add one in Workspace settings.</span></p></div>
+    <div class="card"><div class="label">Workspace in direct mode</div>
+      <div class="swrow" style="margin:8px 0 0"><span class="switch on" aria-hidden="true"></span><span class="data">k8s-prod</span></div>
+      <p class="errmsg" role="alert">Kubernetes targets are not available to a Workspace in <code>direct</code> mode. Switch the Isolation Mode to <code>worktree</code> first.</p></div>
+  </div>
+</section>
+
+<!-- ===================== 2. #934 ===================== -->
+<h2 class="sec">2. #934 Harmonic issues Repository Proxy passes, and key rotation revokes them</h2>
+<p class="sub">Judge: before pressing Rotate signing key, does the operator know exactly what breaks, for whom, and what to do on the proxy afterwards?</p>
+
+<div class="scope"><span class="scopechip">Global</span><span class="crumb">Settings &rsaquo; Execution &rsaquo; Execution Targets &rsaquo; k8s-prod</span></div>
+<section class="card section">
+  <h3>Repository Proxy</h3>
+  <p class="desc">Pods never hold the Code Repository's credentials. The proxy does, and lets a pod through only with a pass Harmonic signed.</p>
+  <div class="facts">
+    <div class="fact"><div class="label">Signing key</div><div class="v"><span class="pill set"><span class="dot"></span>set</span> <code class="id">k8s-prod-proxy-key</code></div></div>
+    <div class="fact"><div class="label">Last rotated</div><div class="v">Oct 3 &middot; 14:20 <span class="dim" style="font-weight:400">(28 days ago)</span></div></div>
+    <div class="fact"><div class="label">Passes</div><div class="v">24 h, one per pod start</div></div>
+  </div>
+  <div class="passline" style="margin-bottom:16px">A pass is signed, not stored: <span class="gchip">Code Repository</span><span class="gchip">base branch</span><span class="gchip">Ticket branch</span><span class="gchip">expiry</span> Harmonic keeps no list of passes.</div>
+
+  <div class="rules">
+    <div class="rule allow"><h5>A pass allows</h5><ul>
+      <li>Fetch the base branch</li><li>Fetch the Ticket branch</li><li>Push to <code>harmonic/task-&lt;id&gt;</code> only, force included (the Rebase Step rewrites the branch)</li></ul></div>
+    <div class="rule deny"><h5>The proxy denies</h5><ul>
+      <li>Tags</li><li>Deleting any ref</li><li>Any other ref</li><li>Every forge API call</li></ul></div>
+  </div>
+
+  <hr class="hr">
+  <div class="testrow">
+    <span class="btnghost">Rotate signing key&hellip;</span>
+    <span class="hostnote">Replaces the shared key. Do this after a suspected leak or on your own schedule.</span>
+  </div>
+
+  <div class="vlabel">Confirmation &middot; the consequence comes before the button</div>
+  <div class="scrim"><div class="dialog" role="alertdialog" aria-label="Rotate signing key">
+    <h4>Rotate the signing key for <code>k8s-prod</code>?</h4>
+    <div class="warnbox"><b>Running pods lose git access.</b> Rotating the key revokes every outstanding pass.</div>
+    <ul>
+      <li>2 Tickets are running on <code>k8s-prod</code> now. Their next checkpoint push fails until they start a new pod.</li>
+      <li>New pods get a pass signed with the new key at start, so waiting Tickets are not affected.</li>
+      <li><b>Update the key on the Repository Proxy too.</b> Until you do, the proxy rejects every pass from Harmonic, new ones included.</li>
+    </ul>
+    <p class="dim">The new key is shown once, for you to copy to the proxy. Harmonic stores it as a Secret and never shows it again.</p>
+    <div class="foot"><span class="btnquiet">Cancel</span><span class="btndanger">Rotate key and revoke passes</span></div>
+  </div></div>
+
+  <div class="vlabel">After rotating</div>
+  <div class="states">
+    <div class="card"><div class="label">Just rotated</div>
+      <div class="result ok" role="status"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 2 2 3.6-4"/></svg><span><b>Rotated just now &middot; 2 passes revoked.</b><span class="why">Key must be updated on the Repository Proxy.</span></span></div>
+      <div class="secretline" style="margin-top:10px"><span class="mask">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span><span class="btnsm">Copy new key</span><span class="hostnote">Shown once.</span></div></div>
+    <div class="card"><div class="label">Proxy and Harmonic disagree</div>
+      <div class="result bad" role="alert"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.6v4M8 11v.1"/></svg><span><b>Repository Proxy rejected the last pass.</b><span class="why">The proxy is likely still on the old key. Update it, then Test connection.</span></span></div></div>
+  </div>
+</section>
+
+<!-- ===================== 3. #937 ===================== -->
+<h2 class="sec">3. #937 Agent steps run a Harness in the pod with injected credentials</h2>
+<p class="sub">Judge: is it obvious which Harnesses this target can run, how to get a Claude subscription token, and what happens when one is missing?</p>
+
+<div class="scope"><span class="scopechip">Global</span><span class="crumb">Settings &rsaquo; Execution &rsaquo; Execution Targets &rsaquo; k8s-prod &rsaquo; Credentials</span></div>
+<section class="card section">
+  <h3>Credentials</h3>
+  <p class="desc">One Secret per Harness. Harmonic injects it into a per-pod Kubernetes Secret when the pod starts and deletes it with the pod. A value never appears in logs or Activity, and is never shown here.</p>
+  <div class="tray cred">
+
+    <div class="trow" style="grid-template-columns:190px 1fr auto">
+      <div class="nm"><span style="font-weight:600">Claude</span><span class="pill set"><span class="dot"></span>set</span></div>
+      <div><div class="cell-l">Claude subscription &middot; OAuth token</div><code class="id">k8s-prod-claude-token</code> <span class="dim small" style="font-size:12px">last rotated Oct 12</span></div>
+      <div class="acts"><span class="btnsm">Replace&hellip;</span><span class="btnsm">Clear</span></div>
+    </div>
+    <div class="trow" style="grid-template-columns:190px 1fr auto">
+      <div class="nm"><span style="font-weight:600">Codex</span><span class="pill unset"><span class="dot"></span>not set</span></div>
+      <div><div class="cell-l">API key</div><span class="dim">No Secret yet. Steps that use Codex on this target will escalate.</span></div>
+      <div class="acts"><span class="btnsm">Add API key&hellip;</span></div>
+    </div>
+    <div class="trow" style="grid-template-columns:190px 1fr auto">
+      <div class="nm"><span style="font-weight:600">Copilot</span><span class="pill set"><span class="dot"></span>set</span></div>
+      <div><div class="cell-l">API key</div><code class="id">k8s-prod-copilot-key</code> <span class="dim" style="font-size:12px">last rotated Sep 29</span></div>
+      <div class="acts"><span class="btnsm">Replace&hellip;</span><span class="btnsm">Clear</span></div>
+    </div>
+    <div class="trow" style="grid-template-columns:190px 1fr auto">
+      <div class="nm"><span style="font-weight:600">OpenCode</span><span class="pill opt"><span class="dot"></span>not set</span></div>
+      <div><div class="cell-l">API key</div><span class="dim">Not configured as a Harness in this Harmonic, so nothing needs it.</span></div>
+      <div class="acts"><span class="btnsm">Add API key&hellip;</span></div>
+    </div>
+  </div>
+
+  <div class="vlabel">Replace the Claude token</div>
+  <div class="cols">
+    <div>
+      <span class="label fl">New Claude subscription token</span>
+      <div class="field focus"><span class="mask">Paste a token&hellip;</span></div>
+      <p class="help">Stored as the Secret <code>k8s-prod-claude-token</code>. Existing pods keep the old token until they end.</p>
+    </div>
+    <div class="card" style="padding:14px;background:var(--sunken);box-shadow:none;border:1px solid var(--hairline)">
+      <div class="label">How to get a token</div>
+      <p style="margin:6px 0 8px">A Claude subscription works in a pod through a long-lived OAuth token. Run this on a machine where you are signed in:</p>
+      <div class="field data" style="min-height:36px">claude setup-token</div>
+      <p class="help">Other Harnesses use an API key instead. Do not bake either into the image; Harmonic refuses images that contain credentials.</p>
+    </div>
+  </div>
+
+  <div class="vlabel">When a credential is missing</div>
+  <div class="card tickethead" style="box-shadow:none;border:1px solid var(--hairline)">
+    <div class="thr"><h1 style="font-size:20px">Generate fixtures for the retry suite</h1><span class="pill escalated" style="margin-top:4px">escalated</span></div>
+    <div class="banner" style="margin-top:14px">
+      <span class="hd"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></svg>Escalated &middot; permanent infrastructure failure</span>
+      <div class="bd2">Target <code>k8s-prod</code> has no credential for Harness Codex. Add one in Execution Targets &rsaquo; <code>k8s-prod</code> &rsaquo; Credentials, or change the Step's Harness. Harmonic never falls back to <code>local</code>.</div>
+    </div>
+    <div class="gate">
+      <span class="hint-inline">Adding the credential, then Retry, starts a fresh pod.</span><span class="sp"></span>
+      <span class="btnquiet">Close</span><span class="btnghost">Open Credentials</span><span class="btnprimary">Retry</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 4. #936 ===================== -->
+<h2 class="sec">4. #936 A workflow's shell steps run in a Kubernetes pod with checkpoint pushes</h2>
+<p class="sub">Judge: on a Ticket running in a pod, can you tell which target and pod each Step ran on, that work was saved after every Step, and what happened if the pod was lost?</p>
+
+<div class="card tickethead">
+  <div class="thr"><h1>Rework retry backoff in the mirror poller</h1><span class="pill working" style="margin-top:10px">working</span></div>
+  <dl class="props">
+    <div><dt class="label">Target</dt><dd><span class="tchip k8s"><code>k8s-prod</code></span> <span class="dim" style="font-size:12px">from workflow <code>runs_on</code></span></dd></div>
+    <div><dt class="label">Pod</dt><dd><code>harmonic-task-482-7f9c</code> <span class="pill working" style="margin-left:6px">Running</span></dd></div>
+    <div><dt class="label">Image</dt><dd><code style="font-size:12px">harmonic-harnesses:2.19.0</code></dd></div>
+    <div><dt class="label">Namespace</dt><dd><code>harmonic-agents</code></dd></div>
+    <div><dt class="label">Branch</dt><dd><code>harmonic/task-482</code></dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span></dd></div>
+  </dl>
+</div>
+
+<div class="vlabel">Step list</div>
+<div class="vlabel">Checkpoint under each Step</div>
+    <div class="card" style="padding:18px 20px">
+    <ol class="steps">
+      <li class="step done"><span class="mk">1</span><div><div class="hd"><span class="sn">Rebase onto base</span><span class="kind">rebase</span><span class="tchip local">local</span></div>
+        <div class="ck"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 4.8"/></svg>Checkpoint: <b>force-pushed</b> <code>harmonic/task-482</code> via Repository Proxy &middot; <code>a41c9e2</code></div></div></li>
+      <li class="step done"><span class="mk">2</span><div><div class="hd"><span class="sn">Install dependencies</span><span class="kind">run: npm ci</span><span class="tchip k8s"><code>k8s-prod</code></span></div>
+        <div class="ck"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 4.8"/></svg>Checkpoint pushed to <code>harmonic/task-482</code> via Repository Proxy &middot; no changes</div></div></li>
+      <li class="step done"><span class="mk">3</span><div><div class="hd"><span class="sn">Implement</span><span class="kind">agent &middot; Claude</span><span class="tchip k8s"><code>k8s-prod</code></span></div>
+        <div class="ck"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 4.8"/></svg>Checkpoint pushed to <code>harmonic/task-482</code> via Repository Proxy &middot; <code>7be03d1</code> &middot; 6 files</div></div></li>
+      <li class="step bad"><span class="mk">4</span><div><div class="hd"><span class="sn">Verify</span><span class="kind">command: npm test</span><span class="tchip k8s"><code>k8s-prod</code></span></div>
+        <div class="ev">Pod lost; restarted from last checkpoint <code>7be03d1</code>. Re-running Step <code>verify</code> once. This is an infrastructure failure, not a failed Attempt.</div></div></li>
+      <li class="step run"><span class="mk">5</span><div><div class="hd"><span class="sn">Verify (re-run)</span><span class="kind">command: npm test</span><span class="tchip k8s"><code>k8s-prod</code></span><span class="pill working">running</span></div>
+        <div class="ck dim">Second pod <code>harmonic-task-482-c2d8</code>. A second loss escalates as permanent infrastructure failure.</div></div></li>
+    </ol>
+    </div>
+
+<div class="vlabel">Ticket with step-level <code>runs_on</code> and after the run ends</div>
+<div class="states">
+  <div class="card"><div class="label">Fresh pod per Step</div>
+    <p style="margin:6px 0 0">Each Step starts its own pod, so each agent Step begins with a <b>cold Session</b>. The Step list shows a different pod name per Step.</p></div>
+  <div class="card"><div class="label">After the Ticket ends</div>
+    <p style="margin:6px 0 0"><span class="pill off">Pod deleted</span> The pod and its per-pod Secret are gone. Transcripts were copied out before deletion; Cost and the Archive are unchanged. No Service or port was ever exposed.</p></div>
+  <div class="card span2" style="grid-column:1/-1"><div class="label">Second loss</div>
+    <div class="banner" style="margin-top:8px"><span class="hd">Escalated &middot; permanent infrastructure failure</span>
+    <div class="bd2">Pod lost twice running Step <code>verify</code> on <code>k8s-prod</code>. Check the cluster, then Retry to start a fresh pod from checkpoint <code>7be03d1</code>.</div></div></div>
+</div>
+
+<!-- ===================== 5. #941 ===================== -->
+<h2 class="sec">5. #941 Each target has its own concurrency limit; disabled and deleted targets are handled</h2>
+<p class="sub">Judge: when a Ticket is not starting, does the chip say why and which target, on both the Board and the Ticket page?</p>
+
+<div class="vlabel" style="margin-top:0">Target rows &middot; concurrency per target, Host Ceiling for <code>local</code></div>
+<div class="tray">
+  <div class="thead" style="grid-template-columns:minmax(150px,1.1fr) 1fr 1fr 1.6fr"><span>Target</span><span>Running</span><span>Waiting</span><span>Note</span></div>
+  <div class="trow" style="grid-template-columns:minmax(150px,1.1fr) 1fr 1fr 1.6fr">
+    <div class="nm"><span class="n">local</span><span class="pill on"><span class="dot"></span>built in</span></div>
+    <div class="cc"><div class="cell-l">Host Ceiling</div><span class="t"><b>1</b>/3 running</span><span class="meter"><i style="width:33%"></i></span></div>
+    <div></div><div class="hostnote">A <code>local</code> Ticket starts here even while <code>k8s-prod</code> is full: the two do not share capacity.</div>
+  </div>
+  <div class="trow" style="grid-template-columns:minmax(150px,1.1fr) 1fr 1fr 1.6fr">
+    <div class="nm"><span class="n">k8s-prod</span><span class="pill on"><span class="dot"></span>enabled</span></div>
+    <div class="cc"><div class="cell-l">Concurrency</div><span class="t"><b>1</b>/1 running</span><span class="meter"><i class="full" style="width:100%"></i></span></div>
+    <div><span class="wchip"><span class="dot"></span>2 waiting</span></div>
+    <div class="hostnote">Full. The next Ticket waits and starts when the running one finishes.</div>
+  </div>
+  <div class="trow offrow" style="grid-template-columns:minmax(150px,1.1fr) 1fr 1fr 1.6fr">
+    <div class="nm"><span class="n">k8s-staging</span><span class="pill off"><span class="dot"></span>disabled</span></div>
+    <div class="cc"><div class="cell-l">Concurrency</div><span class="t"><b>0</b>/1 running</span><span class="meter"><i style="width:0"></i></span></div>
+    <div><span class="wchip off"><span class="dot"></span>1 waiting</span></div>
+    <div class="hostnote">Disabled. Waiting Tickets stay <code>ready</code> until it is re-enabled.</div>
+  </div>
+</div>
+
+<div class="vlabel">Chip placement</div>
+<div class="vlabel">Chip beside the status pill</div>
+
+    <div class="cards">
+      <div><p class="cardcap">Target full (limit 1)</p>
+        <article class="bcard ready"><span class="bar"></span><div class="in">
+          <div class="top"><span class="bd"></span><span class="id">#484</span><span class="chip">ready</span></div>
+          <div class="tt">Bulk-rename legacy fixtures</div>
+          <div class="who"><span class="wchip"><span class="dot"></span>waiting for k8s-prod</span></div>
+          <div class="foot"><span class="br">harmonic/task-484</span><span class="go">queued 6m</span></div>
+        </div></article></div>
+      <div><p class="cardcap">Target disabled (tooltip shown)</p>
+        <article class="bcard ready" style="overflow:visible"><span class="bar"></span><div class="in">
+          <div class="top"><span class="bd"></span><span class="id">#487</span><span class="chip">ready</span></div>
+          <div class="tt">Add pagination to the activity feed</div>
+          <div class="who"><span class="wchip off" tabindex="0"><span class="dot"></span>waiting for k8s-staging
+            <span class="tip" role="tooltip"><b>k8s-staging is disabled</b><br>Tickets wait until it is re-enabled.</span></span></div>
+          <div class="foot" style="margin-top:84px"><span class="br">harmonic/task-487</span><span class="go">queued 2h</span></div>
+        </div></article></div>
+      <div><p class="cardcap">A <code>local</code> Ticket starting meanwhile</p>
+        <article class="bcard working"><span class="bar"></span><div class="in">
+          <div class="top"><span class="bd"></span><span class="id">#485</span><span class="chip">implementing</span></div>
+          <div class="tt">Document the release checklist</div>
+          <div class="who"><span class="tchip local">local</span> Claude &middot; Sonnet 5.5</div>
+          <div class="foot"><span class="br">harmonic/task-485</span><span class="go">1m &middot; ctx 4%</span></div>
+        </div></article></div>
+    </div>
+
+    <div class="vlabel">Ticket page</div>
+    <div class="card tickethead">
+      <div class="thr"><h1>Bulk-rename legacy fixtures</h1><span class="pill ready" style="margin-top:10px">ready</span><span class="wchip" style="margin-top:12px"><span class="dot"></span>waiting for k8s-prod</span></div>
+      <dl class="props">
+        <div><dt class="label">Target</dt><dd><span class="tchip k8s"><code>k8s-prod</code></span> <span class="dim" style="font-size:12px">1/1 running</span></dd></div>
+        <div><dt class="label">Position</dt><dd>2nd in line</dd></div>
+        <div><dt class="label">Starts</dt><dd>when a running Ticket finishes</dd></div>
+      </dl>
+    </div>
+
+<div class="vlabel">Deleted target &middot; Tickets escalate instead of waiting</div>
+<div class="cols">
+  <div class="card tickethead" style="padding:16px 20px">
+    <div class="thr"><h1 style="font-size:20px">Bulk-rename legacy fixtures</h1><span class="pill escalated" style="margin-top:2px">escalated</span></div>
+    <div class="banner" style="margin-top:12px">
+      <span class="hd"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></svg>Escalated</span>
+      <div class="bd2">Execution Target &lsquo;k8s-prod&rsquo; was deleted. No Attempt was started. Change <code>runs_on</code> in the workflow, or add the target back in Settings &rsaquo; Execution.</div>
+    </div>
+    <div class="gate"><span class="sp"></span><span class="btnquiet">Close</span><span class="btnprimary">Retry</span></div>
+  </div>
+  <div style="max-width:420px"><p class="cardcap">Same Ticket on the Board (Attention strip)</p>
+    <article class="bcard escalated"><span class="bar"></span><div class="in">
+      <div class="top"><span class="bd"></span><span class="id">#484</span><span class="chip">escalated</span></div>
+      <div class="tt">Bulk-rename legacy fixtures</div>
+      <div class="why">Execution Target &lsquo;k8s-prod&rsquo; was deleted.</div>
+      <div class="foot"><span class="go"><span class="btngo">Resolve &rarr;</span></span></div>
+    </div></article></div>
+</div>
+
+</div>
+<script>
+try{if(new URLSearchParams(location.search).get('theme')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}
+window.toggleSelect = window.toggleSelect || function(el){
+  var c = el.closest('.options');
+  if (c) c.querySelectorAll('.option').forEach(function(o){o.classList.remove('selected')});
+  el.classList.add('selected');
+  window.selectedChoice = el.dataset.choice;
+};
+</script>
+</body>
+</html>

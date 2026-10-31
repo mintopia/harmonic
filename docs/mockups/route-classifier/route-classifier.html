@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Route Classifier - mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Paper tokens copied from web/src/index.css (light = :root, dark = [data-theme=dark]) */
+:root{
+  color-scheme:light;
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--switch-off:#858983;
+  --ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-hot:#0a6f66;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-tint:#fdeacc;--ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --merged:#0d7734;--merged-tint:#c2f2cd;--fail:#b3253f;--fail-tint:#ffccd6;
+  --tool:#077067;--tool-tint:#b6ece4;--paused:#205f99;--paused-tint:#cde4fb;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+  --shadow-bar:0 16px 44px rgb(27 30 36/.16),0 0 0 1px var(--hairline);
+  --shadow-btn:0 1px 2px rgb(13 114 113/.32);
+  --font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-tint:#51360a;--ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-tint:#0d5531;--fail:#ff5570;--fail-tint:#4d121f;
+  --tool:#2ed3c4;--tool-tint:#0f3e38;--paused:#57b0ff;--paused-tint:#10395c;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 8px 24px rgb(0 0 0/.5),0 0 0 1px var(--edge);
+  --shadow-bar:0 16px 44px rgb(0 0 0/.55),0 0 0 1px var(--edge);
+  --shadow-btn:0 1px 2px rgb(0 0 0/.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:400 14px/1.5 var(--font);font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,.data{font-family:var(--font-data);font-size:13px}
+.page{max-width:1040px;margin:0 auto;padding:24px 24px 80px}
+.topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+.topbar button{font:inherit;font-size:12px;color:var(--muted);background:none;border:1px solid var(--edge);border-radius:3px;padding:4px 10px;cursor:pointer}
+h2.sec{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:700;margin:44px 0 2px}
+p.sub{margin:0 0 16px;color:var(--muted)}
+.label{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:600;text-transform:uppercase;color:var(--muted)}
+.small{font-size:12px;line-height:1.45}
+.card{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+
+/* Settings shell */
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline);margin-bottom:16px;overflow-x:auto}
+.tab{min-height:44px;display:inline-flex;align-items:center;padding:0 4px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{border-color:var(--accent);color:var(--ink)}
+.scope{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.scope .crumb{font-size:12px;color:var(--muted)}
+.scopechip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;background:var(--raised);color:var(--muted)}
+.scopechip.ws{background:var(--accent-tint);color:var(--accent)}
+.section{padding:20px;margin-bottom:12px}
+.section h3{font-size:15px;line-height:1.4;font-weight:600;margin:0}
+.section .desc{margin:2px 0 16px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:640px}
+.fl{display:block;margin-bottom:6px}
+.field,.select{width:100%;min-height:44px;border:1px solid var(--edge);background:var(--field);color:var(--ink);border-radius:3px;padding:6px 10px;font:inherit;display:flex;align-items:center}
+.select{justify-content:space-between}
+.select:after,.combo:after{content:"";width:6px;height:6px;border:solid var(--faint);border-width:0 1.5px 1.5px 0;transform:rotate(45deg) translateY(-2px);flex:none;margin-left:8px}
+.field.focus{border-color:var(--accent)}
+.field.err{border-color:var(--fail)}
+.errmsg{margin:4px 0 0;font-size:10px;color:var(--fail);line-height:1.3}
+.hr{border:0;border-top:1px solid var(--hairline);margin:20px 0}
+
+/* Precedence hint */
+.prec{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:var(--sunken);border:1px solid var(--hairline);border-radius:3px;padding:8px 12px;margin-bottom:14px}
+.prec b{font-weight:600;color:var(--ink)}
+.prec .arrow{color:var(--faint)}
+.prec .lead{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.prec .hl{color:var(--accent);font-weight:600}
+
+/* EntryList (copied structure: sunken tray, surface rows, grip, Global chip, Switch) */
+.elhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.addlink{font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;font-family:inherit}
+.tray{display:flex;flex-direction:column;gap:6px;border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:6px}
+.row{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card);overflow:visible;position:relative}
+.row.locked{opacity:.85}
+.row.dragging{box-shadow:var(--shadow-float),0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+.rowh{display:grid;grid-template-columns:16px 24px minmax(120px,1.1fr) 20px minmax(110px,.8fr) minmax(170px,1.3fr) auto;align-items:center;gap:10px;padding:10px 12px}
+.rowh.nopick{grid-template-columns:16px 24px minmax(120px,1.1fr) 20px minmax(110px,.8fr) minmax(170px,1.3fr) auto}
+.grip{color:var(--faint);display:flex;align-items:center;justify-content:center;width:16px;height:24px;cursor:grab}
+.pri{font-size:10px;font-weight:700;color:var(--faint);text-align:center}
+.arr{color:var(--faint);text-align:center}
+.rowc{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-size:12px;color:var(--faint)}
+.rm{font-size:12px;color:var(--faint);background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+.rm:hover{color:var(--fail)}
+.gchip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;background:var(--raised);color:var(--muted)}
+.lbl{font-family:var(--font-data);font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.lbl .hash{color:var(--faint)}
+.off .lbl,.off .static{opacity:.55;text-decoration:line-through}
+.static{display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
+.static svg{color:var(--muted)}
+.static .mono{font-family:var(--font-data);font-size:13px}
+.compact{min-height:36px;padding:4px 10px}
+.combo{position:relative;display:flex;align-items:center;min-height:36px;border:1px solid var(--edge);background:var(--field);border-radius:3px;padding:4px 10px;font-family:var(--font-data);font-size:13px;gap:6px;justify-content:space-between}
+.combo:after{margin-left:auto}
+.combo.focus{border-color:var(--accent)}
+.rowc .sw{display:inline-flex}
+.switch{position:relative;display:inline-block;height:18px;width:32px;border-radius:999px;background:var(--switch-off);flex:none}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--shell);box-shadow:0 1px 1px rgb(0 0 0/.2)}
+.switch.on{background:var(--accent)}
+.switch.on:after{transform:translateX(14px)}
+.listbox{position:absolute;z-index:10;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border-radius:3px;box-shadow:var(--shadow-bar);padding:4px 0;font-size:13px}
+.listbox div{display:flex;justify-content:space-between;padding:6px 10px;font-family:var(--font-data)}
+.listbox div.hl{background:var(--raised)}
+.listbox div .ck{color:var(--accent);font-family:var(--font)}
+.listbox .grp{font:600 10px/1.2 var(--font);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:6px 10px 2px}
+.rowerr{padding:0 12px 10px 62px}
+.reserve{height:150px}
+.note{font-size:12px;color:var(--faint);margin-top:8px}
+.btnghost{display:inline-flex;min-height:44px;align-items:center;border:1px solid var(--edge);background:var(--surface);color:var(--ink);border-radius:3px;padding:8px 14px;font:500 14px var(--font)}
+.btnprimary{display:inline-flex;min-height:44px;align-items:center;border-radius:3px;background:var(--accent);color:var(--on-accent);padding:8px 14px;font:600 14px var(--font);box-shadow:var(--shadow-btn);background-image:linear-gradient(180deg,rgb(255 255 255/.15),rgb(255 255 255/0) 52%,rgb(0 0 0/.09))}
+.btnquiet{display:inline-flex;min-height:44px;align-items:center;color:var(--muted);font:500 14px var(--font);padding:0 4px}
+.btngo{display:inline-flex;min-height:36px;align-items:center;border-radius:3px;background:var(--await);color:var(--on-await);padding:4px 12px;font:600 13px var(--font)}
+
+/* Ticket page bits */
+.pill{display:inline-flex;align-items:center;border-radius:3px;padding:4px 10px;font-size:11px;font-weight:600}
+.pill.working{background:var(--running-tint);color:var(--running)}
+.pill.escalated{background:var(--await-tint);color:var(--await)}
+.pill.ready{background:var(--ready-tint);color:var(--ready)}
+.tickethead{padding:20px 24px}
+.tickethead h1{margin:0;font-size:26px;font-weight:800;line-height:1.15;letter-spacing:-.03em;max-width:680px}
+.thr{display:flex;gap:16px;align-items:flex-start}
+.epicref{display:inline-flex;align-items:center;gap:7px;color:var(--tool);margin-bottom:10px}
+.epicref .k{border-radius:3px;background:var(--tool-tint);padding:1px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.epicref .r{font-family:var(--font-data);font-size:12.5px}
+dl.props{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin:16px 0 0;max-width:620px}
+dl.props dt{margin:0 0 2px}
+dl.props dd{margin:0}
+.dim{color:var(--muted)}
+.rtag{font-size:12px;color:var(--muted)}
+.rtag code{font-size:12px;color:var(--tool);background:var(--tool-tint);padding:0 5px;border-radius:3px}
+.rtag.ovr code{color:var(--muted);background:var(--raised);text-decoration:line-through}
+.rtag .em{color:var(--ink);font-weight:500}
+.tchip{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;background:var(--tool-tint);color:var(--tool);cursor:help;position:relative}
+.tchip code{font-size:11px;font-weight:600}
+.tchip.ovr{background:var(--raised);color:var(--muted)}
+.tip{position:absolute;z-index:5;left:0;top:calc(100% + 8px);width:290px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-bar);border-radius:4px;padding:10px 12px;font-size:12px;line-height:1.45;font-weight:400;text-transform:none;letter-spacing:0;white-space:normal;cursor:default}
+.tip b{font-weight:600}
+.tip .row2{display:block;color:var(--muted);margin-top:4px}
+.tip code{font-size:11.5px}
+.vlabel{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:16px 0 8px}
+.vspace{margin-top:16px}
+.variantbox{margin-bottom:12px}
+.tkreserve{height:78px}
+
+/* Board card */
+.cards{display:flex;gap:14px;flex-wrap:wrap}
+.bcard{position:relative;width:340px;max-width:100%;border-radius:4px;background:var(--surface);box-shadow:var(--shadow-card);overflow:hidden}
+.bcard .bar{position:absolute;inset:0 auto 0 0;width:5px}
+.bcard.working .bar{background:var(--running)}
+.bcard.escalated{background:var(--await-tint)}
+.bcard.escalated .bar{background:var(--await)}
+.bcard .in{padding:16px 16px 14px 20px}
+.bcard .top{display:flex;align-items:center;gap:8px}
+.bd{width:8px;height:8px;border-radius:50%;flex:none}
+.working .bd{background:var(--running)}
+.escalated .bd{background:var(--await)}
+.bcard .id{font-family:var(--font-data);font-size:12px;color:var(--faint)}
+.bcard .chip{margin-left:auto;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase}
+.working .chip{background:var(--running-tint);color:var(--running)}
+.escalated .chip{background:var(--await-tint);color:var(--await)}
+.bcard .tt{margin-top:8px;font-size:15px;font-weight:600;line-height:1.3}
+.bcard .who{margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bcard .who code{font-size:11px;color:var(--tool)}
+.bcard .why{margin-top:6px;font-size:12.5px;color:var(--await)}
+.bcard .foot{display:flex;align-items:center;margin-top:12px;font-size:12px;color:var(--muted);gap:8px}
+.bcard .foot .br{font-family:var(--font-data);color:var(--faint)}
+.bcard .foot .go{margin-left:auto}
+.mchip{border-radius:999px;padding:1px 7px;font-size:10px;font-weight:600;background:var(--tool-tint);color:var(--tool)}
+.mchip code{font-size:10.5px}
+.mchip.ovr{background:var(--raised);color:var(--muted)}
+.cardcap{font-size:12px;color:var(--muted);margin:0 0 6px}
+
+/* Escalation banner */
+.banner{border-radius:3px;background:var(--await-tint);padding:8px 12px;font-size:12px}
+.banner .hd{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--await)}
+.banner .bd2{margin-top:2px;color:var(--ink)}
+.banner code{font-size:12px;background:var(--surface);padding:0 5px;border-radius:3px;color:var(--ink)}
+.gate{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);background:var(--surface);padding:12px 14px;box-shadow:var(--shadow-float);margin-top:16px;border-radius:0 0 4px 4px;flex-wrap:wrap}
+.gate .sp{flex:1}
+.hint-inline{font-size:12px;color:var(--muted)}
+.linkbtn{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+
+/* Options (companion helper expects .options > .option[data-choice] with .letter + .content) */
+.options{display:flex;flex-direction:column;gap:16px}
+.option{display:flex;gap:14px;align-items:flex-start;border:2px solid var(--edge);border-radius:6px;padding:16px;background:var(--canvas);cursor:pointer;transition:border-color .15s}
+.option:hover{border-color:var(--accent)}
+.option.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent-tint) 35%,var(--canvas))}
+.option .letter{flex:none;width:28px;height:28px;border-radius:50%;background:var(--raised);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700}
+.option.selected .letter{background:var(--accent);color:var(--on-accent)}
+.option .content{flex:1;min-width:0}
+.option .content h3{font-size:15px;margin:0 0 2px;font-weight:700}
+.option .content p.d{margin:0 0 12px;color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Route Classifier additions (Paper tokens only) */
+.tk{display:inline-block;vertical-align:middle;margin-left:10px;border-radius:3px;background:var(--raised);color:var(--muted);font:600 11px/1 var(--font-data);padding:4px 7px;letter-spacing:0}
+.faded{opacity:.5}
+.collapsed{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;margin-bottom:12px}
+.collapsed h3{margin:0;font-size:15px;font-weight:600}
+.collapsed .meta{font-size:12px;color:var(--muted)}
+.mrow{display:grid;grid-template-columns:16px 24px minmax(110px,.55fr) minmax(130px,.75fr) minmax(220px,2fr) auto;align-items:center;gap:10px;padding:10px 12px}
+.mrow .desc-f{min-height:36px;padding:4px 10px;font-size:13px}
+.ibtn{font:600 12px var(--font);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+.mrow .rowc{gap:12px}
+.expand{padding:2px 12px 12px 62px;display:grid;gap:6px}
+.textarea{width:100%;min-height:64px;border:1px solid var(--accent);background:var(--field);color:var(--ink);border-radius:3px;padding:8px 10px;font:inherit;font-size:13px}
+.ctr{font-size:10px;color:var(--faint);text-align:right}
+.micro code{font-size:11px}
+.micro{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);background:var(--raised);border-radius:3px;padding:2px 8px;margin-top:4px}
+.warn{display:flex;gap:10px;align-items:flex-start;border-radius:3px;background:var(--raised);color:var(--ink);padding:10px 12px;font-size:12.5px;margin:12px 0}
+.warn b{color:var(--ink)}
+.warn svg{flex:none;margin-top:2px;color:var(--muted)}
+.errbox{display:flex;gap:10px;align-items:flex-start;border-radius:3px;background:var(--fail-tint);padding:10px 12px;font-size:12.5px;margin:10px 0}
+.errbox b{color:var(--fail)}
+.errbox svg{flex:none;margin-top:2px;color:var(--fail)}
+.ctl{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.ctlrow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--hairline)}
+.ctlrow:last-of-type{border-bottom:0}
+.ctlrow .t{font-weight:600}
+.ctlrow .d{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:3px;overflow:hidden}
+.seg span{padding:8px 12px;font-size:13px;color:var(--muted);border-left:1px solid var(--edge);min-height:36px;display:inline-flex;align-items:center}
+.seg span:first-child{border-left:0}
+.seg span.on{background:var(--accent-tint);color:var(--accent);font-weight:600}
+.bk{border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.bk.sel{border-color:var(--accent);background:var(--surface)}
+.bk h4{margin:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.bk .d{font-size:12px;color:var(--muted);margin:0}
+.bks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sec-chip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600}
+.sec-chip.set{background:var(--merged-tint);color:var(--merged)}
+.sec-chip.unset{background:var(--fail-tint);color:var(--fail)}
+.sec-chip code{font-size:11px}
+.contract{background:var(--sunken);border:1px solid var(--hairline);border-radius:3px;padding:10px 12px;font-size:12px;color:var(--muted)}
+.skel{display:inline-block;height:10px;border-radius:3px;background:var(--raised);width:120px;vertical-align:middle}
+.savebar{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.btnbusy{opacity:.75}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--on-accent);border-right-color:transparent;border-radius:50%;margin-right:8px}
+.sublbl{font-size:13px;font-weight:700;margin:28px 0 4px;letter-spacing:-.01em}
+.sublbl .tk{margin-left:8px}
+.sub2{margin:0 0 12px;color:var(--muted);font-size:13px}
+.expander{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:var(--accent);margin-left:6px}
+.reasonbox{margin-top:10px;border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:12px 14px;max-width:620px;display:grid;gap:8px}
+.reasonbox .rl{display:grid;grid-template-columns:110px 1fr;gap:8px;font-size:13px}
+.reasonbox .rl .label{padding-top:3px}
+.reasonbox .quote{border-left:2px solid var(--accent);padding-left:10px;color:var(--ink)}
+.cost{font-size:12px;color:var(--muted)}
+.ab{display:inline-flex;align-items:center;gap:6px}
+.atag{font-size:12px;color:var(--muted)}
+.atag code{font-size:12px;color:var(--tool);background:var(--tool-tint);padding:0 5px;border-radius:3px}
+.cchip{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;background:var(--ready-tint);color:var(--ready)}
+.cchip.def{background:var(--raised);color:var(--muted)}
+.cchip.rl{background:var(--tool-tint);color:var(--tool)}
+.hist{border:1px solid var(--hairline);border-radius:4px;overflow:hidden;max-width:760px;background:var(--surface)}
+.hist .h{display:grid;grid-template-columns:90px 1fr 1fr 110px;gap:12px;padding:10px 14px;align-items:center;border-top:1px solid var(--hairline);font-size:13px}
+.hist .h.hd{border-top:0;background:var(--sunken)}
+.hist .sub3{display:block;font-size:12px;color:var(--muted)}
+.cold{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--await);background:var(--await-tint);border-radius:3px;padding:2px 8px;margin-top:4px}
+.act{display:flex;gap:10px;align-items:baseline;font-size:12.5px;color:var(--muted);padding:6px 0;border-top:1px solid var(--hairline)}
+.act:first-child{border-top:0}
+.act time{font-size:11.5px;color:var(--faint);flex:none;width:44px}
+.act b{color:var(--ink);font-weight:600}
+.legend{font-size:12px;color:var(--muted);margin:0 0 8px}
+.tickethead.pad{margin-bottom:12px}
+@media (max-width:760px){.mrow,.ctl,.bks{grid-template-columns:1fr}.hist .h{grid-template-columns:1fr}}
+.stack{display:flex;flex-direction:column;gap:18px;max-width:560px;margin-top:16px}
+.stack .seg{display:flex;flex-wrap:wrap}
+.mo{display:flex;flex-direction:column;gap:8px;min-width:0}
+.mo-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mo-top .codef{width:180px;min-height:36px;padding:4px 10px;font-size:13px}
+.mo-top .select{width:150px}.mo-top .combo{width:190px}
+.mrow{grid-template-columns:16px 24px 1fr auto!important;align-items:start}
+.mrow .grip,.mrow .pri,.mrow .rowc{align-self:center}
+.mrow .desc-f{width:100%}
+.mo .lbl{min-width:140px}
+.ocode{display:inline-block;font-family:var(--font-data);font-size:11.5px;color:var(--tool);background:var(--tool-tint);border-radius:3px;padding:0 6px}
+.field.err{border-color:var(--fail)}
+.histstack{display:flex;flex-direction:column;gap:10px;max-width:560px}
+.att{padding:12px 16px;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.reasonbox .rl{grid-template-columns:1fr!important;gap:2px!important}
+.grid2{grid-template-columns:1fr!important}
+.field.data,.mo-top .codef{font-family:var(--font-data);font-size:13px}
+.mo-top .combo{width:240px}
+.mo .lbl{min-width:180px}
+dl.props{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto!important;gap:0!important;max-width:none!important;margin-top:16px}
+dl.props>div{padding:0 20px;border-left:1px solid var(--hairline)}
+dl.props>div:first-child{padding-left:0;border-left:0}
+.hist{max-width:820px}
+.hist .h{grid-template-columns:80px 1.2fr 1.3fr 100px}
+.bcard{width:420px}
+.combo,.listbox div{font-family:var(--font);font-size:13px}
+.static .mdl,.mdl{font-family:inherit;font-size:inherit}
+.achip{display:inline-flex;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;text-transform:uppercase;background:var(--raised);color:var(--muted);vertical-align:middle}
+.atag.ab-note{color:var(--muted)}
+.cost,.act time,.hist .h{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="grip" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></symbol>
+<symbol id="tri" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></g></symbol>
+</defs></svg>
+<div class="page">
+
+<div class="topbar"><button type="button" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">Toggle light / dark</button></div>
+
+<!-- ===================== 1. #891 ===================== -->
+<h2 class="sec" style="margin-top:8px">1. #891 Model Options and classifier settings <span class="tk">#891</span></h2>
+<p class="sub">Settings &rsaquo; Execution gains a closed list of Model Options below Routing Labels, plus per-Workspace Route Classifier controls. Judge: is it obvious that the classifier can only choose from this list, and that an empty list means it never acts?</p>
+
+<div class="sublbl">1a. Global scope: Model Options</div>
+<p class="sub2">Reorder by drag. Each row is two lines: the code, Harness and Model on the first, the description (the text the classifier reads) below it. The API refuses unconfigured Harnesses and Models outside the Harness's catalog.</p>
+
+<div class="tabs" role="tablist">
+  <span class="tab">General</span><span class="tab on">Execution</span><span class="tab">Verification</span><span class="tab">Prompts</span><span class="tab">Integrations</span><span class="tab">Security</span><span class="tab">Archive</span>
+</div>
+
+<div class="card collapsed faded" aria-label="Routing Labels, collapsed for context">
+  <h3>Routing Labels</h3><span class="meta">3 labels &middot; <code>reasoning</code>, <code>cheap</code>, <code>bulk</code></span>
+</div>
+
+<section class="card section">
+  <h3>Model Options</h3>
+  <p class="desc">A closed list the Route Classifier picks from. It never picks outside the list. Each Model Option has a code that Task Execution Workflow YAML can reference. Write each description as when it fits: the classifier reads it to choose.</p>
+  <div class="prec"><span class="lead">Precedence</span>
+    <b>Operator setting on the Ticket</b><span class="arrow">&rarr;</span><b>Routing Label</b><span class="arrow">&rarr;</span><b class="hl">Route Classifier</b><span class="arrow">&rarr;</span><b>Workspace default</b><span class="arrow">&rarr;</span><b>Global default</b>
+  </div>
+  <div class="elhead"><span class="label">Model Options</span><button class="addlink" type="button">+ Add Model Option</button></div>
+  <div class="tray">
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">1</span><div class="mo"><div class="mo-top"><div class="field compact data codef">sonnet-small</div><div class="select compact">Claude</div><div class="combo">Sonnet 5.5</div></div><div class="field compact desc-f">Small, well-scoped fixes and single-file changes</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div></div>
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">2</span><div class="mo"><div class="mo-top"><div class="field compact data codef">opus-deep</div><div class="select compact">Claude</div><div class="combo">Opus 5.5</div></div><div class="field compact desc-f">Cross-cutting refactors, concurrency, anything that failed once already</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div></div>
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">3</span><div class="mo"><div class="mo-top"><div class="field compact data codef">codex-bulk</div><div class="select compact">Codex</div><div class="combo">gpt-5-codex</div></div><div class="field compact desc-f">Mechanical bulk edits and test writing</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div></div>
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">4</span><div class="mo"><div class="mo-top"><div class="field compact data codef">codex-mini</div><div class="select compact">Codex</div><div class="combo">gpt-5-mini</div></div><div class="field compact desc-f">Trivial docs and config changes</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div></div>
+  </div>
+  <p class="note">Epics are not classified, and Critics are never classified. The Route Classifier runs at the start of every Attempt on a Native Task; an Attempt already in flight is never re-routed.</p>
+</section>
+
+<div class="vlabel">Add / edit form (expanded row, Harness just changed, duplicate code)</div>
+<section class="card section">
+  <div class="stack">
+    <div><span class="label fl">Code</span><div class="field data err" aria-invalid="true">opus-deep</div>
+      <p class="errmsg" role="alert">Code &lsquo;opus-deep&rsquo; is already used by Model Option 2. Codes must be unique.</p>
+      <p class="note" style="margin-top:4px">Lowercase letters, digits and hyphens, starting with a letter (<code>opus-deep</code>, <code>codex-bulk</code>). Task Execution Workflow YAML refers to this Model Option by code, so changing it breaks those references.</p></div>
+    <div><span class="label fl">Harness</span><div class="select">Codex</div><span class="micro">Harness changed from Claude: Model reset to Codex default gpt-5-codex</span></div>
+    <div style="position:relative"><span class="label fl">Model</span><div class="combo focus" style="min-height:44px">gpt-5-codex
+      <div class="listbox" role="listbox" aria-label="Models for Codex"><div class="grp">Codex catalog</div><div class="hl"><span>gpt-5-codex</span><span class="ck">&#10003;</span></div><div><span>gpt-5-mini</span></div><div><span>gpt-5</span></div></div></div></div>
+    <div class="reserve" style="height:120px"></div>
+    <div><span class="label fl">Description: when it fits</span><div class="textarea">Cross-cutting refactors, concurrency, anything that failed once already. Prefer when the change spans more than three files.</div><span class="ctr">128 / 400</span></div>
+    <div class="savebar" style="margin-top:0"><span class="btnprimary">Save Model Option</span><span class="btnquiet">Cancel</span></div>
+  </div>
+</section>
+
+<div class="vlabel">Inline refusals from the API (row stays editable, nothing is saved)</div>
+<section class="card section">
+  <div class="tray">
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">5</span><div class="mo"><div class="mo-top"><div class="field compact data codef">opencode-spike</div><div class="select compact">OpenCode</div><div class="combo">openrouter/some-model</div></div><div class="field compact desc-f">Long-running research-style spikes</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div><div class="rowerr"><p class="errmsg" role="alert">Harness &lsquo;opencode&rsquo; is not configured. Configure it in Settings &rsaquo; Integrations, or pick a different Harness.</p></div></div>
+<div class="row"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">6</span><div class="mo"><div class="mo-top"><div class="field compact data codef">codex-migrate</div><div class="select compact">Codex</div><div class="combo" style="border-color:var(--fail)">gpt-9</div></div><div class="field compact desc-f">Large generated migrations</div></div><span class="rowc"><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div><div class="rowerr"><p class="errmsg" role="alert">Model &lsquo;gpt-9&rsquo; is not in the Codex model catalog. Unlike a Routing Label, a Model Option must name a Model the Harness offers.</p></div></div>
+  </div>
+  <p class="note">Same catalog check Critics use. A custom id is accepted only if the Harness's catalog lists it.</p>
+</section>
+
+<div class="vlabel">Empty list (nothing configured yet)</div>
+<section class="card section">
+  <div class="elhead"><span class="label">Model Options</span><button class="addlink" type="button">+ Add Model Option</button></div>
+  <div class="tray"><div class="row" style="padding:22px 16px;text-align:center"><div style="font-weight:600">No Model Options yet</div><div class="small dim">Without Model Options the Route Classifier abstains on every Ticket and the Workspace default applies.</div></div></div>
+</section>
+
+<div class="sublbl">1b. Workspace scope: overlay and classifier controls</div>
+<p class="sub2">Additive overlay (ADR-0037 pattern). Global rows are inherited and muted; local rows are editable with an accent edge and a Workspace chip.</p>
+<div class="scope"><span class="scopechip ws">Workspace</span><span class="crumb">harmonic &rsaquo; Settings &rsaquo; Execution</span></div>
+
+<section class="card section">
+  <h3>Model Options</h3>
+  <p class="desc">Global rows are managed in Global settings. You can reorder them and turn them off here; Model Options you add are local to this Workspace. Codes are unique across both.</p>
+  <div class="elhead"><span class="label">Model Options</span><button class="addlink" type="button">+ Add Model Option</button></div>
+  <div class="tray">
+<div class="row locked"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">1</span><div class="mo"><div class="mo-top"><span class="lbl">sonnet-small</span><span class="static">Claude</span><span class="static">Sonnet 5.5</span></div><span class="small dim">Small, well-scoped fixes and single-file changes</span></div><span class="rowc"><span class="gchip">Global</span><span class="switch on" role="switch" aria-checked="true" aria-label="Toggle Model Option 1"></span></span></div></div>
+<div class="row" style="box-shadow:var(--shadow-card),inset 3px 0 0 var(--accent)"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">2</span><div class="mo"><div class="mo-top"><div class="field compact data codef">codex-migrations</div><div class="select compact">Codex</div><div class="combo">gpt-5-codex</div></div><div class="field compact desc-f">Schema migrations and fixture rewrites in this repo</div></div><span class="rowc"><span class="scopechip ws">Workspace</span><button class="ibtn" type="button">Edit</button><button class="rm" type="button">Remove</button></span></div></div>
+<div class="row locked"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">3</span><div class="mo"><div class="mo-top"><span class="lbl">opus-deep</span><span class="static">Claude</span><span class="static">Opus 5.5</span></div><span class="small dim">Cross-cutting refactors, concurrency, anything that failed once already</span></div><span class="rowc"><span class="gchip">Global</span><span class="switch on" role="switch" aria-checked="true" aria-label="Toggle Model Option 3"></span></span></div></div>
+<div class="row locked off"><div class="mrow"><span class="grip"><svg width="10" height="16"><use href="#grip"/></svg></span><span class="pri">4</span><div class="mo"><div class="mo-top"><span class="lbl">codex-mini</span><span class="static">Codex</span><span class="static">gpt-5-mini</span></div><span class="small dim">Trivial docs and config changes</span></div><span class="rowc"><span class="gchip">Global</span><span class="switch" role="switch" aria-checked="false" aria-label="Toggle Model Option 4"></span></span></div></div>
+  </div>
+</section>
+
+<section class="card section">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+    <div><h3>Route Classifier</h3><p class="desc" style="margin-bottom:8px">Picks one Model Option for each Attempt on a Native Task. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway.</p></div>
+    <span class="switch on" role="switch" aria-checked="true" aria-label="Route Classifier" style="margin-top:4px"></span>
+  </div>
+  <div class="stack">
+    <div><span class="label fl">Backend</span><div class="seg"><span>TypeSafe decision model</span><span>OpenAI-compatible endpoint</span><span class="on">Harness</span></div>
+      <p class="note" style="margin-top:6px">Harness: a configured Harness run as a one-shot Session, with no tool permissions, outside any worktree. The fields below follow the selected backend.</p></div>
+    <div><span class="label fl">Harness</span><div class="select">Claude</div></div>
+    <div><span class="label fl">Model</span><div class="combo" style="min-height:44px">Sonnet 5.5</div></div>
+    <div><span class="label fl">Timeout (seconds)</span><div class="field data">30</div><p class="note" style="margin-top:4px">Default 30. On timeout the classifier abstains.</p></div>
+    <div><span class="label fl">Classifier instructions</span><div class="field" style="justify-content:space-between"><code>route-classifier</code><span class="linkbtn small">View resolved prompt</span></div><p class="note" style="margin-top:4px">A Prompt Library entry; edit it in Settings &rsaquo; Prompts.</p></div>
+    <div><span class="label fl">Output contract</span><div class="contract">The classifier must return <code>{optionId, reason}</code>. <code>optionId</code> must be the code of one Model Option above (for example <code>opus-deep</code>); anything else is an invalid output and the classifier abstains.</div></div>
+    <div class="savebar" style="margin-top:0"><span class="btnprimary">Save</span><span class="btnghost">Test classifier</span></div>
+    <p class="hint-inline" style="margin:0">Test runs against a sample Ticket and records no Cost on any Ticket.</p>
+  </div>
+</section>
+
+<div class="vlabel">Backend: TypeSafe decision model selected</div>
+<section class="card section"><div class="stack">
+  <div><span class="label fl">Backend</span><div class="seg"><span class="on">TypeSafe decision model</span><span>OpenAI-compatible endpoint</span><span>Harness</span></div><p class="note" style="margin-top:6px">Jev family, called via OpenRouter.</p></div>
+  <div><span class="label fl">Secret</span><div class="select data">OPENROUTER_API_KEY</div><p style="margin:6px 0 0"><span class="sec-chip set">Secret set</span></p></div>
+  <div><span class="label fl">Timeout (seconds)</span><div class="field data">30</div></div>
+</div></section>
+
+<div class="vlabel">Backend: OpenAI-compatible endpoint, Secret not set</div>
+<section class="card section"><div class="stack">
+  <div><span class="label fl">Backend</span><div class="seg"><span>TypeSafe decision model</span><span class="on">OpenAI-compatible endpoint</span><span>Harness</span></div><p class="note" style="margin-top:6px">Must support structured output (JSON schema).</p></div>
+  <div><span class="label fl">Endpoint URL</span><div class="field data">https://llm.internal/v1</div></div>
+  <div><span class="label fl">Secret</span><div class="select data err" style="border-color:var(--fail)">CLASSIFIER_ENDPOINT_KEY</div><p style="margin:6px 0 0"><span class="sec-chip unset">Secret not set</span></p></div>
+  <div class="errbox" role="alert" style="margin:0"><svg width="14" height="14" viewBox="0 0 16 16"><use href="#tri"/></svg><div><b>Secret <code>CLASSIFIER_ENDPOINT_KEY</code> is not set.</b> The Route Classifier cannot call this endpoint, so it will abstain until the Secret is set in Settings &rsaquo; Security. Saving is still allowed.</div></div>
+  <div><span class="label fl">Timeout (seconds)</span><div class="field data">30</div></div>
+</div></section>
+
+<div class="vlabel">State: classifier on, no Model Options in the resolved list</div>
+<section class="card section">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h3>Route Classifier</h3><span class="switch on" role="switch" aria-checked="true" aria-label="Route Classifier"></span></div>
+  <div class="warn" role="status"><svg width="14" height="14" viewBox="0 0 16 16"><use href="#tri"/></svg><div><b>No Model Options.</b> The Route Classifier will abstain every time and the Workspace default applies. Add a Model Option above, or turn Global rows back on.</div></div>
+</section>
+
+<div class="vlabel">State: classifier off (controls kept, muted)</div>
+<section class="card section faded">
+  <div style="display:flex;justify-content:space-between;align-items:center"><div><h3>Route Classifier</h3><p class="desc" style="margin-bottom:0">Off. Attempts start with the Routing Label or Workspace default; nothing is classified or charged.</p></div><span class="switch" role="switch" aria-checked="false" aria-label="Route Classifier"></span></div>
+</section>
+
+<div class="vlabel">State: saving and testing</div>
+<section class="card section">
+  <div class="stack">
+    <div class="savebar" style="margin-top:0"><span class="btnprimary btnbusy"><span class="spin"></span>Saving&hellip;</span><span class="btnghost btnbusy"><span class="spin" style="border-color:var(--muted);border-right-color:transparent"></span>Testing classifier&hellip;</span></div>
+    <p class="hint-inline" style="margin:0">Waiting for a reply (up to 30 s)</p>
+    <div><span class="label fl">Test result</span><div class="contract"><span class="skel"></span><br><br><span class="skel" style="width:260px"></span></div></div>
+  </div>
+</section>
+
+<!-- ===================== 2. #896 ===================== -->
+<h2 class="sec">2. #896 Ticket page and board show the classifier's route and reason <span class="tk">#896</span></h2>
+<p class="sub">Judge: can an operator see which Model Option was chosen and why in one glance, and tell routed, abstained and overridden Tickets apart without opening anything?</p>
+
+<div class="sublbl">2a. Ticket page: Agent fact, routed</div>
+<p class="sub2">Collapsed shows the sentence; expanding reveals the one-line reason, inputs for later Attempts and the routing Cost.</p>
+
+<div class="vlabel" style="margin-top:0">Routed &middot; collapsed</div>
+<div class="card tickethead pad">
+  <div class="epicref"><span class="k">Epic</span><span class="r">epic/166</span></div>
+  <div class="thr"><h1>Rework retry backoff in the mirror poller</h1><span class="pill working" style="margin-top:10px">working</span></div>
+  <dl class="props">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span> <span class="atag">&mdash; routed by classifier</span> <span class="ocode">opus-deep</span> <span class="expander">Why &#9662;</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+
+<div class="vlabel">Routed &middot; expanded, Attempt 1</div>
+<div class="card tickethead pad">
+  <div class="thr"><h1>Rework retry backoff in the mirror poller</h1><span class="pill working" style="margin-top:10px">working</span></div>
+  <dl class="props">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span> <span class="atag">&mdash; routed by classifier</span> <span class="expander">Hide &#9652;</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+  <div class="reasonbox">
+    <div class="rl"><span class="label">Reason</span><span class="quote">Touches the lease reconciler and its tests across four modules; concurrency-sensitive.</span></div>
+    <div class="rl"><span class="label">Chosen</span><span><span class="ocode">opus-deep</span> &middot; option 2 of 4 &middot; Claude <span class="mdl">Opus 5.5</span></span></div>
+    <div class="rl"><span class="label">Attempt</span><span>1 &middot; first Attempt, no prior verdict</span></div>
+    <div class="rl"><span class="label">Routing</span><span class="cost">Routing $0.004 &middot; Harness Claude Sonnet 5.5 &middot; 2.1 s</span></div>
+  </div>
+</div>
+
+<div class="vlabel">Routed &middot; expanded, Attempt 2 (inputs summary)</div>
+<div class="card tickethead pad">
+  <div class="thr"><h1>Rework retry backoff in the mirror poller</h1><span class="pill working" style="margin-top:10px">working</span></div>
+  <dl class="props">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span> <span class="atag">&mdash; routed by classifier</span> <span class="expander">Hide &#9652;</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+  <div class="reasonbox">
+    <div class="rl"><span class="label">Reason</span><span class="quote">Touches the lease reconciler and its tests across four modules; prior Attempt failed on a race.</span></div>
+    <div class="rl"><span class="label">Attempt</span><span>2 &middot; Attempt 1 failed verification: <code>lease-reconciler.test.ts</code> flaked under load (Sonnet 5.5)</span></div>
+    <div class="rl"><span class="label">Routing</span><span class="cost">Routing $0.005 &middot; separate from the Attempt's Cost</span></div>
+  </div>
+</div>
+
+<div class="sublbl">2b. Ticket page: abstained</div>
+<p class="sub2">Advisory layer: recorded in Activity, never an Escalation. Three causes, same sentence shape.</p>
+
+<div class="vlabel" style="margin-top:0">Abstained &middot; timeout</div>
+<div class="card tickethead pad">
+  <dl class="props" style="margin-top:0">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Sonnet 5.5</span> <span class="achip">abstained</span> <span class="atag">&mdash; Route Classifier abstained (timed out after 30 s); used Workspace default Claude Sonnet 5.5.</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+<div class="vlabel">Abstained &middot; error</div>
+<div class="card tickethead pad">
+  <dl class="props" style="margin-top:0">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Sonnet 5.5</span> <span class="achip">abstained</span> <span class="atag">&mdash; Route Classifier abstained (backend error: HTTP 503); used Workspace default Claude Sonnet 5.5.</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+<div class="vlabel">Abstained &middot; invalid output</div>
+<div class="card tickethead pad">
+  <dl class="props" style="margin-top:0">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Sonnet 5.5</span> <span class="achip">abstained</span> <span class="atag">&mdash; Route Classifier abstained (invalid output: option not in list); used Workspace default Claude Sonnet 5.5.</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+
+<div class="vlabel">Activity entry for an abstention</div>
+<div class="card" style="padding:8px 16px;max-width:760px">
+  <div class="act"><time>09:14</time><span><b>Route Classifier abstained</b> &middot; timed out after 30 s &middot; Attempt 1 started with Workspace default Claude Sonnet 5.5</span></div>
+  <div class="act"><time>09:13</time><span>Route Classifier consulted &middot; 4 Model Options</span></div>
+  <div class="act"><time>09:12</time><span>Ticket created</span></div>
+</div>
+
+<div class="sublbl">2c. Ticket page: operator-overridden, and Routing Label-won</div>
+<div class="vlabel" style="margin-top:0">Operator-overridden</div>
+<div class="card tickethead pad">
+  <dl class="props" style="margin-top:0">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Codex <span class="dim">gpt-5-codex</span> <span class="rtag ovr">&mdash; <span class="em">set on this Ticket</span>; the classifier was not consulted</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+<div class="vlabel">Routing Label-won</div>
+<div class="card tickethead pad">
+  <dl class="props" style="margin-top:0">
+    <div><dt class="label">Priority</dt><dd>normal</dd></div>
+    <div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span> <span class="rtag">&mdash; routed by <code>reasoning</code>; the classifier was not consulted</span></dd></div>
+    <div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+    <div><dt class="label">Created</dt><dd>Oct 7 &middot; 09:12</dd></div>
+  </dl>
+</div>
+
+<div class="sublbl">2d. Attempt history: an Attempt that switched options</div>
+<div class="hist" role="table">
+  <div class="h hd label"><span>Attempt</span><span>Agent</span><span>Routing</span><span>Outcome</span></div>
+  <div class="h"><span>1</span><span>Claude <span class="mdl">Sonnet 5.5</span> <span class="ocode">sonnet-small</span></span><span><span class="atag">Classifier: small, well-scoped fix</span><span class="cost sub3">Routing $0.004</span></span><span class="pill escalated" style="justify-self:start">failed</span></div>
+  <div class="h"><span>2</span><span>Codex <span class="mdl">gpt-5-codex</span> <span class="ocode">codex-bulk</span><br><span class="cold">Harness changed: cold Session</span></span><span><span class="atag">Classifier: prior Attempt failed on a race</span><span class="cost sub3">Routing $0.005</span></span><span class="pill working" style="justify-self:start">working</span></div>
+</div>
+<p class="note">A Harness change starts a cold Session (no warm context carried over). A change of Model within the same Harness keeps the warm Session.</p>
+
+<div class="sublbl">2e. Board card chip</div>
+<p class="sub2">The classifier chip mirrors the Routing Label chip. An abstained card shows a muted <em>default</em> chip rather than nothing, so it is visibly not classified.</p>
+<div class="cards">
+  <div><p class="cardcap">Classifier-routed</p>
+    <article class="bcard working"><span class="bar"></span><div class="in">
+      <div class="top"><span class="bd"></span><span class="id">#412</span><span class="chip">implementing</span></div>
+      <div class="tt">Rework retry backoff in the mirror poller</div>
+      <div class="who">Claude &middot; Opus 5.5 <span class="mchip">&#8627; classifier</span></div>
+      <div class="foot"><span class="br">harmonic/task-412</span><span class="go">14m &middot; ctx 38%</span></div>
+    </div></article></div>
+  <div><p class="cardcap">Routing Label (for comparison)</p>
+    <article class="bcard working"><span class="bar"></span><div class="in">
+      <div class="top"><span class="bd"></span><span class="id">#414</span><span class="chip">implementing</span></div>
+      <div class="tt">Bulk-rename legacy fixtures</div>
+      <div class="who">Codex &middot; gpt-5-codex <span class="mchip">&#8627; <code>bulk</code></span></div>
+      <div class="foot"><span class="br">harmonic/task-414</span><span class="go">9m &middot; ctx 27%</span></div>
+    </div></article></div>
+  <div><p class="cardcap">Abstained (muted default)</p>
+    <article class="bcard working"><span class="bar"></span><div class="in">
+      <div class="top"><span class="bd"></span><span class="id">#415</span><span class="chip">implementing</span></div>
+      <div class="tt">Fix typo in the retry docs</div>
+      <div class="who">Claude &middot; Sonnet 5.5 <span class="mchip ovr">default</span></div>
+      <div class="foot"><span class="br">harmonic/task-415</span><span class="go">3m &middot; ctx 12%</span></div>
+    </div></article></div>
+  <div><p class="cardcap">Unrouted (no chip)</p>
+    <article class="bcard working"><span class="bar"></span><div class="in">
+      <div class="top"><span class="bd"></span><span class="id">#416</span><span class="chip">implementing</span></div>
+      <div class="tt">Add pagination to the activity feed</div>
+      <div class="who">Claude &middot; Sonnet 5.5</div>
+      <div class="foot"><span class="br">harmonic/task-416</span><span class="go">6m &middot; ctx 21%</span></div>
+    </div></article></div>
+</div>
+
+</div>
+<script>
+(function(){try{var t=new URLSearchParams(location.search).get('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}})();
+</script>
+</body>
+</html>
