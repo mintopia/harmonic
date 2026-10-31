@@ -10061,6 +10061,85 @@
           "version"
         ]
       },
+      "WorkflowListEntryInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          },
+          "bundled": {
+            "type": "boolean",
+            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The current version; every save creates the next one."
+          },
+          "inUse": {
+            "type": "object",
+            "properties": {
+              "tickets": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "workspaces": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "tickets",
+              "workspaces"
+            ],
+            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+          },
+          "assignedAs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "global-default",
+                    "workspace-default",
+                    "label"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "text",
+          "bundled",
+          "version",
+          "inUse",
+          "assignedAs"
+        ]
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -20332,6 +20411,88 @@
           "version"
         ],
         "additionalProperties": false
+      },
+      "WorkflowListEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          },
+          "bundled": {
+            "type": "boolean",
+            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The current version; every save creates the next one."
+          },
+          "inUse": {
+            "type": "object",
+            "properties": {
+              "tickets": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "workspaces": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "tickets",
+              "workspaces"
+            ],
+            "additionalProperties": false,
+            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+          },
+          "assignedAs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "global-default",
+                    "workspace-default",
+                    "label"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "text",
+          "bundled",
+          "version",
+          "inUse",
+          "assignedAs"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -27954,7 +28115,7 @@
                     "workflows": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Workflow"
+                        "$ref": "#/components/schemas/WorkflowListEntry"
                       }
                     },
                     "total": {
@@ -28016,6 +28177,67 @@
           },
           "404": {
             "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Delete an operator workflow with all its kept versions. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "403": {
+            "description": "The workflow is bundled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Tickets reference the workflow, so it is kept.",
             "content": {
               "application/json": {
                 "schema": {
