@@ -47,7 +47,6 @@ export interface PodApi {
   createPod(spec: PodSpecInput): Promise<void>;
   waitForRunning(namespace: string, name: string, timeoutMs: number): Promise<void>;
   exec(namespace: string, pod: string, argv: string[], options: PodExecOptions): Promise<PodExecResult>;
-  /** Attaches to a process's stdio with no in-pod agent; the result has no pid. */
   execStream(namespace: string, pod: string, argv: string[], options: PodStreamOptions): Promise<ChildProcess>;
   deletePod(namespace: string, name: string): Promise<void>;
   deleteSecret(namespace: string, name: string): Promise<void>;

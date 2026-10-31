@@ -2,7 +2,6 @@ import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-/** A Kubernetes exec attach shaped like the slice of ChildProcess that AcpDriver and killProcessGroup use; it has no pid. */
 export class PodProcess extends EventEmitter {
   readonly stdin = new PassThrough();
   readonly stdout = new PassThrough();
@@ -17,13 +16,13 @@ export class PodProcess extends EventEmitter {
     super();
   }
 
-  /** Closing the attach cannot be relied on to stop the in-pod process; the pod is deleted when the run ends. */
   kill(signal: NodeJS.Signals | number = 'SIGTERM'): boolean {
     if (this.done) return false;
     this.killed = true;
     try {
       this.close();
     } catch {
+      // a closed attach has nothing left to stop; the pod is deleted at run end
     }
     this.finish(null, typeof signal === 'string' ? signal : 'SIGTERM');
     return true;

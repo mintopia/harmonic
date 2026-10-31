@@ -16,7 +16,6 @@ const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim();
 const agentSource = readFileSync(resolve(import.meta.dirname, '../fixtures/pod-acp-agent.mjs'), 'utf8');
 
-// The image must carry node and git: the fake ACP agent runs in the pod and is passed to node inline.
 describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-kind-agent-'));
   const upstream = process.env.HARMONIC_KIND_UPSTREAM ?? join(root, 'upstream.git');
