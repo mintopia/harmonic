@@ -4,14 +4,12 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
-import { startServer, type TestServer } from './helpers.js';
+import { inBlock, startServer, type TestServer } from './helpers.js';
 
 const flow = (name: string, extra = '') => `name: ${name}
 description: A test flow
 steps:
-  - id: build
-    run: npm test
-${extra}`;
+${inBlock('  - id: build\n    run: npm test\n')}${extra}`;
 
 describe('/api/workflows', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-workflow-routes-'));
@@ -27,9 +25,9 @@ describe('/api/workflows', () => {
   });
 
   it('refuses an invalid save with line and column and writes nothing', async () => {
-    const res = await server.api('PUT', '/api/workflows/broken', { text: 'name: broken\ndescription: x\nsteps:\n  - id: build\n    run: npm test\n    bogus: 1\n' });
+    const res = await server.api('PUT', '/api/workflows/broken', { text: 'name: broken\ndescription: x\nsteps:\n' + inBlock('  - id: build\n    run: npm test\n    bogus: 1\n') });
     expect(res.status).toBe(400);
-    expect(res.body.error.issues).toEqual([expect.objectContaining({ line: 6, column: 5 })]);
+    expect(res.body.error.issues).toEqual([expect.objectContaining({ line: 9, column: 11 })]);
     expect(existsSync(join(dataDir, 'workflows', 'broken.yaml'))).toBe(false);
     expect(existsSync(join(dataDir, 'workflows', '.versions', 'broken'))).toBe(false);
   });
@@ -126,7 +124,7 @@ describe('WorkflowLibrary on a real filesystem', () => {
 });
 
 describe('agent step options', () => {
-  const flow = (withBlock: string): string => `name: f\ndescription: d\nsteps:\n  - id: build\n    uses: agent\n${withBlock}`;
+  const flow = (withBlock: string): string => `name: f\ndescription: d\nsteps:\n${inBlock(`  - id: build\n    uses: agent\n${withBlock}`)}`;
 
   it('accepts prompt, harness, model and continue options', () => {
     expect(() => parseWorkflow(flow('    with:\n      prompt: hi\n      harness: claude\n      model: m\n      continueAttempts: 2\n      continuePrompt: go on\n'))).not.toThrow();
@@ -137,13 +135,13 @@ describe('agent step options', () => {
   });
 
   it('refuses an unknown key and a bad continueAttempts with a position', () => {
-    expect(() => parseWorkflow(flow('    with:\n      colour: red\n'))).toThrow(/7:7 unknown key: colour/);
+    expect(() => parseWorkflow(flow('    with:\n      colour: red\n'))).toThrow(/10:13 unknown key: colour/);
     expect(() => parseWorkflow(flow('    with:\n      continueAttempts: -1\n'))).toThrow(/with\.continueAttempts/);
   });
 });
 
 describe('critic steps and parallel groups', () => {
-  const wf = (steps: string): string => `name: f\ndescription: d\nsteps:\n${steps}`;
+  const wf = (steps: string): string => `name: f\ndescription: d\nsteps:\n${steps}  - attempts:\n      max: 1\n      steps:\n        - id: tail\n          uses: verify\n`;
   const criticStep = (withBlock: string): string => `  - id: review\n    uses: critic\n${withBlock}`;
 
   it('accepts a critic with its own prompt, harness and model', () => {

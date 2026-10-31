@@ -310,6 +310,8 @@ export const workflowStepRuns = sqliteTable('workflow_step_runs', {
   outputs: text('outputs'),
   summary: text('summary'),
   resolvedPrompt: text('resolved_prompt'),
+  /** The `attempts:` block pass (1-based) this step ran in; null outside the block. */
+  attempt: integer('attempt'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
 }, (t) => [index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId)]);
