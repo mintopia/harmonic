@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { DndContext, MeasuringStrategy, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { api } from '../../api';
+import type { ModelOption } from '../../types';
 import { useAsyncResource } from '../../useAsyncResource';
 import { WORKFLOW_ACTIONS } from '../../../../src/domain/workflow.js';
 import { field, labelType, selectField } from '../../ui';
@@ -123,6 +124,7 @@ function stepDetail(step: BuilderStep): string {
   const parts: string[] = [];
   if (step.prompt !== undefined) parts.push(step.uses === 'critic' ? '' : `prompt ${step.prompt}`);
   if (step.run !== undefined) parts.push(step.run);
+  if (step.option !== undefined) parts.push(`option ${step.option}`);
   if (step.harness !== undefined) parts.push([step.harness, step.model].filter(Boolean).join(' · '));
   if (step.condition !== undefined) parts.push(`if: ${step.condition}`);
   return parts.filter(Boolean).join('  ');
@@ -134,6 +136,7 @@ interface Ctx {
   issues: Map<string, WorkflowEditorIssue[]>;
   dragging: DragItem | null;
   prompts: string[];
+  modelOptions: readonly ModelOption[];
   selected: string | null;
   select: (key: string | null) => void;
   readOnly: boolean;
@@ -163,6 +166,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
   const agentLike = step.uses === 'agent' || step.uses === 'critic';
   const isRun = step.run !== undefined && step.uses === undefined;
   const prompts = step.prompt !== undefined && !ctx.prompts.includes(step.prompt) ? [...ctx.prompts, step.prompt] : ctx.prompts;
+  const modelOptions = step.option !== undefined && !ctx.modelOptions.some((o) => o.id === step.option) ? [...ctx.modelOptions, { id: step.option, harness: '', model: '', description: 'not defined' }] : ctx.modelOptions;
   const harnesses = step.harness !== undefined && !HARNESSES.includes(step.harness) ? [...HARNESSES, step.harness] : HARNESSES;
   return (
     <div className="mt-2 border-t border-hairline pt-1">
@@ -185,6 +189,17 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
       )}
       {agentLike && (
         <>
+          <Labelled label="Model Option">
+            <select aria-label="Model Option" disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.option ?? ''} onChange={(e) => set('option', e.target.value)}>
+              <option value="">None (use Harness and Model)</option>
+              {modelOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.id}
+                  {o.harness ? ` · ${o.harness} · ${o.model}` : ''}
+                </option>
+              ))}
+            </select>
+          </Labelled>
           <Labelled label="Harness">
             <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.harness ?? ''} onChange={(e) => set('harness', e.target.value)}>
               <option value="">Default</option>
@@ -351,7 +366,7 @@ function Palette() {
   );
 }
 
-export function WorkflowBuilder({ text, issues, dirty, readOnly, onChange }: { text: string; issues: readonly WorkflowEditorIssue[]; dirty: boolean; readOnly: boolean; onChange: (text: string) => void }) {
+export function WorkflowBuilder({ text, issues, dirty, readOnly, modelOptions, onChange }: { text: string; modelOptions: readonly ModelOption[]; issues: readonly WorkflowEditorIssue[]; dirty: boolean; readOnly: boolean; onChange: (text: string) => void }) {
   const tree = useMemo(() => readBuilder(text), [text]);
   const [dragging, setDragging] = useState<DragItem | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -359,7 +374,7 @@ export function WorkflowBuilder({ text, issues, dirty, readOnly, onChange }: { t
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const grouped = useMemo(() => (tree === null ? new Map<string, WorkflowEditorIssue[]>() : issuesByBlock(tree, issues)), [tree, issues]);
 
-  const ctx: Ctx = { text, change: onChange, issues: grouped, dragging, prompts: (prompts.data?.prompts ?? []).map((p) => p.code), selected, select: setSelected, readOnly };
+  const ctx: Ctx = { text, change: onChange, issues: grouped, dragging, prompts: (prompts.data?.prompts ?? []).map((p) => p.code), modelOptions, selected, select: setSelected, readOnly };
 
   const onDragStart = (event: DragStartEvent) => setDragging((event.active.data.current as DragItem | undefined) ?? null);
   const onDragEnd = (event: DragEndEvent) => {

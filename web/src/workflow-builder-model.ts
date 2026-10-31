@@ -13,6 +13,7 @@ export interface BuilderStep {
   id: string;
   uses?: string;
   run?: string;
+  option?: string;
   harness?: string;
   model?: string;
   prompt?: string;
@@ -102,6 +103,7 @@ function readStep(doc: Document, lc: LineCounter, path: BuilderPath): BuilderSte
   const optional: [keyof BuilderStep, string | undefined][] = [
     ['uses', get('uses')],
     ['run', get('run')],
+    ['option', withGet('option')],
     ['harness', withGet('harness')],
     ['model', withGet('model')],
     ['prompt', withGet('prompt')],
@@ -260,11 +262,17 @@ export function moveBlock(text: string, from: BuilderPath, container: BuilderPat
   });
 }
 
-export function setStepField(text: string, path: BuilderPath, field: 'id' | 'uses' | 'run' | 'condition' | 'harness' | 'model' | 'prompt', value: string): string {
+export function setStepField(text: string, path: BuilderPath, field: 'id' | 'uses' | 'run' | 'condition' | 'option' | 'harness' | 'model' | 'prompt', value: string): string {
   return edit(text, (doc) => {
     const node = doc.getIn(path, true);
     if (!isMap(node)) return;
-    if (field === 'harness' || field === 'model' || field === 'prompt') return setWith(doc, node, field, value);
+    if (field === 'option' || field === 'harness' || field === 'model' || field === 'prompt') {
+      if (value !== '' && field === 'option') {
+        setWith(doc, node, 'harness', '');
+        setWith(doc, node, 'model', '');
+      } else if (value !== '' && (field === 'harness' || field === 'model')) setWith(doc, node, 'option', '');
+      return setWith(doc, node, field, value);
+    }
     const key = field === 'condition' ? 'if' : field;
     if (value === '' && key !== 'id') node.delete(key);
     else node.set(key, key === 'if' ? `\${{ ${value.trim()} }}` : value);

@@ -23,9 +23,28 @@ describe('completeWorkflow', () => {
   });
 
   it('offers with keys for agent and critic steps only', () => {
-    expect(labels('steps:\n  - id: a\n    uses: agent\n    with:\n      ')).toEqual(['prompt', 'harness', 'model', 'continueAttempts', 'continuePrompt']);
+    expect(labels('steps:\n  - id: a\n    uses: agent\n    with:\n      ')).toEqual(['prompt', 'option', 'harness', 'model', 'continueAttempts', 'continuePrompt']);
     expect(labels('steps:\n  - id: a\n    uses: critic\n    with:\n      pro')).toEqual(['prompt']);
     expect(labels('steps:\n  - id: a\n    uses: merge\n    with:\n      ')).toBeUndefined();
+  });
+
+  it('offers defined Model Option codes after option:, with Harness, Model and description', () => {
+    const options = [
+      { id: 'fast', harness: 'claude', model: 'haiku', description: 'cheap and quick' },
+      { id: 'deep', harness: 'codex', model: 'gpt-5', description: 'hard problems' },
+    ];
+    const text = 'steps:\n  - id: a\n    uses: agent\n    with:\n      option: ';
+    const hit = completeWorkflow(text, text.length, options)!;
+    expect(hit.from).toBe(text.length);
+    expect(hit.options).toEqual([
+      { label: 'fast', detail: 'claude · haiku · cheap and quick' },
+      { label: 'deep', detail: 'codex · gpt-5 · hard problems' },
+    ]);
+    const typed = text + 'f';
+    expect(completeWorkflow(typed, typed.length, options)!.options.map((o) => o.label)).toEqual(['fast']);
+    expect(completeWorkflow(text.replace('agent', 'critic'), text.length, options)).not.toBeNull();
+    expect(completeWorkflow(text.replace('agent', 'merge'), text.length, options)).toBeNull();
+    expect(completeWorkflow(text, text.length)).toBeNull();
   });
 
   it('does not throw on invalid YAML or bad offsets', () => {

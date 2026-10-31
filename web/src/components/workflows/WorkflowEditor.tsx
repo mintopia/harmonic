@@ -61,6 +61,8 @@ function EditorBody({
   onOpen: (name: string) => void;
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialEditor(doc.text, doc.version));
+  const config = useAsyncResource(() => api.config(), []);
+  const modelOptions = useMemo(() => (config.data?.modelOptions ?? []).filter((o) => !o.disabled), [config.data]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [lastGood, setLastGood] = useState<WorkflowDiagramModel | null>(null);
   const parsed = useMemo(() => validateWorkflowText(state.text), [state.text]);
@@ -167,9 +169,9 @@ function EditorBody({
           </ul>
         </div>
       )}
-      <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} onChange={(text) => dispatch({ type: 'edit', text })} />
+      <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} />
       <div className="px-3.5">
-        <YamlEditor text={state.text} readOnly={readOnly} issues={issues} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
+        <YamlEditor text={state.text} readOnly={readOnly} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
       </div>
       <p className="px-3.5 pt-2 text-small text-faint">Edits apply from the Ticket&apos;s next Retry; in-flight Tickets finish on the version they snapshotted.</p>
       {confirmingDelete && (

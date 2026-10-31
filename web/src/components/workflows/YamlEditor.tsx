@@ -4,7 +4,7 @@ import { Decoration, EditorView, GutterMarker, WidgetType, gutterLineClass, type
 import { basicSetup } from 'codemirror';
 import { acceptCompletion, type CompletionContext } from '@codemirror/autocomplete';
 import { keymap } from '@codemirror/view';
-import { completeWorkflow } from '../../../../src/domain/workflow-completion.js';
+import { completeWorkflow, type CompletionModelOption } from '../../../../src/domain/workflow-completion.js';
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { messageParts, type WorkflowEditorIssue } from '../../workflow-editor-model';
@@ -43,8 +43,8 @@ class IssueWidget extends WidgetType {
   }
 }
 
-const completionSource = (ctx: CompletionContext) => {
-  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos);
+const completionSource = (modelOptions: () => readonly CompletionModelOption[]) => (ctx: CompletionContext) => {
+  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos, modelOptions());
   if (!hit) return null;
   return { from: hit.from, options: hit.options.map((o) => ({ label: o.label, detail: o.detail, type: 'keyword' })), validFor: /^[\w-]*$/ };
 };
@@ -120,12 +120,14 @@ export function YamlEditor({
   text,
   readOnly,
   issues,
+  modelOptions,
   onChange,
   onSave,
 }: {
   text: string;
   readOnly: boolean;
   issues: readonly WorkflowEditorIssue[];
+  modelOptions: readonly CompletionModelOption[];
   onChange: (text: string) => void;
   onSave: () => void;
 }) {
@@ -135,7 +137,9 @@ export function YamlEditor({
   const onSaveRef = useRef(onSave);
   const textRef = useRef(text);
   const issuesRef = useRef(issues);
+  const modelOptionsRef = useRef(modelOptions);
   useEffect(() => {
+    modelOptionsRef.current = modelOptions;
     onChangeRef.current = onChange;
     onSaveRef.current = onSave;
     textRef.current = text;
@@ -146,6 +150,7 @@ export function YamlEditor({
     if (!host.current) return;
     let disposed = false;
     const language = new Compartment();
+    const source = completionSource(() => modelOptionsRef.current);
     const extensions: Extension[] = [
       syntaxHighlighting(paperHighlight),
       basicSetup,
@@ -154,7 +159,7 @@ export function YamlEditor({
       issueField,
       gutterField,
       language.of([]),
-      EditorState.languageData.of(() => [{ autocomplete: completionSource }]),
+      EditorState.languageData.of(() => [{ autocomplete: source }]),
       keymap.of([{ key: 'Tab', run: acceptCompletion }]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
