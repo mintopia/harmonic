@@ -23,11 +23,6 @@ const DEFAULT_COMMAND_TIMEOUT_SECONDS = 600;
 const DEFAULT_CRITIC_TIMEOUT_SECONDS = 300;
 const IN_FLIGHT_STATES = ['working', 'paused', 'escalated'] as const;
 
-/**
- * A setting is unconvertible when a workflow cannot express it: a verify command or Critic with a non-default
- * timeout (a step has one fixed timeout), `maxAttempts` outside 1..20 (the workflow limit), an environment
- * variable name a shell cannot take, or prompt/command text holding `${{`, which a workflow would evaluate.
- */
 export class UnconvertibleSettingError extends Error {
   constructor(readonly setting: string, reason: string) {
     super(`Cannot migrate setting ${setting} to a workflow: ${reason}. Change it on the previous release, then upgrade again.`);
@@ -94,7 +89,6 @@ export interface SettingsMigrationPlan {
 export interface PlanInput {
   config: AppConfig;
   workspaces: readonly WorkspaceRow[];
-  /** The Prompt Library's operator entry text for a code, includes expanded. */
   promptText: (code: string) => string | undefined;
 }
 
@@ -291,8 +285,7 @@ export interface SettingsMigrationDeps {
   workflows: WorkflowLibrary;
   workspaces: { list(): Promise<WorkspaceRow[]> };
   tasks: Pick<TaskService, 'list' | 'pinWorkflow'>;
-  /** Fault-injection seam: runs after each Workspace default is written. */
-  afterWorkspace?: (workspaceId: number) => Promise<void>;
+  onWorkspaceDefaultWritten?: (workspaceId: number) => Promise<void>;
 }
 
 async function writePrompt(prompts: PromptLibrary, entry: PlannedPrompt): Promise<void> {
@@ -321,10 +314,7 @@ async function pinInFlight(deps: SettingsMigrationDeps): Promise<void> {
   });
 }
 
-/**
- * Converts today's execution settings into workflows once. Every write is convergent and the done-marker is
- * written last, so a crash at any point is repaired by running it again.
- */
+// The done-marker is written last so a crash at any point converges on re-run.
 export async function migrateSettingsToWorkflows(deps: SettingsMigrationDeps): Promise<void> {
   const done = await deps.db.read((d) => d.select({ value: settings.value }).from(settings).where(eq(settings.key, SETTINGS_MIGRATION_MARKER)).get());
   if (done) return;
@@ -337,7 +327,7 @@ export async function migrateSettingsToWorkflows(deps: SettingsMigrationDeps): P
   await forEachYielding(plan.workflows, (workflow) => writeWorkflow(deps.workflows, workflow));
   await forEachYielding(plan.workspaceWorkflows, async ({ workspaceId, workflow }) => {
     if (deps.settings.getOverrides(workspaceId).workflow === null) await deps.settings.setOverrides(workspaceId, { workflow });
-    await deps.afterWorkspace?.(workspaceId);
+    await deps.onWorkspaceDefaultWritten?.(workspaceId);
   });
   if (deps.settings.getGlobal().defaults.workflow === null) await deps.settings.setDefaultWorkflow(plan.globalWorkflow);
   await pinInFlight(deps);

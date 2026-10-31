@@ -83,7 +83,7 @@ describe('settings to workflows migration', () => {
 
     let seen = 0;
     const crashing = await boot(seed, {
-      afterWorkspace: async () => {
+      onWorkspaceDefaultWritten: async () => {
         if (++seen === 2) throw new Error('crash after the second Workspace');
       },
     });

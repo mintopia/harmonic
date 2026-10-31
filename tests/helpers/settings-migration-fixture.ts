@@ -75,7 +75,6 @@ export interface Harness {
   deps: SettingsMigrationDeps;
 }
 
-/** Writes the old-style settings a previous release left behind, as a store would. */
 export async function seedOldSettings(dir: string, seed: Seed): Promise<number[]> {
   mkdirSync(dir, { recursive: true });
   const db = await openAsyncDb(dir);
@@ -91,7 +90,6 @@ export async function seedOldSettings(dir: string, seed: Seed): Promise<number[]
   return ids;
 }
 
-/** Opens everything the way a boot does, over settings already on disk. */
 export async function openHarness(dir: string, extra: Partial<SettingsMigrationDeps> = {}): Promise<Harness> {
   const db = await openAsyncDb(dir);
   const settings = await SettingsStore.create(dir);
@@ -110,7 +108,6 @@ export function migrate(harness: Harness): Promise<void> {
   return migrateSettingsToWorkflows(harness.deps);
 }
 
-/** Every file under the data directory's workflows and prompts, plus settings.yaml, keyed by relative path. */
 export function treeOf(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
   const walk = (current: string): void => {
