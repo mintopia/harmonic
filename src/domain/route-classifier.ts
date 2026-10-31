@@ -41,7 +41,6 @@ export interface ClassifierBackendResult {
 }
 
 export interface ClassifierBackend {
-  /** `prompt` is the Resolved Prompt to send, built from the Workspace's Prompt Fragments. */
   classify(input: ClassifierInput, ctx: { timeoutMs: number; workspace: WorkspaceRow; prompt: string }): Promise<ClassifierBackendResult>;
 }
 
