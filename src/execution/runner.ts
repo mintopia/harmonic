@@ -517,7 +517,6 @@ export class Runner {
     await this.settleEscalated(task, run, reason, {});
   }
 
-  /** Stops a running Ticket's Attempt, or claims a waiting one, then escalates it. */
   async escalateForTarget(taskId: number, reason: string): Promise<void> {
     const task = await this.taskService.get(taskId);
     if (task.state === 'ready') return this.escalateUnspawned(taskId, reason);

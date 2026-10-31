@@ -302,7 +302,8 @@ export class ExecutionTargetService {
   }
 
   async listWithLocal(): Promise<ExecutionTargetView[]> {
-    return [LOCAL_TARGET_VIEW, ...(await this.list())];
+    const local = { ...LOCAL_TARGET_VIEW, ...(await this.counts(LOCAL_TARGET)) };
+    return [local, ...(await this.list())];
   }
 
   async get(name: string): Promise<ExecutionTargetView> {

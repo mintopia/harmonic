@@ -112,7 +112,7 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
             <span role="columnheader" className="sr-only">Actions</span>
           </div>
           {list.map((target) => {
-            const view = rowView(target);
+            const view = rowView(target, hostCeiling);
             const dim = target.enabled || target.builtIn ? '' : 'opacity-70';
             return (
               <div key={target.name} role="row" className={`${ROW_GRID} rounded-lg bg-surface shadow-card`}>
@@ -121,16 +121,10 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                   <StatusPill label={view.statusLabel} />
                 </div>
                 <div role="cell" className="flex flex-col gap-1">
-                  {target.builtIn ? (
-                    <span className="text-[13px]">Host Ceiling <b>{hostCeiling}</b></span>
-                  ) : (
-                    <>
-                      <span className="text-[13px]"><b>{target.running}</b>/{target.concurrencyLimit} running</span>
-                      <span role="img" aria-label={view.runningLabel ?? ''} className="h-1.5 w-full max-w-28 overflow-hidden rounded-full bg-raised">
-                        <i className={`block h-full ${view.full ? 'bg-ready' : 'bg-running'}`} style={{ width: `${view.runningPercent}%` }} />
-                      </span>
-                    </>
-                  )}
+                  <span className="text-[13px]"><b>{target.running}</b>/{target.builtIn ? hostCeiling : target.concurrencyLimit} running</span>
+                  <span role="img" aria-label={view.runningLabel} className="h-1.5 w-full max-w-28 overflow-hidden rounded-full bg-raised">
+                    <i className={`block h-full ${view.full ? 'bg-ready' : 'bg-running'}`} style={{ width: `${view.runningPercent}%` }} />
+                  </span>
                 </div>
                 <div role="cell">
                   {!target.builtIn && target.waiting > 0 && (
@@ -143,11 +137,11 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                 </div>
                 <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted`}>
                   {target.builtIn ? (
-                    <span>Runs on the Harmonic host. Bounded by the Host Ceiling; does not share capacity with Kubernetes targets.</span>
+                    <span>A local Ticket starts here even while a Kubernetes target is full: the two do not share capacity.</span>
                   ) : (
                     <>
                       <span>
-                        {!target.enabled ? 'Disabled. Waiting Tickets stay ready until it is re-enabled.' : view.full ? 'Full. The next Ticket waits and starts when a running one finishes.' : 'Starts Tickets while under its limit.'}
+                        {!target.enabled ? 'Disabled. Waiting Tickets stay ready until it is re-enabled.' : view.full ? 'Full. The next Ticket waits and starts when the running one finishes.' : 'Starts Tickets while under its limit.'}
                       </span>
                       <span className="break-words">
                         <code className={codeInline}>{target.namespace}</code> <code className="font-data text-[11.5px]">{target.defaultImage}</code>

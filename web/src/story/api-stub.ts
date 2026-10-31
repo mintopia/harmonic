@@ -298,7 +298,7 @@ const stubTarget = (name: string, enabled: boolean, running: number, limit: numb
   updatedAt: 1,
 });
 const executionTargetFixtures: ExecutionTarget[] = [
-  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, credentials: [], running: 0, waiting: 0, createdAt: null, updatedAt: null },
+  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, credentials: [], running: 1, waiting: 0, createdAt: null, updatedAt: null },
   stubTarget('k8s-prod', true, 2, 4, 'harmonic-agents'),
   stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
 ];

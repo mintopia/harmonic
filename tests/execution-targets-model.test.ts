@@ -128,6 +128,10 @@ describe('row view', () => {
     expect(rowView(prod)).toMatchObject({ statusLabel: 'enabled', runningLabel: '2/4 running', runningPercent: 50, full: false, toggleLabel: 'Disable' });
     expect(rowView({ ...prod, enabled: false, running: 4 })).toMatchObject({ statusLabel: 'disabled', full: true, toggleLabel: 'Enable' });
   });
+
+  it('counts the built-in local target against the Host Ceiling', () => {
+    expect(rowView({ ...prod, builtIn: true, concurrencyLimit: null, running: 1 }, 3)).toMatchObject({ runningLabel: '1/3 running', runningPercent: 33, full: false, toggleLabel: null });
+  });
 });
 
 describe('delete confirmation copy', () => {

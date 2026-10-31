@@ -2,6 +2,7 @@ import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-
 import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
+import { LOCAL_TARGET } from '../execution/execution-targets.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
@@ -416,8 +417,7 @@ export async function createRuntime(deps: {
     byTarget: async () => {
       const found = new Map<string, { running: number[]; waiting: number[] }>();
       await forEachYielding(await tasks.list({ state: ['ready', 'working'] }), async (task) => {
-        const target = await runner.kubernetesTargetOfTask(task);
-        if (target === undefined) return;
+        const target = (await runner.kubernetesTargetOfTask(task)) ?? LOCAL_TARGET;
         const entry = found.get(target) ?? { running: [], waiting: [] };
         (task.state === 'working' ? entry.running : entry.waiting).push(task.id);
         found.set(target, entry);
