@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
@@ -100,6 +100,7 @@ describe('SettingsStore keeps the retired prompt keys', () => {
     const store = await SettingsStore.create(dir, undefined, () => now);
     now += 5_000;
     writeFileSync(join(dir, 'settings.yaml'), JSON.stringify({ ...stored, global: { ...stored.global, [RETIRED_GLOBAL_KEY]: { peerLine: 'CHANGED' } } }));
+    utimesSync(join(dir, 'settings.yaml'), new Date(), new Date(Date.now() + 60_000));
     expect(store.getRetired().global).toEqual({ peerLine: 'CHANGED' });
   });
 });
