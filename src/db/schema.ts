@@ -309,6 +309,7 @@ export const workflowStepRuns = sqliteTable('workflow_step_runs', {
   /** JSON `{stdout, exitCode}`, secrets already masked. */
   outputs: text('outputs'),
   summary: text('summary'),
+  resolvedPrompt: text('resolved_prompt'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
 }, (t) => [index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId)]);

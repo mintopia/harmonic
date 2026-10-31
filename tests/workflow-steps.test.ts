@@ -15,6 +15,7 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
     position: 0,
     outcome: 'pass',
     summary: null,
+    resolvedPrompt: null,
     outputs: { stdout: '', exitCode: 0 },
     startedAt: 1,
     endedAt: 2,
@@ -54,6 +55,16 @@ describe('WorkflowSteps', () => {
     expect(rows[2]!.textContent).toContain('running');
     expect(rows[2]!.textContent).not.toContain('exit');
     expect(host.textContent).toContain('implement@2');
+  });
+
+  it('shows an agent step\'s Resolved Prompt and none for other steps', async () => {
+    const host = await mountComponent(
+      createElement(WorkflowSteps, { data: response([step({ stepId: 'build', action: 'agent', resolvedPrompt: 'Do the thing' }), step({ stepId: 'lint', position: 1 })]) }),
+    );
+    const rows = [...host.querySelectorAll('li')];
+    expect(rows[0]!.querySelector('details summary')?.textContent).toBe('Resolved Prompt');
+    expect(rows[0]!.querySelector('details pre')?.textContent).toBe('Do the thing');
+    expect(rows[1]!.querySelector('details')).toBeNull();
   });
 
   it('renders a re-run step as a second row without duplicate keys', async () => {

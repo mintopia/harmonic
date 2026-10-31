@@ -10,9 +10,11 @@ import { TaskService } from '../src/domain/tasks.js';
 import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
 import { mergeIntoBase } from '../src/execution/branch-merge.js';
-import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
+import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, UNCOMMITTED_AFTER_AGENT, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
+import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
+import { resolveRoute } from '../src/domain/route.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, seedWorkspace, STUB_HARNESS, testSpawnProcessGroup } from './helpers.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -38,6 +40,7 @@ describe('WorkflowEngine', () => {
       secretValues: async () => secretValues,
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
+      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text },
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -282,6 +285,103 @@ describe('WorkflowEngine', () => {
       expect(git(wt, 'rev-parse', 'HEAD')).toBe(before);
       expect(git(wt, 'status', '--porcelain')).toBe('');
       expect(git(repo, 'branch', '--show-current')).toBe('main');
+    });
+  });
+
+  describe('agent steps', () => {
+    const stubConfig = (): ReturnType<typeof baselineConfig> => ({
+      ...baselineConfig(),
+      harnesses: { claude: { command: process.execPath, args: [STUB_HARNESS], env: {}, models: [{ id: 'stub-model' }], defaultModel: 'stub-model', cacheWarmSeconds: 300 } },
+    }) as unknown as ReturnType<typeof baselineConfig>;
+    let driven: { harnessId: string; model: string; prompt: string; continueSessionId: string | undefined }[];
+    let routeCalls: number;
+    const recordingDrive = (): CriticHarnessDrive => {
+      const real = createAcpCriticDrive(testSpawnProcessGroup);
+      return { run: async (req) => { driven.push({ harnessId: req.harnessId, model: req.model, prompt: req.prompt, continueSessionId: req.continueSessionId }); return real.run(req); } };
+    };
+    const agentEngine = (over: Partial<WorkflowEngineDeps['agent']> = {}): WorkflowEngine =>
+      engine({
+        agent: {
+          drive: recordingDrive(),
+          getConfig: stubConfig,
+          route: async () => { routeCalls += 1; return resolveRoute(stubConfig(), 'claude', 'stub-model', null); },
+          resolvePrompt: async (text) => text,
+          ...over,
+        },
+      });
+    const scenario = (files: Record<string, string>, extra: object = {}): string => `'${JSON.stringify({ writeFiles: files, ...extra })}'`;
+
+    beforeEach(() => { driven = []; routeCalls = 0; });
+
+    it('drives a real ACP Harness whose commit lands on the branch, and stores the Resolved Prompt', async () => {
+      const prompt = scenario({ 'a.txt': 'hello' });
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n`));
+      const head = git(repo, 'rev-parse', 'HEAD');
+      await agentEngine().run(task, run);
+      const [row] = await stepRows(task.id);
+      expect(row).toMatchObject({ stepId: 'build', action: 'agent', outcome: 'pass' });
+      expect(row!.resolvedPrompt).toContain('a.txt');
+      expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(head);
+      expect(git(repo, 'log', '-1', '--format=%s')).toBe('stub implementation');
+      expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('hello');
+      expect(completions).toBe(1);
+    });
+
+    it('stores the expanded prompt when the step names a Library code', async () => {
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: my-code\n`));
+      await agentEngine({ resolvePrompt: async (text) => (text === 'my-code' ? 'expanded library text' : text) }).run(task, run);
+      expect((await stepRows(task.id))[0]!.resolvedPrompt).toBe('expanded library text');
+      expect(driven[0]!.prompt).toBe('expanded library text');
+    });
+
+    it('resolves the Ticket route once for two implicit steps and shares one warm Session', async () => {
+      const a = scenario({ 'a.txt': '1' });
+      const b = scenario({ 'b.txt': '2' });
+      const { task, run } = await startTask(flow(`  - id: one\n    uses: agent\n    with:\n      prompt: ${a}\n  - id: two\n    uses: agent\n    with:\n      prompt: ${b}\n`));
+      await agentEngine().run(task, run);
+      expect(routeCalls).toBe(1);
+      expect(driven[0]!.continueSessionId).toBeUndefined();
+      expect(driven[1]!.continueSessionId).toBeDefined();
+      expect(completions).toBe(1);
+    });
+
+    it('ignores routing when the step names a Harness', async () => {
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      harness: claude\n      model: stub-model\n      prompt: ${scenario({ 'a.txt': '1' })}\n`));
+      await agentEngine({ route: async () => { routeCalls += 1; return resolveRoute(stubConfig(), 'codex', 'other', 'fast'); } }).run(task, run);
+      expect(routeCalls).toBe(0);
+      expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
+    });
+
+    it('escalates with the unconfigured-Harness reason', async () => {
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      harness: codex\n      prompt: hi\n`));
+      await agentEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'inconclusive', summary: "Harness 'codex' is not configured." });
+      expect(escalations[0]).toContain("Harness 'codex' is not configured.");
+      expect(driven).toEqual([]);
+    });
+
+    it('escalates with the Routing Label reason when the routed Harness is unavailable', async () => {
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: hi\n`));
+      await agentEngine({ route: async () => resolveRoute(stubConfig(), 'codex', 'm', 'fast') }).run(task, run);
+      expect(escalations[0]).toContain("Routing Label 'fast' needs Harness 'codex', which is not configured.");
+    });
+
+    it('fails when the agent leaves work uncommitted and no nudges remain', async () => {
+      const prompt = scenario({ 'a.txt': '1' }, { commit: false });
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n`));
+      await agentEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT });
+    });
+
+    it('nudges with continuePrompt while work is uncommitted', async () => {
+      const prompt = scenario({ 'a.txt': '1' }, { commit: false });
+      const nudge = scenario({ 'b.txt': '2' });
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n      continueAttempts: 2\n      continuePrompt: ${nudge}\n`));
+      await agentEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      expect(driven).toHaveLength(2);
+      expect(driven[1]!.continueSessionId).toBeDefined();
+      expect(git(repo, 'status', '--porcelain')).toBe('');
     });
   });
 });

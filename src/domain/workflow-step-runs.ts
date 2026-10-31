@@ -43,6 +43,10 @@ export class WorkflowStepRunStore {
     );
   }
 
+  async setResolvedPrompt(id: number, prompt: string): Promise<void> {
+    await this.db.write((db) => db.update(workflowStepRuns).set({ resolvedPrompt: prompt }).where(eq(workflowStepRuns.id, id)).run());
+  }
+
   listForTask(taskId: number): Promise<WorkflowStepRunRow[]> {
     return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.taskId, taskId)).orderBy(asc(workflowStepRuns.id)).all());
   }
