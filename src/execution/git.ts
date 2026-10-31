@@ -153,6 +153,8 @@ export const Git = {
   /** Resolve a revision to its object id (e.g. a branch tip, `HEAD`). */
   revParse: (dir: string, rev: string) => git(dir, 'rev-parse', rev),
 
+  commitCount: async (dir: string, rev: string): Promise<number> => parseInt(await git(dir, 'rev-list', '--count', rev), 10),
+
   /** Rejects with the git error when `dir` is not a repository with a resolvable `HEAD`. */
   assertRepo: async (dir: string): Promise<void> => {
     await git(dir, 'rev-parse', 'HEAD');

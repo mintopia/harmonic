@@ -16,6 +16,8 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  WORKFLOW_CHOSEN,
+  WORKFLOW_STEP_OUTCOMES,
   isEpicAttempt,
   isTaskAttempt,
   type AttemptRow,
@@ -33,7 +35,25 @@ import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchem
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
+import { WorkflowStepRunStore, type WorkflowStepOutputs } from '../../domain/workflow-step-runs.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
+
+const workflowStepsResponseSchema = z.object({
+  workflowRef: z.string().nullable().meta({ example: 'implement@1' }),
+  workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().meta({ example: 'explicit' }),
+  steps: z.array(
+    z.object({
+      stepId: z.string().meta({ example: 'lint' }),
+      action: z.string().meta({ example: 'run' }),
+      position: z.number().int().meta({ example: 0 }),
+      outcome: z.enum(WORKFLOW_STEP_OUTCOMES).nullable().meta({ description: 'Null while the step is running.', example: 'pass' }),
+      summary: z.string().nullable().meta({ example: 'command exited 0' }),
+      outputs: z.object({ stdout: z.string().meta({ example: 'ok\n' }), exitCode: z.number().int().nullable().meta({ example: 0 }) }).meta({ description: 'Secret values are masked.' }),
+      startedAt: z.number().meta({ example: 1784030400000 }),
+      endedAt: z.number().nullable().meta({ example: 1784030401000 }),
+    }),
+  ),
+});
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
 const worktreeGone = (err: unknown): boolean =>
@@ -169,6 +189,7 @@ const taskWithDepsSchema = z
     trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     issueWorkflow: z.enum(ISSUE_WORKFLOWS).nullable().meta({ example: null }),
+    workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
     workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
@@ -430,6 +451,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
+      if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow)) {
+        throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
+      }
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
@@ -488,6 +512,41 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => await withDeps({ id: req.params.id }),
+  );
+
+  app.get(
+    '/tasks/:id/workflow-steps',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'The pinned workflow of a Ticket and every step the engine has executed on it, in execution order.',
+        params: idParamsSchema,
+        response: {
+          200: workflowStepsResponseSchema.describe('The workflow pin and its executed steps; `steps` is empty for a Ticket without a workflow.'),
+          404: errorResponse('No task has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const task = await ctx.tasks.get(req.params.id);
+      const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForTask(task.id);
+      return {
+        workflowRef: task.workflowRef,
+        workflowChosen: task.workflowChosen,
+        steps: rows
+          .filter((row) => row.workflowRef === task.workflowRef)
+          .map((row) => ({
+            stepId: row.stepId,
+            action: row.action,
+            position: row.position,
+            outcome: row.outcome,
+            summary: row.summary,
+            outputs: row.outputs === null ? { stdout: '', exitCode: null } : (JSON.parse(row.outputs) as WorkflowStepOutputs),
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+          })),
+      };
+    },
   );
 
   app.patch(

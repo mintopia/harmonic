@@ -37,6 +37,34 @@ export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'canc
 export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
 
+export type WorkflowChosen = 'explicit' | 'label' | 'workspace' | 'global';
+export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict';
+
+export interface WorkflowLibraryEntry {
+  name: string;
+  description: string;
+  bundled: boolean;
+  version: number;
+}
+
+export interface WorkflowStepRun {
+  stepId: string;
+  action: string;
+  position: number;
+  /** null while the step is still running. */
+  outcome: WorkflowStepOutcome | null;
+  summary: string | null;
+  outputs: { stdout: string; exitCode: number | null };
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface WorkflowStepsResponse {
+  workflowRef: string | null;
+  workflowChosen: WorkflowChosen | null;
+  steps: WorkflowStepRun[];
+}
+
 export interface Step {
   id: number;
   attemptId: number;
@@ -641,7 +669,9 @@ export interface Task {
   trackerRef: TrackerRef | null;
   /** Mirrored role: which Issue Workflow the tracker labelled it; null on native Tasks. */
   issueWorkflow: IssueWorkflow | null;
+  /** `name@version` of the workflow pinned when the Ticket started; null on Tickets on today's path. */
   workflowRef: string | null;
+  workflowChosen: WorkflowChosen | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */

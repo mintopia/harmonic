@@ -41,7 +41,7 @@ const task = ({
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,
-  mergeStatus: null, ticketClosePending: false, workflowRef: null,
+  mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowChosen: null,
   openBlockerCount: 0,
   epicBlockers: [],
   agentWorkable: true,

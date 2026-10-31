@@ -1,6 +1,8 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import type { EpicBaseGate } from './epic-coordinator.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
+import type { SecretService } from '../secrets/secret-service.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
 import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
@@ -52,6 +54,8 @@ export interface RunnerOptions {
   /** Held Agent Messages injected at Attempt start. */
   agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
+  /** Runs a Ticket's chosen Task Execution Workflow; absent → starting such a Ticket throws invalid_state. */
+  workflows?: { library: WorkflowLibrary; secrets: SecretService };
   /** Source of the Epic fix prompt text; absent → bundled prompts only. */
   promptLibrary?: PromptLibrary;
   isGloballyPaused?: () => boolean;

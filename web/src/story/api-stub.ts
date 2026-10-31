@@ -316,7 +316,9 @@ export const api: typeof RealApi = {
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   epicStats: (_epicRef: TrackerRef, _workspaceId: number) => ok(f.epicStats),
-  createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) => ok(f.task),
+  workflows: () => ok({ workflows: [], total: 0 }),
+  workflowSteps: (_id: number) => ok({ workflowRef: null, workflowChosen: null, steps: [] }),
+  createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),
   workspaceFiles: (_workspaceId: number, path = '', offset = 0) => {
     const entries = FILE_TREE[path] ?? [];

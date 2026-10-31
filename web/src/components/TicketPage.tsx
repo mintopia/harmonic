@@ -31,6 +31,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
+import { WorkflowSteps } from './ticket/WorkflowSteps';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
@@ -79,7 +80,7 @@ export function TicketPage({
   const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
   const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
 
-  const { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents } = useTicketPageData(
+  const { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents, workflowSteps } = useTicketPageData(
     task,
     selectedRunId,
   );
@@ -210,6 +211,8 @@ export function TicketPage({
             </div>
 
             <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
+
+            <WorkflowSteps data={workflowSteps} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 

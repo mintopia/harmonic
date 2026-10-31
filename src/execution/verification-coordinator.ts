@@ -238,6 +238,11 @@ export class VerificationCoordinator {
     return { verifier: mechanism, verdict: 'inconclusive' };
   }
 
+  async preMergeCommandById(task: TaskRow, id: string): Promise<VerificationCommand | undefined> {
+    const { resolvedTask } = await this.resolveTaskVerifiers(task);
+    return resolvedTask.preMerge.commands.find((command) => command.id === id);
+  }
+
   async criticEnabledFor(task: TaskRow): Promise<boolean> {
     const { resolvedTask } = await this.resolveTaskVerifiers(task);
     return resolvedTask.preMerge.critics.length > 0;

@@ -49,12 +49,14 @@ export function TaskForm({
   const [ov, setOv] = useState<Overrides>(originalOv);
   const originalWorkingDir = task?.workingDir ?? workspace?.workingDir ?? '';
   const [workingDir, setWorkingDir] = useState(originalWorkingDir);
+  const [workflow, setWorkflow] = useState('');
+  const workflows = useAsyncResource(task ? null : () => api.workflows(), [task]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
   const dirty = prompt !== (full.data?.prompt ?? task?.prompt ?? '') ||
-    JSON.stringify(ov) !== JSON.stringify(originalOv) || workingDir !== originalWorkingDir;
+    JSON.stringify(ov) !== JSON.stringify(originalOv) || workingDir !== originalWorkingDir || workflow !== '';
   const requestClose = () => {
     if (busy) return;
     if (dirty) setConfirmClose(true);
@@ -82,6 +84,7 @@ export function TaskForm({
           prompt,
           ...pinned,
           ...(showWorkingDir ? { workingDir } : {}),
+          ...(workflow ? { workflow } : {}),
           ...(state ? { state } : {}),
           ...(workspaceId !== null ? { workspaceId } : {}),
         });
@@ -214,6 +217,23 @@ export function TaskForm({
               )}
             </InheritField>
           </div>
+
+          {!task && (
+            <div className="mb-3">
+              <label className={label} htmlFor="task-execution-workflow">Task Execution Workflow</label>
+              <select
+                id="task-execution-workflow"
+                className={`${selectField} w-full`}
+                value={workflow}
+                onChange={(e) => setWorkflow(e.target.value)}
+              >
+                <option value="">None — today's behaviour</option>
+                {(workflows.data?.workflows ?? []).map((w) => (
+                  <option key={w.name} value={w.name}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {task?.issueWorkflow && (
             <div className="mb-3">

@@ -26,6 +26,7 @@ import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { EpicService } from '../tracker/epic-service.js';
 import { ChannelService } from '../notifications/channels.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { SecretService } from '../secrets/secret-service.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
@@ -108,6 +109,7 @@ export interface AppContext {
   auth: AuthService;
   channels: ChannelService;
   secrets: SecretService;
+  workflows: WorkflowLibrary;
   notifier: Notifier;
   notifications: NotificationStore;
   bus: EventBus;
