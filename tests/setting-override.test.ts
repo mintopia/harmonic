@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigSchema, baselineConfig, type AppConfig } from '../src/config.js';
-import { expandFragments } from '../src/execution/prompt-template.js';
+import { baselineConfig, type AppConfig } from '../src/config.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
+import { expandIncludes } from '../src/execution/prompt-template.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolvePauseMessage, resolvePromptFragments, resolveMergePrompts } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolvePauseMessage, resolveMergePrompts } from '../src/domain/setting-override.js';
 
-const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+const DEFAULT_PROMPTS = bundledEnginePrompts();
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   it('resolves the pause message from the Workspace override or global default', () => {
-    expect(resolvePauseMessage({ pauseMessage: null }, { pauseMessage: 'global pause', promptFragments: baselineConfig().promptFragments })).toBe('global pause');
-    expect(resolvePauseMessage({ pauseMessage: 'workspace pause' }, { pauseMessage: 'global pause', promptFragments: baselineConfig().promptFragments })).toBe('workspace pause');
+    expect(resolvePauseMessage({ pauseMessage: null }, { pauseMessage: 'global pause' }, DEFAULT_PROMPTS)).toBe('global pause');
+    expect(resolvePauseMessage({ pauseMessage: 'workspace pause' }, { pauseMessage: 'global pause' }, DEFAULT_PROMPTS)).toBe('workspace pause');
   });
   describe('resolve', () => {
     it('inherits the global default when the Workspace value is null', () => {
@@ -168,36 +169,20 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   });
 });
 
-describe('Prompt Fragments', () => {
-  const config = { promptFragments: { ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: 'GLOBAL RESTRAINT', conflictResolution: 'GLOBAL CONFLICT' } };
-  const inheritAll = { promptFragmentReadOnlyRestraint: null, promptFragmentConflictResolution: null };
-
-  it('inherits the global fragment unless the Workspace overrides it', () => {
-    expect(resolvePromptFragments(inheritAll, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
-    expect(resolvePromptFragments(undefined, config).readOnlyRestraint).toBe('GLOBAL RESTRAINT');
-    expect(resolvePromptFragments({ ...inheritAll, promptFragmentReadOnlyRestraint: 'WS RESTRAINT' }, config).readOnlyRestraint).toBe('WS RESTRAINT');
-    expect(resolvePromptFragments({ ...inheritAll, promptFragmentConflictResolution: 'WS CONFLICT' }, config).conflictResolution).toBe('WS CONFLICT');
-    expect(resolvePromptFragments(inheritAll, config).conflictResolution).toBe('GLOBAL CONFLICT');
-  });
-
+describe('Prompt Library includes in the merge prompts', () => {
   it('resolves the merge conflict prompts per Workspace', () => {
     const global = { ...baselineConfig() };
-    const inherit = { ...inheritAll, mergeConflictPrompt: null, mergeEpicConflictPrompt: null };
+    const inherit = { mergeConflictPrompt: null, mergeEpicConflictPrompt: null };
     expect(resolveMergePrompts(inherit, global).conflictPrompt).toBe(global.merge.conflictPrompt);
-    const own = resolveMergePrompts({ ...inherit, mergeConflictPrompt: 'WS A', mergeEpicConflictPrompt: 'WS B', promptFragmentConflictResolution: 'WS F' }, global);
-    expect([own.conflictPrompt, own.epicConflictPrompt, own.fragments.conflictResolution]).toEqual(['WS A', 'WS B', 'WS F']);
+    const own = resolveMergePrompts({ ...inherit, mergeConflictPrompt: 'WS A', mergeEpicConflictPrompt: 'WS B' }, global);
+    expect([own.conflictPrompt, own.epicConflictPrompt]).toEqual(['WS A', 'WS B']);
   });
 
   it('is defined once in the baseline and expands in more than one prompt', () => {
-    const fragments = resolvePromptFragments(null, { promptFragments: DEFAULT_PROMPT_FRAGMENTS });
-    const a = expandFragments('Critic.\n{fragment.readOnlyRestraint}', fragments);
-    const b = expandFragments('Epic review: {fragment.readOnlyRestraint} {fragment.unknown}', fragments);
-    expect(a).toContain(DEFAULT_PROMPT_FRAGMENTS.readOnlyRestraint);
-    expect(b).toContain(DEFAULT_PROMPT_FRAGMENTS.readOnlyRestraint);
-    expect(b).toContain('{fragment.unknown}');
-  });
-
-  it('rejects an empty fragment at boot', () => {
-    expect(() => appConfigSchema.shape.promptFragments.parse({ ...DEFAULT_PROMPT_FRAGMENTS, readOnlyRestraint: '' })).toThrow();
+    const a = expandIncludes('Critic.\n${{ prompts.conflictResolution }}', DEFAULT_PROMPTS);
+    const b = expandIncludes('Epic review: ${{ prompts.conflictResolution }} ${{ prompts.unknown }}', DEFAULT_PROMPTS);
+    expect(a).toContain(DEFAULT_PROMPTS.conflictResolution);
+    expect(b).toContain(DEFAULT_PROMPTS.conflictResolution);
+    expect(b).toContain('${{ prompts.unknown }}');
   });
 });

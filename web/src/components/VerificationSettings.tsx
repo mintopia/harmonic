@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import type { AppConfig, EpicVerificationCritic, VerificationCommand, Workspace } from "../types";
-import { resolvePromptFragments } from "../../../src/domain/setting-override.js";
 import { CommandListEditor, CommandOverlayEditor } from "./CommandListEditor";
 import {
-  PromptFragmentsContext,
   EpicCriticListEditor,
   EpicCriticOverlayEditor,
 } from "./CriticListEditor";
@@ -119,7 +117,6 @@ export function GlobalVerificationSettings({
     });
 
   return (
-    <PromptFragmentsContext.Provider value={config.promptFragments}>
       <div className="flex flex-col gap-5">
         <StageBlock
           title="Pre-merge"
@@ -141,10 +138,9 @@ export function GlobalVerificationSettings({
           />
         </StageBlock>
         <p className="text-small text-faint">
-          The prompt for fixing a failing Epic verification is on the Prompts tab (Epic verification fix).
+          The prompt for fixing a failing Epic verification is on the Prompt Library page (Epic verification fix).
         </p>
       </div>
-    </PromptFragmentsContext.Provider>
   );
 }
 
@@ -199,7 +195,6 @@ export function WorkspaceVerificationSettings({
 }) {
   const harnessModels = harnessChoices(config);
   return (
-    <PromptFragmentsContext.Provider value={resolvePromptFragments(workspace, config)}>
       <StageBlock title="Pre-merge" hint="runs on the integration branch before the epic merges">
         <WorkspaceEpicStage
           workspace={workspace}
@@ -209,6 +204,5 @@ export function WorkspaceVerificationSettings({
           fieldErrors={fieldErrors}
         />
       </StageBlock>
-    </PromptFragmentsContext.Provider>
   );
 }

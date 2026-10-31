@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baselineConfig } from '../src/config.js';
-import type { PromptFragments } from '../src/domain/prompt-fragments.js';
+import { bundledEnginePrompts, type EnginePrompts } from '../src/domain/bundled-prompts.js';
 import {
   composeAttemptPrompt,
   composeEpicResolvePrompt,
@@ -12,12 +11,12 @@ import {
   type AttemptPromptInput,
   type PeerEntry,
 } from '../src/execution/prompt-assembly.js';
-import { renderFragment } from '../src/execution/prompt-template.js';
+import { renderPrompt } from '../src/execution/prompt-template.js';
 
-const defaults = (): PromptFragments => ({ ...baselineConfig().promptFragments });
+const defaults = (): EnginePrompts => bundledEnginePrompts();
 
-const peerSection = (held: readonly PeerEntry[], fragments: PromptFragments): string =>
-  composePeerContext(held, fragments).replace(`\n\n${renderFragment('peerLine', fragments)}`, '');
+const peerSection = (held: readonly PeerEntry[], prompts: EnginePrompts): string =>
+  composePeerContext(held, prompts).replace(`\n\n${renderPrompt('peerLine', prompts)}`, '');
 
 const OPERATOR = '## Operator message\n\nfocus on X';
 const HEAL =
@@ -122,17 +121,17 @@ describe('peer context', () => {
 });
 
 describe('resolver prompts', () => {
-  it('renderConflictPrompt expands fragments, then fills merge placeholders', () => {
+  it('renderConflictPrompt expands includes, then fills merge placeholders', () => {
     const out = renderConflictPrompt(
-      'Turn {turn}: {taskBranch} into {baseBranch} at {baseDir}\n{paths}\n{fragment.note}',
-      { note: 'NOTE {baseDir}' },
+      'Turn {turn}: {taskBranch} into {baseBranch} at {baseDir}\n{paths}\n${{ prompts.conflictResolution }}',
+      { ...defaults(), conflictResolution: 'NOTE {baseDir}' },
       { turn: 2, baseBranch: 'develop', taskBranch: 'task/1', unmergedPaths: ['a.ts', 'b.ts'], baseDir: '/w' },
     );
     expect(out).toBe('Turn 2: task/1 into develop at /w\n- a.ts\n- b.ts\nNOTE /w');
   });
 
   it('renderEpicRefreshPrompt maps the refresh context onto the merge placeholders', () => {
-    const out = renderEpicRefreshPrompt('{defaultBranch}|{branch}|{detail}|{baseDir}|{baseBranch}|{taskBranch}', {}, {
+    const out = renderEpicRefreshPrompt('{defaultBranch}|{branch}|{detail}|{baseDir}|{baseBranch}|{taskBranch}', defaults(), {
       defaultBranch: 'develop',
       branch: 'epic/3',
       detail: 'D',
@@ -142,11 +141,11 @@ describe('resolver prompts', () => {
   });
 
   it('composeEpicResolvePrompt joins prompt, failing verification and suffix with blank lines', () => {
-    const fragments = { ...defaults(), epicFailingVerification: 'FAILED: {reason}' };
+    const prompts = { ...defaults(), epicFailingVerification: 'FAILED: {reason}' };
     const out = composeEpicResolvePrompt({
       resolvePrompt: 'Fix {ref} {title} {description} {url}',
       resolveSuffix: 'Push to {branch}.',
-      fragments,
+      prompts,
       epic: { ref: '3', title: 'Epic three', body: '$& body', url: 'http://x/3' },
       reason: 'tests red',
       branch: 'epic/3',
@@ -156,8 +155,8 @@ describe('resolver prompts', () => {
 });
 
 describe('nudge templates', () => {
-  it('expands fragment references in the pause message', () => {
-    const fragments = { ...defaults(), conflictResolution: 'SHARED' };
-    expect(composePauseMessage('Stop. {fragment.conflictResolution}', fragments)).toBe('Stop. SHARED');
+  it('expands included prompts in the pause message', () => {
+    const prompts = { ...defaults(), conflictResolution: 'SHARED' };
+    expect(composePauseMessage('Stop. ${{ prompts.conflictResolution }}', prompts)).toBe('Stop. SHARED');
   });
 });

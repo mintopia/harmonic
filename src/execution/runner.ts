@@ -250,6 +250,7 @@ export class Runner {
       agent: {
         drive: { run: (req) => (req.task ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
         getConfig: this.getConfig,
+        prompts: () => this.promptLibrary.enginePrompts(),
         route: (task) => this.taskService.routing.ticketRoute(task),
         resolveOption: async (task, code) => resolveModelOption(code, { ticketOverrides: task.modelOptionOverrides, workspace: { modelOptions: (await this.getWorkspace?.(task.workspaceId))?.modelOptions ?? null }, config: this.getConfig() }),
         resolvePrompt: (text) => this.promptLibrary.resolve(text),
@@ -261,6 +262,7 @@ export class Runner {
   private mergeCoordinatorDeps(): MergeCoordinatorDeps {
     return {
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       attempts: this.attempts,
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       criticDrive: this.criticDrive,
@@ -282,6 +284,7 @@ export class Runner {
       epicMergeEvents: new EpicMergeEventStore(this.asyncDb),
       onAttemptEvent: (event) => this.events.onAttemptEvent?.(event),
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       getWorkspace: this.getWorkspace,
       worktreesDir: this.worktreesDir,
       criticDrive: this.criticDrive,
@@ -327,6 +330,7 @@ export class Runner {
       usage: this.usage,
       tailer: this.tailer,
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       activeRuns: this.activeRuns,
       sessionContinuation: this.sessionContinuation,
       archive: this.archive,
@@ -362,6 +366,7 @@ export class Runner {
       events: this.events,
       getWorkspace: this.getWorkspace,
       getConfig: this.getConfig,
+      prompts: () => this.promptLibrary.enginePrompts(),
       isGloballyPaused: this.isGloballyPaused,
       onGloballyPaused: this.onGloballyPaused,
       sessionContinuation: this.sessionContinuation,

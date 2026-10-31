@@ -333,12 +333,12 @@ export async function createRuntime(deps: {
   );
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
-  await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal());
+  await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal(), settingsStore.getRetired());
   const routeClassifier = new RouteClassifier(promptConfig, {
     typesafe: createTypesafeClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
     harness: createHarnessClassifierBackend({ drive: criticDrive, getConfig: () => settingsStore.getGlobal() }),
     'openai-compatible': createOpenAiCompatibleClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
-  });
+  }, () => deps.promptLibrary.enginePrompts());
   const runner = new Runner(tasks, asyncDb, promptConfig, {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
@@ -428,6 +428,7 @@ export async function createRuntime(deps: {
     {
       integration: {
         getConfig: promptConfig,
+        prompts: () => deps.promptLibrary.enginePrompts(),
         mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
         criticDrive,
         commandSpawn,

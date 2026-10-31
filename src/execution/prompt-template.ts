@@ -1,4 +1,6 @@
-import type { PromptFragmentName, PromptFragments } from '../domain/prompt-fragments.js';
+import type { BundledPromptCode, EnginePrompts } from '../domain/bundled-prompts.js';
+import { INCLUDE } from '../domain/prompt-library.js';
+import { translateRetiredText } from '../domain/retired-settings.js';
 import type { TrackerRef } from '../tracker/adapter.js';
 /** The interpolation tokens a Drive-style prompt fills. `taskId`/`title`/
  * `description` are always populated — a native (non-mirrored) Task has no
@@ -27,26 +29,23 @@ export function fillTemplate(template: string, fields: Record<string, string | n
   return template.replace(/\{([^{}]+)\}/g, (match, key: string) => (key in fields ? String(fields[key]) : match));
 }
 
-/** Expand `{fragment.<name>}` references in a template from the shared Prompt Fragments, leaving unknown names intact. */
-export function expandFragments(template: string, fragments: Record<string, string>): string {
-  return fillTemplate(
-    template,
-    Object.fromEntries(Object.entries(fragments).map(([name, text]) => [`fragment.${name}`, text])),
-  );
+/** Expand `${{ prompts.<code> }}` includes from the engine prompts, leaving unknown codes intact; retired fragment references are read as includes. */
+export function expandIncludes(template: string, prompts: EnginePrompts): string {
+  return translateRetiredText(template).replace(INCLUDE, (whole, code: string) => (Object.hasOwn(prompts, code) ? prompts[code as BundledPromptCode] : whole));
 }
 
-/** Render one Prompt Fragment: fragment references expand first, then the runtime fields fill in a single pass so their values are never re-expanded. */
-export function renderFragment(name: PromptFragmentName, fragments: PromptFragments, fields: Record<string, string | number> = {}): string {
-  return fillTemplate(expandFragments(fragments[name], fragments), fields);
+/** Render one engine prompt: includes expand first, then the runtime fields fill in a single pass so their values are never re-expanded. */
+export function renderPrompt(code: BundledPromptCode, prompts: EnginePrompts, fields: Record<string, string | number> = {}): string {
+  return fillTemplate(expandIncludes(prompts[code], prompts), fields);
 }
 
 /**
  * Guidance appended to an agent turn whose worktree Harmonic has indexed as its
  * own jCodeMunch repo. Empty id ⇒ nothing rendered.
  */
-export function codeIndexRepoGuidance(repoId: string, fragments: PromptFragments): string {
+export function codeIndexRepoGuidance(repoId: string, prompts: EnginePrompts): string {
   if (!repoId) return '';
-  return `\n\n${renderFragment('codeIndexGuidance', fragments, { repoId })}`;
+  return `\n\n${renderPrompt('codeIndexGuidance', prompts, { repoId })}`;
 }
 
 /** Map-Epic child→`wayfinder`; research→`research`; everything else→`implement`. */

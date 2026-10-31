@@ -1,5 +1,4 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
-import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
@@ -471,7 +470,7 @@ export type VerifyResult = { ok: true; identity: string } | { ok: false; reason:
 export type TrackerSource = 'configured' | 'detected' | 'code-repository';
 
 /** A Workspace: a named Working Directory, unique by absolute path. */
-export interface Workspace extends PromptFragmentOverrides {
+export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
@@ -1286,7 +1285,7 @@ export interface AppConfig {
     /** Sent when an Attempt ends its turn with uncommitted changes. No placeholders. */
     commitNudge: string;
   };
-  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/{fragment.conflictResolution} placeholders. */
+  /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/${{ prompts.conflictResolution }} placeholders. */
   merge: { postMergeCheck: boolean; conflictPrompt: string; epicConflictPrompt: string; epicRefreshPrompt: string };
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
@@ -1297,8 +1296,6 @@ export interface AppConfig {
   /** The Task Prompt template for native Attempts, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
   pauseMessage: string;
-  /** Shared Prompt Fragments, referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: PromptFragments;
   archive: { retain: { days: number | null; maxTotalMB: number | null } };
   /** S3 credentials arrive masked (`********`) when set; writing the mask back keeps the stored value. */
   export: {

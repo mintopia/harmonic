@@ -21,6 +21,7 @@ import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
 import { readFileSync } from 'node:fs';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
 
@@ -764,9 +765,9 @@ describe('epic refresh corrective turn (issue #315)', () => {
     return driven[0]!;
   };
 
-  it('expands fragments in the default Epic refresh prompt, shared with the conflict prompts', async () => {
+  it('expands includes in the default Epic refresh prompt, shared with the conflict prompts', async () => {
     const prompt = await refreshPromptDriven('Refresh default');
-    expect(prompt).not.toContain('{fragment.');
+    expect(prompt).not.toContain('${{ prompts.');
     expect(prompt).toMatch(/^## Epic integration refresh — merge conflict resolution\nMerging `develop` into the Epic integration branch `epic\/5` conflicted:\n/);
     expect(prompt).toContain('has `epic/5` checked out with that merge in progress');
     expect(prompt).toContain("keeps both `epic/5`'s and `develop`'s work");
@@ -774,30 +775,29 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(prompt).not.toContain('Do not run `git commit`');
   });
 
-  it('applies the Workspace Epic refresh prompt and conflict-resolution fragment over the global defaults', async () => {
+  it('applies the Workspace Epic refresh prompt over the global default, expanding the included conflict resolution', async () => {
     const prompt = await refreshPromptDriven('Refresh override', {
-      mergeEpicRefreshPrompt: 'WS refresh {branch}: {fragment.conflictResolution}',
-      promptFragmentConflictResolution: 'WS RESOLUTION for {taskBranch} into {baseBranch}',
+      mergeEpicRefreshPrompt: 'WS refresh {branch}: ${{ prompts.conflictResolution }}',
     });
-    expect(prompt).toBe('WS refresh epic/5: WS RESOLUTION for develop into epic/5');
+    expect(prompt).toMatch(/^WS refresh epic\/5: This checkout \(`.+`\) has `epic\/5` checked out with that merge in progress/);
+    expect(prompt).toContain("keeps both `epic/5`'s and `develop`'s work");
   });
 
-  it('applies the Workspace Epic verification suffix and failing-verification fragment, expanding fragments in the suffix', async () => {
+  it('applies the Workspace Epic verification suffix and the Library failing-verification prompt, expanding includes in the suffix', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Suffix override', workingDir: repo });
     await tasks.syncEpics(workspace.id, [{ ref: trackerRef(5), kind: 'epic' }]);
     const attempts = new AttemptStore(asyncDb);
     const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
     await workspaces.update(workspace.id, {
-      verifyEpicResolveSuffix: 'WS SUFFIX for {branch}. {fragment.readOnlyRestraint}',
-      promptFragmentEpicFailingVerification: 'WS FAILURE: {reason}',
-      promptFragmentReadOnlyRestraint: 'WS RESTRAINT',
+      verifyEpicResolveSuffix: 'WS SUFFIX for {branch}. ${{ prompts.criticSpecTicket }}',
     });
     const liveWorktree = join(dir, 'epic-suffix');
     git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
     const driven: string[] = [];
     const promptLibrary = new PromptLibrary(join(dir, 'data'));
-    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix it {fragment.readOnlyRestraint}');
+    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix it ${{ prompts.criticSpecTicket }}');
+    await promptLibrary.create('epicFailingVerification-edited', 'edited', 'WS FAILURE: {reason}');
     const runner = new Runner(tasks, asyncDb, () => baselineConfig(), {
       ...executionPlumbing(),
       archive: new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: async () => 'unused', workspaceName: async () => workspace.name }),
@@ -824,7 +824,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       verificationReason: 'tests red',
     });
     expect(driven).toHaveLength(1);
-    expect(driven[0]).toBe('Fix it WS RESTRAINT\n\nWS FAILURE: tests red\n\nWS SUFFIX for epic/5. WS RESTRAINT');
+    expect(driven[0]).toBe('Fix it the referenced ticket\n\nWS FAILURE: tests red\n\nWS SUFFIX for epic/5. the referenced ticket');
     git(repo, 'worktree', 'remove', '--force', liveWorktree);
   });
 
@@ -851,6 +851,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
         fireAndForget: executionPlumbing().fireAndForget,
         integration: {
           getConfig: () => config,
+          prompts: bundledEnginePrompts,
           mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
           criticDrive: executionPlumbing().criticDrive,
           commandSpawn: executionPlumbing().commandSpawn,
@@ -895,6 +896,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
         fireAndForget: executionPlumbing().fireAndForget,
         integration: {
           getConfig: () => config,
+          prompts: bundledEnginePrompts,
           mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
           criticDrive: executionPlumbing().criticDrive,
           commandSpawn: executionPlumbing().commandSpawn,
@@ -936,6 +938,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
         fireAndForget: executionPlumbing().fireAndForget,
         integration: {
           getConfig: () => config,
+          prompts: bundledEnginePrompts,
           mergeEpicIntegration: async () => ({ kind: 'merged', mergeOid: 'unused' }),
           criticDrive: executionPlumbing().criticDrive,
           commandSpawn: executionPlumbing().commandSpawn,

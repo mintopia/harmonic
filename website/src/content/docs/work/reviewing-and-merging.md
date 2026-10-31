@@ -35,7 +35,7 @@ and verify output copies in full, even when the page shows only part of it.
 
 The prompt sent to each agent (the **Resolved Prompt**) is shown inline on the
 ticket page in a **Sent prompt** block, at the point where it was sent. You see
-the text exactly as the agent received it, with placeholders and fragments
+the text exactly as the agent received it, with placeholders and included prompts
 already filled in.
 
 ## Completion and merging

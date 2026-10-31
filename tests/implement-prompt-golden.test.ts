@@ -18,6 +18,7 @@ import { WorkflowEngine } from '../src/execution/workflow-engine.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup } from './helpers.js';
 import { FEEDBACK, HEAL, NATIVE_TASK, TICKET_TASK, TICKET_URL } from './helpers/implement-golden-fixtures.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const golden = JSON.parse(readFileSync(new URL('./fixtures/implement-prompt-golden.json', import.meta.url), 'utf8')) as Record<string, string>;
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -84,6 +85,7 @@ describe('bundled implement workflow through the engine', () => {
       agent: {
         drive: { run: async (req) => { driven.push(req.prompt); turns[driven.length - 1]?.(req.cwd, driven.length); return { output: '', sessionId: 's', permissionRequests: [] }; } },
         getConfig: () => config,
+        prompts: bundledEnginePrompts,
         route: async () => resolveRoute(config, 'claude', 'm', null),
         resolveOption: async () => { throw new Error('no option'); },
         resolvePrompt: (text) => prompts.resolve(text),

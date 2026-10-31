@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RunControl, type RunControlDeps } from '../src/execution/run-control.js';
 import { ActiveRuns } from '../src/execution/active-runs.js';
 import type { TaskAttemptRow, AttemptEventRow } from '../src/db/schema.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const guardrailConfig = (wallClockMinutes: number) =>
   JSON.stringify({ budget: { wallClockMinutes }, progress: false, toolTimeoutMinutes: 10 });
@@ -82,6 +83,7 @@ describe('RunControl.extendGuardrail — between-turns (no ActiveRun)', () => {
       events: { onAttemptEvent } as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {} as unknown as RunControlDeps['sessionContinuation'],
@@ -116,6 +118,7 @@ describe('RunControl.extendGuardrail — between-turns (no ActiveRun)', () => {
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {} as unknown as RunControlDeps['sessionContinuation'],

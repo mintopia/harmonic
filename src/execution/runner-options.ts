@@ -4,7 +4,6 @@ import type { TaskArchive } from '../archive/task-archive.js';
 import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import type { SecretService } from '../secrets/secret-service.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
-import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AgentMessageStore } from '../domain/agent-messages.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
@@ -94,7 +93,6 @@ export interface RunnerOptions {
         | 'contextReuseTokenLimit'
         | 'taskPrompt'
         | 'pauseMessage'
-        | PromptFragmentOverrideKey
         | 'agentMessagesEnabled'
         | 'driveCommitNudge'
         | 'mergeConflictPrompt'

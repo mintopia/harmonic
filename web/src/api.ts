@@ -1,5 +1,4 @@
 import type { TrackerRef } from './types.js';
-import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
   Prompt,
   WorkflowDocument,
@@ -362,7 +361,7 @@ export const api = {
       driveUnattendedReminder?: string | null;
       driveContinuePrompt?: string | null;
       taskPrompt?: string | null;
-    } & Partial<PromptFragmentOverrides>,
+    },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed

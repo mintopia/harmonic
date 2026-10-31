@@ -2,7 +2,7 @@ import { DomainError } from './errors.js';
 
 export const PROMPT_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
-const INCLUDE = /\$\{\{\s*prompts\.([^\s}]+)\s*\}\}/g;
+export const INCLUDE = /\$\{\{\s*prompts\.([^\s}]+)\s*\}\}/g;
 
 export interface PromptEntry {
   readonly code: string;

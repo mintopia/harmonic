@@ -7,7 +7,7 @@ import type { WorkspaceRow } from '../db/schema.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { defaultRoute } from './routing.js';
 import { buildClassifierPrompt } from '../execution/prompt-assembly.js';
-import { resolvePromptFragments } from './setting-override.js';
+import type { EnginePrompts } from './bundled-prompts.js';
 import { harnessConfig } from './route.js';
 import { parseClassifierEndpoint, resolveClassifierSettings, resolveModelOptions, type ModelOptionOverride, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
 import { costOfUsages, pricesForHarness, type Cost } from './pricing.js';
@@ -276,6 +276,7 @@ export class RouteClassifier {
   constructor(
     private readonly getConfig: () => AppConfig,
     private readonly backends: Partial<Record<ClassifierBackendId, ClassifierBackend>>,
+    private readonly prompts: () => EnginePrompts,
   ) {}
 
   isEnabled(workspace: WorkspaceRow): boolean {
@@ -302,7 +303,7 @@ export class RouteClassifier {
       timeoutMs: settings.timeoutSeconds * 1000,
       workspace: request.workspace,
       config,
-      prompt: buildClassifierPrompt(input, resolvePromptFragments(request.workspace, config)),
+      prompt: buildClassifierPrompt(input, this.prompts()),
     }, options);
   }
 

@@ -1,7 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Verdict } from '../verification/critic-schema.js';
-import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import type { VarRecord } from '../domain/workflow-vars.js';
@@ -72,7 +71,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;
   exportIncludeStates: string | null;
   configuredTracker: string | null; codeRepository: 'github' | 'gitlab' | 'forgejo' | 'git' | null; triageLabels: string | null; archiveRetentionDays: number | null; archiveRetentionMaxTotalMB: number | null;
-} & PromptFragmentOverrides;
+};
 
 /** `jobKey` is the job name plus optional Workspace id, so SQLite's NULL-distinct unique semantics can't duplicate global job rows. */
 export const scheduledJobs = sqliteTable('scheduled_jobs', {

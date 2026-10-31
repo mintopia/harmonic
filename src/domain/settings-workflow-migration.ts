@@ -8,9 +8,8 @@ import { settings, type TaskRow, type WorkspaceRow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
 import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
-import { ENGINE_APPENDED_FRAGMENTS, libraryEntryFor } from './prompt-library-sources.js';
+import { libraryEntryFor } from './prompt-library-sources.js';
 import type { PromptLibrary } from './prompt-library-store.js';
-import { PROMPT_FRAGMENTS, type PromptFragmentName } from './prompt-fragments.js';
 import {
   resolveLegacyExecution,
   type LegacySettings,
@@ -18,7 +17,8 @@ import {
   type TaskVerificationCritic,
   type TaskVerificationStage,
 } from './legacy-execution-settings.js';
-import { resolvePromptFragments, resolveScoped } from './setting-override.js';
+import { FRAGMENT_REF, RETIRED_CODES, retiredBaseline, retiredEntryFor, retiredPromptTexts, retiredWorkspaceKey, translateRetiredText, type RetiredCode, type RetiredSettings } from './retired-settings.js';
+import { resolveScoped } from './setting-override.js';
 import type { TaskService } from './tasks.js';
 import { MAX_ATTEMPTS_LIMIT, parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
 import { resolveTaskWorkflow } from './workflow-assignment.js';
@@ -47,12 +47,12 @@ interface ScopeSettings {
   preMerge: TaskVerificationStage;
   postMerge: TaskVerificationStage;
   prompts: Record<PromptSlot, string>;
-  fragments: AppConfig['promptFragments'];
+  fragments: Record<RetiredCode, string>;
 }
 
-function scopeSettings(ws: WorkspaceRow | null, config: AppConfig, legacy: LegacySettings): ScopeSettings {
+function scopeSettings(ws: WorkspaceRow | null, config: AppConfig, legacy: LegacySettings, retired: RetiredSettings): ScopeSettings {
   const execution = resolveLegacyExecution(legacy.global, ws ? legacy.workspaces.get(ws.id) ?? null : null);
-  const fragments = resolvePromptFragments(ws, config);
+  const fragments = retiredPromptTexts(ws ? retired.workspaces[String(ws.id)] : undefined, retired.global);
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
     continueAttempts: execution.continueAttempts,
@@ -92,11 +92,11 @@ export interface SettingsMigrationPlan {
 export interface PlanInput {
   config: AppConfig;
   legacy: LegacySettings;
+  retired: RetiredSettings;
   workspaces: readonly WorkspaceRow[];
   promptText: (code: string) => string | undefined;
 }
 
-const FRAGMENT_REF = /\{fragment\.([^{}]+)\}/g;
 const include = (code: string): string => `\${{ prompts.${code} }}`;
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 const quote = (word: string): string => (SAFE_WORD.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`);
@@ -124,26 +124,25 @@ class ScopePlanner {
     return code;
   }
 
-  private fragmentRef(name: PromptFragmentName, depth: number): string {
+  private fragmentRef(name: RetiredCode, depth: number): string {
     const resolved = this.s.fragments[name];
-    if ((ENGINE_APPENDED_FRAGMENTS as readonly string[]).includes(name)) return resolved;
-    const baseline = loadBaselineConfig().promptFragments[name];
-    if (resolved === baseline) return include(name);
-    const entry = libraryEntryFor(name);
-    if (entry !== undefined && this.input.promptText(entry) === resolved) return include(entry);
+    if (name === 'readOnlyRestraint' || name === 'criticVerdictContract') return resolved;
+    if (resolved === retiredBaseline(name)) return include(name);
+    const entry = retiredEntryFor(name);
+    if (this.input.promptText(entry) === resolved) return include(entry);
     return depth > 0 ? this.rewrite(resolved, depth - 1) : resolved;
   }
 
   private rewrite(text: string, depth = 3): string {
-    return text.replace(FRAGMENT_REF, (whole, name: string) => (name in PROMPT_FRAGMENTS ? this.fragmentRef(name as PromptFragmentName, depth) : whole));
+    return text.replace(FRAGMENT_REF, (whole, name: string) => ((RETIRED_CODES as readonly string[]).includes(name) ? this.fragmentRef(name as RetiredCode, depth) : whole));
   }
 
   private promptEntry(slot: PromptSlot, baseline: string, description: string): string {
     const value = this.s.prompts[slot];
     if (value === baseline) return slot;
     refuseExpressions(value, this.name(slot));
-    const edited = libraryEntryFor(slot);
-    if (edited !== undefined && this.input.promptText(edited) === value && !value.includes('{fragment.')) return edited;
+    const edited = slot === 'selfHeal' ? retiredEntryFor(slot) : libraryEntryFor(slot);
+    if (edited !== undefined && this.input.promptText(edited) === value && translateRetiredText(value) === value) return edited;
     return this.addEntry(`migrated-${this.scopeKey}-${slot}`, description, this.rewrite(value));
   }
 
@@ -156,7 +155,7 @@ class ScopePlanner {
     const drive = this.promptEntry('drivePrompt', baseline.drive.prompt, 'Your edited drive prompt.');
     const unattended = this.promptEntry('unattendedReminder', baseline.drive.unattendedReminder, 'Your edited unattended reminder.');
     const task = this.promptEntry('taskPrompt', baseline.taskPrompt, 'Your edited task prompt.');
-    const selfHeal = this.promptEntry('selfHeal', baseline.promptFragments.selfHeal, 'Your edited self-heal section.');
+    const selfHeal = this.promptEntry('selfHeal', retiredBaseline('selfHeal'), 'Your edited self-heal section.');
     const commitNudge = this.promptEntry('commitNudge', baseline.drive.commitNudge, 'Your edited commit nudge.');
     const ticket = this.composite('implement-ticket', 'Opening prompt for a mirrored Ticket, from your migrated settings.', ticketText(drive, unattended), 'implement-ticket');
     const native = this.composite('implement-native', 'Opening prompt for a native Task, from your migrated settings.', nativeText(task), 'implement-native');
@@ -246,12 +245,27 @@ function pickPrompt(ticket: string, ticketHeal: string, native: string, nativeHe
   return `\${{ ticket.origin == 'mirrored' && (attempt.number > 1 && '${ticketHeal}' || '${ticket}') || (attempt.number > 1 && '${nativeHeal}' || '${native}') }}`;
 }
 
-/** A scope's settings with only the Prompt Fragments its prompts reference, so an unrelated Fragment override changes nothing. */
+function referencedCodes(s: ScopeSettings): RetiredCode[] {
+  const texts = [...Object.values(s.prompts), ...[...s.preMerge.critics, ...s.postMerge.critics].flatMap((critic) => [critic.issuePrompt, critic.noIssuePrompt])];
+  return [...new Set(texts.flatMap((text) => [...text.matchAll(FRAGMENT_REF)].map((match) => match[1] as RetiredCode)))].sort();
+}
+
+/** A scope's settings with only the retired prompts its prompts reference, so an unrelated override changes nothing. */
 function comparable(s: ScopeSettings): unknown {
   const { fragments, ...rest } = s;
-  const texts = [...Object.values(s.prompts), ...[...s.preMerge.critics, ...s.postMerge.critics].flatMap((critic) => [critic.issuePrompt, critic.noIssuePrompt])];
-  const names = new Set(texts.flatMap((text) => [...text.matchAll(FRAGMENT_REF)].map((match) => match[1] as PromptFragmentName)));
-  return { ...rest, fragments: [...names].sort().map((name) => fragments[name]) };
+  return { ...rest, fragments: referencedCodes(s).map((name) => fragments[name]) };
+}
+
+/** A Workspace override of an engine prompt no migrated prompt references has nowhere to go (ADR-0054), so it stops the boot. */
+function refuseDroppedOverrides(workspace: WorkspaceRow, own: ScopeSettings, global: ScopeSettings): void {
+  const referenced = new Set<RetiredCode>(referencedCodes(own));
+  for (const code of RETIRED_CODES) {
+    if (code === 'selfHeal' || referenced.has(code) || own.fragments[code] === global.fragments[code]) continue;
+    throw new UnconvertibleSettingError(
+      `Workspace "${workspace.name}" ${retiredWorkspaceKey(code)}`,
+      'a per-Workspace override of this engine prompt is no longer supported; the Prompt Library has no per-Workspace form of it',
+    );
+  }
 }
 
 function workflowNameFor(workspace: WorkspaceRow, taken: Set<string>): string {
@@ -268,11 +282,12 @@ export async function planSettingsMigration(input: PlanInput): Promise<SettingsM
   const entries = new Map<string, PlannedPrompt>();
   const workflows: PlannedWorkflow[] = [];
   const taken = new Set(['migrated-global']);
-  const global = scopeSettings(null, input.config, input.legacy);
+  const global = scopeSettings(null, input.config, input.legacy, input.retired);
   workflows.push({ name: 'migrated-global', text: new ScopePlanner('', 'global', global, input, entries).workflow('migrated-global', 'Migrated (global)') });
   const workspaceWorkflows: { workspaceId: number; workflow: string }[] = [];
   await forEachYielding([...input.workspaces].sort((a, b) => a.id - b.id), (workspace) => {
-    const own = scopeSettings(workspace, input.config, input.legacy);
+    const own = scopeSettings(workspace, input.config, input.legacy, input.retired);
+    refuseDroppedOverrides(workspace, own, global);
     if (isDeepStrictEqual(comparable(own), comparable(global))) return;
     const name = workflowNameFor(workspace, taken);
     const planner = new ScopePlanner(`Workspace "${workspace.name}"`, `w${workspace.id}`, own, input, entries);
@@ -324,6 +339,7 @@ export async function migrateSettingsToWorkflows(deps: SettingsMigrationDeps): P
   const plan = await planSettingsMigration({
     config: deps.settings.getGlobal(),
     legacy: deps.settings.getLegacySettings(),
+    retired: deps.settings.getRetired(),
     workspaces: await deps.workspaces.list(),
     promptText: (code) => deps.prompts.operatorText(code),
   });

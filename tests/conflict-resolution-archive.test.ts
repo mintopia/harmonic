@@ -11,6 +11,7 @@ import { TaskArchive } from '../src/archive/task-archive.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 import type { TaskRow } from '../src/db/schema.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -61,9 +62,8 @@ const resolvingDrive = {
 
 function overriddenConfig(): AppConfig {
   const config = baselineConfig();
-  config.promptFragments.conflictResolution = 'FRAGMENT in {baseDir}: keep {baseBranch} and {taskBranch}.';
-  config.merge.conflictPrompt = 'TASK turn {turn} {taskBranch}->{baseBranch}\n{paths}\n{fragment.conflictResolution}';
-  config.merge.epicConflictPrompt = 'EPIC turn {turn} {taskBranch}->{baseBranch}\n{paths}\n{fragment.conflictResolution}';
+  config.merge.conflictPrompt = 'TASK turn {turn} {taskBranch}->{baseBranch}\n{paths}\n${{ prompts.conflictResolution }}';
+  config.merge.epicConflictPrompt = 'EPIC turn {turn} {taskBranch}->{baseBranch}\n{paths}\n${{ prompts.conflictResolution }}';
   return config;
 }
 
@@ -71,6 +71,7 @@ function coordinator(dataDir: string, over: Partial<MergeCoordinatorDeps>): Merg
   const archive = new TaskArchive({ dataDir, ensureArchiveId: async () => 'arch-1', workspaceName: async () => 'ws' });
   return new MergeCoordinator({
     getConfig: overriddenConfig,
+    prompts: () => ({ ...bundledEnginePrompts(), conflictResolution: 'FRAGMENT in {baseDir}: keep {baseBranch} and {taskBranch}.' }),
     archive,
     criticDrive: resolvingDrive,
     ...over,

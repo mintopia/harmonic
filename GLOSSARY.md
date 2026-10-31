@@ -852,9 +852,9 @@ The named prompts Harmonic and operators keep, each with a code and a
 description of what it is for. A Task Execution Workflow step uses a prompt
 either by its code or as literal text written into the step. A prompt may
 include another by code, so shared text is defined once. Bundled prompts ship
-read-only and are duplicated to edit. Replaces Prompt Fragments and Prompt
-Anatomy; the one piece outside it is the Critic's verdict contract, which the
-engine appends because it parses the reply.
+read-only and are duplicated to edit. The pieces outside it are the Critic's
+read-only restraint and verdict contract, which the engine appends because it
+parses the reply.
 _Avoid_: template store, prompt bank, snippets
 
 **Execution Target**:
@@ -894,30 +894,13 @@ _Avoid_: review, reviewer Task (the single-critic name, superseded)
 
 **Resolved Prompt**:
 The final text actually sent to a Session for one prompt turn — an operator
-template with its tokens filled and every Harmonic-appended Prompt Fragment
-concatenated. It is exactly what the transcript renders and the Archive keeps,
+template with its tokens filled, every included prompt expanded, and the
+engine-appended Critic restraint and verdict contract concatenated. It is exactly what the transcript renders and the Archive keeps,
 and it is immutable once sent: editing the configured prompt changes only later
 turns (the settings "compiled preview" is the same assembly shown against sample
 tokens, not a record of what was sent).
 _Avoid_: compiled prompt (that is the settings preview), assembled prompt,
 final prompt
-
-**Prompt Fragment**:
-(Being replaced by the Prompt Library.) A named, individually-editable piece that composes into a Resolved Prompt — e.g.
-the critic's revision block, the read-only restraint, or the JSON verdict
-contract. Each is a setting (baseline default plus per-Workspace override,
-ADR-0022); a Fragment shared across prompts (the restraint) is defined once and
-reused rather than copied. Structural glue — ordering and whitespace — stays in
-code and is not a Fragment.
-_Avoid_: prompt piece, prompt section, snippet, segment
-
-**Prompt Anatomy**:
-(Being replaced: each Task Execution Workflow step states its own prompt.) The ordered Prompt Templates and Prompt Fragments that compose one kind of
-Resolved Prompt (Implementation turn, mid-Attempt nudges, merge conflict
-resolvers, Epic verification fix, critic review), and the condition under which
-each is included. Declared once in `src/domain/prompt-anatomy.ts`; the Prompts
-tab, its counts and search, and the compiled preview are generated from it.
-_Avoid_: message anatomy, prompt pieces
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback

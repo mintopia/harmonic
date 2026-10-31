@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, epicVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { resolveVerifiers } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -321,7 +320,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       driveUnattendedReminder: null,
       driveContinuePrompt: null,
       taskPrompt: null,
-      ...NO_PROMPT_FRAGMENT_OVERRIDES,
       driveCommitNudge: null,
       mergeConflictPrompt: null,
       mergeEpicConflictPrompt: null,

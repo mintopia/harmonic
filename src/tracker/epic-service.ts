@@ -11,6 +11,7 @@ import { GitError } from '../domain/errors.js';
 import { orFallback, type FireAndForget } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { EpicOperations } from '../execution/epic-operations.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import {
   EpicCoordinator,
   EpicLifecycle,
@@ -83,7 +84,8 @@ interface WorkspaceEpicEntry { epics: EpicLifecycle; epicIntegrate?: EpicCoordin
 
 /** Everything whole-Epic verification, integration and resolution need; supplied together or not at all. */
 export interface EpicIntegrationWiring {
-  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>;
+  prompts: () => EnginePrompts;
   mergeEpicIntegration: MergeEpicIntegration;
   criticDrive: CriticHarnessDrive;
   commandSpawn: CommandSpawn;
@@ -182,12 +184,13 @@ export class TrackerEpicService implements EpicService {
     });
     const entry: WorkspaceEpicEntry = { epics };
     if (this.integration !== 'lifecycle-only') {
-      const { getConfig, mergeEpicIntegration, criticDrive, commandSpawn } = this.integration;
+      const { getConfig, prompts, mergeEpicIntegration, criticDrive, commandSpawn } = this.integration;
       const worktrees = new EpicWorktreePool({ workspaceId: workspace.id, worktreesDir: this.worktreesDir });
       const verification = new EpicVerificationRunner({
         workspace,
         getWorkspaces: this.getWorkspaces,
         getConfig,
+        prompts,
         worktrees,
         epicAttempts: this.epicAttempts,
         verificationAttemptStore: this.verificationAttemptStore,

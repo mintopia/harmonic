@@ -10,6 +10,7 @@ import { VerificationCoordinator, type VerificationCoordinatorDeps } from '../..
 import { trackerRef } from '../../src/tracker/adapter.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../../src/verification/critic.js';
 import { convertEditedEpicFixPrompts } from '../../src/domain/epic-fix-prompt.js';
+import { NO_RETIRED } from '../../src/domain/retired-settings.js';
 import { PromptLibrary } from '../../src/domain/prompt-library-store.js';
 import { SettingsStore } from '../../src/server/settings-store.js';
 
@@ -54,7 +55,7 @@ export async function runFixtureEpic(resolvePrompt?: string): Promise<FixtureEpi
     const promptLibrary = new PromptLibrary(root);
     await promptLibrary.load();
     if (resolvePrompt) {
-      await convertEditedEpicFixPrompts(promptLibrary, { ...config, verify: { ...config.verify, epic: { ...config.verify.epic, resolvePrompt } } });
+      await convertEditedEpicFixPrompts(promptLibrary, { ...config, verify: { ...config.verify, epic: { ...config.verify.epic, resolvePrompt } } }, NO_RETIRED);
     }
     const prompts: string[] = [];
     const drive: CriticHarnessDrive = {

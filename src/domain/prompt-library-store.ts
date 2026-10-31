@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { loadBaselineConfig } from '../config.js';
 import { DomainError } from './errors.js';
-import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES } from './prompt-fragments.js';
-import { ENGINE_APPENDED_FRAGMENTS } from './prompt-library-sources.js';
+import { BUNDLED_PROMPTS, BUNDLED_PROMPT_CODES, type EnginePrompts } from './bundled-prompts.js';
+import { retiredEntryFor } from './retired-settings.js';
 import { PROMPT_CODE_PATTERN, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
 import { parseWorkflow, type WorkflowStepDefinition } from './workflow.js';
@@ -47,12 +47,7 @@ function atPath(root: unknown, path: readonly string[]): string {
 
 function bundledEntries(): PromptEntry[] {
   const baseline = loadBaselineConfig();
-  const fragments = PROMPT_FRAGMENT_NAMES.map((name) => ({
-    code: name,
-    description: PROMPT_FRAGMENTS[name].help,
-    text: baseline.promptFragments[name],
-    bundled: true,
-  }));
+  const enginePieces = BUNDLED_PROMPT_CODES.map((code) => ({ code, ...BUNDLED_PROMPTS[code], bundled: true }));
   const templates = PROMPT_TEMPLATE_IDS.map((id) => ({
     code: id,
     description: PROMPT_TEMPLATES[id].help,
@@ -66,8 +61,7 @@ function bundledEntries(): PromptEntry[] {
     { code: 'implement-ticket-heal', description: 'The mirrored-Ticket opening prompt followed by the self-heal section.', text: '${{ prompts.implement-ticket }}\n\n${{ prompts.selfHeal }}' },
     { code: 'criticReview', description: 'Default instruction for the critic review step.', text: 'Review the candidate against the Ticket and judge whether it does what the Ticket asked.' },
   ].map((entry) => ({ ...entry, bundled: true }));
-  const stock: PromptEntry[] = [...fragments, ...templates].filter((entry) => !(ENGINE_APPENDED_FRAGMENTS as readonly string[]).includes(entry.code));
-  return [...stock, ...composites];
+  return [...enginePieces, ...templates, ...composites];
 }
 
 /** The Prompt Library: bundled entries (read-only) plus operator entries kept as one JSON file each under `<dataDir>/prompts`. */
@@ -76,6 +70,7 @@ export class PromptLibrary {
   private readonly bundled = bundledEntries();
   private operatorCache = new Map<string, string>();
   private workflows: WorkflowSource | null = null;
+  private engineCache: EnginePrompts | null = null;
 
   /** A `null` data directory gives a Library of bundled entries only. */
   constructor(dataDir: string | null) {
@@ -85,6 +80,7 @@ export class PromptLibrary {
   /** Reads the operator entries into memory so synchronous prompt assembly can see them. */
   async load(): Promise<void> {
     this.operatorCache = new Map((await this.operatorEntries()).map((e) => [e.code, e.text]));
+    this.engineCache = null;
   }
 
   attachWorkflows(workflows: WorkflowSource): void {
@@ -107,6 +103,14 @@ export class PromptLibrary {
     if (text === undefined) return undefined;
     const lookup = new Map([...this.bundled.map((e) => [e.code, e.text] as const), ...this.operatorCache]);
     return resolvePrompt(text, lookup, [code]);
+  }
+
+  /** Each engine prompt's text: the converted operator entry when one exists, else the bundled text. */
+  enginePrompts(): EnginePrompts {
+    this.engineCache ??= Object.fromEntries(
+      BUNDLED_PROMPT_CODES.map((code) => [code, this.operatorText(retiredEntryFor(code)) ?? BUNDLED_PROMPTS[code].text]),
+    ) as EnginePrompts;
+    return this.engineCache;
   }
 
   private async operatorEntries(): Promise<PromptEntry[]> {
@@ -173,6 +177,7 @@ export class PromptLibrary {
     await writeFile(tmp, JSON.stringify({ description, text }, null, 2));
     await rename(tmp, file);
     this.operatorCache.set(code, text);
+    this.engineCache = null;
     return this.get(code);
   }
 
@@ -205,5 +210,6 @@ export class PromptLibrary {
     if (this.dir === null) return;
     await rm(join(this.dir, `${code}.json`), { force: true });
     this.operatorCache.delete(code);
+    this.engineCache = null;
   }
 }

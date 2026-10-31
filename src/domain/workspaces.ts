@@ -17,8 +17,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
-import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
@@ -125,7 +124,6 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
-  ...promptFragmentOverrideShape,
   /** Commit nudge override; null inherits `config.drive.commitNudge`. */
   driveCommitNudge: z.string().min(1).nullable().optional(),
   /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
@@ -160,8 +158,6 @@ export const workspaceOverridesSchema = z.object({
   /** Archive retention overrides; a null field inherits `config.archive.retain`. */
   archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
   archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
-}).superRefine((overrides, ctx) => {
-  for (const issue of unknownWorkspaceFragmentIssues(overrides)) ctx.addIssue({ code: 'custom', ...issue });
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -205,7 +201,6 @@ export const OVERRIDE_KEYS = [
   'driveContinuePrompt',
   'taskPrompt',
   'pauseMessage',
-  ...PROMPT_FRAGMENT_OVERRIDE_KEYS,
   'driveCommitNudge',
   'mergeConflictPrompt',
   'mergeEpicConflictPrompt',
@@ -241,10 +236,7 @@ export interface WorkspaceSettingsStore {
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
-  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() })
-  .superRefine((input, ctx) => {
-    for (const issue of unknownWorkspaceFragmentIssues(input)) ctx.addIssue({ code: 'custom', ...issue });
-  });
+  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
@@ -312,7 +304,6 @@ export class WorkspaceService {
       driveContinuePrompt: o.driveContinuePrompt,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
-      ...(Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, o[key]])) as PromptFragmentOverrides),
       driveCommitNudge: o.driveCommitNudge,
       mergeConflictPrompt: o.mergeConflictPrompt,
       mergeEpicConflictPrompt: o.mergeEpicConflictPrompt,

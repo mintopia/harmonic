@@ -1,7 +1,6 @@
 /* eslint-disable */
 import { parse } from 'yaml';
 import baselineYaml from '../../../src/baseline.yaml?raw';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../../../src/domain/prompt-fragments.js';
 import type {
   EpicAttempt,
   TaskExportStatus,
@@ -116,7 +115,6 @@ const workspace = {
   driveContinuePrompt: null,
   taskPrompt: null,
   pauseMessage: null,
-  ...NO_PROMPT_FRAGMENT_OVERRIDES,
   mergeConflictPrompt: null,
   mergeEpicConflictPrompt: null,
   mergeEpicRefreshPrompt: null,

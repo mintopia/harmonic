@@ -15,6 +15,7 @@ import { createRuntime } from './app-runtime.js';
 import { resolveModelOption } from '../domain/model-options.js';
 import { migrateSettingsToWorkflows } from '../domain/settings-workflow-migration.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
+import { convertRetiredEditedPrompts } from '../domain/retired-settings.js';
 import { isNotNull } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
 import { PromptLibrary } from '../domain/prompt-library-store.js';
@@ -77,6 +78,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const promptLibrary = new PromptLibrary(opts.dataDir);
   await promptLibrary.load();
   await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
+  await convertRetiredEditedPrompts(promptLibrary, stores.settingsStore.getRetired());
   const workflowLibrary = new WorkflowLibrary(opts.dataDir, {
     optionCodeUsable: async (code) => {
       const config = stores.settingsStore.getGlobal();
@@ -163,6 +165,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     channels: stores.channels,
     secrets: stores.secrets,
     workflows: workflowLibrary,
+    promptLibrary,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,

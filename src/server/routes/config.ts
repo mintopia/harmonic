@@ -14,7 +14,6 @@ import {
   epicVerificationStageSchema,
   type AppConfig,
   type DeepPartial,
-  promptFragmentsShape,
   routingLabelSchema,
   workflowLabelSchema,
   modelOptionsSchema,
@@ -136,7 +135,6 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    promptFragments: z.object(promptFragmentsShape).partial().optional(),
     merge: appConfigSchema.shape.merge.partial().optional(),
     verify: z
       .object({

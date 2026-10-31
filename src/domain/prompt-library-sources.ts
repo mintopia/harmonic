@@ -1,23 +1,7 @@
 import { loadBaselineConfig, type AppConfig } from '../config.js';
-import { PROMPT_FRAGMENTS, type PromptFragmentName } from './prompt-fragments.js';
+import { convertedCode, editedCode } from './bundled-prompts.js';
 import { PROMPT_TEMPLATES, type PromptTemplateId } from './prompt-templates.js';
 import type { PromptLibrary } from './prompt-library-store.js';
-
-export const ENGINE_APPENDED_FRAGMENTS = ['readOnlyRestraint', 'criticVerdictContract'] as const satisfies readonly PromptFragmentName[];
-
-const LIBRARY_FRAGMENTS = [
-  'conflictResolution',
-  'criticRevisionIdentical',
-  'criticRevisionDiff',
-  'criticRevisionAlone',
-  'criticTicketFirst',
-  'criticInstructionsFirst',
-  'criticSpecTicket',
-  'criticSpecInstructions',
-  'criticWorkingTreeNote',
-  'criticRole',
-  'criticSecurity',
-] as const satisfies readonly PromptFragmentName[];
 
 const LIBRARY_TEMPLATES = {
   mergeConflictPrompt: ['merge', 'conflictPrompt'],
@@ -27,38 +11,7 @@ const LIBRARY_TEMPLATES = {
 
 type LibraryTemplateId = keyof typeof LIBRARY_TEMPLATES;
 
-const EDITED_FRAGMENTS = [
-  'selfHeal',
-  'operatorMessage',
-  'peerMessages',
-  'peerMessage',
-  'peerLine',
-  'rebaseConflict',
-  'priorSession',
-  'codeIndexGuidance',
-  'peerLiveMessage',
-  'routeClassifier',
-] as const satisfies readonly PromptFragmentName[];
-
 const EDITED_TEMPLATES = ['taskPrompt', 'drivePrompt', 'unattendedReminder', 'continuePrompt', 'commitNudge', 'pauseMessage'] as const satisfies readonly PromptTemplateId[];
-
-type EngineFragments = Pick<AppConfig['promptFragments'], (typeof ENGINE_APPENDED_FRAGMENTS)[number]>;
-
-let engineFragments: EngineFragments | undefined;
-
-export const engineAppendedFragments = (): EngineFragments => {
-  if (!engineFragments) {
-    const { promptFragments } = loadBaselineConfig();
-    engineFragments = { readOnlyRestraint: promptFragments.readOnlyRestraint, criticVerdictContract: promptFragments.criticVerdictContract };
-  }
-  return engineFragments;
-};
-
-export const withEngineFragments = (fragments: AppConfig['promptFragments']): AppConfig['promptFragments'] => ({ ...fragments, ...engineAppendedFragments() });
-
-export const convertedCode = (code: string): string => `${code}-migrated`;
-
-export const editedCode = (code: string): string => `${code}-edited`;
 
 interface PromptSource {
   readonly code: string;
@@ -68,14 +21,12 @@ interface PromptSource {
 }
 
 const SOURCES: readonly PromptSource[] = [
-  ...LIBRARY_FRAGMENTS.map((name) => ({ code: name, entry: convertedCode(name), description: PROMPT_FRAGMENTS[name].help, path: ['promptFragments', name] })),
   ...(Object.keys(LIBRARY_TEMPLATES) as LibraryTemplateId[]).map((id) => ({
     code: id,
     entry: convertedCode(id),
     description: PROMPT_TEMPLATES[id].help,
     path: LIBRARY_TEMPLATES[id] as readonly string[],
   })),
-  ...EDITED_FRAGMENTS.map((name) => ({ code: name, entry: editedCode(name), description: PROMPT_FRAGMENTS[name].help, path: ['promptFragments', name] })),
   ...EDITED_TEMPLATES.map((id) => ({ code: id, entry: editedCode(id), description: PROMPT_TEMPLATES[id].help, path: PROMPT_TEMPLATES[id].config })),
 ];
 

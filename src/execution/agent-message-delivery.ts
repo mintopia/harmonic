@@ -4,7 +4,7 @@ import { messageText } from '../domain/agent-messages.js';
 import { logger } from '../logger.js';
 import type { FailureReport } from '../error-handling.js';
 import type { RunControl } from './run-control.js';
-import type { PromptFragments } from '../domain/prompt-fragments.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { peerFrame } from './prompt-assembly.js';
 
 export interface AgentMessageRunner {
@@ -15,11 +15,11 @@ export interface AgentMessageRunner {
 
 /** Delivers to each recipient and records its receipt; no steerable run means held. */
 export async function deliverAgentMessage(
-  deps: { store: AgentMessageStore; runner: AgentMessageRunner; fragments: PromptFragments },
+  deps: { store: AgentMessageStore; runner: AgentMessageRunner; prompts: EnginePrompts },
   row: AgentMessageRow,
   sender: Pick<TaskRow, 'id' | 'harness'>,
 ): Promise<AgentMessageRecipient[]> {
-  const text = peerFrame(sender, messageText(row), deps.fragments);
+  const text = peerFrame(sender, messageText(row), deps.prompts);
   const receipts: AgentMessageRecipient[] = [];
   for (const { taskId } of row.recipients) {
     let receipt: AgentMessageRecipient = { taskId, receipt: 'held' };

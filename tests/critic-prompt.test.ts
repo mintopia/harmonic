@@ -1,10 +1,10 @@
-import { baselineConfig } from '../src/config.js';
+import { bundledEnginePrompts, CRITIC_VERDICT_CONTRACT, READ_ONLY_RESTRAINT } from '../src/domain/bundled-prompts.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { buildCriticPrompt as buildWithFragments, type BuildCriticPromptArgs } from '../src/execution/prompt-assembly.js';
+import { buildCriticPrompt as buildWithPrompts, type BuildCriticPromptArgs } from '../src/execution/prompt-assembly.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 
-const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+const DEFAULT_PROMPTS = bundledEnginePrompts();
 
 const FIELDS: DriveFields = {
   taskId: '172',
@@ -15,8 +15,8 @@ const FIELDS: DriveFields = {
   description: 'The request hangs forever.',
 };
 
-const buildCriticPrompt = (args: Omit<BuildCriticPromptArgs, 'fragments'>): string =>
-  buildWithFragments({ ...args, fragments: DEFAULT_PROMPT_FRAGMENTS });
+const buildCriticPrompt = (args: Omit<BuildCriticPromptArgs, 'prompts'>): string =>
+  buildWithPrompts({ ...args, prompts: DEFAULT_PROMPTS });
 
 const CANDIDATE = 'cand0000000000000000000000000000000000000';
 const BASE = 'base0000000000000000000000000000000000000';
@@ -165,11 +165,11 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 });
 
-describe('critic Prompt Fragments', () => {
+describe('critic prompts', () => {
   const golden = JSON.parse(readFileSync(new URL('./fixtures/critic-prompt-golden.json', import.meta.url), 'utf8')) as Record<string, string>;
   const native: DriveFields = { ...FIELDS, ref: '', url: '' };
 
-  it('assembles byte-for-byte the pre-fragment prompt when fragments are at defaults', () => {
+  it('assembles byte-for-byte the pre-library prompt when the prompts are at defaults', () => {
     const op = (text: string) => ({ operatorPrompt: text });
     const built = {
       ticketDiff: buildCriticPrompt({ ...op('Review {ref}.'), fields: { ...FIELDS, ref: '123', url: 'https://t/123', title: 'T', description: 'D' }, verifiedHeadOid: 'HEAD1', baseOid: 'BASE1' }),
@@ -181,54 +181,51 @@ describe('critic Prompt Fragments', () => {
     expect(built).toEqual(golden);
   });
 
-  it('puts an edited fragment into the Resolved Prompt, in the matching revision variant only', () => {
-    const fragments = {
-      ...DEFAULT_PROMPT_FRAGMENTS,
+  it('puts an edited prompt into the Resolved Prompt, in the matching revision variant only', () => {
+    const prompts = {
+      ...DEFAULT_PROMPTS,
       criticRevisionDiff: 'EDITED-DIFF head={head} base={base}.{workingTreeNote}',
       criticRevisionIdentical: 'EDITED-SAME {head}',
       criticRevisionAlone: 'EDITED-ALONE {head}',
-      readOnlyRestraint: 'EDITED-RESTRAINT',
-      criticVerdictContract: 'EDITED-CONTRACT {"verdict":"pass","summary":"x"}',
     };
-    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, fragments };
-    const diff = buildWithFragments({ ...args, baseOid: BASE });
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, prompts };
+    const diff = buildWithPrompts({ ...args, baseOid: BASE });
     expect(diff).toContain(`EDITED-DIFF head=${CANDIDATE} base=${BASE}.`);
-    expect(diff).toContain('EDITED-RESTRAINT');
-    expect(diff).toContain('EDITED-CONTRACT');
+    expect(diff).toContain(READ_ONLY_RESTRAINT);
+    expect(diff.endsWith(CRITIC_VERDICT_CONTRACT)).toBe(true);
     expect(diff).not.toContain('EDITED-SAME');
-    expect(buildWithFragments({ ...args, baseOid: CANDIDATE })).toContain(`EDITED-SAME ${CANDIDATE}`);
-    expect(buildWithFragments(args)).toContain(`EDITED-ALONE ${CANDIDATE}`);
+    expect(buildWithPrompts({ ...args, baseOid: CANDIDATE })).toContain(`EDITED-SAME ${CANDIDATE}`);
+    expect(buildWithPrompts(args)).toContain(`EDITED-ALONE ${CANDIDATE}`);
   });
 
-  it('makes every piece of critic prose an editable fragment, expanding {fragment.x} references inside them', () => {
-    const fragments = {
-      ...DEFAULT_PROMPT_FRAGMENTS,
-      readOnlyRestraint: 'SHARED-RESTRAINT',
-      criticRole: 'ROLE-EDITED. {fragment.readOnlyRestraint}',
+  it('makes every piece of critic prose an editable prompt, expanding ${{ prompts.x }} includes inside them', () => {
+    const prompts = {
+      ...DEFAULT_PROMPTS,
+      criticRole: 'ROLE-EDITED. {readOnlyRestraint}',
       criticSecurity: 'SECURITY-EDITED',
       criticTicketFirst: 'TICKET-FIRST-EDITED',
       criticInstructionsFirst: 'INSTRUCTIONS-FIRST-EDITED',
       criticSpecTicket: 'SPEC-TICKET-EDITED',
       criticSpecInstructions: 'SPEC-INSTRUCTIONS-EDITED',
       criticWorkingTreeNote: 'DIRTY-EDITED against {base} at {head}',
-      criticRevisionDiff: '{ticketFirst} vs {spec}: {head}/{base} {fragment.criticSpecTicket}{workingTreeNote}',
+      criticRevisionDiff: '{ticketFirst} vs {spec}: {head}/{base} ${{ prompts.criticSpecTicket }}{workingTreeNote}',
     };
-    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, baseOid: BASE, fragments };
-    const clean = buildWithFragments(args);
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, baseOid: BASE, prompts };
+    const clean = buildWithPrompts(args);
     expect(clean).toContain(`TICKET-FIRST-EDITED vs SPEC-TICKET-EDITED: ${CANDIDATE}/${BASE} SPEC-TICKET-EDITED\n`);
-    expect(clean).toContain('ROLE-EDITED. SHARED-RESTRAINT');
+    expect(clean).toContain(`ROLE-EDITED. ${READ_ONLY_RESTRAINT}`);
     expect(clean).toContain('SECURITY-EDITED');
-    expect(clean).not.toContain('{fragment.');
+    expect(clean).not.toContain('${{ prompts.');
     expect(clean).not.toContain('READ-ONLY code critic');
     expect(clean).not.toContain('UNTRUSTED DATA');
     expect(clean).not.toContain('DIRTY-EDITED');
-    expect(buildWithFragments({ ...args, dirty: true })).toContain(`SPEC-TICKET-EDITED DIRTY-EDITED against ${BASE} at ${CANDIDATE}\n`);
+    expect(buildWithPrompts({ ...args, dirty: true })).toContain(`SPEC-TICKET-EDITED DIRTY-EDITED against ${BASE} at ${CANDIDATE}\n`);
     const native = { ...FIELDS, ref: '', url: '' };
-    expect(buildWithFragments({ ...args, fields: native })).toContain('INSTRUCTIONS-FIRST-EDITED vs SPEC-INSTRUCTIONS-EDITED:');
+    expect(buildWithPrompts({ ...args, fields: native })).toContain('INSTRUCTIONS-FIRST-EDITED vs SPEC-INSTRUCTIONS-EDITED:');
   });
 
-  it('leaves an unknown {fragment.name} literal, so save-time validation is the only guard', () => {
-    const fragments = { ...DEFAULT_PROMPT_FRAGMENTS, criticRole: 'ROLE {fragment.nope}' };
-    expect(buildWithFragments({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, fragments })).toContain('ROLE {fragment.nope}');
+  it('leaves an unknown ${{ prompts.code }} include literal', () => {
+    const prompts = { ...DEFAULT_PROMPTS, criticRole: 'ROLE ${{ prompts.nope }}' };
+    expect(buildWithPrompts({ operatorPrompt: 'Review it.', fields: FIELDS, verifiedHeadOid: CANDIDATE, prompts })).toContain('ROLE ${{ prompts.nope }}');
   });
 });

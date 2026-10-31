@@ -16,7 +16,7 @@ Harmonic starts an Archive for every task when the task is created. You
 don't need to configure anything. It holds:
 
 - the **Resolved Prompt** sent to each agent (with all placeholders and
-  fragments expanded), and everything the agent did, for the implementation
+  included prompts expanded), and everything the agent did, for the implementation
   and for every Critic;
 - a copy of each agent harness's own log, taken when its step ends;
 - the complete output of every verify command, with nothing cut;

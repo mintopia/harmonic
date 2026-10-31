@@ -15,6 +15,7 @@ import { EpicVerificationRunner } from '../src/tracker/epic-verification-runner.
 import type { CriticDriveRequest, CriticHarnessDrive } from '../src/verification/critic.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -119,6 +120,7 @@ describe('Critic Step archive wiring (#730)', () => {
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),
+        prompts: bundledEnginePrompts,
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         epicAttempts,
         verificationAttemptStore: epicVerificationAttempts,
@@ -155,6 +157,7 @@ describe('Critic Step archive wiring (#730)', () => {
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => ({ ...config, defaults: { ...config.defaults, harness: 'codex' } }),
+        prompts: bundledEnginePrompts,
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
       });
@@ -173,6 +176,7 @@ describe('Critic Step archive wiring (#730)', () => {
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => withoutClaude(criticConfig(logDir)),
+        prompts: bundledEnginePrompts,
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
       });
@@ -198,6 +202,7 @@ describe('Critic Step archive wiring (#730)', () => {
         workspace: workspace as never,
         getWorkspaces: async () => [workspace as never],
         getConfig: () => criticConfig(logDir),
+        prompts: bundledEnginePrompts,
         worktrees: { acquire: async () => repoDir, get: () => repoDir } as unknown as EpicWorktreePool,
         epicAttempts,
         verificationAttemptStore: store,

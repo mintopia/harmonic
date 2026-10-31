@@ -18,9 +18,8 @@ import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 import { buildWorkflowCriticPrompt, renderAgentPrompt } from './prompt-assembly.js';
 import { appendFeedback, type DriveFields } from './prompt-template.js';
-import { loadBaselineConfig } from '../config.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { PROMPT_CODE_PATTERN } from '../domain/prompt-library.js';
-import { withEngineFragments } from '../domain/prompt-library-sources.js';
 import { parseCriticOutput } from '../verification/critic-schema.js';
 
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
@@ -70,6 +69,7 @@ export interface WorkflowEngineDeps {
   agent: {
     drive: AgentDrive;
     getConfig: () => Pick<AppConfig, 'harnesses'>;
+    prompts: () => EnginePrompts;
     route: (task: TaskRow) => Promise<ResolvedRoute>;
     resolveOption: (task: TaskRow, code: string) => Promise<ModelOptionResolution>;
     resolvePrompt: (text: string) => Promise<string>;
@@ -114,7 +114,6 @@ interface RunContext {
   stepsContext: Record<string, Value>;
   context: ExpressionContext;
   agentState: AgentRunState;
-  criticFragments: ReturnType<typeof withEngineFragments>;
   halted: boolean;
 }
 
@@ -159,7 +158,7 @@ export class WorkflowEngine {
       secrets: secretMap,
     };
     const warm = reuseSession ? this.warmSessions.get(task.id) : undefined;
-    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, criticFragments: withEngineFragments(loadBaselineConfig().promptFragments), halted: false };
+    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, halted: false };
     return { workflow, ctx };
   }
 
@@ -292,7 +291,7 @@ export class WorkflowEngine {
           resolved.uses === 'agent'
             ? await this.executeAgent(ctx, resolved, row.id)
             : resolved.uses === 'critic'
-              ? await this.executeCritic(task, resolved, row.id, secrets, ctx.criticFragments, context)
+              ? await this.executeCritic(task, resolved, row.id, secrets, context)
               : await this.execute(task, run, resolved, env, secrets);
       }
     } catch (error) {
@@ -325,7 +324,7 @@ export class WorkflowEngine {
     };
   }
 
-  private async executeCritic(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], fragments: RunContext['criticFragments'], context: ExpressionContext): Promise<StepResult> {
+  private async executeCritic(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], context: ExpressionContext): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
     try {
@@ -341,7 +340,7 @@ export class WorkflowEngine {
         route = resolveRoute(agent.getConfig(), options.harness!, options.model!, null);
       }
       if (!route.ok) return inconclusive(route.reason);
-      const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route), context), fragments);
+      const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route), context), agent.prompts());
       await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
       this.deps.onStepChanged?.(task.id);
       const cwd = this.deps.cwdFor(task);
