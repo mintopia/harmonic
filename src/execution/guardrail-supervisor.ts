@@ -218,12 +218,12 @@ export class GuardrailSupervisor {
     }
   }
 
-  /** One wall-clock watchdog fire. A trip only counts while a Step is actively running. */
   /** A supervised turn is the agent step; Attempts of a workflow carry no legacy Step rows. */
   private async stepType(): Promise<StepType> {
     return (await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber)) ?? 'implementation';
   }
 
+  /** One wall-clock watchdog fire. */
   async evaluateWallClock(): Promise<void> {
     if (!this.budget) return;
     if (this.turn.isSettled()) return;
