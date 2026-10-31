@@ -22,6 +22,7 @@ import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promp
 import { DomainError } from './errors.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
+import { workspaceWorkflowVarsSchema } from './workflow-vars.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -94,6 +95,7 @@ export const workspaceOverridesSchema = z.object({
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
   workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
+  workflowVars: workspaceWorkflowVarsSchema.nullable().optional().meta({ example: { implement: { maxAttempts: 3 } } }),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -178,6 +180,7 @@ export const OVERRIDE_KEYS = [
   'routingLabels',
   'workflow',
   'workflowLabels',
+  'workflowVars',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -280,6 +283,7 @@ export class WorkspaceService {
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       workflow: o.workflow,
       workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
+      workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

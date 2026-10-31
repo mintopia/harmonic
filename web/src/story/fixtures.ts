@@ -85,6 +85,7 @@ const workspace = {
   routingLabels: null,
   workflow: null,
   workflowLabels: null,
+  workflowVars: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,

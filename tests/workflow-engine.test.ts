@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { resolveVars } from '../src/domain/workflow-vars.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -585,6 +586,17 @@ describe('WorkflowEngine', () => {
       const { task, run } = await startTask(text);
       await engine().run(task, run);
       expect(await stepRows(task.id)).toHaveLength(3);
+    });
+
+    it('honours the Ticket override frozen into the pin over the workflow default', async () => {
+      const text = `name: flow\ndescription: test\nvars:\n  tries: 3\nsteps:\n  - attempts:\n      max: \${{ vars.tries }}\n      steps:\n        - id: try\n          run: exit 1\n`;
+      workflows.set('flow@1', text);
+      const created = await tasks.create({ prompt: 'p', workflow: 'flow' });
+      await tasks.setWorkflowVarOverrides(created.id, { tries: 2 });
+      const overridden = await tasks.get(created.id);
+      const task = await tasks.pinWorkflow(created.id, 'flow@1', 'explicit', null, resolveVars({ tries: 3 }, null, overridden.workflowVarOverrides));
+      await engine().run(task, await attempts.create(task.id));
+      expect(await stepRows(task.id)).toHaveLength(2);
     });
   });
 

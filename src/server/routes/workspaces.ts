@@ -27,6 +27,8 @@ import type { AppContext } from '../app.js';
 import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
 import { parseWorkflowLabelOverlay, workflowReferenceProblems } from '../../domain/workflow-labels.js';
+import { parseWorkspaceWorkflowVars, validateVarOverrides, workspaceWorkflowVarsSchema } from '../../domain/workflow-vars.js';
+import { parseWorkflow } from '../../domain/workflow.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -88,6 +90,7 @@ const workspaceSchema = z
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     workflow: z.string().nullable().meta({ example: null }),
     workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
+    workflowVars: workspaceWorkflowVarsSchema.nullable().meta({ description: 'Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.', example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -159,6 +162,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
+    workflowVars: parseWorkspaceWorkflowVars(ws.workflowVars),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -272,6 +276,15 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         const global = ctx.settingsStore.getGlobal();
         const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
         if (first) throw new DomainError('validation', first);
+      }
+      if (req.body.workflowVars) {
+        for (const [name, overrides] of Object.entries(req.body.workflowVars)) {
+          const entry = ctx.workflows.list().find((w) => w.name === name);
+          if (!entry) throw new DomainError('validation', `workflowVars.${name}: No workflow is named ${name}`);
+          const defaults = parseWorkflow((await ctx.workflows.getVersion(name, entry.version)).text).vars;
+          const first = validateVarOverrides(defaults, overrides)[0];
+          if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
+        }
       }
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {

@@ -338,6 +338,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       routingLabels: null,
       workflow: null,
       workflowLabels: null,
+      workflowVars: null,
       guardrailBudget: null,
       guardrailProgress: null,
       toolTimeoutMinutes: null,

@@ -57,6 +57,20 @@ export interface WorkflowLibraryEntry {
   assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
 }
 
+export interface TaskWorkflowVars {
+  workflowRef: string | null;
+  workflow: string | null;
+  vars: {
+    name: string;
+    default: string | number | boolean;
+    workspace: string | number | boolean | null;
+    ticket: string | number | boolean | null;
+    value: string | number | boolean;
+    source: 'default' | 'workspace' | 'ticket';
+  }[];
+  snapshot: Record<string, string | number | boolean> | null;
+}
+
 export interface WorkflowStepRun {
   stepId: string;
   action: string;
@@ -476,6 +490,7 @@ export interface Workspace extends PromptFragmentOverrides {
   routingLabels: RoutingLabelOverlayEntry[] | null;
   workflow: string | null;
   workflowLabels: WorkflowLabelOverlayEntry[] | null;
+  workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */

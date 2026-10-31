@@ -6,6 +6,7 @@ import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
 import { agentStepWith, criticStepWith, parseWorkflow, resolveAttemptsMax, type WorkflowStepDefinition } from '../domain/workflow.js';
+import { snapshotVars } from '../domain/workflow-vars.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
@@ -125,7 +126,7 @@ export class WorkflowEngine {
       ticket: { title: task.trackerTitle ?? task.prompt, body: task.trackerBody ?? '', labels: task.trackerLabels ?? [], ref: task.trackerRef ?? '' },
       attempt: { number: run.number, previousVerdict: '', failureReason: run.feedback ?? task.feedback ?? '' },
       workspace: { id: task.workspaceId ?? null, name: (await this.deps.workspaceName?.(task)) ?? '' },
-      vars: workflow.vars,
+      vars: snapshotVars(task.workflowVars, workflow.vars),
       secrets: secretMap,
     };
     const warm = reuseSession ? this.warmSessions.get(task.id) : undefined;
@@ -165,7 +166,7 @@ export class WorkflowEngine {
   }
 
   private async runAttemptsBlock(ctx: RunContext, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[], fresh: boolean): Promise<boolean> {
-    const max = resolveAttemptsMax(workflow.attempts.max, workflow.vars);
+    const max = resolveAttemptsMax(workflow.attempts.max, snapshotVars(ctx.task.workflowVars, workflow.vars));
     if (!max.ok) {
       await this.deps.escalate(ctx.task, ctx.run, `workflow refused: ${max.message}`);
       return false;

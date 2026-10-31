@@ -26,6 +26,7 @@ async function render(reason: string, escalationCause: Task['escalationCause'] =
     if (path === `/api/tasks/${task.id}/attempts/timeline`) return new Response(JSON.stringify({ attempts: [], budgetBase: 0, total: 0 }));
     if (path === `/api/tasks/${task.id}/attempts`) return new Response(JSON.stringify({ attempts: [], total: 0 }));
     if (path === `/api/tasks/${task.id}/timeline`) return new Response(JSON.stringify({ events: [], total: 0 }));
+    if (path === `/api/tasks/${task.id}/workflow-vars`) return new Response(JSON.stringify({ workflowRef: null, workflow: null, vars: [], snapshot: null }));
     return new Response(JSON.stringify(task));
   });
   return mountComponent(
