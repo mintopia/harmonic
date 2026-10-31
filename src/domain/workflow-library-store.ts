@@ -25,13 +25,13 @@ const PICK_PROMPT = "${{ ticket.origin == 'mirrored' && (attempt.number > 1 && '
 const BUNDLED_IMPLEMENT = `name: implement
 description: Build the ticket, verify it, review it and merge it.
 vars:
-  max_attempts: 2
+  maxAttempts: 2
   review: false
 steps:
   - id: rebase
     uses: rebase
   - attempts:
-      max: \${{ vars.max_attempts }}
+      max: \${{ vars.maxAttempts }}
       steps:
         - id: build
           uses: agent
@@ -64,10 +64,10 @@ cleanup:
 const BUNDLED_RESEARCH = `name: research
 description: Research the ticket and keep the branch as the artifact.
 vars:
-  max_attempts: 2
+  maxAttempts: 2
 steps:
   - attempts:
-      max: \${{ vars.max_attempts }}
+      max: \${{ vars.maxAttempts }}
       steps:
         - id: research
           uses: agent

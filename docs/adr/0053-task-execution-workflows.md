@@ -293,5 +293,3 @@ install they reproduce today's execution.
   - There is no peer or code-index prompt text.
   - The engine's post-merge check runs after the Merge is published.
   - Critic prompts are not byte-identical to the old critic prompt.
-
-Workflow var names use snake case, for example `max_attempts`.
