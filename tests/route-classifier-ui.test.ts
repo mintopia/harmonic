@@ -112,7 +112,7 @@ describe('Board card classifier chip', () => {
 });
 
 describe('Attempt history routing', () => {
-  const mountNav = (attempts: Attempt[]) => mountComponent(createElement(AttemptsNav, { attempts, maxAttempts: null, selectedNumber: null, onSelect: () => {} }));
+  const mountNav = (attempts: Attempt[]) => mountComponent(createElement(AttemptsNav, { attempts, selectedNumber: null, onSelect: () => {} }));
 
   it('shows both options when Attempt 2 switched, with reason, routing Cost and a cold Session note on a Harness change', async () => {
     const host = await mountNav([

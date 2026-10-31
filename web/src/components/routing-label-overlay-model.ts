@@ -11,9 +11,9 @@ export const isIssueVisible = (issue: RoutingLabelIssue | undefined, touched: bo
 export const issuesByIndex = (issues: readonly RoutingLabelIssue[]): Map<number, RoutingLabelIssue> =>
   new Map(issues.map((issue) => [issue.index, issue]));
 
-export function firstIssueMessage(issues: readonly RoutingLabelIssue[], labelAt: (index: number) => string): string | null {
+export function firstIssueMessage(issues: readonly RoutingLabelIssue[], labelAt: (index: number) => string, noun = 'Routing Label'): string | null {
   const first = issues[0];
-  return first ? `Routing Label ${first.index + 1}: ${routingLabelIssueMessage(first, labelAt(first.index))}` : null;
+  return first ? `${noun} ${first.index + 1}: ${routingLabelIssueMessage(first, labelAt(first.index))}` : null;
 }
 
 /** The overlay as displayed: any global not named is appended enabled, mirroring the runtime merge. */

@@ -6,7 +6,6 @@ import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer, withArchivedPrompt } from './helpers.js';
 import { attemptToolCalls, guardrailEvents } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
-import { AttemptStore } from '../src/domain/attempts.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
@@ -58,8 +57,6 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.body.finishedAt).toBeGreaterThan(0);
     const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
-    expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
-    expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
 
     const events = await server.api('GET', `/api/attempts/${attemptId}/events`);
     expect(events.status).toBe(200);
@@ -115,8 +112,6 @@ describe('run execution over ACP (direct mode)', () => {
 
     const attempt1 = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.find((a: any) => a.number === 1);
     expect(attempt1.state).toBe('passed');
-    expect(attempt1.steps.map((s: any) => s.type)).toEqual(['implementation']);
-    expect(attempt1.steps.every((s: any) => s.state === 'passed')).toBe(true);
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
@@ -168,7 +163,7 @@ describe('run execution over ACP (direct mode)', () => {
     const run = await server.api('GET', `/api/tasks/${taskId}/attempts/current`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBeTruthy();
-    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/^escalated to human: attempt \d+ of \d+ failed/);
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/^escalated to human: workflow attempts exhausted after \d+/);
   });
 
   it('cancelling a running task kills the harness process and the run', async () => {
@@ -449,32 +444,6 @@ describe('wall-clock guardrail (issue #127)', () => {
       const event = rows[0]!;
       expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
       expect(event.observedValue).toBeGreaterThanOrEqual(event.limitValue);
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('does not kill an over-budget run after its attempt tasks enter merging', async () => {
-    const server = await startServer({
-      ...stubHarness(),
-      guardrails: { budget: { wallClockMinutes: 0.01 } },
-    });
-    try {
-      const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      const attempts = new AttemptStore(server.app.ctx.asyncDb);
-      const attempt = await waitFor(async () => (await attempts.listForTask(created.body.id))[0]);
-      const implementation = await waitFor(async () => (await attempts.listSteps(attempt.id))[0]);
-
-      await attempts.updateStep(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      expect((await server.api('GET', `/api/attempts/${started.body.id}`)).body.state).toBe('running');
-      expect(
-        await server.app.ctx.asyncDb.read((db) =>
-          db.select().from(guardrailEvents).where(eq(guardrailEvents.attemptId, attempt.id)).all(),
-        ),
-      ).toEqual([]);
     } finally {
       await server.close();
     }

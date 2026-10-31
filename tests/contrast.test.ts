@@ -197,7 +197,7 @@ it('uses contrast-safe ink for a selected failed Attempt label', () => {
     harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: null, steps: [],
   };
   const html = renderToStaticMarkup(createElement(AttemptsNav, {
-    attempts: [failed], maxAttempts: 3, selectedNumber: 1, onSelect: () => {},
+    attempts: [failed], selectedNumber: 1, onSelect: () => {},
   }));
   expect(html).toMatch(/class="[^"]*text-ink[^"]*"[^>]*>failed<\/span>/);
 });

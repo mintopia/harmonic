@@ -14,6 +14,16 @@ import {
   type DeepPartial,
 } from '../config.js';
 import { DomainError } from '../domain/errors.js';
+import {
+  parseLegacyGlobal,
+  parseLegacyWorkspace,
+  pickLegacyGlobal,
+  pickLegacyWorkspace,
+  withLegacyGlobal,
+  type LegacyGlobalRaw,
+  type LegacySettings,
+} from '../domain/legacy-execution-settings.js';
+import { RETIRED_GLOBAL_KEY, RETIRED_WORKSPACE_KEYS, NO_RETIRED, type RetiredSettings } from '../domain/retired-settings.js';
 import { logger } from '../logger.js';
 import { isMaskedWorkspaceSecret, restoreConfigSecrets } from '../archive/export-secrets.js';
 
@@ -32,7 +42,16 @@ interface SettingsFile {
   /** Sparse per-Workspace override entries keyed by Workspace id (string) —
    * only non-null (i.e. actually overridden) keys are present. */
   workspaces: Record<string, WorkspaceOverrides>;
+  legacy: { preserved: StoredLegacy; view: StoredLegacy };
+  retired: RetiredSettings;
 }
+
+interface StoredLegacy {
+  global: LegacyGlobalRaw;
+  workspaces: Record<string, Record<string, unknown>>;
+}
+
+const NO_STORED_LEGACY = (): StoredLegacy => ({ global: {}, workspaces: {} });
 
 interface RawSettingsFile {
   global?: unknown;
@@ -237,6 +256,31 @@ function assertCriticModels(config: AppConfig): AppConfig {
   return config;
 }
 
+/** Lifts the retired prompt keys out of a raw file so the schemas never see them; they are written back untouched. */
+function splitRetired(raw: RawSettingsFile): { global: unknown; workspaces: Record<string, unknown>; retired: RetiredSettings } {
+  let global = raw.global ?? {};
+  let retiredGlobal: Record<string, unknown> = {};
+  if (isRecord(global) && RETIRED_GLOBAL_KEY in global) {
+    const { [RETIRED_GLOBAL_KEY]: lifted, ...rest } = global;
+    global = rest;
+    if (isRecord(lifted)) retiredGlobal = lifted;
+  }
+  const workspaces: Record<string, unknown> = {};
+  const retiredWorkspaces: Record<string, Record<string, unknown>> = {};
+  for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
+    if (!isRecord(entry)) {
+      workspaces[id] = entry;
+      continue;
+    }
+    const kept: Record<string, unknown> = {};
+    const lifted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entry)) (RETIRED_WORKSPACE_KEYS.includes(key) ? lifted : kept)[key] = value;
+    workspaces[id] = kept;
+    if (Object.keys(lifted).length > 0) retiredWorkspaces[id] = lifted;
+  }
+  return { global, workspaces, retired: { global: retiredGlobal, workspaces: retiredWorkspaces } };
+}
+
 function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   let raw: RawSettingsFile;
   try {
@@ -245,7 +289,8 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const migratedGlobal = migrateGlobalCriticHarnesses(migrateGlobalVerifierIds(raw.global ?? {}), baseline);
+    const split = splitRetired(raw);
+    const migratedGlobal = migrateGlobalCriticHarnesses(migrateGlobalVerifierIds(split.global), baseline);
     const storedGlobal = (migratedGlobal ?? {}) as DeepPartial<AppConfig>;
     // A flattened (whole-config) global is converted to a sparse patch in
     // inherit mode: a field it doesn't carry is treated as inherited from the
@@ -258,11 +303,19 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
       : storedGlobal;
     const global = mergeConfig(baseline, globalPatch);
     const workspaces: Record<string, WorkspaceOverrides> = {};
+    const preserved: StoredLegacy = { global: pickLegacyGlobal(raw.global), workspaces: {} };
+    const view: StoredLegacy = { global: pickLegacyGlobal(migratedGlobal), workspaces: {} };
     const catalog = harnessCatalog(baseline, migratedGlobal);
-    for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
-      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness));
+    for (const [id, entry] of Object.entries(split.workspaces)) {
+      const migrated = migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness);
+      workspaces[id] = workspaceOverridesSchema.parse(migrated);
+      const stored = pickLegacyWorkspace(entry);
+      if (Object.keys(stored).length > 0) {
+        preserved.workspaces[id] = stored;
+        view.workspaces[id] = pickLegacyWorkspace(migrated);
+      }
     }
-    return { globalPatch, global, workspaces };
+    return { globalPatch, global, workspaces, legacy: { preserved, view }, retired: split.retired };
   } catch (err) {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -277,6 +330,8 @@ export class SettingsStore implements WorkspaceSettingsStore {
   private global: AppConfig;
   private globalPatch: unknown;
   private workspaces: Record<string, WorkspaceOverrides>;
+  private legacy: SettingsFile['legacy'];
+  private retired: RetiredSettings;
   private loadedMtimeMs = 0;
   private lastCheckMs = 0;
 
@@ -288,6 +343,8 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.global = file.global;
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
+    this.legacy = file.legacy;
+    this.retired = file.retired;
   }
 
   static async create(
@@ -303,7 +360,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
       file = loadFromDisk(path, baselineConfig());
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        file = { globalPatch: {}, global: baselineConfig(), workspaces: {} };
+        file = { globalPatch: {}, global: baselineConfig(), workspaces: {}, legacy: { preserved: NO_STORED_LEGACY(), view: NO_STORED_LEGACY() }, retired: NO_RETIRED };
       } else {
         throw err;
       }
@@ -311,13 +368,28 @@ export class SettingsStore implements WorkspaceSettingsStore {
     const store = new SettingsStore(path, file, clock);
     store.global = mergeConfig(store.global, overrides);
     store.globalPatch = deepDiff(baselineConfig(), store.global) ?? {};
-    store.persist();
+    store.persistUnlessCurrent();
     return store;
   }
 
   getGlobal(): AppConfig {
     this.reloadIfChanged();
     return this.global;
+  }
+
+  getLegacySettings(): LegacySettings {
+    this.reloadIfChanged();
+    const { view } = this.legacy;
+    return {
+      global: parseLegacyGlobal(view.global),
+      workspaces: new Map(Object.entries(view.workspaces).map(([id, entry]) => [Number(id), parseLegacyWorkspace(entry)])),
+    };
+  }
+
+  /** The retired prompt keys as stored, for the unreleased ADR-0055 migration to read. */
+  getRetired(): RetiredSettings {
+    this.reloadIfChanged();
+    return this.retired;
   }
 
   getBaseline(): AppConfig {
@@ -330,6 +402,21 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
+  }
+
+  /** Sets the global default workflow without the save-time Critic Model check, which must never block a boot. */
+  async setDefaultWorkflow(name: string): Promise<void> {
+    this.reloadIfChanged();
+    this.global = mergeConfig(this.global, { defaults: { workflow: name } });
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
+    this.persist();
+  }
+
+  async setDefaultEpicWorkflow(name: string): Promise<void> {
+    this.reloadIfChanged();
+    this.global = mergeConfig(this.global, { defaults: { epicWorkflow: name } });
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
+    this.persist();
   }
 
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
@@ -382,6 +469,8 @@ export class SettingsStore implements WorkspaceSettingsStore {
   async deleteOverrides(workspaceId: number): Promise<void> {
     this.reloadIfChanged();
     delete this.workspaces[String(workspaceId)];
+    delete this.legacy.preserved.workspaces[String(workspaceId)];
+    delete this.legacy.view.workspaces[String(workspaceId)];
     this.persist();
   }
 
@@ -400,15 +489,40 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.global = file.global;
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
+    this.legacy = file.legacy;
+    this.retired = file.retired;
     this.loadedMtimeMs = stat.mtimeMs;
   }
 
-  private persist(): void {
-    const workspaces: Record<string, WorkspaceOverrides> = {};
-    for (const [id, entry] of Object.entries(this.workspaces)) {
+  private snapshot(): { global: unknown; workspaces: Record<string, unknown> } {
+    const { preserved } = this.legacy;
+    const workspaces: Record<string, unknown> = {};
+    for (const id of new Set([...Object.keys(this.workspaces), ...Object.keys(preserved.workspaces), ...Object.keys(this.retired.workspaces)])) {
+      const entry = { ...this.workspaces[id], ...preserved.workspaces[id], ...this.retired.workspaces[id] };
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
-    writeFileSync(this.path, stringify({ global: this.globalPatch, workspaces }));
+    const withLegacy = withLegacyGlobal(this.globalPatch, preserved.global);
+    const global = Object.keys(this.retired.global).length > 0 ? { ...withLegacy, [RETIRED_GLOBAL_KEY]: this.retired.global } : withLegacy;
+    return { global, workspaces };
+  }
+
+  private persist(): void {
+    writeFileSync(this.path, stringify(this.snapshot()));
     this.loadedMtimeMs = statSync(this.path).mtimeMs;
+  }
+
+  /** A boot that changed nothing leaves the file's bytes alone, so the keys an ADR-0042 rollback reads are never reformatted. */
+  private persistUnlessCurrent(): void {
+    try {
+      const onDisk = parse(readFileSync(this.path, 'utf8')) as RawSettingsFile | null;
+      const current = { global: onDisk?.global ?? {}, workspaces: onDisk?.workspaces ?? {} };
+      if (isDeepStrictEqual(current, parse(stringify(this.snapshot())))) {
+        this.loadedMtimeMs = statSync(this.path).mtimeMs;
+        return;
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+    }
+    this.persist();
   }
 }

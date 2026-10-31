@@ -2,6 +2,7 @@ import type { SpanContext } from '@opentelemetry/api';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { resolvePauseMessage } from '../domain/setting-override.js';
 import type { ResolvedGuardrails } from '../domain/setting-override.js';
 import type { AttemptStore } from '../domain/attempts.js';
@@ -27,6 +28,7 @@ export interface RunControlDeps {
   events: RunnerEvents;
   getWorkspace: RunnerOptions['getWorkspace'];
   getConfig: () => AppConfig;
+  prompts: () => EnginePrompts;
   isGloballyPaused: (() => boolean) | undefined;
   onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
   sessionContinuation: SessionContinuation;
@@ -128,7 +130,7 @@ export class RunControl {
       logger.info('Task pause requested (settling)', { taskId, attemptId: active.attemptId });
       return true;
     }
-    const message = resolvePauseMessage(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig());
+    const message = resolvePauseMessage(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig(), this.deps.prompts());
     if (!(await this.steer(taskId, message))) return false;
     active.pauseRequested = true;
     active.pauseReason = 'operator request';

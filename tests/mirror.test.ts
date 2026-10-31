@@ -34,12 +34,12 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
 describe('deriveRole (labels → workflow/wayfinderType)', () => {
   it('research → wayfinder/research', () => {
     expect(deriveRole(ticket({ labels: ['wayfinder:research', 'ready-for-agent'] }))).toEqual({
-      workflow: 'wayfinder',
+      issueWorkflow: 'wayfinder',
       wayfinderType: 'research',
     });
   });
   it('no wayfinder label → implement', () => {
-    expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({ workflow: 'implement', wayfinderType: null });
+    expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({ issueWorkflow: 'implement', wayfinderType: null });
   });
 });
 
@@ -95,7 +95,7 @@ describe('mirrorScan upsert', () => {
     expect(task).toMatchObject({
       origin: 'mirrored',
       trackerRef: '42',
-      workflow: 'implement',
+      issueWorkflow: 'implement',
       wayfinderType: null,
       state: 'ready',
       prompt: 'Add rate limiting\n\nper CONTEXT.md',

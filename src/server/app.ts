@@ -12,6 +12,15 @@ import { readPackageManifest } from './routes/openapi.js';
 import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
+import { resolveModelOption } from '../domain/model-options.js';
+import { migrateSettingsToWorkflows } from '../domain/settings-workflow-migration.js';
+import { migrateEpicSettingsToWorkflows } from '../domain/epic-settings-workflow-migration.js';
+import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
+import { convertRetiredEditedPrompts } from '../domain/retired-settings.js';
+import { isNotNull } from 'drizzle-orm';
+import { tasks } from '../db/schema.js';
+import { PromptLibrary } from '../domain/prompt-library-store.js';
+import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { registerAppJobs } from './app-jobs.js';
 import { registerAppExports } from './app-exports.js';
 import { registerBusListeners } from './app-bus-listeners.js';
@@ -67,8 +76,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesDir,
     managedWorktreesRoot,
   });
+  const promptLibrary = new PromptLibrary(opts.dataDir);
+  await promptLibrary.load();
+  await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
+  await convertRetiredEditedPrompts(promptLibrary, stores.settingsStore.getRetired());
+  const workflowLibrary = new WorkflowLibrary(opts.dataDir, {
+    optionCodeUsable: async (code) => {
+      const config = stores.settingsStore.getGlobal();
+      if (resolveModelOption(code, { config }).kind === 'found') return true;
+      return (await stores.workspaces.list()).some((ws) => resolveModelOption(code, { workspace: ws, config }).kind === 'found');
+    },
+    referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
+  });
+  await workflowLibrary.load();
+  promptLibrary.attachWorkflows(workflowLibrary);
+  await migrateSettingsToWorkflows({ db: asyncDb, settings: stores.settingsStore, prompts: promptLibrary, workflows: workflowLibrary, workspaces: stores.workspaces, tasks: stores.tasks });
+  await migrateEpicSettingsToWorkflows({ db: asyncDb, settings: stores.settingsStore, prompts: promptLibrary, workflows: workflowLibrary, workspaces: stores.workspaces });
   const runtime = await createRuntime({
     opts,
+    promptLibrary,
+    workflowLibrary,
     stores,
     worktrees,
     bus,
@@ -140,6 +167,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     channels: stores.channels,
     secrets: stores.secrets,
     executionTargets: stores.executionTargets,
+    workflows: workflowLibrary,
+    promptLibrary,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,
@@ -193,6 +222,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     upgrade: runtime.upgrade,
     worktreesDir,
   });
-  await registerRoutes(app, ctx, contexts);
+  await registerRoutes(app, ctx, contexts, promptLibrary);
   return app;
 }

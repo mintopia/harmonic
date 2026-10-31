@@ -110,4 +110,76 @@ describe('TaskForm smoke (issue #469)', () => {
     const submit = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Save');
     expect(submit?.disabled).toBe(true);
   });
+
+  it('labels the mirrored Issue Workflow on the Edit form', async () => {
+    const task = makeTask({ id: 10, state: 'draft', issueWorkflow: 'implement' });
+
+    await renderForm({ task, workspace: makeWorkspace(), workspaceId: null });
+
+    expect(host!.textContent).toContain('Issue Workflow');
+    expect(host!.textContent).toContain('implement');
+  });
+  it('offers the workflow library in a Task Execution Workflow select and sends the choice', async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        bodies.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify(makeTask()));
+      }
+      if (url.endsWith('/api/workflows')) {
+        return new Response(JSON.stringify({ workflows: [{ name: 'implement', description: 'd', bundled: true, version: 1 }], total: 1 }));
+      }
+      return new Response('{}');
+    });
+    const onSaved = vi.fn();
+    host = await mountComponent(
+      createElement(TaskForm, { config: makeConfig(), task: null, workspace: null, workspaceId: 1, onClose: () => {}, onSaved }),
+    );
+
+    const select = host.querySelector<HTMLSelectElement>('#task-execution-workflow')!;
+    expect(select.value).toBe('');
+    expect([...select.options].map((o) => o.textContent)).toEqual(["None — today's behaviour", 'implement']);
+
+    const setPrompt = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    const prompt = host.querySelector<HTMLTextAreaElement>('#task-prompt')!;
+    await act(async () => {
+      setPrompt.call(prompt, 'Do it');
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'implement');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => { [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Create ready')!.click(); });
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ prompt: 'Do it', workflow: 'implement' });
+  });
+
+  it('omits workflow from the request when none is chosen', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST') bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ workflows: [], total: 0 }));
+    });
+    host = await mountComponent(
+      createElement(TaskForm, { config: makeConfig(), task: null, workspace: null, workspaceId: 1, onClose: () => {}, onSaved: () => {} }),
+    );
+    const setPrompt = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    const prompt = host.querySelector<HTMLTextAreaElement>('#task-prompt')!;
+    await act(async () => {
+      setPrompt.call(prompt, 'Plain');
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Create ready')!.click(); });
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toHaveProperty('workflow');
+  });
+
+  it('hides the workflow select when editing an existing task', async () => {
+    await renderForm({ task: makeTask({ id: 12, state: 'draft' }), workspace: makeWorkspace(), workspaceId: null });
+    expect(host!.querySelector('#task-execution-workflow')).toBeNull();
+  });
 });

@@ -1,6 +1,11 @@
 import type { TrackerRef } from './types.js';
-import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
+  Prompt,
+  WorkflowDocument,
+  WorkflowIssue,
+  WorkflowLibraryEntry,
+  TaskWorkflowVars,
+  WorkflowStepsResponse,
   Attempt,
   ActivityProcess,
   AgentMessageThread,
@@ -33,9 +38,9 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   CommandOverlayEntry,
-  TaskCriticOverlayEntry,
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
+  WorkflowLabelOverlayEntry,
   ModelOptionOverlayEntry,
   ClassifierEndpoint,
   VerifierStatus,
@@ -89,6 +94,7 @@ export class ApiError extends Error {
     message: string,
     public code: string | null = null,
     public errorId: string | null = null,
+    public issues: WorkflowIssue[] = [],
   ) {
     super(message);
   }
@@ -134,9 +140,9 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
 
 function failure(method: string, path: string, res: Response, json: unknown): ApiError {
   const fallback = `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
-  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string } }).error : undefined;
+  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string; issues?: WorkflowIssue[] } }).error : undefined;
   const message = envelope?.message ?? fallback;
-  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null);
+  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null, envelope?.issues ?? []);
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -181,6 +187,13 @@ export const api = {
     request<ClassifierTestResult>('POST', `/api/workspaces/${workspaceId}/classifier-test`, { settings }),
   harnessProviders: (harness: string) => request<{ providers: HarnessProvider[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/providers`),
   harnessModels: (harness: string, provider: string) => request<{ models: DiscoveredHarnessModel[] }>('GET', `/api/harnesses/${encodeURIComponent(harness)}/models?provider=${encodeURIComponent(provider)}`),
+  prompts: () => request<{ prompts: Prompt[]; total: number }>('GET', '/api/prompts'),
+  createPrompt: (body: { code: string; description: string; text: string }) => request<Prompt>('POST', '/api/prompts', body),
+  updatePrompt: (code: string, body: { description: string; text: string }) =>
+    request<Prompt>('PUT', `/api/prompts/${encodeURIComponent(code)}`, body),
+  deletePrompt: (code: string) => request<{ ok: true }>('DELETE', `/api/prompts/${encodeURIComponent(code)}`),
+  duplicatePrompt: (code: string, copyCode?: string) =>
+    request<Prompt>('POST', `/api/prompts/${encodeURIComponent(code)}/duplicate`, copyCode ? { code: copyCode } : {}),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
   updateState: () => request<UpdateState>('GET', '/api/update'),
@@ -241,7 +254,18 @@ export const api = {
   },
   epicStats: (epicRef: TrackerRef, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
-  createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
+  workflows: () => request<{ workflows: WorkflowLibraryEntry[]; total: number }>('GET', '/api/workflows'),
+  workflow: (name: string) => request<WorkflowDocument>('GET', `/api/workflows/${encodeURIComponent(name)}`),
+  saveWorkflow: (name: string, text: string) => request<WorkflowDocument>('PUT', `/api/workflows/${encodeURIComponent(name)}`, { text }),
+  importWorkflow: (text: string) => request<WorkflowDocument>('POST', '/api/workflows/import', { text }),
+  exportWorkflow: (name: string) => requestText(`/api/workflows/${encodeURIComponent(name)}/export`, 'Export failed'),
+  duplicateWorkflow: (name: string, newName?: string) => request<WorkflowDocument>('POST', `/api/workflows/${encodeURIComponent(name)}/duplicate`, newName ? { name: newName } : {}),
+  deleteWorkflow: (name: string) => request<unknown>('DELETE', `/api/workflows/${encodeURIComponent(name)}`),
+  workflowVars: (id: number) => request<TaskWorkflowVars>('GET', `/api/tasks/${id}/workflow-vars`),
+  setWorkflowVars: (id: number, vars: Record<string, string | number | boolean>) => request<TaskWorkflowVars>('PUT', `/api/tasks/${id}/workflow-vars`, { vars }),
+  epicWorkflowSteps: (workspaceId: number, epicRef: TrackerRef) => request<WorkflowStepsResponse>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/workflow-steps`),
+  workflowSteps: (id: number) => request<WorkflowStepsResponse>('GET', `/api/tasks/${id}/workflow-steps`),
+  createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) =>
     request<Task>('POST', '/api/tasks', input),
   // Lazy directory picker: one level deep per call; an omitted
   // path starts at the server user's home. Operator-only (full-scope session).
@@ -327,16 +351,17 @@ export const api = {
       agentMessagesEnabled?: boolean | null;
       agentMessagesSendCap?: number | null;
       contextReuseTokenLimit?: number | null;
-      taskPreMergeCommands?: CommandOverlayEntry[] | null;
-      taskPreMergeCritics?: TaskCriticOverlayEntry[] | null;
-      taskPostMergeCommands?: CommandOverlayEntry[] | null;
-      taskPostMergeCritics?: TaskCriticOverlayEntry[] | null;
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
       executionTargets?: string[] | null;
+      workflow?: string | null;
+      epicWorkflow?: string | null;
+      workflowLabels?: WorkflowLabelOverlayEntry[] | null;
+      workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
       modelOptions?: ModelOptionOverlayEntry[] | null;
       classifierEnabled?: boolean | null;
+      workflowClassifierEnabled?: boolean | null;
       classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
       classifierTimeoutSeconds?: number | null;
       classifierTypesafeModel?: string | null;
@@ -366,10 +391,8 @@ export const api = {
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
       driveContinuePrompt?: string | null;
-      driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
-      driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
-    } & Partial<PromptFragmentOverrides>,
+    },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed

@@ -96,6 +96,12 @@ export class RoutingService {
     return resolveClassifierSettings(scope.workspace).enabled ? scope.workspace : null;
   }
 
+  /** The Workspace whose workflow classifier is on for this Ticket, or null. */
+  async workflowClassifierWorkspace(task: Pick<TaskRow, 'workspaceId'>): Promise<WorkspaceRow | null> {
+    const { workspace } = await this.scopeFor(task.workspaceId);
+    return workspace?.workflowClassifierEnabled ? workspace : null;
+  }
+
   /** The Harness + Model an Epic-level turn runs on: the Epic's operator Harness/Model override, else its Task row's Routing Label, else the container row's, else the Workspace/global default. */
   async epicRoute(workspaceId: number, epicRef: TrackerRef): Promise<ResolvedRoute> {
     const config = this.getConfig();

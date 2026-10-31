@@ -1,8 +1,6 @@
 import { act, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { vi } from 'vitest';
-import { blankPromptFragments } from './prompt-fragment-fixtures.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Task, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
@@ -41,21 +39,20 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     name: '',
     harnesses: { claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 } },
-    defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2 },
+    defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2, workflow: null, epicWorkflow: null },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
-    verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
+    verify: { epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
-    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '', mergeFate: 'auto-merge', continueAttempts: 0 },
-    maxAttempts: 3,
+    drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '' },
     contextReuseTokenLimit: 100_000,
     routingLabels: [],
+    workflowLabels: [],
     modelOptions: [],
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',
-    promptFragments: blankPromptFragments(),
     merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
@@ -92,13 +89,11 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     effectiveAgentMessagesEnabled: false,
     maxAttempts: null,
     contextReuseTokenLimit: null,
-    taskPreMergeCommands: null,
-    taskPreMergeCritics: null,
-    taskPostMergeCommands: null,
-    taskPostMergeCritics: null,
     epicPreMergeCommands: null,
     epicPreMergeCritics: null,
     routingLabels: null,
+    workflow: null,
+    workflowLabels: null,
     modelOptions: null,
     executionTargets: null,
     classifierEnabled: null,
@@ -131,11 +126,8 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     drivePrompt: null,
     driveUnattendedReminder: null,
     driveContinuePrompt: null,
-    driveMergeFate: null,
-    driveContinueAttempts: null,
     taskPrompt: null,
     pauseMessage: null,
-    ...NO_PROMPT_FRAGMENT_OVERRIDES,
     mergeConflictPrompt: null,
     mergeEpicConflictPrompt: null,
     mergeEpicRefreshPrompt: null,
@@ -165,7 +157,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     state: 'ready',
     escalationReason: null,
     escalationCause: null,
-    mergeStatus: null, ticketClosePending: false,
+    mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowChosen: null,
     feedback: null,
     createdAt: Date.now() - 3_600_000,
     updatedAt: Date.now(),
@@ -180,7 +172,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     cost: null,
     origin: 'native',
     trackerRef: null,
-    workflow: null,
+    issueWorkflow: null,
     wayfinderType: null,
     mapRef: null,
     url: null,

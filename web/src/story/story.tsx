@@ -3,7 +3,6 @@ import { api, ApiError } from '../api';
 import type { JSX } from 'react';
 import ReactDOM from 'react-dom/client';
 import '../index.css';
-import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import { PromptSent } from '../components/ticket/Description';
@@ -30,12 +29,14 @@ import { ExecutionTargetsPanel } from '../components/ExecutionTargetsSettings';
 import { WorkspaceExecutionTargets } from '../components/WorkspaceExecutionTargets';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
-import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
+import type { AppConfig, RoutingLabelOverlayEntry, WorkflowLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
+import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
-import { PromptsTab } from '../components/prompts/PromptsTab';
+import { workflowStory, workflowTaskFields } from './api-stub';
+import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -82,78 +83,10 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
   );
 }
 
-function SettingsStory() {
-  const seed = structuredClone(storyConfig);
-  seed.verify.task.preMerge.commands = [
-    { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
-    { id: 'cmd-typecheck', command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
-  ];
-  seed.verify.task.preMerge.critics = [
-    {
-      id: 'critic-correctness',
-      name: 'Correctness',
-      issuePrompt:
-        "Review the diff for {title}. Flag correctness bugs, missing edge cases, and anything that breaks the issue's stated contract.",
-      noIssuePrompt: 'Review the diff for correctness. There is no issue to check against.',
-      model: 'claude-opus-5',
-      harness: 'claude',
-      timeoutSeconds: 300,
-    },
-    {
-      id: 'critic-security',
-      name: 'Security review',
-      issuePrompt: 'Check the diff for security regressions relevant to {title}.',
-      noIssuePrompt: 'Check the diff for security regressions.',
-      model: 'gpt-5.3-codex',
-      harness: 'codex',
-      timeoutSeconds: 300,
-    },
-    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', harness: 'claude', timeoutSeconds: 300 },
-  ];
-  const [config, setConfig] = useState(seed);
+function PromptLibraryStory() {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
-        <section
-          style={{
-            background: 'var(--hm-surface)',
-            borderRadius: 12,
-            boxShadow: 'var(--hm-shadow-card)',
-            padding: 20,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700 }}>Verification</h2>
-          <p style={{ margin: '2px 0 16px', color: 'var(--hm-muted)', fontSize: 13 }}>
-            What runs before work merges, in order.
-          </p>
-          <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function PromptsTabStory() {
-  const baseline = structuredClone(storyConfig);
-  const seed = structuredClone(storyConfig);
-  seed.promptFragments.selfHeal = `${seed.promptFragments.selfHeal}\nRe-read the failing output before you change anything.`;
-  seed.verify.task.preMerge.critics = [
-    { id: 'critic-correctness', name: 'Correctness', issuePrompt: 'Review the diff for {title}.', noIssuePrompt: 'Review the diff for correctness.', model: 'claude-opus-5', harness: 'claude', timeoutSeconds: 300 },
-  ];
-  const [config, setConfig] = useState(seed);
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
-      <PromptsTab
-        ctx={{
-          surface: 'global',
-          config,
-          baseline,
-          setConfig,
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        }}
-      />
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1040, margin: '0 auto' }}>
+      <PromptLibrary />
     </div>
   );
 }
@@ -497,7 +430,8 @@ function EpicStory() {
 
 function TicketStory() {
   const routed = params.get('routing');
-  const routedTask = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
+  const baseTask = workflowStory ? { ...task, ...workflowTaskFields } : task;
+  const routedTask = routed ? { ...baseTask, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : baseTask;
   const withOverrides = params.get('overrides') === '1'
     ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
     : routedTask;
@@ -574,6 +508,36 @@ function RoutingOverlayStory() {
   );
 }
 
+function WorkflowLabelsStory() {
+  const [config, setConfig] = useState<AppConfig>({
+    ...storyConfig,
+    workflowLabels: [
+      { label: 'security', workflow: 'Security review on label' },
+      { label: 'docs', workflow: 'Docs only' },
+    ],
+    defaults: { ...storyConfig.defaults, workflow: 'Migrated (global)' },
+  });
+  const [overlay, setOverlay] = useState<WorkflowLabelOverlayEntry[] | null>([
+    { kind: 'local', enabled: true, workflowLabel: { label: 'ci-only', workflow: 'Docs only' } },
+    { kind: 'global', ref: 'security', enabled: true },
+    { kind: 'global', ref: 'docs', enabled: false },
+    { kind: 'local', enabled: true, workflowLabel: { label: 'Security', workflow: 'Migrated (harmonic)' } },
+  ]);
+  const [workflow, setWorkflow] = useState<string | null>('Migrated (harmonic)');
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 24 }}>
+        <SettingsSection title="Workflow Labels" description="Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.">
+          <WorkflowLabelsEditor config={config} onChange={setConfig} />
+        </SettingsSection>
+        <SettingsSection title="Workflow Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
+          <WorkflowLabelOverlayEditor overlay={overlay} workflow={workflow} config={config} onChange={setOverlay} onWorkflow={setWorkflow} />
+        </SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 function RetryStory() {
   const choices = {
     defaultHarness: 'claude',
@@ -596,8 +560,7 @@ function RetryStory() {
 }
 
 const STORIES: Record<string, () => JSX.Element> = {
-  settings: SettingsStory,
-  'prompts-tab': PromptsTabStory,
+  'prompt-library': PromptLibraryStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
   'critic-prompts': CriticPromptsStory,
@@ -630,6 +593,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   tracker: TrackerStory,
   secrets: SecretsStory,
   'routing-overlay': RoutingOverlayStory,
+  'workflow-labels': WorkflowLabelsStory,
   retry: RetryStory,
 };
 

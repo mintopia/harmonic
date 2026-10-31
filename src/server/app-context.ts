@@ -26,6 +26,8 @@ import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { EpicService } from '../tracker/epic-service.js';
 import { ChannelService } from '../notifications/channels.js';
+import type { PromptLibrary } from '../domain/prompt-library-store.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { SecretService } from '../secrets/secret-service.js';
 import type { ExecutionTargetService } from '../execution/execution-targets.js';
 import type { KubernetesClientFactory } from '../execution/kubernetes-client.js';
@@ -115,6 +117,8 @@ export interface AppContext {
   channels: ChannelService;
   secrets: SecretService;
   executionTargets: ExecutionTargetService;
+  workflows: WorkflowLibrary;
+  promptLibrary: PromptLibrary;
   notifier: Notifier;
   notifications: NotificationStore;
   bus: EventBus;

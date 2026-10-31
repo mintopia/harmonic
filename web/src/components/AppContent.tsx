@@ -12,6 +12,7 @@ import { FilesPage } from './FilesPage';
 import { TimelinePage } from './TimelinePage';
 import { OperationsPage } from './OperationsPage';
 import { ApiPage } from './ApiPage';
+import { WorkflowsPage } from './workflows/WorkflowsPage';
 import { SettingsPage } from './SettingsPage';
 import { WorkspaceSettingsPage } from './WorkspaceSettingsPage';
 import { EmptyState } from './EmptyState';
@@ -166,6 +167,7 @@ function MainViewContent({
           onMarkAllRead={notifications.markAllRead}
         />
       )}
+      {view === 'workflows' && <WorkflowsPage />}
       {view === 'api' && <ApiPage />}
       {view === 'settings' && <SettingsPage onSaved={setConfig} />}
       {view === 'workspace' && config && activeWorkspace && (

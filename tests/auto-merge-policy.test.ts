@@ -1,3 +1,4 @@
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -57,24 +58,6 @@ function siblingAdvanceVerifier(repo: string, flag: string) {
   });
 }
 
-function conflictingSiblingVerifier(repo: string, flag: string) {
-  const conflictFile = join(repo, 'conflict.txt');
-  return verificationCommandSchema.parse({
-    id: 'cmd-sibling-conflict',
-    command: process.execPath,
-    args: [
-      '-e',
-      `const fs=require('fs');const cp=require('child_process');` +
-        `if(!fs.existsSync(${JSON.stringify(flag)})){` +
-        `fs.writeFileSync(${JSON.stringify(flag)},'1');` +
-        `fs.writeFileSync(${JSON.stringify(conflictFile)},'sibling version\\n');` +
-        `cp.execFileSync('git',['-C',${JSON.stringify(repo)},'add','-A']);` +
-        `cp.execFileSync('git',['-C',${JSON.stringify(repo)},'commit','-m','sibling changes conflict.txt']);}`,
-    ],
-    timeoutSeconds: 30,
-  });
-}
-
 function lockWorktreeAdminVerifier(repo: string) {
   return verificationCommandSchema.parse({
     id: 'cmd-lock-worktree-admin',
@@ -120,7 +103,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   const mirroredAfk = (ref: number): MirrorInput => ({
     trackerRef: trackerRef(ref),
     prompt: `ticket ${ref}\n\nbody`,
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     closed: false,
@@ -157,25 +140,13 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       return t.state === 'escalated' ? t : undefined;
     });
 
-  const timelineFor = async (taskId: number) =>
-    (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts as Array<{
-      number: number;
-      state: string;
-      steps: Array<{ type: string; state: string; verdict: string | null }>;
-    }>;
-  const lifecycle = async (attemptId: number): Promise<Array<{ event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string }>> =>
-    (await server.api('GET', `/api/attempts/${attemptId}/events`)).body.events
-      .filter((e: { type: string }) => e.type === 'lifecycle')
-      .map((e: { payload: { event: string; mechanism?: string; reason?: string; oid?: string; baseBranch?: string } }) => e.payload);
-
   it(
     '(a) an afk auto-merge Task with a REAL post-merge check merges as an ordinary merge commit (never a fast-forward), closes the ticket, and does not deadlock',
     async () => {
       const repo = makeRepo();
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(passingVerifier()), taskPostMergeCommands: local(passingVerifier()) });
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        taskPreMergeCommands: local(passingVerifier()),
-        taskPostMergeCommands: local(passingVerifier()),
       });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
@@ -190,47 +161,17 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
       expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
 
-      const events = await lifecycle(attemptId);
-      const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
-      expect(commandVerifications).toHaveLength(2);
-      expect(events).toContainEqual(expect.objectContaining({ event: 'merged', baseBranch: 'main' }));
+      const rows = await new WorkflowStepRunStore(server.app.ctx.asyncDb).listForTask(taskId);
+      for (const stepId of ['verify-1', 'merge', 'post-merge-check']) expect(rows.find((row) => row.stepId === stepId)).toMatchObject({ outcome: 'pass' });
     },
     30_000,
   );
 
-  it('runs task post-merge commands in an isolated integration checkout, then discards and escalates on red', async () => {
-    const repo = makeRepo();
-    const postMergeFail = verificationCommandSchema.parse({
-      id: 'cmd-post-merge-fail',
-      command: process.execPath,
-      args: ['-e', 'process.exit(1)'],
-      timeoutSeconds: 30,
-    });
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      taskPreMergeCommands: local(passingVerifier()),
-      taskPostMergeCommands: local(postMergeFail),
-    });
-    await server.app.ctx.settingsStore.updateGlobal({
-      merge: { postMergeCheck: true },
-      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
-    });
-
-    const { taskId, attemptId, trackerRef } = await launchAfk();
-    const task = await waitEscalated(taskId);
-    expect(task.escalationReason).toContain('post-merge check');
-    expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
-    expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBe(0);
-
-    const events = await lifecycle(attemptId);
-    expect(events.filter((event) => event.event === 'verification' && event.mechanism === 'command')).toHaveLength(2);
-    await server.app.ctx.workspaces.update(wsId, { taskPostMergeCommands: null });
-  }, 30_000);
-
   it('(b) a sibling advancing the base mid-verification does not trigger re-verification — the candidate still merges as an ordinary merge commit', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-auto-merge-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: local(siblingAdvanceVerifier(repo, flag)) });
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(siblingAdvanceVerifier(repo, flag)) });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -240,60 +181,20 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     const task = await waitDone(taskId, attemptId);
     expect(task.state).toBe('done');
 
-    const events = await lifecycle(attemptId);
-    const commandVerifications = events.filter((e) => e.event === 'verification' && e.mechanism === 'command');
-    expect(commandVerifications).toHaveLength(1);
-    expect(events.map((e) => e.event)).not.toContain('rebase-required');
-    expect(events.map((e) => e.event)).not.toContain('moving-base');
+    const rows = await new WorkflowStepRunStore(server.app.ctx.asyncDb).listForTask(taskId);
+    expect(rows.filter((row) => row.stepId === 'verify-1')).toHaveLength(1);
 
     expect(git(repo, 'rev-parse', 'main^2')).toMatch(/^[0-9a-f]{40}$/);
     expect(Number(git(repo, 'rev-list', '--count', '--merges', 'main'))).toBeGreaterThanOrEqual(1);
     expect(git(repo, 'log', '--format=%s', 'main')).toContain('sibling advances independently');
     expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
-
-    const timeline = await timelineFor(taskId);
-    expect(timeline).toHaveLength(1);
-    expect(timeline[0]!.steps.filter((t) => t.type === 'rebase')).toHaveLength(1);
   });
 
-  it('(d) conflictResolveTurns is wired from the task setting through to the merge policy: 0 turns escalates immediately on a real conflict', async () => {
-    const repo = makeRepo();
-    const flag = join(tmpPath('harmonic-auto-merge-conflict-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      taskPreMergeCommands: local(conflictingSiblingVerifier(repo, flag)),
-      conflictResolveTurns: 0,
-    });
-    await server.app.ctx.settingsStore.updateGlobal({
-      merge: { postMergeCheck: false },
-      drive: {
-        prompt: JSON.stringify({
-          writeFiles: { 'conflict.txt': 'agent version\n', 'impl-{ref}.txt': 'implementation {ref}\n' },
-          mcpFinish: true,
-        }),
-      },
-    });
-
-    const { taskId, attemptId } = await launchAfk();
-    const task = await waitEscalated(taskId);
-    expect(task.state).toBe('escalated');
-
-    expect(task.escalationReason).toMatch(/hit conflicts and automated resolution is disabled \(0 resolve turns\)/);
-    expect(task.escalationReason).not.toMatch(/<<<<<<<|CONFLICT/);
-
-    expect(git(repo, 'log', '--merges', 'main')).toBe('');
-    expect(git(repo, 'show', 'main:conflict.txt')).toBe('sibling version');
-
-    const events = await lifecycle(attemptId);
-    const escalation = events.find((e) => e.event === 'escalated');
-    expect(escalation?.reason).toMatch(/hit conflicts and automated resolution is disabled \(0 resolve turns\)/);
-    expect(escalation?.reason).not.toMatch(/<<<<<<<|CONFLICT/);
-  });
   it('escalates with a visible reason when the merge throws a non-conflict git failure, rather than retrying the agent', async () => {
     const repo = makeRepo();
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(lockWorktreeAdminVerifier(repo)) });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: local(lockWorktreeAdminVerifier(repo)),
     });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
@@ -301,20 +202,18 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     });
 
     try {
-      const { taskId, attemptId, trackerRef } = await launchAfk();
+      const { taskId, trackerRef } = await launchAfk();
       const baseTip = git(repo, 'rev-parse', 'main');
       const task = await waitEscalated(taskId);
 
-      expect(task.escalationReason).toMatch(/Merging harmonic\/\S+ into main failed: git worktree add/);
+      expect(task.escalationReason).toMatch(/workflow step merge .*git worktree add/s);
       expect(task.mergeStatus).toBeNull();
-      expect(await timelineFor(taskId)).toHaveLength(1);
-      const events = await lifecycle(attemptId);
-      expect(events).toContainEqual(expect.objectContaining({ event: 'escalated', reason: expect.stringMatching(/^Merging harmonic\/\S+ into main failed: git worktree add/) }));
+      expect(await server.app.ctx.attempts.listForTask(taskId)).toHaveLength(1);
       expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
       expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
     } finally {
       chmodSync(join(repo, '.git', 'worktrees'), 0o755);
-      await server.app.ctx.workspaces.update(wsId, { taskPreMergeCommands: null });
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: null });
     }
   });
 });

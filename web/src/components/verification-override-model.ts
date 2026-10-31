@@ -1,27 +1,4 @@
-import type {
-  AppConfig,
-  EpicVerificationCritic,
-  TaskVerificationCritic,
-  VerificationCommand,
-} from '../types.js';
-import { formatModelLabel, providerLabel } from './TaskIdentity.js';
-
-/** A freshly added command verifier, own id via `crypto.randomUUID()` — a
- * shared static seed would hand every add the same id (ADR-0037: commands are
- * id-keyed for the overlay's `ref`). */
-export function newCommand(): VerificationCommand {
-  return { id: crypto.randomUUID(), command: '', args: [], env: {}, timeoutSeconds: 600 };
-}
-
-/** A freshly added task critic, own id (see {@link newCommand}). */
-export function newCritic(start: HarnessStart): TaskVerificationCritic {
-  return { id: crypto.randomUUID(), name: '', issuePrompt: '', noIssuePrompt: '', ...start, timeoutSeconds: 300 };
-}
-
-/** A freshly added epic critic, own id (see {@link newCommand}). */
-export function newEpicCritic(start: HarnessStart): EpicVerificationCritic {
-  return { id: crypto.randomUUID(), name: '', prompt: '', ...start, timeoutSeconds: 300 };
-}
+import type { AppConfig } from '../types.js';
 
 export type HarnessChoice = { models: string[]; defaultModel: string };
 
@@ -42,19 +19,6 @@ export function harnessChoices(config: Pick<AppConfig, 'defaults' | 'harnesses'>
       ]),
     ),
   };
-}
-
-export type HarnessStart = { harness: string; model: string };
-
-export function startingHarness(choices: HarnessChoices): HarnessStart {
-  return { harness: choices.defaultHarness, model: choices.byId[choices.defaultHarness]?.defaultModel ?? '' };
-}
-
-/** Switch a Critic's Harness; the model resets to that Harness's default unless it is already one of its models. */
-export function withHarness<T extends HarnessStart>(critic: T, harness: string, choices: HarnessChoices): T {
-  const choice = choices.byId[harness];
-  const keepModel = choice?.models.includes(critic.model) ?? false;
-  return { ...critic, harness, model: keepModel ? critic.model : (choice?.defaultModel ?? '') };
 }
 
 type GlobalOverlayEntry = { kind: 'global'; ref: string; enabled: boolean };
@@ -78,86 +42,4 @@ export function withMissingGlobals<O extends GlobalOverlayEntry | { kind: 'local
     .filter((id) => !seen.has(id))
     .map((ref) => ({ kind: 'global', ref, enabled: true }) as O);
   return [...base, ...missing];
-}
-
-export function criticLabel(name: string): string {
-  return name.trim() === '' ? 'Untitled critic' : name.trim();
-}
-
-/** An editable dimension of the command verifier. `args` is edited directly as an array, not through this. */
-export type CommandField = 'command' | 'timeoutSeconds';
-
-/**
- * Fold a raw text-input value into the command object. `command` sets the
- * executable to `raw` unconditionally, blank included. `timeoutSeconds` takes
- * a positive integer, keeping the prior value on a blank or non-numeric input
- * rather than dropping the only bound on a runaway verifier.
- */
-export function setCommandField(cmd: VerificationCommand, field: CommandField, raw: string): VerificationCommand {
-  if (field === 'command') return { ...cmd, command: raw };
-  const n = Number(raw.trim());
-  return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? cmd : { ...cmd, timeoutSeconds: n };
-}
-
-/**
- * One-line summary of a command verifier for the inheriting read-only display:
- * the executable and its args, then the timeout. An empty executable (the seed
- * for an unconfigured global default) reads as "Not configured".
- */
-export function summarizeCommand(cmd: VerificationCommand): string {
-  if (cmd.command.trim() === '') return 'Not configured';
-  const argv = [cmd.command, ...cmd.args].join(' ');
-  return `${argv} · ${cmd.timeoutSeconds}s timeout`;
-}
-
-/**
- * One-line summary of a whole command list for the inheriting read-only
- * display: an empty list reads as "No commands"
- * (this Workspace would run nothing were it inheriting), otherwise each
- * command's {@link summarizeCommand} is joined for a compact overview.
- */
-export function summarizeCommands(commands: VerificationCommand[]): string {
-  if (commands.length === 0) return 'No commands';
-  return commands.map(summarizeCommand).join(' · ');
-}
-
-/** An editable dimension of the agent critic; the Harness is switched through {@link withHarness}. */
-export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | 'timeoutSeconds';
-
-/**
- * Fold a raw text-input value into the critic object. `prompt`/`model` are free
- * text.
- */
-export function setCriticField(critic: TaskVerificationCritic, field: CriticField, raw: string): TaskVerificationCritic {
-  if (field === 'timeoutSeconds') {
-    const n = Number(raw.trim());
-    return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? critic : { ...critic, timeoutSeconds: n };
-  }
-  return { ...critic, [field]: raw };
-}
-
-export type EpicCriticField = 'name' | 'prompt' | 'model' | 'timeoutSeconds';
-
-/** The epic-critic counterpart of {@link setCriticField}, over the epic critic's single `prompt`. */
-export function setEpicCriticField(
-  critic: EpicVerificationCritic,
-  field: EpicCriticField,
-  raw: string,
-): EpicVerificationCritic {
-  if (field === 'timeoutSeconds') {
-    const n = Number(raw.trim());
-    return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? critic : { ...critic, timeoutSeconds: n };
-  }
-  return { ...critic, [field]: raw };
-}
-
-/**
- * One-line summary of an agent critic for the inheriting read-only display: the
- * reviewer Harness and Model by friendly name. An empty model (the seed for
- * an unconfigured global default) reads as "Not configured".
- */
-export function summarizeCritic(critic: Pick<TaskVerificationCritic, 'name' | 'harness' | 'model'>): string {
-  if (critic.model.trim() === '') return 'Not configured';
-  const runtime = `${providerLabel(critic.harness)} · ${formatModelLabel(critic.model)}`;
-  return `${criticLabel(critic.name)} (${runtime})`;
 }

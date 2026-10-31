@@ -1,0 +1,31 @@
+name: migrated-beta-service
+description: Migrated (Beta Service)
+vars:
+  maxAttempts: 3
+steps:
+  - id: rebase
+    uses: rebase
+  - attempts:
+      max: ${{ vars.maxAttempts }}
+      steps:
+        - id: build
+          uses: agent
+          with:
+            prompt: ${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'migrated-w3-implement-ticket-heal' || 'migrated-w3-implement-ticket') || (attempt.number > 1 && 'migrated-w3-implement-native-heal' || 'implement-native') }}
+            continueAttempts: 4
+            continuePrompt: commitNudge
+        - id: verify-1
+          run: make check
+        - id: verify-2
+          run: cd packages/api && env CI=1 node scripts/lint.mjs '--mode strict'
+  - id: merge
+    uses: merge
+  - id: post-merge-check
+    uses: post-merge-check
+    with:
+      run: npm run smoke
+  - id: close-ticket
+    uses: close-ticket
+cleanup:
+  - id: cleanup
+    uses: cleanup

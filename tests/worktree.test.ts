@@ -64,7 +64,6 @@ describe('worktree', () => {
       expect(run.branch).toBe(`harmonic/task-${taskId}`);
       expect(run.baseBranch).toBe('main');
 
-      expect(git(repo, 'show', `${run.branch}:feature.txt`)).toBe('made by agent');
       expect(git(repo, 'show', 'main:feature.txt')).toBe('made by agent');
       expect(git(repo, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
       expect(git(repo, 'log', '--merges', 'main')).not.toBe('');
@@ -73,22 +72,22 @@ describe('worktree', () => {
       expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
     });
 
-    it('a worktree run that leaves its work uncommitted has it captured as the candidate and merged, not orphaned (task 340)', async () => {
+    it('a worktree run that leaves its work uncommitted escalates: only the agent commits (ADR-0053)', async () => {
       const repo = makeRepo();
+      const mainBefore = git(repo, 'rev-parse', 'main');
       const created = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'uncommitted work\n' }, commit: false }),
         workingDir: repo,
         isolationMode: 'worktree',
       });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      await waitFor(
-        async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
-      );
+      await server.api('POST', `/api/tasks/${created.body.id}/run`);
+      const task = await waitFor(async () => {
+        const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+        return t.state === 'escalated' ? t : undefined;
+      });
 
-      const run = (await server.api('GET', `/api/attempts/${started.body.id}`)).body;
-      expect(run.verifiedHeadOid).toBeTruthy();
-      expect(git(repo, 'rev-parse', 'main^2')).toBe(run.verifiedHeadOid);
-      expect(git(repo, 'show', 'main:feature.txt')).toBe('uncommitted work');
+      expect(task.escalationReason).toContain('uncommitted changes remain after the agent turn');
+      expect(git(repo, 'rev-parse', 'main')).toBe(mainBefore);
     });
 
     it('a worktree run whose base branch advances externally mid-turn still verifies and merges normally', async () => {
@@ -143,7 +142,7 @@ describe('worktree', () => {
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(run.branch).toBe(`harmonic/task-${taskId}`);
       expect(run.baseBranch).toBe('feature-base');
-      expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
+      expect(git(repo, 'show', 'feature-base:base-marker.txt')).toBe('from feature-base');
 
       expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
       expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
@@ -177,9 +176,7 @@ describe('worktree', () => {
       const states = [ta.state, tb.state].sort();
       expect(states).toEqual(['done', 'escalated']);
       const escalated = ta.state === 'escalated' ? ta : tb;
-      expect(escalated.escalationReason).toMatch(
-        /hit conflicts that \d+ automated resolve turns? could not settle; a human needs to resolve them/,
-      );
+      expect(escalated.escalationReason).toMatch(/workflow step merge conflict/);
       expect(git(repo, 'status', '--porcelain')).toBe('');
       expect(git(repo, 'log', '--merges', 'main')).not.toBe('');
       expect(['version A', 'version B']).toContain(git(repo, 'show', 'main:conflict.txt'));
@@ -251,9 +248,7 @@ describe('worktree', () => {
       for (const { taskId } of results) {
         const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
         expect(run.branch).toBe(`harmonic/task-${taskId}`);
-        expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
       }
-      expect(git(repo, 'show', `${(await server.api('GET', `/api/attempts/${results[0].attemptId}`)).body.branch}:a.txt`)).toBe('A');
 
       for (const file of ['a.txt', 'b.txt', 'c.txt']) expect(git(repo, 'ls-tree', '--name-only', 'main', file)).toBe(file);
       await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
@@ -395,7 +390,7 @@ describe('worktree', () => {
       await server.close();
     });
 
-    it('an afk worktree run that produced no candidate of its own fails closed (Escalates) rather than merging', async () => {
+    it('an afk worktree run that produced no candidate of its own completes with a no-op merge: the base branch is untouched', async () => {
       const repo = makeRepo();
       const mainBefore = git(repo, 'rev-parse', 'main');
 
@@ -405,7 +400,7 @@ describe('worktree', () => {
       const task = await server.app.ctx.tasks.upsertMirrored({
         trackerRef: trackerRef(ref++),
         prompt: 'go',
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,
@@ -416,10 +411,9 @@ describe('worktree', () => {
 
       const settled = await waitFor(async () => {
         const t = (await server.api('GET', `/api/tasks/${task.id}`)).body;
-        return t.state === 'escalated' ? t : undefined;
+        return t.state === 'done' || t.state === 'escalated' ? t : undefined;
       });
-      expect(settled.state).toBe('escalated');
-      expect(settled.escalationReason).toBeTruthy();
+      expect(settled.state).toBe('done');
       expect(git(repo, 'rev-parse', 'main')).toBe(mainBefore);
     });
   });

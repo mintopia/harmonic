@@ -2,78 +2,18 @@
 import { act, createElement, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Tabs } from '../web/src/components/Tabs.js';
+import { sectionsForTab } from '../web/src/components/settings-schema.js';
 import { SettingsForm } from '../web/src/components/SettingsForm.js';
-import { cleanup, makeConfig, mountComponent } from './component-smoke-harness.js';
+import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
 afterEach(cleanup);
 
-describe('settings layout (issue #554)', () => {
-  it('gives verification the full desktop settings grid', async () => {
-    const config = makeConfig();
-    const host = await mountComponent(
-      createElement(SettingsForm, {
-        title: 'Settings',
-        intro: 'Configure Harmonic.',
-        tabs: [{ id: 'verification', label: 'Verification' }],
-        tab: 'verification',
-        onTab: () => {},
-        ctx: {
-          surface: 'global',
-          config,
-          baseline: config,
-          setConfig: () => {},
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        },
-        dirty: false,
-        saving: false,
-        error: null,
-        onSave: () => {},
-        onDiscard: () => {},
-      }),
-    );
-
-    expect(host.querySelector('section')?.className).toContain('xl:col-span-2');
-  });
-});
-
-
 describe('settings prompts layout', () => {
-  it('renders the Prompts tab as one bare full-width panel organised by anatomy', async () => {
-    const config = makeConfig();
-    const host = await mountComponent(
-      createElement(SettingsForm, {
-        title: 'Settings',
-        intro: 'Configure Harmonic.',
-        tabs: [{ id: 'prompts', label: 'Prompts' }],
-        tab: 'prompts',
-        onTab: () => {},
-        ctx: {
-          surface: 'global',
-          config,
-          baseline: config,
-          setConfig: () => {},
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        },
-        dirty: false,
-        saving: false,
-        error: null,
-        onSave: () => {},
-        onDiscard: () => {},
-      }),
-    );
-
-    const panel = host.querySelector('[role="tabpanel"]');
-    expect(panel?.className).toContain('xl:grid-cols-2');
-    expect(panel?.className).not.toContain('xl:columns-2');
-    expect(panel?.querySelector('[role="tablist"][aria-label="Prompts the agent receives"]')).not.toBeNull();
-    expect(panel?.firstElementChild?.className).toContain('xl:col-span-2');
+  it('renders the Prompts settings as the Prompt Library alone', () => {
+    expect(sectionsForTab('global', 'prompts').map((s) => s.title)).toEqual(['Prompt Library']);
+    expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
   });
 });
-
 
 describe('settings tab keyboard navigation', () => {
   it('keeps one tab in the tab order and activates focused arrow and endpoint destinations', async () => {
@@ -100,5 +40,54 @@ describe('settings tab keyboard navigation', () => {
       expect(host.querySelector('[aria-selected="true"]')?.id).toBe(`settings-tab-${selected}`);
       expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
     }
+  });
+});
+
+
+describe('settings Execution tab without Ticket-side execution controls (ADR-0055)', () => {
+  const channels = { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} };
+  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution') => {
+    const config = makeConfig();
+    const workspace = makeWorkspace();
+    const ctx =
+      surface === 'global'
+        ? { surface: 'global' as const, config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {}, channels }
+        : {
+            surface: 'workspace' as const,
+            config,
+            workspace,
+            pristineWorkspace: workspace,
+            setWorkspace: () => {},
+            errors: {},
+            blockedByRunningTask: false,
+            onRequestDelete: () => {},
+          };
+    return mountComponent(
+      createElement(SettingsForm, {
+        title: 'Settings',
+        intro: 'Configure Harmonic.',
+        tabs: [{ id: tab, label: tab }],
+        tab,
+        onTab: () => {},
+        ctx,
+        dirty: false,
+        saving: false,
+        error: null,
+        onSave: () => {},
+        onDiscard: () => {},
+      }),
+    );
+  };
+
+  it.each(['global', 'workspace'] as const)('renders none of the removed controls on the %s Execution tab', async (surface) => {
+    const host = await mountTab(surface, 'execution');
+    const text = host.textContent ?? '';
+    for (const label of ['Attempt limit', 'Merge fate', 'Continue attempts', 'Unattended drive']) expect(text).not.toContain(label);
+    for (const id of ['settings-max-attempts', 'workspace-max-attempts', 'settings-merge-fate', 'workspace-merge-fate', 'settings-continue-attempts', 'workspace-continue-attempts']) {
+      expect(host.querySelector(`#${id}`), id).toBeNull();
+    }
+    expect(text).toContain('Session reuse');
+    expect(text).not.toContain('before the epic merges');
+    expect(text).not.toContain('+ Add critic');
   });
 });

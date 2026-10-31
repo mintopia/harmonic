@@ -1,7 +1,8 @@
 import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
-import type { AppConfig, HarnessConfig } from '../config.js';
+import type { HarnessConfig } from '../config.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -14,9 +15,7 @@ import { logger } from '../logger.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
 
 function rejectOptionId(request: PermissionRequest): string | null {
-  const options = request.options;
-  const pick = options.find((o) => o.kind === 'reject_always') ?? options.find((o) => o.kind === 'reject_once');
-  return pick?.optionId ?? null;
+  return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
 }
 
 function grantOptionId(request: PermissionRequest): string | null {
@@ -25,6 +24,8 @@ function grantOptionId(request: PermissionRequest): string | null {
     options.find((o) => o.kind === 'allow_always') ?? options.find((o) => o.kind === 'allow_once') ?? options[0];
   return pick?.optionId ?? null;
 }
+
+const READ_ONLY_PERMITTED_KINDS = new Set(['read', 'search', 'fetch', 'think', 'execute']);
 
 /** What a drive of one critic turn produced. */
 export interface CriticDriveResult {
@@ -55,6 +56,8 @@ export interface CriticDriveRequest {
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
   /** Reload this prior ACP session instead of starting a fresh one. */
   continueSessionId?: string;
+  /** Deny every permission request that could write, and never switch the harness into its unattended permission mode. */
+  readOnly?: boolean;
   /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
   onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
@@ -139,6 +142,10 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
               return { outcome: 'cancelled' };
             }
             permissionRequests.push(request);
+            if (req.readOnly && !READ_ONLY_PERMITTED_KINDS.has(request.toolCall.kind ?? '')) {
+              const denied = rejectOptionId(request);
+              return denied ? { outcome: 'selected', optionId: denied } : { outcome: 'cancelled' };
+            }
             if (req.denyPermissions) {
               const rejectId = rejectOptionId(request);
               return rejectId ? { outcome: 'selected', optionId: rejectId } : { outcome: 'cancelled' };
@@ -175,7 +182,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
         }
         if (initialize && sessionId !== req.continueSessionId) await req.onSessionCreated?.(sessionId, initialize);
 
-        const mode = req.denyPermissions ? undefined : adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
+        const mode = req.readOnly || req.denyPermissions ? null : adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }
@@ -209,7 +216,7 @@ export interface RunCriticArgs {
   /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
   dirty?: boolean;
   critic: { prompt: string; model: string; harness: string };
-  fragments: AppConfig['promptFragments'];
+  prompts: EnginePrompts;
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;
   harness: HarnessConfig;
@@ -318,7 +325,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
     fields: args.fields,
-    fragments: args.fragments,
+    prompts: args.prompts,
     verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),

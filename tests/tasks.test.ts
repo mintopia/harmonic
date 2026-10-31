@@ -173,7 +173,7 @@ describe('task authoring', () => {
       {
         trackerRef: trackerRef(91234),
         prompt: 'mirrored issue',
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,
@@ -199,7 +199,7 @@ describe('task authoring', () => {
     const input = {
       trackerRef: trackerRef(90777),
       prompt: 'stable mirrored issue',
-      workflow: 'implement' as const,
+      issueWorkflow: 'implement' as const,
       wayfinderType: null,
       mapRef: null,
       closed: false,

@@ -14,17 +14,18 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
+import { EpicWorkflowEditor, WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
+import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
-import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
-import { PromptsTab } from './prompts/PromptsTab';
 import { ExecutionTargetsPanel } from './ExecutionTargetsSettings';
 import { WorkspaceExecutionTargets } from './WorkspaceExecutionTargets';
+import { PromptLibrary } from './prompt-library/PromptLibrary';
 
 export type Surface = 'global' | 'workspace';
 
@@ -335,26 +336,6 @@ const concurrencyCap = scalar(null, {
   max: (c) => c.autoRunner.maxConcurrentAttempts,
 });
 
-const maxAttempts = scalar(
-  registryField('maxAttempts', {
-    id: 'settings-max-attempts',
-    errorKey: 'maxAttempts',
-    min: 1,
-    widthClass: 'w-28',
-    get: (c) => c.maxAttempts,
-    set: (c, raw) => ({ ...c, maxAttempts: Number(raw) }),
-  }),
-  {
-    key: 'maxAttempts',
-    id: 'workspace-max-attempts',
-    errorKey: 'maxAttempts',
-    get: (w) => w.maxAttempts,
-    set: (w, v) => ({ ...w, maxAttempts: v as number | null }),
-    inherited: (c) => c.maxAttempts,
-    min: 1,
-  },
-);
-
 const contextReuseTokenLimit = scalar(
   registryField('contextReuseTokenLimit', {
     id: 'settings-context-reuse-token-limit',
@@ -415,51 +396,6 @@ const agentMessagesSendCap = scalar(
     set: (w, v) => ({ ...w, agentMessagesSendCap: typeof v === 'number' ? v : null }),
     inherited: (c) => c.agentMessages.sendCap,
     min: 1,
-  },
-);
-
-const MERGE_FATE_OPTIONS: FieldOption[] = [
-  { value: 'auto-merge', label: 'Merge automatically' },
-  { value: 'open-PR', label: 'Open a pull request' },
-  { value: 'artifact', label: 'Leave the branch' },
-];
-
-const driveMergeFate = scalar(
-  registryField('driveMergeFate', {
-    id: 'settings-merge-fate',
-    errorKey: 'drive.mergeFate',
-    get: (c) => c.drive.mergeFate,
-    options: () => MERGE_FATE_OPTIONS,
-    set: (c, raw) => ({ ...c, drive: { ...c.drive, mergeFate: raw as AppConfig['drive']['mergeFate'] } }),
-  }),
-  {
-    key: 'driveMergeFate',
-    id: 'workspace-merge-fate',
-    errorKey: 'driveMergeFate',
-    get: (w) => w.driveMergeFate,
-    set: (w, v) => ({ ...w, driveMergeFate: v as 'auto-merge' | 'open-PR' | 'artifact' | null }),
-    inherited: (c) => c.drive.mergeFate,
-    options: () => MERGE_FATE_OPTIONS,
-  },
-);
-
-const driveContinueAttempts = scalar(
-  registryField('driveContinueAttempts', {
-    id: 'settings-continue-attempts',
-    errorKey: 'drive.continueAttempts',
-    min: 0,
-    widthClass: 'w-28',
-    get: (c) => c.drive.continueAttempts,
-    set: (c, raw) => ({ ...c, drive: { ...c.drive, continueAttempts: Number(raw) } }),
-  }),
-  {
-    key: 'driveContinueAttempts',
-    id: 'workspace-continue-attempts',
-    errorKey: 'driveContinueAttempts',
-    get: (w) => w.driveContinueAttempts,
-    set: (w, v) => ({ ...w, driveContinueAttempts: v as number | null }),
-    inherited: (c) => c.drive.continueAttempts,
-    min: 0,
   },
 );
 
@@ -921,6 +857,57 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     surfaces: BOTH,
+    title: 'Workflow Labels',
+    wide: true,
+    description: {
+      global:
+        'Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.',
+      workspace:
+        'Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <WorkflowLabelsEditor config={ctx.config} onChange={ctx.setConfig} />
+      ) : (
+        <WorkflowLabelOverlayEditor
+          overlay={ctx.workspace.workflowLabels}
+          workflow={ctx.workspace.workflow}
+          config={ctx.config}
+          onChange={(workflowLabels) => ctx.setWorkspace({ ...ctx.workspace, workflowLabels })}
+          onWorkflow={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Epic workflow',
+    wide: true,
+    description: {
+      global:
+        "The Task Execution Workflow that verifies an Epic's integration branch, resolves failures, and merges it into the base. Workflow Labels do not apply to Epics.",
+      workspace: 'Overrides the global Epic workflow for every Epic in this Workspace.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <EpicWorkflowEditor
+          surface="global"
+          value={ctx.config.defaults.epicWorkflow}
+          globalValue={ctx.config.defaults.epicWorkflow}
+          onChange={(epicWorkflow) => ctx.setConfig({ ...ctx.config, defaults: { ...ctx.config.defaults, epicWorkflow } })}
+        />
+      ) : (
+        <EpicWorkflowEditor
+          surface="workspace"
+          value={ctx.workspace.epicWorkflow ?? null}
+          globalValue={ctx.config.defaults.epicWorkflow}
+          onChange={(epicWorkflow) => ctx.setWorkspace({ ...ctx.workspace, epicWorkflow })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
     title: 'Model Options',
     wide: true,
     description: {
@@ -950,6 +937,18 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     surfaces: ['workspace'],
+    bare: true,
+    wide: true,
+    title: 'Workflow variables',
+    description: '',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <WorkspaceWorkflowVars workspace={ctx.workspace} onChange={(workflowVars) => ctx.setWorkspace({ ...ctx.workspace, workflowVars })} />
+      ) : null,
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
     title: 'Route Classifier',
     wide: true,
     description:
@@ -974,6 +973,23 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           onChange={ctx.setWorkspace}
         />
       ) : null,
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
+    title: 'Workflow classifier',
+    wide: true,
+    description:
+      "Picks a Ticket's workflow from the library by name and description when no operator choice or Workflow Label applies. Advisory: on error, timeout or invalid output the Workspace default workflow applies. Uses the Route Classifier's backend settings.",
+    action: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <Switch
+          checked={ctx.workspace.workflowClassifierEnabled ?? false}
+          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })}
+          label="Workflow classifier"
+        />
+      ) : null,
+    body: () => null,
   },
   {
     tab: 'execution',
@@ -1009,16 +1025,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     surfaces: BOTH,
-    title: 'Attempt limit',
-    description: {
-      global: 'The maximum implementation attempts before a ticket is escalated. Workspaces can override this cap.',
-      workspace: 'The maximum implementation attempts before a Task escalates. Inherits the global cap until overridden.',
-    },
-    body: (ctx) => grid('', [maxAttempts], ctx),
-  },
-  {
-    tab: 'execution',
-    surfaces: BOTH,
     title: 'Session reuse',
     description: {
       global:
@@ -1042,41 +1048,13 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
 
   {
-    tab: 'execution',
-    surfaces: BOTH,
-    title: 'Unattended drive',
-    description:
-      'What happens to a mirrored Task\'s finished work, and how many times Harmonic re-prompts a turn that ends without `finish_task`.',
-    body: (ctx) => grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx),
-  },
-
-  {
-    tab: 'verification',
-    surfaces: BOTH,
-    title: 'Verification',
-    wide: true,
-    description: {
-      global:
-        'Task and Epic verification is configured as independent command and critic lists for each stage.',
-      workspace:
-        'Global verifiers apply to every Workspace. Here you can reorder or disable them for this Workspace and add its own — the global ones stay locked.',
-    },
-    body: (ctx) =>
-      ctx.surface === 'global' ? (
-        <GlobalVerificationSettings config={ctx.config} setConfig={ctx.setConfig} fieldErrors={ctx.errors} />
-      ) : (
-        <WorkspaceVerificationSettings workspace={ctx.workspace} config={ctx.config} setWorkspace={ctx.setWorkspace} fieldErrors={ctx.errors} />
-      ),
-  },
-
-  {
     tab: 'prompts',
-    surfaces: BOTH,
+    surfaces: ['global'],
     bare: true,
     wide: true,
-    title: 'Prompts',
+    title: 'Prompt Library',
     description: '',
-    body: (ctx) => <PromptsTab ctx={ctx} />,
+    body: () => <PromptLibrary />,
   },
 
   {

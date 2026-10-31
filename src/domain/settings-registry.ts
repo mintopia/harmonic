@@ -1,13 +1,11 @@
-import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, type PromptFragmentOverrideKey } from './prompt-fragments.js';
-
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as. */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
-export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security' | 'archive';
+export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'security' | 'archive';
 
 export interface SettingSpec {
   readonly scope: SettingScope;
@@ -16,19 +14,6 @@ export interface SettingSpec {
   readonly label: string;
   readonly help: string;
 }
-
-const promptFragmentSettings = Object.fromEntries(
-  PROMPT_FRAGMENT_NAMES.map((name) => [
-    promptFragmentOverrideKey(name),
-    {
-      scope: 'overridable',
-      control: 'text',
-      tab: 'prompts',
-      label: PROMPT_FRAGMENTS[name].label,
-      help: `${PROMPT_FRAGMENTS[name].help} Inherits the global fragment when unset.`,
-    },
-  ]),
-) as Record<PromptFragmentOverrideKey, SettingSpec & { readonly scope: 'overridable' }>;
 
 export const settingsRegistry = {
   harness: {
@@ -72,6 +57,34 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Priority',
     help: 'Default scheduling priority for new Tasks.',
+  },
+  workflow: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'execution',
+    label: 'Default workflow',
+    help: 'Workflow a Ticket runs when no operator choice or Workflow Label applies; inherits the global default when unset.',
+  },
+  epicWorkflow: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'execution',
+    label: 'Epic workflow',
+    help: 'Workflow an Epic runs to verify, merge and close; inherits the global Epic workflow when unset.',
+  },
+  workflowLabels: {
+    scope: 'overridable',
+    control: 'workflow-labels',
+    tab: 'execution',
+    label: 'Workflow Labels',
+    help: 'Ordered ticket label to workflow assignments; reorder or disable global ones and add Workspace-only ones. Inherits the global list when unset.',
+  },
+  workflowVars: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Workflow variables',
+    help: 'Per-workflow overrides of the `vars:` a workflow declares; a Ticket can override these again.',
   },
   maxConcurrentAttempts: {
     scope: 'overridable',
@@ -122,45 +135,17 @@ export const settingsRegistry = {
     label: 'Conflict resolve turns',
     help: 'How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates.',
   },
-  taskPreMergeCommands: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'verification',
-    label: 'Task pre-merge commands',
-    help: 'Command verifiers run before a Task merge.',
-  },
-  taskPreMergeCritics: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'verification',
-    label: 'Task pre-merge critics',
-    help: 'Critics run after Task pre-merge commands pass.',
-  },
-  taskPostMergeCommands: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'verification',
-    label: 'Task post-merge commands',
-    help: 'Command verifiers run after a Task merge.',
-  },
-  taskPostMergeCritics: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'verification',
-    label: 'Task post-merge critics',
-    help: 'Critics run after Task post-merge commands pass.',
-  },
   epicPreMergeCommands: {
     scope: 'overridable',
     control: 'verifier',
-    tab: 'verification',
+    tab: 'execution',
     label: 'Epic pre-merge commands',
     help: 'Command verifiers run before an Epic merges to its default branch.',
   },
   epicPreMergeCritics: {
     scope: 'overridable',
     control: 'verifier',
-    tab: 'verification',
+    tab: 'execution',
     label: 'Epic pre-merge critics',
     help: 'Critics run after Epic pre-merge commands pass.',
   },
@@ -184,6 +169,13 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Model Options',
     help: 'Harness and Model choices the Route Classifier may pick from. A Workspace reorders or turns off global options and adds its own.',
+  },
+  workflowClassifierEnabled: {
+    scope: 'overridable',
+    control: 'toggle',
+    tab: 'execution',
+    label: 'Workflow classifier',
+    help: "Let a classifier pick a Ticket's workflow from the library when no operator choice or Workflow Label applies. Off unless set.",
   },
   classifierEnabled: {
     scope: 'overridable',
@@ -283,20 +275,6 @@ export const settingsRegistry = {
     label: 'Continue prompt',
     help: 'Re-prompt nudge for an auto-driven Attempt that ended its turn without finishing; inherits the global default when unset.',
   },
-  driveMergeFate: {
-    scope: 'overridable',
-    control: 'select',
-    tab: 'execution',
-    label: 'Merge fate',
-    help: 'What becomes of a completed auto-driven Attempt — auto-merge, open a PR, or leave an artifact; inherits the global default when unset.',
-  },
-  driveContinueAttempts: {
-    scope: 'overridable',
-    control: 'number',
-    tab: 'execution',
-    label: 'Continue attempts',
-    help: 'How many times an unfinished auto-driven Attempt is re-prompted before it is treated as unresolved; inherits the global default when unset.',
-  },
   taskPrompt: {
     scope: 'overridable',
     control: 'text',
@@ -311,7 +289,6 @@ export const settingsRegistry = {
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
-  ...promptFragmentSettings,
   driveCommitNudge: {
     scope: 'overridable',
     control: 'text',
@@ -324,28 +301,28 @@ export const settingsRegistry = {
     control: 'text',
     tab: 'prompts',
     label: 'Merge conflict resolver',
-    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   mergeEpicConflictPrompt: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic merge conflict resolver',
-    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   mergeEpicRefreshPrompt: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic refresh resolver',
-    help: 'Opens the turn that resolves a conflicted Epic integration refresh ({defaultBranch}, {branch}, {detail}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens the turn that resolves a conflicted Epic integration refresh ({defaultBranch}, {branch}, {detail}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   verifyEpicResolveSuffix: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic verification resolver suffix',
-    help: 'Closes the prompt that asks an agent to fix a failed Epic verification ({branch}, fragments such as {fragment.epicFailingVerification}); inherits the global default when unset.',
+    help: 'Closes the prompt that asks an agent to fix a failed Epic verification ({branch}); inherits the global default when unset.',
   },
   exportEnabled: {
     scope: 'overridable',
@@ -487,7 +464,6 @@ export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boo
 export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'execution', label: 'Execution' },
-  { id: 'verification', label: 'Verification' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security' },

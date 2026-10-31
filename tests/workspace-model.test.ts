@@ -6,7 +6,6 @@ import {
   resolveActiveWorkspace,
   storeActiveWorkspaceId,
 } from '../web/src/workspace-model.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { Workspace } from '../web/src/types.js';
 
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -40,13 +39,11 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   agentMessagesEnabled: null,
   agentMessagesSendCap: null,
   effectiveAgentMessagesEnabled: false,
-  taskPreMergeCommands: null,
-  taskPreMergeCritics: null,
-  taskPostMergeCommands: null,
-  taskPostMergeCritics: null,
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
   routingLabels: null,
+  workflow: null,
+  workflowLabels: null,
   modelOptions: null,
   executionTargets: null,
   classifierEnabled: null,
@@ -79,11 +76,8 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   drivePrompt: null,
   driveUnattendedReminder: null,
   driveContinuePrompt: null,
-  driveMergeFate: null,
-  driveContinueAttempts: null,
   taskPrompt: null,
   pauseMessage: null,
-  ...NO_PROMPT_FRAGMENT_OVERRIDES,
   mergeConflictPrompt: null,
   mergeEpicConflictPrompt: null,
   mergeEpicRefreshPrompt: null,

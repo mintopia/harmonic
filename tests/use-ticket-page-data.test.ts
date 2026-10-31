@@ -2,7 +2,7 @@
 import { createElement, useEffect } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { useTicketPageData, type TicketPageData, type TicketPageDataDeps } from '../web/src/components/useTicketPageData.js';
-import { cleanup, makeConfig, makeTask, makeWorkspace, mountComponent } from './component-smoke-harness.js';
+import { cleanup, makeTask, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
 afterEach(cleanup);
 
@@ -11,9 +11,9 @@ function fakeDeps(overrides: Partial<TicketPageDataDeps> = {}): TicketPageDataDe
     loadAllTasks: async () => ({ tasks: [] }),
     loadTask: async (id) => makeTask({ id }),
     loadTimeline: async () => ({ events: [] }),
-    loadConfig: async () => makeConfig(),
     loadWorkspaces: async () => ({ workspaces: [] }),
     loadGuardrailEvents: async () => ({ guardrailEvents: [] }),
+    loadWorkflowSteps: async () => ({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
     ...overrides,
   };
 }
@@ -49,39 +49,24 @@ describe('useTicketPageData (issue #657)', () => {
     expect(data.timelineEvents).toHaveLength(1);
   });
 
-  it('derives maxAttempts/workspaceName/commandConfigured from the workspace, falling back to config', async () => {
+  it('derives workspaceName from the owning workspace', async () => {
     const withWorkspace = await probe(
       1,
       null,
       fakeDeps({
-        loadConfig: async () => makeConfig({ maxAttempts: 3, verify: { task: { preMerge: { commands: [], critics: [] }, postMerge: { commands: [], critics: [] } }, epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: '', resolveSuffix: '' } } }),
-        loadWorkspaces: async () => ({
-          workspaces: [
-            makeWorkspace({
-              id: 1,
-              name: 'Payments',
-              maxAttempts: 9,
-              taskPreMergeCommands: [{ kind: 'local', enabled: true, command: { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 60 } }],
-            }),
-          ],
-        }),
+        loadWorkspaces: async () => ({ workspaces: [makeWorkspace({ id: 1, name: 'Payments' })] }),
       }),
     );
-    expect(withWorkspace.maxAttempts).toBe(9);
     expect(withWorkspace.workspaceName).toBe('Payments');
-    expect(withWorkspace.commandConfigured).toBe(true);
 
-    const fallsBackToConfig = await probe(
+    const unmatched = await probe(
       2,
       null,
       fakeDeps({
-        loadConfig: async () => makeConfig({ maxAttempts: 3 }),
         loadWorkspaces: async () => ({ workspaces: [makeWorkspace({ id: 999, name: 'Other' })] }),
       }),
     );
-    expect(fallsBackToConfig.maxAttempts).toBe(3);
-    expect(fallsBackToConfig.workspaceName).toBeNull();
-    expect(fallsBackToConfig.commandConfigured).toBe(false);
+    expect(unmatched.workspaceName).toBeNull();
   });
 
   it('guardrailEvents is empty with no api call when no attempt is selected, and loads once one is', async () => {

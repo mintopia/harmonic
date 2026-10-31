@@ -16,8 +16,8 @@ const progressTask = (overrides: Partial<ProgressTask> = {}): ProgressTask => ({
   state: 'ready', isolationMode: 'worktree', branch: null, trackerRef: null, mergeStatus: null, ...overrides,
 });
 const stateAttempt = (number: number, state: AttemptSummary['state']): Pick<AttemptSummary, 'number' | 'state'> => ({ number, state });
-function statuses(task: ProgressTask, attempts: Pick<AttemptSummary, 'number' | 'state'>[] = [], details: Pick<Attempt, 'number' | 'steps'>[] = [], configured = true): Record<LifecycleStepKey, LifecycleStepStatus> {
-  return Object.fromEntries(taskLifecycle(task, attempts, details, configured).steps.map((s) => [s.key, s.status])) as Record<LifecycleStepKey, LifecycleStepStatus>;
+function statuses(task: ProgressTask, attempts: Pick<AttemptSummary, 'number' | 'state'>[] = [], details: Pick<Attempt, 'number' | 'steps'>[] = []): Record<LifecycleStepKey, LifecycleStepStatus> {
+  return Object.fromEntries(taskLifecycle(task, attempts, details).steps.map((s) => [s.key, s.status])) as Record<LifecycleStepKey, LifecycleStepStatus>;
 }
 
 const tok = (input: number, output: number, cacheReadTokens = 0, cacheWriteTokens = 0): ModelUsage => ({
@@ -76,7 +76,7 @@ describe('taskLifecycle', () => {
       worktree: 'pending', implementation: 'pending', merge: 'pending',
       postMergeCheck: 'pending', closeIssue: 'skipped', retire: 'pending',
     });
-    expect(taskLifecycle(progressTask(), [], [], true).steps.map((s) => s.key)).toEqual(STEP_ORDER);
+    expect(taskLifecycle(progressTask(), [], []).steps.map((s) => s.key)).toEqual(STEP_ORDER);
   });
 
   it('shows worktree creation until the branch exists, then the running Attempt', () => {
@@ -135,8 +135,6 @@ describe('taskLifecycle', () => {
       worktree: 'done', implementation: 'done', merge: 'done',
       postMergeCheck: 'done', closeIssue: 'done', retire: 'done',
     });
-    const unconfigured = taskLifecycle(task, [stateAttempt(1, 'completed')], [], false);
-    expect(unconfigured.steps.find((s) => s.key === 'postMergeCheck')).toMatchObject({ status: 'skipped', disabled: true });
   });
 
   it('skips merge, issue closure and worktree operations in direct mode', () => {

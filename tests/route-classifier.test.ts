@@ -21,6 +21,7 @@ import { createAcpCriticDrive, type CriticDriveRequest, type CriticHarnessDrive 
 import { withRoutingContribution } from '../src/domain/pricing.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup, STUB_HARNESS } from './helpers.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const OPTIONS = [
   { id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-4-5-20251001', description: 'cheap, small fixes' },
@@ -60,7 +61,7 @@ describe('Route Classifier', () => {
   const makeRunner = () => {
     runner = new Runner(tasks, asyncDb, () => config, {
       ...executionPlumbing(),
-      routeClassifier: new RouteClassifier(() => config, { harness: backend }),
+      routeClassifier: new RouteClassifier(() => config, { harness: backend }, bundledEnginePrompts),
     });
     (runner as unknown as { turnDriver: { drive: () => Promise<void> } }).turnDriver.drive = async () => {};
   };
@@ -176,7 +177,7 @@ describe('Route Classifier', () => {
     it('a backend slower than the Workspace timeout abstains; two Workspaces honour different timeouts', async () => {
       const slow = new RouteClassifier(() => config, {
         harness: { classify: () => new Promise((resolve) => setTimeout(() => resolve(answer('cheap-fix')), 120)) },
-      });
+      }, bundledEnginePrompts);
       const workspace = (await allWorkspaces(asyncDb, settingsStore)())[0]!;
       const request = { title: 't', description: 'd', labels: [], attemptNumber: 1 };
       const short = await slow.classify({ ...request, workspace: { ...workspace, classifierEnabled: true, classifierTimeoutSeconds: 0.03 } });
@@ -226,7 +227,7 @@ describe('Route Classifier', () => {
       await runner.shutdown();
       runner = new Runner(tasks, asyncDb, () => config, {
         ...executionPlumbing(),
-        routeClassifier: new RouteClassifier(() => config, { harness: createHarnessClassifierBackend({ drive, getConfig: () => config }) }),
+        routeClassifier: new RouteClassifier(() => config, { harness: createHarnessClassifierBackend({ drive, getConfig: () => config }) }, bundledEnginePrompts),
       });
       (runner as unknown as { turnDriver: { drive: () => Promise<void> } }).turnDriver.drive = async () => {};
 
@@ -324,7 +325,7 @@ describe('Harness classifier backend (real ACP Harness)', () => {
         return real.run({ ...req, prompt: JSON.stringify(scenario) });
       },
     };
-    const classifier = new RouteClassifier(() => config, { harness: createHarnessClassifierBackend({ drive, getConfig: () => config }) });
+    const classifier = new RouteClassifier(() => config, { harness: createHarnessClassifierBackend({ drive, getConfig: () => config }) }, bundledEnginePrompts);
     const outcome = await classifier.classify({ workspace: workspace, title: input.title, description: input.description, labels: [], attemptNumber: 1 });
     expect(outcome).toMatchObject({ kind: 'chosen', option: { id: 'deep-work' }, reason: 'typo is trivial but ok' });
     if (outcome.kind === 'chosen') expect(outcome.routing?.usage.totals?.totalTokens ?? 0).toBeGreaterThanOrEqual(0);

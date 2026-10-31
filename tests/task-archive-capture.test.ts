@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
-import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore } from '../src/domain/sessions.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -103,7 +102,6 @@ describe('Task Archive crash recovery (#728)', () => {
       const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
       const attempts = new AttemptStore(asyncDb);
       const sessions = new SessionStore(asyncDb);
-      const settle = new AttemptSettleCoordinator(tasks, attempts);
       const native = join(dir, 'native-session.jsonl');
       writeFileSync(native, 'crash-native\n');
       const created = await tasks.create({ prompt: 'crash', state: 'ready', workingDir: dir, isolationMode: 'direct' });
@@ -118,8 +116,7 @@ describe('Task Archive crash recovery (#728)', () => {
         ensureArchiveId: (id) => tasks.ensureArchiveId(id),
         workspaceName: async () => 'ws',
       });
-      const coord = new CrashRecoveryCoordinator(attempts, tasks, settle, {
-        runPostMergeCheck: async () => ({ pass: true, output: '' }),
+      const coord = new CrashRecoveryCoordinator(attempts, tasks, {
         archive,
         sessionTranscriptPath: async (id) => (await sessions.get(id))?.transcriptPath ?? null,
       });

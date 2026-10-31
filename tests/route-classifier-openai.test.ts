@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { baselineConfig } from '../src/config.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
 import { RouteClassifier, createOpenAiCompatibleClassifierBackend } from '../src/domain/route-classifier.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const OPTIONS = [
   { id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-4-5-20251001', description: 'cheap, small fixes' },
@@ -61,7 +62,7 @@ function classifier(opts: { timeoutSeconds?: number; secret?: string | null } = 
       return opts.secret === undefined ? KEY : opts.secret;
     },
   });
-  const rc = new RouteClassifier(() => config, { 'openai-compatible': backend });
+  const rc = new RouteClassifier(() => config, { 'openai-compatible': backend }, bundledEnginePrompts);
   const run = () => rc.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1 });
   return { run, revealed };
 }

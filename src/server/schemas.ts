@@ -18,6 +18,7 @@ export const errorResponseSchema = z
     error: z.object({
       code: z.string().meta({ example: 'not_found' }),
       message: z.string().meta({ example: 'no task with id 4821' }),
+      issues: z.array(z.object({ message: z.string(), line: z.number().int(), column: z.number().int() })).optional().describe('Present on a refused YAML save: each problem with its 1-based line and column.'),
       id: z.string().optional().describe('Present on 500 responses: a reference to grep for in the server logs.').meta({ example: 'req-2a' }),
     }),
   })

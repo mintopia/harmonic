@@ -17,19 +17,18 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
-import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
+import { workspaceWorkflowVarsSchema } from './workflow-vars.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
-  taskVerificationCriticOverrideSchema,
+  workflowLabelOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
-  MERGE_FATES,
 } from '../config.js';
 import { configuredTrackerSchema } from '../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../tracker/triage-labels.js';
@@ -84,20 +83,22 @@ export const workspaceOverridesSchema = z.object({
   agentMessagesSendCap: z.number().int().min(1).nullable().optional().meta({ example: 10 }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
-  taskPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
-  taskPostMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   /** `local` is always available; null inherits every enabled target. */
   executionTargets: z.array(z.string().min(1).max(64)).max(100).nullable().optional().meta({ example: ['k8s-prod'] }),
+  workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
+  epicWorkflow: z.string().min(1).nullable().optional().meta({ example: 'epic' }),
+  workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
+  workflowVars: workspaceWorkflowVarsSchema.nullable().optional().meta({ example: { implement: { maxAttempts: 3 } } }),
   /** Ordered Model Option overlay (ADR-0037); null inherits every global, enabled. */
   modelOptions: modelOptionOverrideSchema.nullable().optional(),
   /** Route Classifier on/off override; null inherits off. */
   classifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  /** Workflow classifier on/off override; null inherits off. */
+  workflowClassifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
   classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
   /** Seconds the Route Classifier may take before it abstains; null inherits 30. */
   classifierTimeoutSeconds: z.number().positive().nullable().optional().meta({ example: 30 }),
@@ -123,14 +124,9 @@ export const workspaceOverridesSchema = z.object({
   driveUnattendedReminder: z.string().min(1).nullable().optional(),
   /** Continue-prompt override; null inherits `config.drive.continuePrompt`. */
   driveContinuePrompt: z.string().min(1).nullable().optional(),
-  /** Merge Fate override; null inherits `config.drive.mergeFate`. */
-  driveMergeFate: z.enum(MERGE_FATES).nullable().optional().meta({ example: 'auto-merge' }),
-  /** Continue-attempts override; null inherits `config.drive.continueAttempts`. */
-  driveContinueAttempts: z.number().int().min(0).nullable().optional().meta({ example: 1 }),
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
-  ...promptFragmentOverrideShape,
   /** Commit nudge override; null inherits `config.drive.commitNudge`. */
   driveCommitNudge: z.string().min(1).nullable().optional(),
   /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
@@ -165,8 +161,6 @@ export const workspaceOverridesSchema = z.object({
   /** Archive retention overrides; a null field inherits `config.archive.retain`. */
   archiveRetentionDays: z.number().int().positive().nullable().optional().meta({ example: 90 }),
   archiveRetentionMaxTotalMB: z.number().positive().nullable().optional().meta({ example: 2048 }),
-}).superRefine((overrides, ctx) => {
-  for (const issue of unknownWorkspaceFragmentIssues(overrides)) ctx.addIssue({ code: 'custom', ...issue });
 });
 export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
@@ -186,15 +180,16 @@ export const OVERRIDE_KEYS = [
   'agentMessagesSendCap',
   'maxAttempts',
   'contextReuseTokenLimit',
-  'taskPreMergeCommands',
-  'taskPreMergeCritics',
-  'taskPostMergeCommands',
-  'taskPostMergeCritics',
   'epicPreMergeCommands',
   'epicPreMergeCritics',
   'routingLabels',
+  'workflow',
+  'epicWorkflow',
+  'workflowLabels',
+  'workflowVars',
   'modelOptions',
   'executionTargets',
+  'workflowClassifierEnabled',
   'classifierEnabled',
   'classifierBackend',
   'classifierTimeoutSeconds',
@@ -209,11 +204,8 @@ export const OVERRIDE_KEYS = [
   'drivePrompt',
   'driveUnattendedReminder',
   'driveContinuePrompt',
-  'driveMergeFate',
-  'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
-  ...PROMPT_FRAGMENT_OVERRIDE_KEYS,
   'driveCommitNudge',
   'mergeConflictPrompt',
   'mergeEpicConflictPrompt',
@@ -249,10 +241,7 @@ export interface WorkspaceSettingsStore {
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
-  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() })
-  .superRefine((input, ctx) => {
-    for (const issue of unknownWorkspaceFragmentIssues(input)) ctx.addIssue({ code: 'custom', ...issue });
-  });
+  .extend({ ...workspaceOverridesSchema.shape, color: workspaceColorSchema.optional() });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /** The given Workspace, or the earliest-created one when `id` is omitted — the default-Workspace fallback. */
@@ -296,15 +285,16 @@ export class WorkspaceService {
       agentMessagesSendCap: o.agentMessagesSendCap,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
-      taskPreMergeCommands: o.taskPreMergeCommands != null ? JSON.stringify(o.taskPreMergeCommands) : null,
-      taskPreMergeCritics: o.taskPreMergeCritics != null ? JSON.stringify(o.taskPreMergeCritics) : null,
-      taskPostMergeCommands: o.taskPostMergeCommands != null ? JSON.stringify(o.taskPostMergeCommands) : null,
-      taskPostMergeCritics: o.taskPostMergeCritics != null ? JSON.stringify(o.taskPostMergeCritics) : null,
       epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
+      workflow: o.workflow,
+      epicWorkflow: o.epicWorkflow,
+      workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
+      workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
       modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
       executionTargets: o.executionTargets,
+      workflowClassifierEnabled: o.workflowClassifierEnabled,
       classifierEnabled: o.classifierEnabled,
       classifierBackend: o.classifierBackend,
       classifierTimeoutSeconds: o.classifierTimeoutSeconds,
@@ -319,11 +309,8 @@ export class WorkspaceService {
       drivePrompt: o.drivePrompt,
       driveUnattendedReminder: o.driveUnattendedReminder,
       driveContinuePrompt: o.driveContinuePrompt,
-      driveMergeFate: o.driveMergeFate,
-      driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
-      ...(Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, o[key]])) as PromptFragmentOverrides),
       driveCommitNudge: o.driveCommitNudge,
       mergeConflictPrompt: o.mergeConflictPrompt,
       mergeEpicConflictPrompt: o.mergeEpicConflictPrompt,

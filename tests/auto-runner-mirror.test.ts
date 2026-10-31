@@ -30,7 +30,7 @@ const agentFacts = (ref: number): TrackerFacts => ({
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
   trackerRef: trackerRef(ref),
   prompt: `ticket ${ref}`,
-  workflow: 'implement',
+  issueWorkflow: 'implement',
   wayfinderType: null,
   mapRef: null,
   closed: false,

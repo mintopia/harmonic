@@ -90,6 +90,16 @@ async function dedupeAttemptEventSeqsBeforeUniqueIndex(client: Client, baseline:
   }
 }
 
+async function contractWorkflowColumn(client: Client): Promise<void> {
+  const columns = (await client.execute('pragma table_info(`tasks`)')).rows.map((row) => String(row.name));
+  if (!columns.includes('workflow')) return;
+  if (!columns.includes('issue_workflow')) {
+    await client.execute('ALTER TABLE `tasks` RENAME COLUMN `workflow` TO `issue_workflow`');
+    return;
+  }
+  await client.execute('UPDATE `tasks` SET `issue_workflow` = `workflow` WHERE `issue_workflow` IS NULL AND `workflow` IS NOT NULL');
+}
+
 async function convergeIncremental(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
   const declaredTables = new Set(baseline.tables.map((t) => t.name));
   const declaredIndexes = new Set(baseline.indexes.map((i) => i.name));
@@ -106,6 +116,7 @@ async function convergeIncremental(client: Client, baseline: Baseline, onStep: (
     onStep();
   }
   const existingTables = new Set(await liveNames(client, 'table'));
+  if (existingTables.has('tasks')) await contractWorkflowColumn(client);
   for (const table of baseline.tables) {
     if (!existingTables.has(table.name)) {
       await client.execute(table.sql);

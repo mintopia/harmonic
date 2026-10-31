@@ -32,6 +32,9 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
+import { nextUnexecutedStep, workflowEscalationNotes } from '../task-actions-model';
+import { WorkflowSteps } from './ticket/WorkflowSteps';
+import { TicketVariables } from './WorkflowVarsEditors';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
@@ -80,7 +83,7 @@ export function TicketPage({
   const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
   const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
 
-  const { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents } = useTicketPageData(
+  const { allTasks, detail, timelineEvents, workspaceName, guardrailEvents, workflowSteps } = useTicketPageData(
     task,
     selectedRunId,
   );
@@ -137,6 +140,7 @@ export function TicketPage({
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
   const failedStep = latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null;
+  const workflowNotes = task.state === 'escalated' ? workflowSteps ? workflowEscalationNotes(workflowSteps) : null : null;
   const panel = contentPanel(resolved);
   const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
   const selectRunById = (runId: number) => {
@@ -206,12 +210,15 @@ export function TicketPage({
               </div>
               <div className="min-w-0">
                 <Metrics task={task} runs={runs} live={liveUsage} now={now} />
-                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} attempts={attempts} />
+                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} latestVersion={workflowSteps?.latestVersion ?? null} attempts={attempts} />
                 <ModelOptionOverrides task={detail ?? task} onChanged={onChanged} />
               </div>
             </div>
 
-            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
+            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
+
+            <WorkflowSteps data={workflowSteps} attemptSelector />
+            <TicketVariables taskId={task.id} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 
@@ -254,7 +261,7 @@ export function TicketPage({
                       ? 'Verifying candidate'
                       : task.mergeStatus === 'merging'
                         ? 'Merging'
-                        : 'Escalated'}
+                        : (workflowNotes?.heading ?? 'Escalated')}
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">
@@ -262,6 +269,16 @@ export function TicketPage({
                   </div>
                 )}
               </div>
+              {workflowNotes && (
+                <dl className="mt-2 grid gap-1 text-small text-ink" aria-label="What each action does">
+                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).map(([name, text]) => (
+                    <div key={name}>
+                      <dt className="inline font-semibold">{name}</dt> <dd className="inline text-muted">{text}</dd>
+                    </div>
+                  ))}
+                  {!task.hasCandidate && <div className="text-muted">Accept is unavailable: no candidate commit on the Ticket branch.</div>}
+                </dl>
+              )}
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
               {gateModel.kind !== 'result' && (
                 <TaskActions
@@ -276,6 +293,15 @@ export function TicketPage({
                 />
               )}
               </div>
+            )}
+
+            {workflowSteps && workflowSteps.workflowRef !== null && task.state === 'working' && (
+              <p className="mb-4 text-small text-muted">Pause: the in-flight turn finishes before the Ticket holds.</p>
+            )}
+            {workflowSteps && workflowSteps.workflowRef !== null && task.state === 'paused' && (
+              <p className="mb-4 text-small text-muted">
+                Resume continues at the next unexecuted step{nextUnexecutedStep(workflowSteps) ? <>, <code>{nextUnexecutedStep(workflowSteps)}</code></> : ''}.
+              </p>
             )}
 
             {/* content panel: driven by the sidebar selection — Stats (default),
@@ -327,7 +353,6 @@ export function TicketPage({
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible max-rail:border-t max-rail:border-hairline max-rail:bg-surface">
             <AttemptsNav
               attempts={attempts}
-              maxAttempts={maxAttempts}
               selectedNumber={resolved.kind === 'attempt' ? resolved.attemptNumber : null}
               onSelect={selectAttempt}
             />

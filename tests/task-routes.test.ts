@@ -230,6 +230,7 @@ describe('task-steering', () => {
     beforeAll(async () => {
       const scenarioPrompt = scenario({
         updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
+        mcpEscalate: { reason: 'need a human' },
         stopReason: 'end_turn',
       });
       const overrides = stubHarness() as DeepPartial<AppConfig>;
@@ -246,7 +247,7 @@ describe('task-steering', () => {
       const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
       const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
       const mirrored = await server.app.ctx.tasks.upsertMirrored(
-        { trackerRef: trackerRef(90210), prompt: 'ticket 90210\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        { trackerRef: trackerRef(90210), prompt: 'ticket 90210\n\nbody', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
         workspaceId,
       );
       await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -276,7 +277,7 @@ describe('task-steering', () => {
       const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
       const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
       const mirrored = await server.app.ctx.tasks.upsertMirrored(
-        { trackerRef: trackerRef(90211), prompt: 'ticket 90211\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+        { trackerRef: trackerRef(90211), prompt: 'ticket 90211\n\nbody', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
         workspaceId,
       );
       await server.api('POST', `/api/tasks/${mirrored.id}/run`);
@@ -458,7 +459,7 @@ describe('task-epic-hold', () => {
     ]);
     await tasks.syncEpics(workspaceId, [{ ref: trackerRef(73), kind: 'epic' }, { ref: trackerRef(71), kind: 'epic' }]);
     const member = await tasks.upsertMirrored(
-      { trackerRef: trackerRef(101), prompt: 'member', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts('73', [], ['ready-for-agent']) },
+      { trackerRef: trackerRef(101), prompt: 'member', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false, facts: facts('73', [], ['ready-for-agent']) },
       workspaceId,
     );
 

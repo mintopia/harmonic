@@ -107,10 +107,10 @@ describe('SettingsStore (issue #391)', () => {
 
   it('writes changed arrays as whole sparse-patch values', async () => {
     const store = await SettingsStore.create(dir);
-    await store.updateGlobal({ verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'] }], critics: [] } } } });
+    await store.updateGlobal({ verify: { epic: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'] }], critics: [] } } } });
 
     expect(parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).global).toEqual({
-      verify: { task: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] } } },
+      verify: { epic: { preMerge: { commands: [{ id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] } } },
     });
   });
 
@@ -261,7 +261,7 @@ describe('SettingsStore (issue #391)', () => {
     expect(raw2.workspaces).toEqual({});
   });
 
-  it('taskPreMergeCommands/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
+  it('epicPreMergeCommands/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
     const store = await SettingsStore.create(dir);
     const wsId = 2;
     const command = [{
@@ -271,22 +271,22 @@ describe('SettingsStore (issue #391)', () => {
     }];
     const budget = budgetGuardrailSchema.parse({ wallClockMinutes: 120 });
 
-    await store.setOverrides(wsId, { taskPreMergeCommands: command, guardrailBudget: budget });
+    await store.setOverrides(wsId, { epicPreMergeCommands: command, guardrailBudget: budget });
 
     const raw = readFileSync(join(dir, 'settings.yaml'), 'utf8');
     const parsed = parse(raw);
     const stored = parsed.workspaces[String(wsId)];
-    expect(Array.isArray(stored.taskPreMergeCommands)).toBe(true);
-    expect(typeof stored.taskPreMergeCommands).not.toBe('string');
+    expect(Array.isArray(stored.epicPreMergeCommands)).toBe(true);
+    expect(typeof stored.epicPreMergeCommands).not.toBe('string');
     expect(typeof stored.guardrailBudget).toBe('object');
     expect(typeof stored.guardrailBudget).not.toBe('string');
 
     const overrides = store.getOverrides(wsId);
-    expect(overrides.taskPreMergeCommands).toMatchObject(command);
+    expect(overrides.epicPreMergeCommands).toMatchObject(command);
     expect(overrides.guardrailBudget).toMatchObject(budget);
 
     const reopened = await SettingsStore.create(dir);
-    expect(reopened.getOverrides(wsId).taskPreMergeCommands).toMatchObject(command);
+    expect(reopened.getOverrides(wsId).epicPreMergeCommands).toMatchObject(command);
     expect(reopened.getOverrides(wsId).guardrailBudget).toMatchObject(budget);
   });
 
@@ -327,23 +327,132 @@ describe('SettingsStore (issue #391)', () => {
     expect(store.getGlobal().maxAttempts).toBe(9);
   });
 
+  describe('pre-workflow execution keys (ADR-0055)', () => {
+    const command = { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+    const critic = { id: 'critic-a', name: 'A', harness: 'claude', model: 'claude-sonnet-5-5', issuePrompt: 'i', noIssuePrompt: 'n', timeoutSeconds: 300 };
+    const oldFile = () => ({
+      global: {
+        maxAttempts: 4,
+        drive: { prompt: 'Resolve {ref}.', mergeFate: 'open-PR', continueAttempts: 3 },
+        verify: {
+          task: { preMerge: { commands: [command], critics: [critic] }, postMerge: { commands: [command], critics: [] } },
+          epic: { preMerge: { commands: [{ ...command, id: 'cmd-epic' }] } },
+        },
+      },
+      workspaces: {
+        1: {
+          priority: 'high',
+          driveMergeFate: 'artifact',
+          driveContinueAttempts: 0,
+          taskPreMergeCommands: [{ kind: 'local', enabled: true, command }],
+          taskPreMergeCritics: [{ kind: 'global', ref: 'critic-a', enabled: false }],
+          taskPostMergeCommands: [],
+          taskPostMergeCritics: null,
+        },
+        2: { driveMergeFate: 'auto-merge' },
+      },
+    });
+    const path = () => join(dir, 'settings.yaml');
+    const onDisk = () => parse(readFileSync(path(), 'utf8'));
+
+    it('loads a file carrying the old keys and ignores them', async () => {
+      writeFileSync(path(), stringify(oldFile()));
+
+      const store = await SettingsStore.create(dir);
+      const global = store.getGlobal() as Record<string, any>;
+
+      expect(global.maxAttempts).toBe(4);
+      expect(global.drive.prompt).toBe('Resolve {ref}.');
+      expect(global.drive).not.toHaveProperty('mergeFate');
+      expect(global.drive).not.toHaveProperty('continueAttempts');
+      expect(global.verify).not.toHaveProperty('task');
+      expect(global.verify.epic.preMerge.commands.map((c: { id: string }) => c.id)).toEqual(['cmd-epic']);
+      const overrides = store.getOverrides(1) as Record<string, unknown>;
+      expect(overrides.priority).toBe('high');
+      for (const key of ['driveMergeFate', 'driveContinueAttempts', 'taskPreMergeCommands', 'taskPreMergeCritics', 'taskPostMergeCommands', 'taskPostMergeCritics']) {
+        expect(overrides).not.toHaveProperty(key);
+      }
+    });
+
+    it('leaves the file byte-identical when booting changes nothing', async () => {
+      writeFileSync(path(), stringify(oldFile()));
+      const before = readFileSync(path(), 'utf8');
+
+      await SettingsStore.create(dir);
+
+      expect(readFileSync(path(), 'utf8')).toBe(before);
+    });
+
+    it('keeps the old keys, global and per-Workspace, on disk through every kind of write', async () => {
+      const original = oldFile();
+      writeFileSync(path(), stringify(original));
+      const store = await SettingsStore.create(dir);
+
+      await store.updateGlobal({ maxAttempts: 5, drive: { prompt: 'Changed.' } });
+      await store.setOverrides(1, { priority: 'low' });
+      await store.setOverrides(3, { priority: 'high' });
+      await store.setDefaultWorkflow('implement');
+      await store.replaceGlobal({ ...store.getGlobal(), maxAttempts: 6 });
+
+      const written = onDisk();
+      expect(written.global.maxAttempts).toBe(6);
+      expect(written.global.drive).toEqual({ prompt: 'Changed.', mergeFate: 'open-PR', continueAttempts: 3 });
+      expect(written.global.verify.task).toEqual(original.global.verify.task);
+      expect(written.global.verify.epic).toEqual(original.global.verify.epic);
+      expect(written.workspaces['1']).toEqual({ ...original.workspaces[1], priority: 'low' });
+      expect(written.workspaces['2']).toEqual(original.workspaces[2]);
+      expect(written.workspaces['3']).toEqual({ priority: 'high' });
+
+      const reopened = await SettingsStore.create(dir);
+      expect(reopened.getOverrides(1).priority).toBe('low');
+      expect(onDisk()).toEqual(written);
+    });
+
+    it('keeps a Workspace entry that holds only old keys when its new overrides are cleared, and drops it when the Workspace is deleted', async () => {
+      writeFileSync(path(), stringify(oldFile()));
+      const store = await SettingsStore.create(dir);
+
+      await store.setOverrides(1, { priority: null });
+      expect(onDisk().workspaces['1']).not.toHaveProperty('priority');
+      expect(onDisk().workspaces['1'].driveMergeFate).toBe('artifact');
+      await store.setOverrides(2, { priority: 'low' });
+      expect(onDisk().workspaces['2']).toEqual({ driveMergeFate: 'auto-merge', priority: 'low' });
+
+      await store.deleteOverrides(1);
+      expect(onDisk().workspaces).not.toHaveProperty('1');
+      expect(onDisk().workspaces['2'].driveMergeFate).toBe('auto-merge');
+    });
+
+    it('exposes the stored old keys, resolved over their old defaults, to the first-boot migration only', async () => {
+      writeFileSync(path(), stringify(oldFile()));
+
+      const legacy = (await SettingsStore.create(dir)).getLegacySettings();
+
+      expect(legacy.global).toMatchObject({ continueAttempts: 3, mergeFate: 'open-PR' });
+      expect(legacy.global.preMerge.commands.map((c) => c.id)).toEqual(['cmd-test']);
+      expect(legacy.workspaces.get(1)).toMatchObject({ driveMergeFate: 'artifact', driveContinueAttempts: 0 });
+      expect(legacy.workspaces.get(2)).toMatchObject({ driveMergeFate: 'auto-merge' });
+      expect((await SettingsStore.create(join(dir, 'fresh'))).getLegacySettings().global).toMatchObject({ continueAttempts: 10, mergeFate: 'auto-merge' });
+    });
+  });
+
   describe('verifier id backfill and array-to-overlay migration (ADR-0037)', () => {
     it('backfills a missing id onto a stored global verifier and persists it stably across restarts', async () => {
       const path = join(dir, 'settings.yaml');
       writeFileSync(path, stringify({
-        global: { verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
+        global: { verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
         workspaces: {},
       }));
 
       const store = await SettingsStore.create(dir);
-      const [command] = store.getGlobal().verify.task.preMerge.commands;
+      const [command] = store.getGlobal().verify.epic.preMerge.commands;
       expect(command!.id).toBeTruthy();
 
       const persisted = parse(readFileSync(path, 'utf8'));
-      expect(persisted.global.verify.task.preMerge.commands[0].id).toBe(command!.id);
+      expect(persisted.global.verify.epic.preMerge.commands[0].id).toBe(command!.id);
 
       const reopened = await SettingsStore.create(dir);
-      expect(reopened.getGlobal().verify.task.preMerge.commands[0]!.id).toBe(command!.id);
+      expect(reopened.getGlobal().verify.epic.preMerge.commands[0]!.id).toBe(command!.id);
     });
 
     it('converts a pre-ADR-0037 whole-array Workspace override to an overlay of local entries, id-backfilled', async () => {
@@ -351,36 +460,36 @@ describe('SettingsStore (issue #391)', () => {
       writeFileSync(path, stringify({
         global: {},
         workspaces: {
-          1: { taskPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+          1: { epicPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
         },
       }));
 
       const store = await SettingsStore.create(dir);
-      const [entry] = store.getOverrides(1).taskPreMergeCommands!;
+      const [entry] = store.getOverrides(1).epicPreMergeCommands!;
       expect(entry).toMatchObject({ kind: 'local', enabled: true, command: { command: 'npm', args: ['test'] } });
       expect((entry as { command: { id: string } }).command.id).toBeTruthy();
 
       const persisted = parse(readFileSync(path, 'utf8'));
-      expect(persisted.workspaces['1'].taskPreMergeCommands[0].kind).toBe('local');
+      expect(persisted.workspaces['1'].epicPreMergeCommands[0].kind).toBe('local');
     });
 
     it('is a no-op on data already migrated: same ids and shape after a second load', async () => {
       const path = join(dir, 'settings.yaml');
       writeFileSync(path, stringify({
-        global: { verify: { task: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
+        global: { verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
         workspaces: {
-          1: { taskPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
+          1: { epicPreMergeCommands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }] },
         },
       }));
 
       const first = await SettingsStore.create(dir);
-      const globalCommandId = first.getGlobal().verify.task.preMerge.commands[0]!.id;
-      const overlayCommandId = (first.getOverrides(1).taskPreMergeCommands![0] as { command: { id: string } }).command.id;
+      const globalCommandId = first.getGlobal().verify.epic.preMerge.commands[0]!.id;
+      const overlayCommandId = (first.getOverrides(1).epicPreMergeCommands![0] as { command: { id: string } }).command.id;
 
       const second = await SettingsStore.create(dir);
-      expect(second.getGlobal().verify.task.preMerge.commands[0]!.id).toBe(globalCommandId);
-      expect((second.getOverrides(1).taskPreMergeCommands![0] as { command: { id: string } }).command.id).toBe(overlayCommandId);
-      expect(second.getOverrides(1).taskPreMergeCommands).toEqual(first.getOverrides(1).taskPreMergeCommands);
+      expect(second.getGlobal().verify.epic.preMerge.commands[0]!.id).toBe(globalCommandId);
+      expect((second.getOverrides(1).epicPreMergeCommands![0] as { command: { id: string } }).command.id).toBe(overlayCommandId);
+      expect(second.getOverrides(1).epicPreMergeCommands).toEqual(first.getOverrides(1).epicPreMergeCommands);
     });
   });
 });

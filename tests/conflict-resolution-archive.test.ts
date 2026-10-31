@@ -7,11 +7,11 @@ import { baselineConfig, type AppConfig } from '../src/config.js';
 import { resolveRoute } from '../src/domain/route.js';
 import { Git } from '../src/execution/git.js';
 import { MergeCoordinator, type MergeCoordinatorDeps } from '../src/execution/merge-coordinator.js';
-import { runMergePolicy } from '../src/execution/merge-policy.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { trackerRef } from '../src/tracker/adapter.js';
-import type { AttemptRow, TaskRow } from '../src/db/schema.js';
+import type { TaskRow } from '../src/db/schema.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -62,9 +62,8 @@ const resolvingDrive = {
 
 function overriddenConfig(): AppConfig {
   const config = baselineConfig();
-  config.promptFragments.conflictResolution = 'FRAGMENT in {baseDir}: keep {baseBranch} and {taskBranch}.';
-  config.merge.conflictPrompt = 'TASK turn {turn} {taskBranch}->{baseBranch}\n{paths}\n{fragment.conflictResolution}';
-  config.merge.epicConflictPrompt = 'EPIC turn {turn} {taskBranch}->{baseBranch}\n{paths}\n{fragment.conflictResolution}';
+  config.merge.conflictPrompt = 'TASK turn {turn} {taskBranch}->{baseBranch}\n{paths}\n${{ prompts.conflictResolution }}';
+  config.merge.epicConflictPrompt = 'EPIC turn {turn} {taskBranch}->{baseBranch}\n{paths}\n${{ prompts.conflictResolution }}';
   return config;
 }
 
@@ -72,6 +71,7 @@ function coordinator(dataDir: string, over: Partial<MergeCoordinatorDeps>): Merg
   const archive = new TaskArchive({ dataDir, ensureArchiveId: async () => 'arch-1', workspaceName: async () => 'ws' });
   return new MergeCoordinator({
     getConfig: overriddenConfig,
+    prompts: () => ({ ...bundledEnginePrompts(), conflictResolution: 'FRAGMENT in {baseDir}: keep {baseBranch} and {taskBranch}.' }),
     archive,
     criticDrive: resolvingDrive,
     ...over,
@@ -79,30 +79,6 @@ function coordinator(dataDir: string, over: Partial<MergeCoordinatorDeps>): Merg
 }
 
 describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
-  it('archives the Task conflict prompt with config overrides applied and records merge-conflict-resolve', async () => {
-    sentPrompts.length = 0;
-    const repo = await conflictedRepo('task-1');
-    const dataDir = tmp('harmonic-conflict-archive-data-');
-    const task = { id: 11, archiveId: 'arch-1', workspaceId: null, trackerRef: null, createdAt: Date.now(), prompt: 't', harness: 'claude', model: 'm', workingDir: repo } as unknown as TaskRow;
-    const run = { id: 5, number: 3 } as AttemptRow;
-    const events: unknown[] = [];
-    const attempts = { addAgentDuration: vi.fn(async () => {}) };
-    const deps = coordinator(dataDir, { attempts } as never).mergePolicyDeps(task, run, (_type, payload) => events.push(payload), new AbortController().signal, {});
-
-    const outcome = await runMergePolicy(
-      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-1', conflictResolveTurns: 1, postMergeCheck: false },
-      deps,
-    );
-
-    expect(outcome.kind).toBe('merged');
-    const expected = () => `TASK turn 1 task-1->main\n- base.txt\nFRAGMENT in ${sentCwd}: keep main and task-1.`;
-    expect(sentPrompts).toEqual([expected()]);
-    const archive = new TaskArchive({ dataDir, ensureArchiveId: async () => 'arch-1', workspaceName: async () => 'ws' });
-    const root = await archive.ensure(task);
-    expect(readFileSync(join(root, 'attempts', '3', 'resolution', 'task-conflict-1', 'prompt.md'), 'utf8')).toBe(expected());
-    expect(events).toContainEqual({ event: 'merge-conflict-resolve', turn: 1, locator: 'resolution/task-conflict-1/prompt.md', promptIndex: 0 });
-  });
-
   it('archives the Epic integration conflict prompt on the Epic Attempt and records the event there', async () => {
     sentPrompts.length = 0;
     const repo = await conflictedRepo('epic/7');
@@ -225,22 +201,5 @@ describe('merge-conflict resolver prompts are archived (ADR-0047)', () => {
     expect(outcome).toMatchObject({ kind: 'escalated', reason: 'conflict' });
     expect(outcome.kind === 'escalated' && outcome.message).toContain("Routing Label 'reasoning' needs Harness 'missing-harness', which is not configured.");
     expect(sentPrompts).toEqual([]);
-  });
-
-  it('still resolves the conflict when the Archive write fails', async () => {
-    sentPrompts.length = 0;
-    const repo = await conflictedRepo('task-2');
-    const task = { id: 12, archiveId: 'arch-1', workspaceId: null, trackerRef: null, createdAt: Date.now(), prompt: 't', harness: 'claude', model: 'm', workingDir: repo } as unknown as TaskRow;
-    const brokenArchive = { appendResolutionPrompt: async () => null };
-    const deps = coordinator(tmp('harmonic-conflict-archive-data-'), { attempts: { addAgentDuration: async () => {} }, archive: brokenArchive } as never)
-      .mergePolicyDeps(task, { id: 6, number: 1 } as AttemptRow, () => {}, new AbortController().signal, {});
-
-    const outcome = await runMergePolicy(
-      { baseDir: repo, baseBranch: 'main', taskBranch: 'task-2', conflictResolveTurns: 1, postMergeCheck: false },
-      deps,
-    );
-
-    expect(outcome.kind).toBe('merged');
-    expect(sentPrompts).toHaveLength(1);
   });
 });

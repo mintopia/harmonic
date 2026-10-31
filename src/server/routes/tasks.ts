@@ -10,12 +10,13 @@ import {
   TASK_STATES,
   MERGE_STATUSES,
   TASK_ORIGINS,
-  WORKFLOWS,
+  ISSUE_WORKFLOWS,
   WAYFINDER_TYPES,
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  WORKFLOW_CHOSEN,
   isEpicAttempt,
   isTaskAttempt,
   type AttemptRow,
@@ -33,7 +34,28 @@ import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchem
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
+import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
+import { resolveTaskWorkflow } from '../../domain/workflow-assignment.js';
+import { resolveVarSources, validateVarOverrides, varOverridesSchema, varValueSchema, workspaceVarsFor } from '../../domain/workflow-vars.js';
+import { parseWorkflowRef } from '../../execution/workflow-engine.js';
+import { pinnedWorkflow, workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
+
+const workflowVarsResponseSchema = z.object({
+  workflowRef: z.string().nullable().meta({ description: 'The pinned workflow, or null while the Ticket is unpinned and `workflow` names the one it would run.', example: 'implement@1' }),
+  workflow: z.string().nullable().meta({ description: 'The workflow whose `vars:` are listed; null when the Ticket has none to run.', example: 'implement' }),
+  vars: z.array(
+    z.object({
+      name: z.string().meta({ example: 'maxAttempts' }),
+      default: varValueSchema.meta({ description: 'The workflow default; its type is the type an override must have.', example: 2 }),
+      workspace: varValueSchema.nullable().meta({ description: 'The Workspace override; null when none.', example: null }),
+      ticket: varValueSchema.nullable().meta({ description: 'The Ticket override; null when none.', example: 5 }),
+      value: varValueSchema.meta({ description: 'The value the workflow runs with: Ticket, then Workspace, then default.', example: 5 }),
+      source: z.enum(['default', 'workspace', 'ticket']).meta({ description: 'Which level `value` came from.', example: 'ticket' }),
+    }),
+  ),
+  snapshot: z.record(z.string(), varValueSchema).nullable().meta({ description: 'The vars frozen when the workflow was pinned; an override set later applies at the next Retry. Null before the pin.', example: null }),
+});
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
 const worktreeGone = (err: unknown): boolean =>
@@ -168,7 +190,13 @@ const taskWithDepsSchema = z
     /** The mirrored issue's number; null on native Tasks. */
     trackerRef: z.string().nullable().meta({ example: null }),
     /** 'wayfinder' | 'implement'; null on native Tasks. */
-    workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
+    issueWorkflow: z.enum(ISSUE_WORKFLOWS).nullable().meta({ example: null }),
+    workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
+    workflowLabel: z.string().nullable().describe('The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.').meta({ example: null }),
+    workflowReason: z.string().nullable().describe('The workflow classifier\'s one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.').meta({ example: null }),
+    workflowVarOverrides: z.record(z.string(), varValueSchema).nullable().describe('The Ticket\'s own overrides of the workflow `vars:`; null when none.').meta({ example: null }),
+    workflowVars: z.record(z.string(), varValueSchema).nullable().describe('The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.').meta({ example: null }),
+    workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */
@@ -217,6 +245,7 @@ const taskSchema = taskWithDepsSchema
     modelOptionOverrides: z.array(z.object({ id: z.string(), harness: z.string(), model: z.string() })).meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
     cost: costSchema.nullable(),
     /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
+    workflowRouting: z.object({ cost: costSchema.nullable() }).nullable().describe('Cost of the workflow classifier call, a routing line separate from any Attempt; null when it was not consulted.').meta({ example: null }),
     routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
     /** What the Route Classifier did: `routed` chose a Model Option (`optionId`, `reason`), `abstained` fell to the default (`reason` is the cause), `overridden` was skipped because an operator Harness/Model won. Null when it did not decide. */
     classifier: taskClassifierSchema
@@ -435,6 +464,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
+      if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow && w.subject === 'ticket')) {
+        throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
+      }
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
@@ -493,6 +525,102 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => await withDeps({ id: req.params.id }),
+  );
+
+  const workflowVarsOf = async (id: number): Promise<z.infer<typeof workflowVarsResponseSchema>> => {
+    const task = await ctx.tasks.get(id);
+    let name: string;
+    let version: number;
+    if (task.workflowRef !== null) {
+      ({ name, version } = parseWorkflowRef(task.workflowRef));
+    } else {
+      const names = new Set(ctx.workflows.list().filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
+      const workspace = task.workspaceId == null ? null : await ctx.workspaces.get(task.workspaceId);
+      name = resolveTaskWorkflow(task, workspace, ctx.settingsStore.getGlobal(), (n) => names.has(n)).name;
+      version = ctx.workflows.get(name).version;
+    }
+    const definition = await pinnedWorkflow(ctx.workflows, `${name}@${version}`);
+    if (!definition) return { workflowRef: task.workflowRef, workflow: null, vars: [], snapshot: task.workflowVars };
+    const workspace = task.workspaceId == null ? null : await ctx.workspaces.get(task.workspaceId);
+    const workspaceVars = workspaceVarsFor(workspace, name);
+    const ticketVars = task.workflowVarOverrides;
+    const sources = resolveVarSources(definition.vars, workspaceVars, ticketVars);
+    return {
+      workflowRef: task.workflowRef,
+      workflow: name,
+      vars: Object.entries(definition.vars).map(([varName, fallback]) => ({
+        name: varName,
+        default: fallback,
+        workspace: workspaceVars?.[varName] ?? null,
+        ticket: ticketVars?.[varName] ?? null,
+        value: sources[varName]!.value,
+        source: sources[varName]!.source,
+      })),
+      snapshot: task.workflowVars,
+    };
+  };
+
+  app.get(
+    '/tasks/:id/workflow-vars',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'The `vars:` of the Ticket\'s workflow with each level of override and the effective value; the workflow is the pinned one, or the one the Ticket would run.',
+        params: idParamsSchema,
+        response: {
+          200: workflowVarsResponseSchema.describe('The declared vars, their overrides and effective values.'),
+          404: errorResponse('No task has that id.'),
+        },
+      },
+    },
+    async (req) => await workflowVarsOf(req.params.id),
+  );
+
+  app.put(
+    '/tasks/:id/workflow-vars',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'Replace the Ticket\'s overrides of its workflow `vars:`. Each value must have the type of the declared default; undeclared names are refused. An empty object clears them. Takes effect when the workflow is next pinned, which is on Retry.',
+        params: idParamsSchema,
+        body: z.object({ vars: varOverridesSchema.meta({ example: { maxAttempts: 5 } }) }),
+        response: {
+          200: workflowVarsResponseSchema.describe('The vars after the change.'),
+          400: errorResponse('A name is undeclared or a value has the wrong type.'),
+          404: errorResponse('No task has that id.'),
+          409: errorResponse('The Ticket has no workflow to take vars from.'),
+        },
+      },
+    },
+    async (req) => {
+      const current = await workflowVarsOf(req.params.id);
+      if (current.workflow === null) throw new DomainError('invalid_state', `task ${req.params.id} has no workflow to override vars of`);
+      const defaults = Object.fromEntries(current.vars.map((entry) => [entry.name, entry.default]));
+      const problem = validateVarOverrides(defaults, req.body.vars)[0];
+      if (problem) throw new DomainError('validation', `vars.${problem}`);
+      await ctx.tasks.setWorkflowVarOverrides(req.params.id, req.body.vars);
+      return await workflowVarsOf(req.params.id);
+    },
+  );
+
+  app.get(
+    '/tasks/:id/workflow-steps',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'The pinned workflow of a Ticket and every step the engine has executed on it, in execution order.',
+        params: idParamsSchema,
+        response: {
+          200: workflowStepsResponseSchema.describe('The workflow pin and its executed steps; `steps` is empty for a Ticket without a workflow.'),
+          404: errorResponse('No task has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const task = await ctx.tasks.get(req.params.id);
+      const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForTask(task.id);
+      return await workflowStepsResponse(ctx.workflows, { workflowRef: task.workflowRef, workflowChosen: task.workflowChosen, rows, vars: task.workflowVars });
+    },
   );
 
   app.patch(

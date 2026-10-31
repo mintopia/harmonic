@@ -1,5 +1,5 @@
 import { STEP_TYPES, type StepType, type VerificationMechanism } from '../db/schema.js';
-import type { TaskVerificationStage, EpicVerificationStage } from '../config.js';
+import type { EpicVerificationStage } from '../config.js';
 import type { Verdict } from '../verification/critic-schema.js';
 
 /** The operator-facing state of one verifier category for an Attempt. */
@@ -19,6 +19,8 @@ export interface VerifierStatus {
    * before the persisted attempt row exists. */
   harness?: string | null;
 }
+
+export const NO_CONFIGURED_VERIFIERS: EpicVerificationStage = { commands: [], critics: [] };
 
 type RecordedAttempt = Pick<{ mechanism: VerificationMechanism; seq: number; verdict: Verdict }, 'mechanism' | 'seq' | 'verdict'>;
 
@@ -53,7 +55,7 @@ export function verifierStatuses({
   attempts,
   stepType,
 }: {
-  verifiers: TaskVerificationStage | EpicVerificationStage;
+  verifiers: EpicVerificationStage;
   attempts: readonly RecordedAttempt[];
   /** The Attempt's currently-running Step, or the most recent one; `null` when none has started or is running. */
   stepType?: StepType | null;

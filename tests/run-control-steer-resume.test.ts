@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RunControl, type RunControlDeps } from '../src/execution/run-control.js';
 import { ActiveRuns } from '../src/execution/active-runs.js';
 import type { TaskAttemptRow, TaskRow } from '../src/db/schema.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 function pausedTask(over: Partial<TaskRow> = {}): TaskRow {
   return { id: 7, state: 'paused', continuationChoice: null } as TaskRow & Record<string, unknown> as TaskRow & typeof over;
@@ -51,6 +52,7 @@ describe('RunControl.resumePaused — a paused Task with no retained Session at 
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -100,6 +102,7 @@ describe('RunControl.resumePaused — a paused Task with no retained Session at 
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -155,6 +158,7 @@ describe('RunControl — a working Task mid-drive between turns (no ActiveRun, b
       events: { onAttemptEvent } as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -193,6 +197,7 @@ describe('RunControl — a working Task mid-drive between turns (no ActiveRun, b
       events: { onAttemptEvent: vi.fn() } as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -231,6 +236,7 @@ describe('RunControl — a working Task mid-drive between turns (no ActiveRun, b
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {} as unknown as RunControlDeps['sessionContinuation'],
@@ -260,6 +266,7 @@ describe('RunControl — a working Task mid-drive between turns (no ActiveRun, b
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {} as unknown as RunControlDeps['sessionContinuation'],
@@ -293,6 +300,7 @@ describe('RunControl.steerSettled — an escalated Task that never recorded a Se
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -340,6 +348,7 @@ describe('RunControl — concurrent launch race on the same stranded/paused Task
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -380,6 +389,7 @@ describe('RunControl — concurrent launch race on the same stranded/paused Task
       events: { onAttemptEvent: vi.fn() } as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {
@@ -424,6 +434,7 @@ describe('RunControl — concurrent launch race on the same stranded/paused Task
       events: {} as unknown as RunControlDeps['events'],
       getWorkspace: undefined,
       getConfig: vi.fn() as unknown as RunControlDeps['getConfig'],
+      prompts: bundledEnginePrompts,
       isGloballyPaused: undefined,
       onGloballyPaused: undefined,
       sessionContinuation: {

@@ -49,8 +49,8 @@ function stepCaption(key: LifecycleStepKey, status: LifecycleStepStatus, task: T
   }
 }
 
-function TaskProgressBar({ task, attempts, attemptDetails, commandConfigured }: { task: Task; attempts: AttemptSummary[]; attemptDetails: Attempt[]; commandConfigured: boolean }) {
-  const { steps } = taskLifecycle(task, attempts, attemptDetails, commandConfigured);
+function TaskProgressBar({ task, attempts, attemptDetails }: { task: Task; attempts: AttemptSummary[]; attemptDetails: Attempt[] }) {
+  const { steps } = taskLifecycle(task, attempts, attemptDetails);
   return (
     <div className="mb-6 mt-6">
       <div className={`mb-3 ${sectionCaps}`}>Task progress</div>

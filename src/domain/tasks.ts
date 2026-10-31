@@ -1,6 +1,7 @@
+import type { VarRecord } from './workflow-vars.js';
 import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -16,6 +17,7 @@ import {
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
+  type WorkflowChosen,
   type TaskState,
   type MergeStatus,
   type WorkspaceRow,
@@ -64,13 +66,15 @@ export const createTaskInputSchema = z.object({
    * Omitted ⇒ resolves at spawn to the working dir's current branch. Not an
    * inheritable default: it never resolves against a Workspace/global value. */
   baseBranch: z.string().min(1).optional().meta({ example: 'integration/epic-42' }),
+  /** A Workflow Library name; the Ticket runs it, pinned to the current version when it starts working. */
+  workflow: z.string().min(1).optional().meta({ example: 'implement' }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 const modelOptionOverrideSchema = modelOptionSchema.pick({ id: true, harness: true, model: true });
 
 export const updateTaskInputSchema = createTaskInputSchema
-  .omit({ state: true, dependsOn: true, workspaceId: true })
+  .omit({ state: true, dependsOn: true, workspaceId: true, workflow: true })
   .partial()
   .extend({
     harness: createTaskInputSchema.shape.harness.nullable(),
@@ -261,6 +265,14 @@ function trackerFactColumns(facts: TrackerFacts) {
 }
 
 type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
+
+/** What the workflow classifier left on a Ticket: its reason (or abstention cause) and the JSON of its routing Usage and Cost. */
+export interface WorkflowClassifierRecord {
+  reason: string | null;
+  routingUsage: string | null;
+  routingCost: string | null;
+}
+export const NO_CLASSIFIER: WorkflowClassifierRecord = { reason: null, routingUsage: null, routingCost: null };
 
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
@@ -508,6 +520,7 @@ export class TaskService {
           priority: input.priority ?? null,
           conflictResolveTurns: input.conflictResolveTurns ?? null,
           baseBranch: input.baseBranch ?? null,
+          workflowRequested: input.workflow ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
           state,
           archiveId: randomUUID(),
@@ -684,6 +697,19 @@ export class TaskService {
     await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
+  async epicWorkflowRef(workspaceId: number, ref: TrackerRef): Promise<string | null> {
+    const row = await this.db.read((db) =>
+      db.select({ workflowRef: epics.workflowRef }).from(epics).where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref))).get(),
+    );
+    return row?.workflowRef ?? null;
+  }
+
+  async setEpicWorkflowRef(workspaceId: number, ref: TrackerRef, workflowRef: string): Promise<void> {
+    await this.db.write(async (db) => {
+      await db.update(epics).set({ workflowRef }).where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref))).run();
+    });
+  }
+
   /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
   async markEpicIntegrating(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.db.write(async (db) => {
@@ -834,6 +860,40 @@ export class TaskService {
       const task = await this.resolve(row ?? claimed);
       this.onChanged(task);
       this.onNotify('run.started', task);
+      return task;
+    });
+  }
+
+  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null, classifier: WorkflowClassifierRecord = NO_CLASSIFIER): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars, classifier, isNull(tasks.workflowRef));
+  }
+
+  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null, classifier: WorkflowClassifierRecord = NO_CLASSIFIER): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars, classifier);
+  }
+
+  async setWorkflowVarOverrides(id: number, overrides: VarRecord | null): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      const stored = overrides && Object.keys(overrides).length > 0 ? overrides : null;
+      await this.db.write((db) => db.update(tasks).set({ workflowVarOverrides: stored, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
+      const task = await this.get(id);
+      this.onChanged(task);
+      return task;
+    });
+  }
+
+  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, vars: VarRecord | null, classifier: WorkflowClassifierRecord, unpinned?: SQL): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, workflowVars: vars, workflowReason: classifier.reason, workflowRoutingUsage: classifier.routingUsage, workflowRoutingCost: classifier.routingCost, updatedAt: Date.now() })
+          .where(unpinned ? and(eq(tasks.id, id), unpinned) : eq(tasks.id, id))
+          .returning()
+          .get(),
+      );
+      const task = await this.get(id);
+      if (row) this.onChanged(task);
       return task;
     });
   }

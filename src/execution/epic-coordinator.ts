@@ -18,9 +18,7 @@ import type { EpicBranchStep } from '../domain/epic-merge-events.js';
 
 export { reduceMemberState };
 
-const CONFLICT_TURN_MS = 10 * 60_000;
-const VERIFY_OVERHEAD_MS = 25 * 60_000;
-export const DEFAULT_EPIC_OPERATION_TIMEOUT_MS = 2 * CONFLICT_TURN_MS + VERIFY_OVERHEAD_MS;
+export const DEFAULT_EPIC_OPERATION_TIMEOUT_MS = 4 * 60 * 60_000;
 
 /** Reject if `work` outruns `ms`, so a hung verify/integrate can never pin the
  * per-Epic in-flight guard forever. Best-effort: the timeout frees the guard and
@@ -102,6 +100,22 @@ export type EpicIntegrate = (args: {
   integrationBranch: string;
 }) => Promise<MergePolicyOutcome>;
 
+export type EpicRunWorkflow = (args: {
+  repoDir: string;
+  epicRef: TrackerRef;
+  title?: string | undefined;
+  body?: string | undefined;
+  url?: string | undefined;
+  defaultBranch: string;
+  integrationBranch: string;
+  verifiedHeadOid: string;
+  guidance?: string | undefined;
+  continuation?: 'continue' | 'fresh' | undefined;
+  onPhase?: ((phase: 'verifying' | 'merging') => void) | undefined;
+}) => Promise<EpicWorkflowOutcome>;
+
+export type EpicWorkflowOutcome = { kind: 'integrated'; mergeOid: string | null } | { kind: 'escalated'; reason: string };
+
 /** The retained whole-Epic Verification status for the operator read model:
  * `pending` while a verify is in flight, `pass`/`fail` for the last completed
  * attempt's verdict, `null` when none has run for the current integration branch.
@@ -160,9 +174,7 @@ const STICKY_ESCALATION_HOLD_REASON = 'already escalated for this member state; 
 export class EpicCoordinator {
   private readonly repoDir: string;
   private readonly git: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
-  private readonly verify: EpicVerify;
-  private readonly resolve: EpicResolve | undefined;
-  private readonly integrate: EpicIntegrate;
+  private readonly runWorkflow: EpicRunWorkflow;
   private readonly retire: (epicRef: TrackerRef) => Promise<void>;
   private readonly escalateFn: (epicRef: TrackerRef, reason: string) => void;
   private readonly onError: (msg: string) => void;
@@ -181,7 +193,7 @@ export class EpicCoordinator {
 
   private readonly lastVerifyAttemptAt = new Map<TrackerRef, number>();
 
-  private readonly resumes = new Map<TrackerRef, { guidance: string; continuation: 'continue' | 'fresh'; continuationSessionId?: string; continuationSessionRowId?: number }>();
+  private readonly resumes = new Map<TrackerRef, { guidance: string; continuation: 'continue' | 'fresh' }>();
 
   /** The phase and start time of an in-flight attempt's current long operation,
    * so a stuck integrate surfaces as e.g. "verifying (18m)" rather than a bare,
@@ -196,13 +208,7 @@ export class EpicCoordinator {
     /** The base repo owning `epic/<ref>` — the Workspace's working directory. */
     repoDir: string;
     git?: Pick<EpicGit, 'branchExists' | 'revParse' | 'symbolicBranch' | 'isAncestor' | 'isContentContained'>;
-    /** Whole-Epic Verification against the integration tip. */
-    verify: EpicVerify;
-    /** Resolve a failed whole-Epic verification.  Omitted only while the
-     * resolver is unavailable, in which case a failed verification escalates. */
-    resolve?: EpicResolve;
-    /** Merge the integration branch into the default branch under the one merge policy. */
-    integrate: EpicIntegrate;
+    runWorkflow: EpicRunWorkflow;
     /** Retire the integration branch after a successful integrate. */
     retire: (epicRef: TrackerRef) => Promise<void>;
     /** Epic-level escalation surface (verify fail/inconclusive or integrate failure). */
@@ -230,9 +236,7 @@ export class EpicCoordinator {
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
-    this.verify = deps.verify;
-    this.resolve = deps.resolve;
-    this.integrate = deps.integrate;
+    this.runWorkflow = deps.runWorkflow;
     this.retire = deps.retire;
     this.escalateFn = deps.escalate;
     this.now = deps.now ?? (() => Date.now());
@@ -345,69 +349,46 @@ export class EpicCoordinator {
     await this.markIntegratingFn?.(target.ref);
     this.lastVerification.set(target.ref, 'pending');
     this.phaseInFlight.set(target.ref, { phase: 'verifying', since: this.now() });
-    let verification: VerificationDecision;
+    const resume = this.resumes.get(target.ref);
+    this.resumes.delete(target.ref);
+    let outcome: EpicWorkflowOutcome;
     try {
-      verification = await this.operations.run({
+      outcome = await this.operations.run({
         repoDir: this.repoDir,
         epicRef: target.ref,
         ...withEpicTitle(target.title),
         type: 'verify',
-        attributes: { 'git.verified_head_oid': verifiedHeadOid },
-        work: () => withTimeout(this.verify({ repoDir: this.repoDir, epicRef: target.ref, verifiedHeadOid }), this.operationTimeoutMs, 'whole-Epic verification'),
+        attributes: { 'git.verified_head_oid': verifiedHeadOid, 'git.base_branch': defaultBranch, 'git.branch': branch },
+        work: () => withTimeout(
+          this.runWorkflow({
+            repoDir: this.repoDir,
+            epicRef: target.ref,
+            title: target.title,
+            body: target.body,
+            url: target.url,
+            defaultBranch,
+            integrationBranch: branch,
+            verifiedHeadOid,
+            guidance: resume?.guidance,
+            continuation: resume?.continuation,
+            onPhase: (phase) => this.phaseInFlight.set(target.ref, { phase, since: this.now() }),
+          }),
+          this.operationTimeoutMs,
+          'Epic workflow',
+        ),
       });
     } catch (err) {
       this.lastVerification.set(target.ref, 'fail');
-      return this.escalate(target, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
+      return this.escalate(target, `Epic workflow could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
-
-    const verdict = decideEpicIntegrate({ integrationExists: true, members: target.members, verification, inPlace: false });
-    if (verdict.action === 'escalate') {
+    if (outcome.kind === 'escalated') {
       this.lastVerification.set(target.ref, 'fail');
-      if (this.resolve) {
-        try {
-          const resume = this.resumes.get(target.ref);
-          this.resumes.delete(target.ref);
-          await this.operations.run({
-            repoDir: this.repoDir,
-            epicRef: target.ref,
-            ...withEpicTitle(target.title),
-            type: 'resolve',
-            attributes: { 'git.verified_head_oid': verifiedHeadOid },
-            work: () => withTimeout(this.resolve!({ repoDir: this.repoDir, epicRef: target.ref, ...withEpicTitle(target.title), ...(target.body !== undefined ? { body: target.body } : {}), ...(target.url !== undefined ? { url: target.url } : {}), verifiedHeadOid, verification, ...(resume ? resume : {}) }), this.operationTimeoutMs, 'whole-Epic resolution'),
-          });
-          return { status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' };
-        } catch (err) {
-          return this.escalate(target, `whole-Epic resolution could not run: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-      return this.escalate(target, verdict.reason);
-    }
-    if (verdict.action !== 'integrate') {
-      this.onError(`epic ${target.ref} unexpected post-verification decision: ${verdict.action}`);
-      return { status: 'noop', reason: `unexpected post-verification decision: ${verdict.action}` };
+      return this.escalate(target, outcome.reason);
     }
 
     this.lastVerification.set(target.ref, 'pass');
-    this.phaseInFlight.set(target.ref, { phase: 'merging', since: this.now() });
-
-    let integrated: MergePolicyOutcome;
-    try {
-      integrated = await this.operations.run({
-        repoDir: this.repoDir,
-        epicRef: target.ref,
-        ...withEpicTitle(target.title),
-        type: 'merge',
-        attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
-        work: () => withTimeout(this.integrate({ repoDir: this.repoDir, epicRef: target.ref, defaultBranch, integrationBranch: branch }), this.operationTimeoutMs, 'whole-Epic integrate'),
-      });
-    } catch (err) {
-      return this.escalate(target, `whole-Epic integrate into '${defaultBranch}' could not run: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (integrated.kind === 'escalated') {
-      return this.escalate(target, `whole-Epic integrate into '${defaultBranch}' failed (${integrated.reason}): ${integrated.message}`);
-    }
-
-    const recorded = await this.recordIntegrationQuietly(target, integrated.mergeOid);
+    const oid = outcome.mergeOid ?? verifiedHeadOid;
+    const recorded = await this.recordIntegrationQuietly(target, outcome.mergeOid);
 
     this.clearMergeGuards(target.ref);
     if (recorded) {
@@ -415,7 +396,7 @@ export class EpicCoordinator {
       await this.retireQuietly(target.ref, target.title, 'after integrate');
     }
     this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
-    return { status: 'integrated', oid: integrated.mergeOid };
+    return { status: 'integrated', oid };
   }
 
   /** Whether `epicRef` currently has a integrate attempt in flight. */
@@ -450,10 +431,10 @@ export class EpicCoordinator {
   }
 
   /** Reopen an operator-held Epic and carry its feedback into the next resolver turn. */
-  resume(epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh', session?: { id: string; rowId: number }): void {
+  resume(epicRef: TrackerRef, guidance: string, continuation: 'continue' | 'fresh'): void {
     this.settledEscalated.delete(epicRef);
     this.lastVerifyAttemptAt.delete(epicRef);
-    this.resumes.set(epicRef, { guidance, continuation, ...(session ? { continuationSessionId: session.id, continuationSessionRowId: session.rowId } : {}) });
+    this.resumes.set(epicRef, { guidance, continuation });
   }
 
   /** The integration branch's existence and tip OID for `epicRef`; `tip:null` when the branch is absent. */

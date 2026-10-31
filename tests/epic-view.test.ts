@@ -24,7 +24,7 @@ const task = (over: Partial<TaskRow>): TaskRow =>
     continuationChoice: null,
     origin: 'mirrored',
     trackerRef: null,
-    workflow: 'implement',
+    issueWorkflow: 'implement',
     wayfinderType: null,
     mapRef: null,
     baseBranch: null,

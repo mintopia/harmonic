@@ -56,14 +56,14 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
   let server: TestServer;
   let wsId: number;
 
-  it('operator Accept on an escalated ticket whose base moved non-conflictingly merges via a merge commit and passes the post-merge check, settling done', async () => {
+  it('operator Accept on an escalated ticket whose base moved non-conflictingly resumes the workflow and merges via a merge commit, settling done', async () => {
     server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }] });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -78,19 +78,21 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
       const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
       return t.state === 'escalated' ? t : undefined;
     });
-    expect(escalated.escalationReason).toMatch(/attempt 2 of 2 failed/);
+    expect(escalated.escalationReason).toMatch(/workflow attempts exhausted after 2/);
     const verified = (await server.app.ctx.attempts.get(attemptId)).verifiedHeadOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
     const mainTip = advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    await server.app.ctx.workspaces.update(wsId, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }],
-    });
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }] });
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`, { force: true });
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(200);
-    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null, mergeStatus: null });
+    const done = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      return t.state === 'done' ? t : undefined;
+    });
+    expect(done).toMatchObject({ escalationReason: null, mergeStatus: null });
 
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
     expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
@@ -100,53 +102,14 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     await server.close();
   });
 
-  it('operator Accept without force verifies the candidate first; a passing verification merges it (issue #429)', async () => {
-    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 });
-    wsId = (await server.app.ctx.workspaces.list())[0]!.id;
-
-    const repo = makeRepo();
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }],
-    });
-
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
-    });
-    expect(created.status).toBe(201);
-    const taskId: number = created.body.id;
-    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-    expect(started.status).toBe(201);
-    await waitFor(async () => {
-      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-      return t.state === 'escalated' ? t : undefined;
-    });
-
-    await server.app.ctx.workspaces.update(wsId, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }],
-    });
-
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(200);
-    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null, mergeStatus: null });
-    expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
-
-    await server.close();
-  });
-
-  it('Accept-and-Merge refuses (409) when the base advance conflicts with the candidate, leaving the ticket escalated and nothing merged', async () => {
-    // Escalate at the review Step so Accept merges the candidate as-is (ADR-0038),
-    // reaching the base-moved merge where the collision surfaces.
+  it('Accept escalates again, merging nothing, when the base advance conflicts with the candidate', async () => {
     const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
     server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 }, { criticDrive });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      conflictResolveTurns: 0,
-      ...failingCritic(),
-    });
+    await server.legacy.setWorkspace(wsId, failingCritic());
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
 
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
@@ -163,50 +126,17 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(409);
-    const stillEscalated = await server.app.ctx.tasks.get(taskId);
-    expect(stillEscalated.state).toBe('escalated');
-    expect(stillEscalated.mergeStatus).toBe('resolving-conflicts');
+    expect(accepted.status).toBe(200);
+    const again = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      return t.state === 'escalated' && /workflow step merge conflict/.test(t.escalationReason ?? '') ? t : undefined;
+    });
+    expect(again.mergeStatus).toBeNull();
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip);
 
     await server.close();
   });
 
-  it('Accept-and-Merge escalates (409) when the post-merge check on the merged base is red, leaving the base unchanged', async () => {
-    const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
-    server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 2 }, { criticDrive });
-    wsId = (await server.app.ctx.workspaces.list())[0]!.id;
-
-    const repo = makeRepo();
-    const redCommand = verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 });
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      ...failingCritic(),
-      taskPostMergeCommands: [{ kind: 'local', enabled: true, command: redCommand }],
-    });
-
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
-    });
-    expect(created.status).toBe(201);
-    const taskId: number = created.body.id;
-    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-    expect(started.status).toBe(201);
-    await waitFor(async () => {
-      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-      return t.state === 'escalated' ? t : undefined;
-    });
-
-    advanceMain(repo, 'other.txt', 'someone else merged\n');
-
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(409);
-    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
-    expect(() => git(repo, 'show', 'main:impl-native.txt')).toThrow();
-    expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
-
-    await server.close();
-  });
 });
 
 describe('escalated worktree Run diff snapshot', () => {
@@ -220,10 +150,7 @@ describe('escalated worktree Run diff snapshot', () => {
     try {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, {
-        workingDir: repo,
-        maxAttempts: 1,
-        taskPreMergeCommands: [{
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{
           kind: 'local',
           enabled: true,
           command: verificationCommandSchema.parse({
@@ -232,7 +159,10 @@ describe('escalated worktree Run diff snapshot', () => {
             args: ['-e', 'process.exit(1)'],
             timeoutSeconds: 30,
           }),
-        }],
+        }] });
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        maxAttempts: 1,
       });
       await server.app.ctx.settingsStore.updateGlobal({
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -241,7 +171,7 @@ describe('escalated worktree Run diff snapshot', () => {
       const mirroredAfk = (trackerRef: number): MirrorInput => ({
         trackerRef: brandRef(trackerRef),
         prompt: `ticket ${trackerRef}\n\nbody`,
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,

@@ -124,7 +124,7 @@ describe('TaskService.delete (issue #162)', () => {
       {
         trackerRef: trackerRef(4242),
         prompt: 'mirrored issue',
-        workflow: 'implement',
+        issueWorkflow: 'implement',
         wayfinderType: null,
         mapRef: null,
         closed: false,

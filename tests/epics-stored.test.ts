@@ -68,8 +68,8 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     ], wsId);
 
     expect(await readEpics()).toEqual([
-      { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: null, state: 'open', memberRefs: null },
-      { workspaceId: wsId, trackerRef: '19', kind: 'map', mergeCommit: null, state: 'open', memberRefs: null },
+      { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: null, state: 'open', memberRefs: null, workflowRef: null },
+      { workspaceId: wsId, trackerRef: '19', kind: 'map', mergeCommit: null, state: 'open', memberRefs: null, workflowRef: null },
     ]);
   });
 
@@ -118,7 +118,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
     await mirrorScan(tasks, [], wsId);
     expect(await tasks.listTrackerContainers(wsId)).toHaveLength(0);
     expect(await readEpics()).toEqual([
-      { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: null, state: 'open', memberRefs: null },
+      { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: null, state: 'open', memberRefs: null, workflowRef: null },
     ]);
   });
 
@@ -140,7 +140,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
   it('Dismiss removes the row', async () => {
     await tasks.syncEpics(wsId, [{ ref: trackerRef(10), kind: 'spec' }]);
     const mirrored = await tasks.upsertMirrored(
-      { trackerRef: trackerRef(10), prompt: 'x', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      { trackerRef: trackerRef(10), prompt: 'x', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
       wsId,
     );
     expect(await readEpics()).toHaveLength(1);
@@ -164,7 +164,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
       await tasks.syncEpics(wsId, [{ ref: trackerRef(10), kind: 'spec' }]);
       await tasks.markEpicIntegrated(wsId, trackerRef(10), { mergeCommit: 'abc123', memberRefs: [trackerRef(11), trackerRef(12)] });
       expect(await readEpics()).toEqual([
-        { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: 'abc123', state: 'integrated', memberRefs: ['11', '12'] },
+        { workspaceId: wsId, trackerRef: '10', kind: 'spec', mergeCommit: 'abc123', state: 'integrated', memberRefs: ['11', '12'], workflowRef: null },
       ]);
     });
 
@@ -179,7 +179,7 @@ describe('stored Epic spine (ADR-0018, #437)', () => {
       await tasks.syncEpics(wsId, [{ ref: trackerRef(10), kind: 'spec' }]);
       await tasks.markEpicIntegrated(wsId, trackerRef(10), { mergeCommit: 'real-merge', memberRefs: [trackerRef(11)] });
       await tasks.markEpicIntegrated(wsId, trackerRef(10), { mergeCommit: null, memberRefs: [] });
-      expect((await readEpics())[0]).toMatchObject({ state: 'integrated', mergeCommit: 'real-merge', memberRefs: ['11'] });
+      expect((await readEpics())[0]).toMatchObject({ state: 'integrated', mergeCommit: 'real-merge', memberRefs: ['11'], workflowRef: null });
     });
 
     it('does not resurrect a row for an unknown Epic ref', async () => {
