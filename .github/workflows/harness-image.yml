@@ -1,0 +1,60 @@
+name: Harness image
+
+# Builds ghcr.io/mintopia/harmonic-harnesses, runs each Harness's version
+# command inside it, and credential-scans it (ADR-0056). Runs on PRs that touch
+# the image; release.yml calls it with a version to also push the image.
+on:
+  pull_request:
+    paths:
+      - docker/harnesses/**
+      - scripts/harness-image-*.sh
+      - .github/workflows/harness-image.yml
+  workflow_call:
+    inputs:
+      version:
+        description: Harmonic version to tag and push; empty builds without pushing
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/mintopia/harmonic-harnesses
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: docker build -t "$IMAGE:ci" docker/harnesses
+
+      - name: Run each Harness version command
+        run: scripts/harness-image-verify.sh "$IMAGE:ci"
+
+      - name: Credential scan passes on the real image
+        run: scripts/harness-image-credential-scan.sh "$IMAGE:ci"
+
+      - name: Credential scan fails on a planted credential
+        run: |
+          fixture="$(mktemp -d)"
+          printf 'FROM %s:ci\nARG K\nRUN echo "ANTHROPIC_API_KEY=$K" > /root/notes.txt\n' "$IMAGE" > "$fixture/Dockerfile"
+          docker build -q -t "$IMAGE:planted" --build-arg "K=sk-ant-$(printf 'api03-%s' abcdefghijklmnopqrstuvwxyz0123)" "$fixture"
+          if scripts/harness-image-credential-scan.sh "$IMAGE:planted"; then
+            echo "scan passed an image with a planted credential" >&2
+            exit 1
+          fi
+
+      - name: Push
+        if: ${{ inputs.version != '' }}
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag "$IMAGE:ci" "$IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
