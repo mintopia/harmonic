@@ -29,6 +29,12 @@ describe('bundled epic workflow', () => {
     expect(parseWorkflow(entry.text).subject).toBe('epic');
     expect(library.get('implement').subject).toBe('ticket');
   });
+  it('runs the critic unconditionally', () => {
+    const text = library.get('epic').text;
+    expect(text).toMatch(/- id: critic\n\s+uses: critic/);
+    expect(text).not.toContain('vars.review');
+    expect(text).not.toMatch(/id: critic[\s\S]*?\n\s+if:/);
+  });
 });
 
 describe('subject validation', () => {

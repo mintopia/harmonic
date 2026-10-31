@@ -139,6 +139,9 @@ function DefaultWorkflow({
   );
 }
 
+/** What resolveEpicWorkflow falls back to when no Epic workflow is chosen. */
+const BUNDLED_EPIC = 'epic';
+
 export function EpicWorkflowEditor({
   surface,
   value,
@@ -165,7 +168,7 @@ export function EpicWorkflowEditor({
       }
       library={library}
       value={value}
-      inheritLabel={workspace ? `Use global default · ${globalValue ?? 'none'}` : 'None'}
+      inheritLabel={workspace ? `Use global default · ${globalValue ?? BUNDLED_EPIC}` : `Bundled default · ${BUNDLED_EPIC}${versionSuffix(library, BUNDLED_EPIC)}`}
       onChange={onChange}
     />
   );

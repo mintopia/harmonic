@@ -98,6 +98,21 @@ function DependsOn({ refs }: { refs: TrackerRef[] }) {
   );
 }
 
+/** The Workflow line in the Epic header card: which Epic workflow runs and where it was chosen. */
+export function EpicWorkflowLine({ workflow }: { workflow: Epic['workflow'] }) {
+  if (!workflow) return null;
+  return (
+    <dl className="mt-3.5 border-t border-hairline pt-3">
+      <Fact label="Workflow">
+        <span className="whitespace-nowrap">
+          <strong>{workflow.name}</strong> <span className="font-data text-faint">v{workflow.version}</span>{' '}
+          <span className="text-muted">— {workflow.chosen === 'workspace' ? 'Workspace' : 'global'} Epic workflow</span>
+        </span>
+      </Fact>
+    </dl>
+  );
+}
+
 /** The rail's Epic facts: the header's Properties card moved beside the content,
  * plus the two roll-ups an operator scans for first (Tasks done, Total cost). */
 export function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | null }) {
@@ -121,12 +136,6 @@ export function EpicMeta({ epic, stats }: { epic: Epic | null; stats: Stats | nu
           <Fact label="Depends on">
             <DependsOn refs={epic.dependsOn} />
           </Fact>
-          {epic.workflow && (
-            <Fact label="Workflow" className="col-span-2">
-              <strong>{epic.workflow.name}</strong> <span className="font-data text-faint">v{epic.workflow.version}</span>{' '}
-              <span className="text-muted">— {epic.workflow.chosen === 'workspace' ? 'Workspace' : 'global'} Epic workflow</span>
-            </Fact>
-          )}
           <Fact label="Created">{fmtDate(epic.createdAt)}</Fact>
           <Fact label="Last activity">{epic.updatedAt != null ? fmtRelative(epic.updatedAt) : '—'}</Fact>
         </dl>
@@ -737,6 +746,7 @@ export function EpicPage({
               <h1 className="max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] max-md:order-last max-md:basis-full max-md:text-[22px]">{cardTitle(title)}</h1>
               {epic && <span className="mt-1.5 max-md:mt-0"><EpicLifecycleChip epic={epic} /></span>}
             </div>
+            {epic && <EpicWorkflowLine workflow={epic.workflow} />}
 
             {epic?.description && <Description text={epic.description} />}
 

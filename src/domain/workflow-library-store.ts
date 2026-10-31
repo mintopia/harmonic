@@ -87,7 +87,6 @@ description: Verify the Epic integration branch, review it, merge it into the ba
 subject: epic
 vars:
   maxAttempts: 2
-  review: false
 steps:
   - attempts:
       max: \${{ vars.maxAttempts }}
@@ -101,15 +100,12 @@ steps:
             continuePrompt: commitNudge
         - id: verify
           uses: verify
-        - id: review
-          if: \${{ vars.review }}
-          parallel:
-            - id: critic
-              uses: critic
-              with:
-                harness: claude
-                model: claude-sonnet-5-5
-                prompt: criticReview
+        - id: critic
+          uses: critic
+          with:
+            harness: claude
+            model: claude-sonnet-5-5
+            prompt: criticReview
   - id: merge
     uses: merge
   - id: post-merge-check
