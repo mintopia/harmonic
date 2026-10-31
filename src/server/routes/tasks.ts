@@ -1,4 +1,7 @@
 import { createReadStream } from 'node:fs';
+import { resolveWorkspace } from '../../domain/workspaces.js';
+import { kubernetesWorkflowRefusal } from '../../execution/workspace-execution-targets.js';
+import { workflowRunsOn } from '../../domain/workflow.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -466,6 +469,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req, reply) => {
       if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow && w.subject === 'ticket')) {
         throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
+      }
+      if (req.body.workflow !== undefined) {
+        const workspace = resolveWorkspace(await ctx.workspaces.list(), req.body.workspaceId);
+        const isolationMode = req.body.isolationMode ?? workspace.isolationMode ?? ctx.settingsStore.getGlobal().defaults.isolationMode;
+        const refusal = await kubernetesWorkflowRefusal(req.body.workflow, workflowRunsOn(ctx.workflows.get(req.body.workflow).text), isolationMode, ctx.executionTargets);
+        if (refusal) throw new DomainError('validation', refusal);
       }
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));

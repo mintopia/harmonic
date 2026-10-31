@@ -1,6 +1,8 @@
 import type { WorkspaceRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import type { UpdateWorkspaceInput } from '../domain/workspaces.js';
+import type { AppConfig } from '../config.js';
+import { resolveWorkflowLabels } from '../domain/workflow-labels.js';
 import { resolveCodeRepository } from '../repository/resolve.js';
 import { LOCAL_TARGET, type ExecutionTargetService } from './execution-targets.js';
 
@@ -95,4 +97,30 @@ export async function describeWorkspaceTargets(
     return { name: target.name, builtIn: target.builtIn, globallyEnabled: target.enabled, allowed, effective: allowed && ineffectiveReason === null, ineffectiveReason, refusal };
   });
   return { restricted: list !== null, codeRepository: state.codeRepository, isolationMode: state.isolationMode, targets: items };
+}
+
+/** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
+export function directWorkspacesUsing(
+  name: string,
+  workspaces: readonly Pick<WorkspaceRow, 'name' | 'isolationMode' | 'workflow' | 'workflowLabels'>[],
+  config: Pick<AppConfig, 'defaults' | 'workflowLabels'>,
+): string[] {
+  return workspaces
+    .filter((ws) => (ws.isolationMode ?? config.defaults.isolationMode) === 'direct')
+    .filter((ws) => (ws.workflow ?? config.defaults.workflow) === name || resolveWorkflowLabels(ws, config).some((entry) => entry.workflow === name))
+    .map((ws) => ws.name);
+}
+
+/** The refusal for assigning a Kubernetes workflow to a Ticket that runs in `direct` mode; null when allowed. */
+export async function kubernetesWorkflowRefusal(
+  workflow: string,
+  runsOn: readonly string[],
+  isolationMode: string,
+  targets: Pick<ExecutionTargetService, 'find'>,
+): Promise<string | null> {
+  if (isolationMode !== 'direct') return null;
+  for (const target of runsOn) {
+    if (await targets.find(target)) return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to a Ticket in direct mode. Switch the Isolation Mode to worktree first.`;
+  }
+  return null;
 }
