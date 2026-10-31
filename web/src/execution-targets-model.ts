@@ -238,6 +238,50 @@ export function deleteCopy(name: string, impact: DeletionImpact | null): DeleteC
   };
 }
 
+export interface RotateKeyCopy {
+  running: TextPart[];
+  newPods: string;
+  proxy: { bold: string; rest: string };
+  shownOnce: string;
+}
+
+export function rotateKeyCopy(name: string, running: number): RotateKeyCopy {
+  const tickets = `${running} ${running === 1 ? 'Ticket is' : 'Tickets are'}`;
+  return {
+    running:
+      running > 0
+        ? [{ text: `${tickets} running on ` }, { text: name, code: true }, { text: ' now. Their next checkpoint push fails until they start a new pod.' }]
+        : [{ text: 'No Tickets are running on ' }, { text: name, code: true }, { text: ' now, so no running pod loses git access.' }],
+    newPods: 'New pods get a pass signed with the new key at start, so waiting Tickets are not affected.',
+    proxy: {
+      bold: 'Update the key on the Repository Proxy too.',
+      rest: 'Until you do, the proxy rejects every pass from Harmonic, new ones included.',
+    },
+    shownOnce: 'The new key is shown once, for you to copy to the proxy. Harmonic stores it as a Secret and never shows it again.',
+  };
+}
+
+export function rotatedSummary(revokedRunning: number): string {
+  return `Rotated just now · ${revokedRunning} ${revokedRunning === 1 ? 'pass' : 'passes'} revoked.`;
+}
+
+export function proxyCheckPanel(outcome: 'agrees' | 'rejected' | 'unreachable'): { tone: 'ok' | 'fail'; title: string; body: string } {
+  switch (outcome) {
+    case 'agrees':
+      return { tone: 'ok', title: 'Repository Proxy accepts Harmonic’s passes.', body: 'The proxy and Harmonic share the same key.' };
+    case 'rejected':
+      return { tone: 'fail', title: 'Repository Proxy rejected the last pass.', body: 'The proxy is likely still on the old key. Update it, then Test connection.' };
+    case 'unreachable':
+      return { tone: 'fail', title: 'Repository Proxy unreachable.', body: 'Check the Repository Proxy URL and that Harmonic can reach it.' };
+  }
+}
+
+export function daysAgo(at: number, now: number): string {
+  const days = Math.floor((now - at) / 86_400_000);
+  if (days <= 0) return 'today';
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
 export interface WorkspaceRefusal {
   parts: TextPart[];
   link: string | null;

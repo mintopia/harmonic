@@ -1311,6 +1311,7 @@ export interface ExecutionTarget {
   concurrencyLimit: number | null;
   repositoryProxyUrl: string | null;
   kubeconfig: { set: boolean; secretName: string | null; updatedAt: number | null } | null;
+  proxyKey: { set: boolean; secretName: string; rotatedAt: number | null } | null;
   running: number;
   createdAt: number | null;
   updatedAt: number | null;
@@ -1329,6 +1330,14 @@ export interface ExecutionTargetBody {
   concurrencyLimit: number;
   repositoryProxyUrl: string;
 }
+
+export interface ProxyKeyRotation {
+  key: string;
+  rotatedAt: number;
+  revokedRunning: number;
+}
+
+export type ProxyKeyCheck = 'agrees' | 'rejected' | 'unreachable';
 
 export interface DeletionImpact {
   running: number;

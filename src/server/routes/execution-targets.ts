@@ -25,6 +25,22 @@ const kubeconfigStatusSchema = z
   })
   .meta({ id: 'ExecutionTargetKubeconfig', description: 'Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned.' });
 
+const proxyKeyStatusSchema = z
+  .object({
+    set: z.boolean().meta({ example: true }),
+    secretName: z.string().meta({ example: 'k8s-prod-proxy-key' }),
+    rotatedAt: z.number().nullable().meta({ example: 1784030400000, description: 'When the signing key was last created or rotated.' }),
+  })
+  .meta({ id: 'ExecutionTargetProxyKey', description: 'Whether the Repository Proxy signing key Secret is set. The key is never returned except once by rotation.' });
+
+const proxyKeyRotationSchema = z
+  .object({
+    key: z.string().meta({ example: 'Zm9v...', description: 'The new signing key. Shown only in this response; copy it to the Repository Proxy.' }),
+    rotatedAt: z.number().meta({ example: 1784030400000 }),
+    revokedRunning: z.number().meta({ example: 2, description: 'Tickets running on the target whose pass is now revoked.' }),
+  })
+  .meta({ id: 'ExecutionTargetProxyKeyRotation' });
+
 const executionTargetSchema = z
   .object({
     name: z.string().meta({ example: 'k8s-prod' }),
@@ -38,6 +54,7 @@ const executionTargetSchema = z
     concurrencyLimit: z.number().nullable().meta({ example: 4 }),
     repositoryProxyUrl: z.string().nullable().meta({ example: 'https://repo-proxy.harmonic-agents.svc.cluster.local' }),
     kubeconfig: kubeconfigStatusSchema.nullable(),
+    proxyKey: proxyKeyStatusSchema.nullable(),
     running: z.number().meta({ example: 0, description: 'Tickets currently running on this target.' }),
     createdAt: z.number().nullable().meta({ example: 1784030400000 }),
     updatedAt: z.number().nullable().meta({ example: 1784030400000 }),
@@ -241,6 +258,40 @@ export async function executionTargetRoutes(fastify: FastifyInstance, ctx: Pick<
       },
     },
     async (req) => ctx.executionTargets.clearKubeconfig(req.params.name),
+  );
+
+  app.post(
+    '/execution-targets/:name/rotate-proxy-key',
+    {
+      schema: {
+        tags,
+        description:
+          'Replace the Repository Proxy signing key, which revokes every outstanding pass. Creates the key when none is set. The new key is returned once; copy it to the Repository Proxy, which rejects every pass until it has the new key.',
+        security,
+        params: targetParamsSchema,
+        response: { 200: proxyKeyRotationSchema.describe('The new key, shown once.'), 404: errorResponse('No target has that name.'), 409: errorResponse('`local` is built in.') },
+      },
+    },
+    async (req) => ctx.executionTargets.rotateProxyKey(req.params.name),
+  );
+
+  app.post(
+    '/execution-targets/:name/check-proxy-key',
+    {
+      schema: {
+        tags,
+        description:
+          'Check that the Repository Proxy accepts passes signed with the current key: Harmonic sends the proxy a probe pass for a repository that does not exist. `rejected` means the proxy is likely still on the old key. 409 when no signing key is set.',
+        security,
+        params: targetParamsSchema,
+        response: {
+          200: z.object({ outcome: z.enum(['agrees', 'rejected', 'unreachable']).meta({ example: 'agrees' }) }).meta({ id: 'ExecutionTargetProxyKeyCheck' }).describe('The proxy verdict.'),
+          404: errorResponse('No target has that name.'),
+          409: errorResponse('`local` is built in, or no signing key is set.'),
+        },
+      },
+    },
+    async (req) => ({ outcome: await ctx.executionTargets.checkProxyKey(req.params.name) }),
   );
 
   app.post(

@@ -280,12 +280,13 @@ const stubTarget = (name: string, enabled: boolean, running: number, limit: numb
   concurrencyLimit: limit,
   repositoryProxyUrl: 'https://repo-proxy.harmonic-agents.svc.cluster.local',
   kubeconfig: { set: true, secretName: `${name}-kubeconfig`, updatedAt: Date.UTC(2026, 9, 12) },
+  proxyKey: { set: true, secretName: `${name}-proxy-key`, rotatedAt: Date.UTC(2026, 9, 3, 14, 20) },
   running,
   createdAt: 1,
   updatedAt: 1,
 });
 const executionTargetFixtures: ExecutionTarget[] = [
-  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, running: 0, createdAt: null, updatedAt: null },
+  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, running: 0, createdAt: null, updatedAt: null },
   stubTarget('k8s-prod', true, 2, 4, 'harmonic-agents'),
   stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
 ];
@@ -296,6 +297,8 @@ export const api: typeof RealApi = {
   updateExecutionTarget: (name) => ok(executionTargetFixtures.find((t) => t.name === name) ?? stubTarget(name, true, 0, 1, 'default')),
   executionTargetDeletionImpact: () => ok({ running: 2, waiting: 1, total: 3 }),
   deleteExecutionTarget: () => ok({ ok: true as const, escalated: 3 }),
+  checkExecutionTargetProxyKey: () => ok({ outcome: 'rejected' as const }),
+  rotateExecutionTargetProxyKey: () => ok({ key: 'hrk_7f3a9c2e51b84d06a1e9c0b3', rotatedAt: Date.now(), revokedRunning: 2 }),
   setExecutionTargetKubeconfig: () => ok(null),
   clearExecutionTargetKubeconfig: () => ok(null),
   testExecutionTargetConnection: (body) => {

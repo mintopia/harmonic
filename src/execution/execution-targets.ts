@@ -6,6 +6,7 @@ import { EXECUTION_TARGET_AUTH_METHODS, executionTargets, type ExecutionTargetRo
 import { DomainError } from '../domain/errors.js';
 import type { WorkspaceService } from '../domain/workspaces.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { RepositoryPassService, signingKeySecretName, type ProxyKeyCheck } from '../repository-proxy/pass-service.js';
 import type { GlobalSecretService } from '../secrets/global-secret-service.js';
 import {
   CONNECTION_TEST_TIMEOUT_MS,
@@ -65,6 +66,18 @@ export interface KubeconfigStatus {
   updatedAt: number | null;
 }
 
+export interface ProxyKeyStatus {
+  set: boolean;
+  secretName: string;
+  rotatedAt: number | null;
+}
+
+export interface ProxyKeyRotation {
+  key: string;
+  rotatedAt: number;
+  revokedRunning: number;
+}
+
 export interface ExecutionTargetView {
   name: string;
   builtIn: boolean;
@@ -77,6 +90,7 @@ export interface ExecutionTargetView {
   concurrencyLimit: number | null;
   repositoryProxyUrl: string | null;
   kubeconfig: KubeconfigStatus | null;
+  proxyKey: ProxyKeyStatus | null;
   running: number;
   createdAt: number | null;
   updatedAt: number | null;
@@ -116,6 +130,7 @@ export const LOCAL_TARGET_VIEW: ExecutionTargetView = {
   concurrencyLimit: null,
   repositoryProxyUrl: null,
   kubeconfig: null,
+  proxyKey: null,
   running: 0,
   createdAt: null,
   updatedAt: null,
@@ -137,6 +152,7 @@ export class ExecutionTargetService {
   private readonly workspaces: Pick<WorkspaceService, 'list' | 'update'>;
   private readonly clientFactory: KubernetesClientFactory;
   private readonly testTimeoutMs: number;
+  private readonly passes: RepositoryPassService;
 
   constructor(deps: ExecutionTargetServiceDeps) {
     this.db = deps.db;
@@ -144,10 +160,13 @@ export class ExecutionTargetService {
     this.workspaces = deps.workspaces;
     this.clientFactory = deps.clientFactory ?? defaultKubernetesClientFactory;
     this.testTimeoutMs = deps.testTimeoutMs ?? CONNECTION_TEST_TIMEOUT_MS;
+    this.passes = new RepositoryPassService(deps.secrets);
   }
 
   private async view(row: ExecutionTargetRow): Promise<ExecutionTargetView> {
     const status = row.kubeconfigSecret ? await this.secrets.status(row.kubeconfigSecret) : null;
+    const keyName = signingKeySecretName(row.name);
+    const key = await this.secrets.status(keyName);
     return {
       name: row.name,
       builtIn: false,
@@ -160,6 +179,7 @@ export class ExecutionTargetService {
       concurrencyLimit: row.concurrencyLimit,
       repositoryProxyUrl: row.repositoryProxyUrl,
       kubeconfig: { set: status !== null, secretName: row.kubeconfigSecret, updatedAt: status?.updatedAt ?? null },
+      proxyKey: { set: key !== null, secretName: keyName, rotatedAt: key?.updatedAt ?? null },
       running: await this.runningCount(row.name),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -228,6 +248,15 @@ export class ExecutionTargetService {
       kubeconfigSecret = value !== null ? renamed : null;
     }
 
+    if (newName !== current.name) {
+      const oldKey = signingKeySecretName(current.name);
+      const proxyKey = await this.secrets.reveal(oldKey);
+      if (proxyKey !== null) {
+        await this.secrets.set(signingKeySecretName(newName), proxyKey);
+        await this.secrets.clear(oldKey);
+      }
+    }
+
     const { name: _name, ...fields } = patch;
     try {
       const row = await this.db.write((db) =>
@@ -262,6 +291,17 @@ export class ExecutionTargetService {
     return { set: false, secretName: null, updatedAt: null };
   }
 
+  async rotateProxyKey(name: string): Promise<ProxyKeyRotation> {
+    const current = await this.row(name);
+    const rotated = await this.passes.rotate(current.name);
+    return { ...rotated, revokedRunning: await this.runningCount(current.name) };
+  }
+
+  async checkProxyKey(name: string): Promise<ProxyKeyCheck> {
+    const current = await this.row(name);
+    return this.passes.checkProxy(current.name, current.repositoryProxyUrl);
+  }
+
   // ponytail: escalates nothing until `runs_on` ties Tickets to targets.
   async deletionImpact(name: string): Promise<DeletionImpact> {
     await this.row(name);
@@ -273,6 +313,7 @@ export class ExecutionTargetService {
     const impact = await this.deletionImpact(name);
     await this.db.write((db) => db.delete(executionTargets).where(eq(executionTargets.id, current.id)).run());
     if (current.kubeconfigSecret) await this.secrets.clear(current.kubeconfigSecret);
+    await this.secrets.clear(signingKeySecretName(name));
     await this.rewriteWorkspaceLists(name, null);
     return impact;
   }
