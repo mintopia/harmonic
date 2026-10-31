@@ -199,6 +199,13 @@ export const settingsRegistry = {
     label: 'Route Classifier timeout',
     help: 'Seconds the Route Classifier may take before it abstains. Defaults to 30.',
   },
+  classifierEndpoint: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Route Classifier endpoint',
+    help: 'Base URL, model name and the name of the Secret holding the API key, for the OpenAI-compatible backend.',
+  },
   guardrailBudget: {
     scope: 'overridable',
     control: 'json',

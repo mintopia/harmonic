@@ -309,6 +309,14 @@ export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema
 export const CLASSIFIER_BACKENDS = ['typesafe', 'openai-compatible', 'harness'] as const;
 export const DEFAULT_CLASSIFIER_TIMEOUT_SECONDS = 30;
 
+export const classifierEndpointSchema = z.object({
+  baseUrl: z.url().meta({ example: 'https://api.openai.com/v1' }),
+  model: z.string().trim().min(1).meta({ example: 'gpt-5-mini' }),
+  /** Name of the ADR-0046 Secret holding the API key; the key itself is never stored here. */
+  apiKeySecret: z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'a secret name is 1-64 letters, digits, `_`, `.` or `-`').meta({ example: 'CLASSIFIER_API_KEY' }),
+});
+export type ClassifierEndpoint = z.infer<typeof classifierEndpointSchema>;
+
 export const modelOptionSchema = z.object({
   id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option id must be lowercase letters, digits and dashes' }).meta({ example: 'cheap-fix' }),
   /** Any id: a Harness that is not configured is refused with ADR-0049's wording, not a generic enum error. */

@@ -37,6 +37,7 @@ import type {
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   ModelOption,
+  ClassifierEndpoint,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -289,6 +290,7 @@ export const api = {
       classifierEnabled?: boolean | null;
       classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
       classifierTimeoutSeconds?: number | null;
+      classifierEndpoint?: ClassifierEndpoint | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

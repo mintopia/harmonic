@@ -7,7 +7,7 @@ import type { WorkspaceRow } from '../db/schema.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { defaultRoute } from './routing.js';
 import { harnessConfig } from './route.js';
-import { resolveClassifierSettings, resolveModelOptions, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
+import { parseClassifierEndpoint, resolveClassifierSettings, resolveModelOptions, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
 import { costOfUsages, pricesForHarness, type Cost } from './pricing.js';
 import type { AttemptUsage } from './usage.js';
 
@@ -166,6 +166,61 @@ export function createHarnessClassifierBackend(deps: {
       } finally {
         await rm(cwd, { recursive: true, force: true });
       }
+    },
+  };
+}
+
+export function createOpenAiCompatibleClassifierBackend(deps: {
+  reveal: (workspaceId: number, name: string) => Promise<string | null>;
+  fetch?: typeof fetch;
+  instructions?: () => string;
+}): ClassifierBackend {
+  const doFetch = deps.fetch ?? fetch;
+  return {
+    async classify(input, { timeoutMs, workspace }) {
+      const endpoint = parseClassifierEndpoint(workspace.classifierEndpoint);
+      if (!endpoint) throw new Error('no OpenAI-compatible endpoint is configured for this Workspace');
+      const apiKey = await deps.reveal(workspace.id, endpoint.apiKeySecret);
+      if (apiKey === null) throw new Error(`Secret '${endpoint.apiKeySecret}' is not set for this Workspace`);
+      const response = await doFetch(`${endpoint.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify({
+          model: endpoint.model,
+          messages: [{ role: 'user', content: buildClassifierPrompt(input, deps.instructions?.()) }],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'route_decision',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: { optionId: { type: 'string', enum: input.options.map((o) => o.id) }, reason: { type: 'string' } },
+                required: ['optionId', 'reason'],
+                additionalProperties: false,
+              },
+            },
+          },
+        }),
+      });
+      if (!response.ok) throw new Error(`the endpoint answered HTTP ${response.status}`);
+      const body = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+        usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown };
+      };
+      const content = body.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('the endpoint reply carried no message content');
+      let output: unknown;
+      try {
+        output = JSON.parse(content);
+      } catch {
+        throw new Error('the endpoint reply was not valid JSON');
+      }
+      const usage = body.usage
+        ? acpUsage({ inputTokens: body.usage.prompt_tokens, outputTokens: body.usage.completion_tokens, totalTokens: body.usage.total_tokens }, endpoint.model)
+        : null;
+      return { output, usage };
     },
   };
 }

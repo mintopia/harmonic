@@ -8,7 +8,7 @@ import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '.
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
-import { CLASSIFIER_BACKENDS, EXPORT_STATES, modelOptionIssues, modelOptionsSchema, redactPatternsSchema } from '../../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionIssues, modelOptionsSchema, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -25,7 +25,7 @@ import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
 import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
-import { parseModelOptions } from '../../domain/model-options.js';
+import { parseClassifierEndpoint, parseModelOptions } from '../../domain/model-options.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -89,6 +89,7 @@ const workspaceSchema = z
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
     classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
+    classifierEndpoint: classifierEndpointSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -160,6 +161,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     modelOptions: parseModelOptions(ws.modelOptions),
+    classifierEndpoint: parseClassifierEndpoint(ws.classifierEndpoint),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
