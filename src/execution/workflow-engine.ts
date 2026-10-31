@@ -374,7 +374,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return shell && (step.runs_on === undefined || step.runs_on === ctx.podTarget) ? ctx.pod : undefined;
   }
 
-  /** The push is the handover to whatever runs next, so a step whose work could not be pushed did not succeed. */
   private async checkpointed(pod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {
     let checkpoint;
     try {

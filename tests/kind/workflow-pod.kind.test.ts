@@ -1,24 +1,5 @@
 /**
- * A workflow whose `runs_on` names a Kubernetes Execution Target runs its shell
- * steps in one pod and pushes the Ticket branch after every step (ADR-0056,
- * issue #936). Skipped unless HARMONIC_KIND_KUBECONFIG names a kubeconfig for a
- * cluster with a `harmonic-agents` namespace (CI creates both with kind).
- *
- * The Repository Proxy runs inside this test process, in front of a bare
- * repository in a temp directory, and listens on every interface. The pods dial
- * it at HARMONIC_KIND_PROXY_HOST, the address the cluster reaches this machine
- * on; with kind on Linux that is the gateway of the `kind` docker network:
- *
- *   HARMONIC_KIND_PROXY_HOST=$(docker network inspect kind -f '{{(index .IPAM.Config 0).Gateway}}')
- *
- * To test against the in-cluster proxy from deploy/kubernetes/repository-proxy.yaml
- * instead, set HARMONIC_KIND_PROXY_URL (its Service URL) and HARMONIC_KIND_PROXY_KEY
- * (its HARMONIC_PROXY_KEY), and mount the bare repository named by
- * HARMONIC_KIND_UPSTREAM into the proxy pod at the same path; the proxy then reads
- * the upstream from that path.
- *
- * HARMONIC_KIND_IMAGE is the pod image: anything with `sh`, `git` and `sleep`
- * (default alpine/git).
+ * Runs against a kind cluster; skipped unless HARMONIC_KIND_KUBECONFIG is set (ADR-0056, #936).
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

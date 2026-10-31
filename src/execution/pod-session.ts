@@ -136,7 +136,6 @@ echo "\${tip%%[[:space:]]*}"`,
     return this.api.exec(this.spec.target.namespace, this.name, ['sh', '-c', script], { env: { ...this.env, ...env }, timeoutMs });
   }
 
-  /** Runs a step's script in the repository checkout; the pass is available to it as the pod's `HARMONIC_PASS`. */
   run(script: string, env: Record<string, string>, timeoutMs: number): Promise<PodExecResult> {
     return this.api.exec(this.spec.target.namespace, this.name, ['sh', '-c', script], { env, timeoutMs, cwd: this.workdir });
   }
@@ -185,7 +184,6 @@ echo "$sha $forced"`,
     });
   }
 
-  /** Deletes the pod and its Secret; safe to call more than once and after a failed start. */
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;

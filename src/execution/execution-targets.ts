@@ -193,7 +193,6 @@ export class ExecutionTargetService {
     return 0;
   }
 
-  /** What a pod needs to run on `name`: the target's pod settings and the cluster access, with the kubeconfig revealed. */
   async podAccess(name: string): Promise<{ target: PodTarget & { defaultImage: string }; access: KubernetesAccess }> {
     const row = await this.row(name);
     if (!row.enabled) throw new DomainError('invalid_state', `Execution Target '${name}' is disabled`);

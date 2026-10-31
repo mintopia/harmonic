@@ -27,7 +27,6 @@ export interface PodOpenerDeps<S extends PodOpenerSubject> {
   apiFactory: PodApiFactory;
   baseBranchFor: (task: S) => Promise<string>;
   setExecution: (task: S, execution: TaskExecution) => Promise<void>;
-  /** Where the pod keeps the checkout; defaults to a directory in the pod's workspace volume. */
   workdir?: string;
 }
 

@@ -116,7 +116,6 @@ export interface WorkflowDefinition {
   readonly cleanup?: readonly WorkflowStepDefinition[] | undefined;
   /** The Execution Target the whole workflow runs on; absent means `local`. */
   readonly runsOn?: string | undefined;
-  /** Overrides the target's default pod image. */
   readonly image?: string | undefined;
   readonly vars: Readonly<Record<string, string | number | boolean>>;
 }
