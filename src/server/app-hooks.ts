@@ -17,7 +17,7 @@ export function registerRouteRecorder(app: App, registeredRoutes: RegisteredRout
 export function registerErrorHandler(app: App): void {
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
-      return reply.status(err.httpStatus).send({ error: { code: err.code, message: err.message } });
+      return reply.status(err.httpStatus).send({ error: { code: err.code, message: err.message, ...(err.issues ? { issues: err.issues } : {}) } });
     }
     if (hasZodFastifySchemaValidationErrors(err)) {
       return reply.status(400).send({

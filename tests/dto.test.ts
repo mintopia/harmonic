@@ -82,7 +82,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,
-  mergeStatus: null, ticketClosePending: false,
+  mergeStatus: null, ticketClosePending: false, workflowRef: null,
   mapRef: null,
   baseBranch: null,
   trackerState: null,

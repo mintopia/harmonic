@@ -34,6 +34,33 @@
                 "type": "string",
                 "example": "no task with id 4821"
               },
+              "issues": {
+                "description": "Present on a refused YAML save: each problem with its 1-based line and column.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "line",
+                    "column"
+                  ]
+                }
+              },
               "id": {
                 "description": "Present on 500 responses: a reference to grep for in the server logs.",
                 "example": "req-2a",
@@ -1946,6 +1973,18 @@
             ],
             "example": null
           },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -2167,6 +2206,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -2371,6 +2411,18 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
             "example": null
           },
           "wayfinderType": {
@@ -2798,6 +2850,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -3018,6 +3071,18 @@
             ],
             "example": null
           },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -3442,6 +3507,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -3645,6 +3711,18 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
             "example": null
           },
           "wayfinderType": {
@@ -4073,6 +4151,7 @@
           "continuationChoice",
           "origin",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -9872,6 +9951,40 @@
           "usedBy"
         ]
       },
+      "WorkflowInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          },
+          "bundled": {
+            "type": "boolean",
+            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The current version; every save creates the next one."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "text",
+          "bundled",
+          "version"
+        ]
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -9885,6 +9998,34 @@
               "message": {
                 "type": "string",
                 "example": "no task with id 4821"
+              },
+              "issues": {
+                "description": "Present on a refused YAML save: each problem with its 1-based line and column.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "id": {
                 "description": "Present on 500 responses: a reference to grep for in the server logs.",
@@ -11830,6 +11971,18 @@
             ],
             "example": null
           },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -12053,6 +12206,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -12259,6 +12413,18 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
             "example": null
           },
           "wayfinderType": {
@@ -12689,6 +12855,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -12911,6 +13078,18 @@
             ],
             "example": null
           },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
+            "example": null
+          },
           "wayfinderType": {
             "anyOf": [
               {
@@ -13338,6 +13517,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -13543,6 +13723,18 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.",
             "example": null
           },
           "wayfinderType": {
@@ -13974,6 +14166,7 @@
           "continuationChoice",
           "origin",
           "issueWorkflow",
+          "workflowRef",
           "wayfinderType",
           "mapRef",
           "createdAt",
@@ -19950,6 +20143,41 @@
           "bundled",
           "resolved",
           "usedBy"
+        ],
+        "additionalProperties": false
+      },
+      "Workflow": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          },
+          "bundled": {
+            "type": "boolean",
+            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "The current version; every save creates the next one."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "text",
+          "bundled",
+          "version"
         ],
         "additionalProperties": false
       }
@@ -27286,6 +27514,504 @@
           },
           "409": {
             "description": "The copy's code is already taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "List the workflow library: bundled workflows first, then operator workflows. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every workflow, bundled first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Workflow"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "workflows",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every workflow, bundled first."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/{name}": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Read one workflow at its current version. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Save a workflow, creating it or adding a version. The YAML is validated against the schema and invariants first. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 200000,
+                    "description": "The workflow YAML."
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved workflow at its new version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The YAML does not validate; `error.issues` lists each problem with its line and column. Nothing was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The workflow is bundled and read-only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/import": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Import a workflow YAML file; its `name` key names it. The file is stored byte for byte. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 200000,
+                    "description": "The workflow YAML."
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The imported workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The YAML does not validate; `error.issues` lists each problem with its line and column. Nothing was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A workflow already has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/{name}/export": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Download the workflow as the YAML file that was saved. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workflow YAML file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "description": "The workflow YAML file."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/{name}/duplicate": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Make an editable copy of a workflow, bundled or not. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "Name for the copy; defaults to `<name>-copy`.",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                    "example": "implement"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The copy's name is taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/{name}/versions": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "List the version numbers still kept: the current one and any a Ticket references. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Kept version numbers, ascending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Kept version numbers, ascending."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No workflow has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/{name}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Read one immutable version of a workflow. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "example": "implement"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "in": "path",
+            "name": "version",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "That version of the workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such workflow or version.",
             "content": {
               "application/json": {
                 "schema": {

@@ -154,7 +154,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     state: 'ready',
     escalationReason: null,
     escalationCause: null,
-    mergeStatus: null, ticketClosePending: false,
+    mergeStatus: null, ticketClosePending: false, workflowRef: null,
     feedback: null,
     createdAt: Date.now() - 3_600_000,
     updatedAt: Date.now(),

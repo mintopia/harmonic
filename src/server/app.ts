@@ -13,7 +13,10 @@ import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
+import { isNotNull } from 'drizzle-orm';
+import { tasks } from '../db/schema.js';
 import { PromptLibrary } from '../domain/prompt-library-store.js';
+import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { registerAppJobs } from './app-jobs.js';
 import { registerAppExports } from './app-exports.js';
 import { registerBusListeners } from './app-bus-listeners.js';
@@ -72,6 +75,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const promptLibrary = new PromptLibrary(opts.dataDir);
   await promptLibrary.load();
   await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
+  const workflowLibrary = new WorkflowLibrary(opts.dataDir, {
+    referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
+  });
+  await workflowLibrary.load();
   const runtime = await createRuntime({
     opts,
     promptLibrary,
@@ -197,6 +204,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     upgrade: runtime.upgrade,
     worktreesDir,
   });
-  await registerRoutes(app, ctx, contexts, promptLibrary);
+  await registerRoutes(app, ctx, contexts, promptLibrary, workflowLibrary);
   return app;
 }
