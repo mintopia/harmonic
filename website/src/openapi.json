@@ -3397,6 +3397,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -3483,6 +3529,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -4358,6 +4405,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -4443,6 +4536,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -5303,6 +5397,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -5390,6 +5530,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline",
@@ -10863,6 +11004,11 @@
             "example": 0,
             "description": "Tickets currently running on this target."
           },
+          "waiting": {
+            "type": "number",
+            "example": 0,
+            "description": "Ready Tickets waiting for this target, because it is full or disabled."
+          },
           "createdAt": {
             "anyOf": [
               {
@@ -10901,6 +11047,7 @@
           "proxyKey",
           "credentials",
           "running",
+          "waiting",
           "createdAt",
           "updatedAt"
         ],
@@ -14807,6 +14954,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -14893,6 +15087,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -15777,6 +15972,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -15862,6 +16104,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -16731,6 +16974,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -16818,6 +17108,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline",
@@ -22435,6 +22726,11 @@
             "example": 0,
             "description": "Tickets currently running on this target."
           },
+          "waiting": {
+            "type": "number",
+            "example": 0,
+            "description": "Ready Tickets waiting for this target, because it is full or disabled."
+          },
           "createdAt": {
             "anyOf": [
               {
@@ -22473,6 +22769,7 @@
           "proxyKey",
           "credentials",
           "running",
+          "waiting",
           "createdAt",
           "updatedAt"
         ],

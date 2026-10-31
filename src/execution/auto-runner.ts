@@ -15,7 +15,7 @@ import type { EpicBlocker } from '../domain/epic-hold.js';
 import type { EpicBaseGate } from './epic-coordinator.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 import { errorMessage } from '../error-handling.js';
-import { EMPTY_TARGET_GATE, type TargetGate } from './target-gate.js';
+import { EMPTY_TARGET_GATE, targetWaitReason, type TargetGate, type TargetWaitInfo } from './target-gate.js';
 
 function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId' | 'prompt' | 'trackerTitle'>): Record<string, string | number> {
   const title = task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`;
@@ -57,6 +57,10 @@ export interface MirrorClaim {
 }
 
 type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0], parent?: SpanContext) => Promise<unknown>;
+
+export interface TargetWait extends TargetWaitInfo {
+  position: number;
+}
 
 export interface AutoRunnerOptions {
   mirror?: MirrorClaim;
@@ -109,6 +113,7 @@ export class AutoRunner {
   private readonly missingEpicBaseGraceMs: number;
   private readonly clock: () => number;
   private schedulerSkipReasons = new Map<number, string>();
+  private targetWaits = new Map<number, TargetWait>();
 
   private readonly missingEpicBaseSince = new Map<number, number>();
 
@@ -155,6 +160,12 @@ export class AutoRunner {
   /** The latest scheduler reason for `taskId`, if it was not picked. */
   skipReasonFor(taskId: number): string | undefined {
     return this.schedulerSkipReasons.get(taskId);
+  }
+
+  /** Why and where `taskId` waits for a Kubernetes target, as of the latest fill; undefined when it is not waiting on one. */
+  targetWaitFor(taskId: number): TargetWait | undefined {
+    const wait = this.targetWaits.get(taskId);
+    return wait && this.schedulerSkipReasons.get(taskId) === targetWaitReason(wait) ? wait : undefined;
   }
 
   /** When `taskId` started its current House-Rule-blocked streak,
@@ -298,9 +309,9 @@ export class AutoRunner {
         record(task.id, 'workspace disabled');
         return;
       }
-      const targetWait = gate.waitReason(task);
+      const targetWait = gate.waitInfo(task);
       if (targetWait !== undefined) {
-        record(task.id, targetWait);
+        record(task.id, targetWaitReason(targetWait));
         return;
       }
       if (localRunning >= ceiling && gate.targetOf(task) === undefined) {
@@ -397,6 +408,8 @@ export class AutoRunner {
     }
 
     let stopped = false;
+    const waiters = new Map<string, number>();
+    this.targetWaits = new Map();
     await forEachYielding(ordered, async (task) => {
       if (stopped) return;
       const kubernetes = gate.targetOf(task) !== undefined;
@@ -405,8 +418,13 @@ export class AutoRunner {
         return;
       }
       if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate, kubernetes })) return;
-      const targetWait = gate.waitReason(task);
-      if (targetWait !== undefined) return;
+      const targetWait = gate.waitInfo(task);
+      if (targetWait !== undefined) {
+        const position = (waiters.get(targetWait.target) ?? 0) + 1;
+        waiters.set(targetWait.target, position);
+        this.targetWaits.set(task.id, { ...targetWait, position });
+        return;
+      }
       const started = await this.startPicked(task, skip, tickParent);
       if (!started) return;
       if (kubernetes) gate.started(task);

@@ -413,11 +413,14 @@ export async function createRuntime(deps: {
     },
   };
   deps.stores.executionTargets.attachTickets({
-    forTarget: async (name) => {
-      const found = { running: [] as number[], waiting: [] as number[] };
+    byTarget: async () => {
+      const found = new Map<string, { running: number[]; waiting: number[] }>();
       await forEachYielding(await tasks.list({ state: ['ready', 'working'] }), async (task) => {
-        if ((await runner.kubernetesTargetOfTask(task)) !== name) return;
-        (task.state === 'working' ? found.running : found.waiting).push(task.id);
+        const target = await runner.kubernetesTargetOfTask(task);
+        if (target === undefined) return;
+        const entry = found.get(target) ?? { running: [], waiting: [] };
+        (task.state === 'working' ? entry.running : entry.waiting).push(task.id);
+        found.set(target, entry);
       });
       return found;
     },

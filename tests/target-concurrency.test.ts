@@ -7,21 +7,24 @@ import { baselineConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner } from '../src/execution/auto-runner.js';
 import { TargetGate } from '../src/execution/target-gate.js';
-import type { ExecutionTargetView } from '../src/execution/execution-targets.js';
 import type { AttemptStore } from '../src/domain/attempts.js';
 import type { Runner } from '../src/execution/runner.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace, startServer } from './helpers.js';
 
-const view = (name: string, over: Partial<ExecutionTargetView> = {}): ExecutionTargetView =>
-  ({ name, builtIn: false, enabled: true, concurrencyLimit: 1, ...over }) as ExecutionTargetView;
+interface Definition {
+  name: string;
+  enabled: boolean;
+  concurrencyLimit: number;
+}
+const view = (name: string, over: Partial<Definition> = {}): Definition => ({ name, enabled: true, concurrencyLimit: 1, ...over });
 
 describe('per-target concurrency in the Auto-Runner', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let settingsStore: SettingsStore;
   let tasks: TaskService;
-  let targets: ExecutionTargetView[];
+  let targets: Definition[];
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-tc-'));
@@ -46,7 +49,7 @@ describe('per-target concurrency in the Auto-Runner', () => {
     } as unknown as AttemptStore;
     const config: AppConfig = { ...baselineConfig(), autoRunner: { enabled: true, maxConcurrentAttempts: ceiling } };
     const targetGate = new TargetGate({
-      targets: { list: async () => targets },
+      targets: { definitions: async () => targets },
       targetOf: async (task) => (task.prompt.startsWith('k8s:') ? 'k8s-prod' : undefined),
     });
     const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb, settingsStore), { targetGate });
@@ -62,6 +65,7 @@ describe('per-target concurrency in the Auto-Runner', () => {
     await vi.waitFor(() => expect(started).toEqual([first.id]));
     await vi.waitFor(() => expect(ar.skipReasonFor(second.id)).toBe('waiting for k8s-prod'));
     expect((await tasks.get(second.id)).state).toBe('ready');
+    expect(ar.targetWaitFor(second.id)).toEqual({ target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 1 });
 
     await tasks.setState(first.id, 'done');
     ar.poke();
@@ -122,13 +126,15 @@ describe('deleting an Execution Target', () => {
       });
       const escalated: [number, string][] = [];
       server.app.ctx.executionTargets.attachTickets({
-        forTarget: async () => ({ running: [7], waiting: [8, 9] }),
+        byTarget: async () => new Map([['k8s-prod', { running: [7], waiting: [8, 9] }]]),
         escalate: async (id, reason) => void escalated.push([id, reason]),
       });
       expect((await server.api('GET', '/api/execution-targets/k8s-prod/deletion-impact')).body).toEqual({ running: 1, waiting: 2, total: 3 });
       const del = await server.api('DELETE', '/api/execution-targets/k8s-prod');
       expect(del.body.escalated).toEqual({ running: 1, waiting: 2, total: 3 });
-      expect(escalated).toEqual([7, 8, 9].map((id) => [id, "Execution Target 'k8s-prod' was deleted"]));
+      expect(escalated.map(([id]) => id)).toEqual([7, 8, 9]);
+      expect(escalated[0]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. Its running Attempt was stopped. Change `runs_on` in the workflow, or add the target back in Settings > Execution.");
+      expect(escalated[1]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Execution.");
     } finally {
       await server.close();
     }

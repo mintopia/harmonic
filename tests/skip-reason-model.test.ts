@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSkipReasonTaskRef, parseTargetWait } from '../web/src/skip-reason-model.js';
+import { parseSkipReasonTaskRef } from '../web/src/skip-reason-model.js';
 
 describe('parseSkipReasonTaskRef', () => {
   it('extracts the holder id from the canonical server format', () => {
@@ -26,14 +26,5 @@ describe('parseSkipReasonTaskRef', () => {
     'HITL',
   ])('leaves non-lease scheduler reasons as plain text', (reason) => {
     expect(parseSkipReasonTaskRef(reason)).toBeNull();
-  });
-});
-
-describe('parseTargetWait', () => {
-  it('reads the target and the disabled flag, and ignores other reasons', () => {
-    expect(parseTargetWait('waiting for k8s-prod')).toEqual({ target: 'k8s-prod', disabled: false });
-    expect(parseTargetWait('waiting for k8s-staging (disabled)')).toEqual({ target: 'k8s-staging', disabled: true });
-    expect(parseTargetWait('Work Context held by task 12 (working)')).toBeNull();
-    expect(parseTargetWait(null)).toBeNull();
   });
 });

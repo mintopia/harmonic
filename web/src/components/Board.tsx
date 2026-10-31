@@ -224,7 +224,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const showFoot = !!task.branch || hasReadout || !!action;
 
   return (
-    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] max-w-full shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
+    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] max-w-full shrink-0 cursor-pointer flex-col ${task.state === 'ready' && task.targetWait ? 'overflow-visible' : 'overflow-hidden'} rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${stateFill(task.state)}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
@@ -261,8 +261,12 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
             <span className="shrink-0 rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
           )}
           <WhoLine harness={task.harness} model={task.model} routedBy={task.routing?.applied ? task.routing.label : undefined} classifier={task.classifier ?? undefined} />
-          {task.state === 'ready' && <TargetWaitChip skipReason={task.skipReason} />}
         </div>
+        {task.state === 'ready' && task.targetWait && (
+          <div className="relative z-20 mt-2">
+            <TargetWaitChip wait={task.targetWait} />
+          </div>
+        )}
         {task.escalationReason && (
           <div className="mt-1.5 line-clamp-2 text-[12.5px] text-await" title={task.escalationReason}>
             {escalationReasonText(task.escalationReason)}

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { WaitChip } from './TargetWaitChip';
 import { api } from '../api';
 import { errorText } from '../error-text';
 import { toastError } from '../toast';
@@ -45,7 +46,7 @@ function StatusPill({ label }: { label: string }) {
   );
 }
 
-const ROW_GRID = 'grid grid-cols-1 items-center gap-3 px-3.5 py-2.5 md:grid-cols-[190px_130px_120px_minmax(0,1fr)_190px]';
+const ROW_GRID = 'grid grid-cols-1 items-center gap-3 px-3.5 py-2.5 md:grid-cols-[190px_130px_120px_110px_minmax(0,1fr)_190px]';
 
 export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) {
   const targets = useAsyncResource(() => api.executionTargets(), []);
@@ -103,10 +104,11 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
           </button>
         </div>
         <div role="table" aria-label="Execution Targets" className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-sunken p-1.5">
-          <div role="row" className={`hidden text-label font-semibold uppercase text-faint md:grid md:grid-cols-[190px_130px_120px_minmax(0,1fr)_190px] md:gap-3 md:px-3.5`}>
+          <div role="row" className={`hidden text-label font-semibold uppercase text-faint md:grid md:grid-cols-[190px_130px_120px_110px_minmax(0,1fr)_190px] md:gap-3 md:px-3.5`}>
             <span role="columnheader">Target</span>
             <span role="columnheader">Namespace</span>
             <span role="columnheader">Concurrency</span>
+            <span role="columnheader">Waiting</span>
             <span role="columnheader">Default image</span>
             <span role="columnheader" className="sr-only">Actions</span>
           </div>
@@ -132,7 +134,16 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     </>
                   )}
                 </div>
-                <div role="cell" className={dim}>
+                <div role="cell" className={target.builtIn ? 'hidden' : ''}>
+                  {!target.builtIn && target.waiting > 0 && (
+                    <WaitChip
+                      label={`${target.waiting} waiting`}
+                      off={!target.enabled}
+                      tip={{ title: `${target.waiting} ready Ticket${target.waiting === 1 ? '' : 's'} waiting for ${target.name}`, body: target.enabled ? 'They start as running Tickets finish.' : 'They stay ready until it is re-enabled.' }}
+                    />
+                  )}
+                </div>
+                <div role="cell" className={`${dim} ${target.builtIn ? 'md:col-span-2' : ''}`}>
                   {target.builtIn ? (
                     <span className="text-small text-muted">Not editable. Bounded by the Host Ceiling.</span>
                   ) : (

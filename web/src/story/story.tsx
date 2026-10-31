@@ -13,7 +13,7 @@ import { TimelinePage } from '../components/TimelinePage';
 import { Composer } from '../components/conversation/Composer';
 import { ConversationsPage } from '../components/ConversationLauncher';
 import { config as storyConfig, workspaces as storyWorkspaces } from './fixtures';
-import { Board } from '../components/Board';
+import { Board, TaskCard } from '../components/Board';
 import { ActivityView } from '../components/ActivityView';
 import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
@@ -105,6 +105,18 @@ function BoardStory() {
         onNewTask={() => {}}
         onOpenEpic={() => {}}
       />
+    </StoryFrame>
+  );
+}
+
+function TargetWaitCardsStory() {
+  const ready = { ...boardTasks.find((t) => t.state === 'ready')!, branch: 'harmonic/task-484' };
+  return (
+    <StoryFrame style={{ padding: 24, display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <TaskCard task={{ ...ready, id: 484, summary: 'Bulk-rename legacy fixtures', skipReason: 'waiting for k8s-prod', targetWait: { target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 2 } }} onOpen={() => {}} />
+      <div style={{ paddingBottom: 120 }}>
+        <TaskCard task={{ ...ready, id: 487, summary: 'Add pagination to the activity feed', skipReason: 'waiting for k8s-staging (disabled)', targetWait: { target: 'k8s-staging', disabled: true, running: 0, limit: 1, position: 1 } }} onOpen={() => {}} />
+      </div>
     </StoryFrame>
   );
 }
@@ -438,7 +450,9 @@ function TicketStory() {
   const shown = params.get('pod') !== null
     ? { ...withOverrides, state: 'working' as const, summary: 'Rework retry backoff in the mirror poller', branch: 'harmonic/task-482' }
     : params.get('state') === 'ready'
-    ? { ...withOverrides, state: 'ready' as const }
+    ? { ...withOverrides, state: 'ready' as const, targetWait: params.get('wait') ? { target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 2 } : null, skipReason: params.get('wait') ? 'waiting for k8s-prod' : null }
+    : params.get('state') === 'escalated' && params.get('deleted') !== null
+      ? { ...withOverrides, state: 'escalated' as const, escalationReason: "escalated to human: Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Execution." }
     : params.get('state') === 'escalated'
       ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
       : withOverrides;
@@ -583,6 +597,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   dashboard: DashboardStory,
   guardrail: GuardrailStory,
   'execution-targets': ExecutionTargetsStory,
+  'target-wait-cards': TargetWaitCardsStory,
   'workspace-execution-targets': WorkspaceExecutionTargetsStory,
   epic: EpicStory,
   'epic-done': EpicStory,

@@ -12,9 +12,3 @@ export function parseSkipReasonTaskRef(skipReason: string | null): number | null
   if (!match) return null;
   return Number(match[1]);
 }
-
-/** Reads `waiting for k8s-prod` / `waiting for k8s-prod (disabled)` back into the target; null for any other reason. */
-export function parseTargetWait(skipReason: string | null): { target: string; disabled: boolean } | null {
-  const match = skipReason?.match(/^waiting for (\S+?)( \(disabled\))?$/);
-  return match?.[1] ? { target: match[1], disabled: match[2] !== undefined } : null;
-}

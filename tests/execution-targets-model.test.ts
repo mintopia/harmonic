@@ -37,6 +37,7 @@ const prod: ExecutionTarget = {
   proxyKey: { set: true, secretName: 'k8s-prod-proxy-key', rotatedAt: 1 },
   credentials: [],
   running: 2,
+  waiting: 0,
   createdAt: 1,
   updatedAt: 1,
 };

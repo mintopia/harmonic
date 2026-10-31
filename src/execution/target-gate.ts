@@ -1,10 +1,17 @@
 import type { TaskRow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
-import type { ExecutionTargetView } from './execution-targets.js';
+import type { ExecutionTargetService } from './execution-targets.js';
 
 export interface TargetGateDeps {
-  targets: { list(): Promise<ExecutionTargetView[]> };
+  targets: Pick<ExecutionTargetService, 'definitions'>;
   targetOf(task: TaskRow): Promise<string | undefined>;
+}
+
+export interface TargetWaitInfo {
+  target: string;
+  disabled: boolean;
+  running: number;
+  limit: number | null;
 }
 
 export interface TargetGateSnapshot {
@@ -14,7 +21,7 @@ export interface TargetGateSnapshot {
   /** The same, per Workspace; per-Workspace caps bound `local` only too. */
   runningKubernetesByWorkspace: Map<number, number>;
   targetOf(task: TaskRow): string | undefined;
-  waitReason(task: TaskRow): string | undefined;
+  waitInfo(task: TaskRow): TargetWaitInfo | undefined;
   started(task: TaskRow): void;
 }
 
@@ -23,7 +30,7 @@ export const EMPTY_TARGET_GATE: TargetGateSnapshot = {
   runningKubernetes: 0,
   runningKubernetesByWorkspace: new Map(),
   targetOf: () => undefined,
-  waitReason: () => undefined,
+  waitInfo: () => undefined,
   started: () => {},
 };
 
@@ -31,7 +38,7 @@ export class TargetGate {
   constructor(private readonly deps: TargetGateDeps) {}
 
   async snapshot(tasks: readonly TaskRow[]): Promise<TargetGateSnapshot> {
-    const defs = new Map((await this.deps.targets.list()).map((target) => [target.name, target]));
+    const defs = new Map((await this.deps.targets.definitions()).map((target) => [target.name, target]));
     if (defs.size === 0) return EMPTY_TARGET_GATE;
     const targetByTask = new Map<number, string>();
     const running = new Map<string, number>();
@@ -53,12 +60,13 @@ export class TargetGate {
       runningKubernetes,
       runningKubernetesByWorkspace: byWorkspace,
       targetOf: (task) => targetByTask.get(task.id),
-      waitReason: (task) => {
+      waitInfo: (task) => {
         const target = targetByTask.get(task.id);
         if (target === undefined) return undefined;
         const def = defs.get(target);
-        if (def && !def.enabled) return `waiting for ${target} (disabled)`;
-        if (def?.concurrencyLimit != null && (running.get(target) ?? 0) >= def.concurrencyLimit) return `waiting for ${target}`;
+        const count = running.get(target) ?? 0;
+        if (def && !def.enabled) return { target, disabled: true, running: count, limit: def.concurrencyLimit };
+        if (def && count >= def.concurrencyLimit) return { target, disabled: false, running: count, limit: def.concurrencyLimit };
         return undefined;
       },
       started: (task) => {
@@ -70,4 +78,8 @@ export class TargetGate {
     };
     return snapshot;
   }
+}
+
+export function targetWaitReason(info: TargetWaitInfo): string {
+  return `waiting for ${info.target}${info.disabled ? ' (disabled)' : ''}`;
 }

@@ -386,6 +386,7 @@ describe('taskToApiDto', () => {
     mapTitle: 'Some Map',
     trackerLabel: 'GitHub',
     skipReason: 'capacity',
+    targetWait: null,
     contextWindow: 200_000,
   };
 

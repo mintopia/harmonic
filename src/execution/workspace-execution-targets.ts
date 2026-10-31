@@ -122,7 +122,19 @@ export type WorkflowTexts = { list(): readonly { name: string; text: string }[] 
 /** The first non-`local` target a workflow's `runs_on:` names; undefined when it runs only locally or is unknown. */
 export function kubernetesTargetOf(library: WorkflowTexts, workflow: string): string | undefined {
   const entry = library.list().find((e) => e.name === workflow);
-  return entry === undefined ? undefined : workflowRunsOn(entry.text).find((name) => name !== LOCAL_TARGET);
+  return entry === undefined ? undefined : runsOnCached(entry.text).find((name) => name !== LOCAL_TARGET);
+}
+
+const RUNS_ON_CACHE_LIMIT = 256;
+const runsOnCache = new Map<string, string[]>();
+
+function runsOnCached(text: string): string[] {
+  const hit = runsOnCache.get(text);
+  if (hit) return hit;
+  if (runsOnCache.size >= RUNS_ON_CACHE_LIMIT) runsOnCache.clear();
+  const parsed = workflowRunsOn(text);
+  runsOnCache.set(text, parsed);
+  return parsed;
 }
 
 /** The refusal for running a Kubernetes workflow in `direct` mode; null when allowed. */

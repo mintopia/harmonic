@@ -71,7 +71,7 @@ describe('Issue Workflow contract (ADR-0053)', () => {
       const dto = taskToApiDto(
         { ...updated, overrides: { isolationMode: null, priority: null }, dependsOn: [], dependents: [], blockedOnFailed: false } as never,
         [],
-        { toolCount: null, currentStep: null, hasCandidate: false, url: null, mapTitle: null, trackerLabel: null, skipReason: null, contextWindow: null },
+        { toolCount: null, currentStep: null, hasCandidate: false, url: null, mapTitle: null, trackerLabel: null, skipReason: null, targetWait: null, contextWindow: null },
       );
       expect(dto.issueWorkflow).toBe('implement');
       expect(dto).not.toHaveProperty('workflow');

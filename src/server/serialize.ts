@@ -308,6 +308,7 @@ function taskToApiWithRuns(
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     trackerLabel: task.origin === 'mirrored' ? ctx.trackerManager.trackerLabelFor(task.workspaceId) : null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
+    targetWait: ctx.autoRunner.targetWaitFor(task.id) ?? null,
     contextWindow: contextWindowOf(ctx, task.model, task.harness),
   });
 }
