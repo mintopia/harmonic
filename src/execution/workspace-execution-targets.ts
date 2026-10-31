@@ -9,7 +9,6 @@ export interface WorkspaceTargetState {
   isolationMode: 'direct' | 'worktree';
 }
 
-/** Why a Kubernetes target cannot be enabled for a Workspace in this state, or null (ADR-0056). */
 export function kubernetesTargetRefusal(target: string, state: WorkspaceTargetState): string | null {
   if (state.codeRepository === null) {
     return `Execution Target '${target}' needs a Code Repository: the remote is the base branch's source of truth. Add a Code Repository in Workspace settings first.`;
@@ -20,7 +19,6 @@ export function kubernetesTargetRefusal(target: string, state: WorkspaceTargetSt
   return null;
 }
 
-/** The explicit allow-list without `local` (always available) and duplicates. */
 export function normalizeTargetList(names: readonly string[]): string[] {
   return [...new Set(names.filter((name) => name !== LOCAL_TARGET))];
 }
@@ -42,7 +40,7 @@ export interface AssertTargetsDeps {
   resolveRepository?: typeof resolveCodeRepository;
 }
 
-/** Refuses a PATCH that leaves a Workspace allowing a Kubernetes target it cannot use; normalizes `patch.executionTargets` in place. */
+/** Normalizes `patch.executionTargets` in place. */
 export async function assertWorkspaceExecutionTargets(current: WorkspaceRow, patch: UpdateWorkspaceInput, deps: AssertTargetsDeps): Promise<void> {
   if (patch.executionTargets) patch.executionTargets = normalizeTargetList(patch.executionTargets);
   const list = patch.executionTargets === undefined ? current.executionTargets : patch.executionTargets;

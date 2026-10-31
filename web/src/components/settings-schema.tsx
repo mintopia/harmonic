@@ -864,14 +864,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     wide: true,
     title: 'Execution Targets',
     description: '',
-    body: () => <ExecutionTargetsPanel />,
+    body: (ctx) => <ExecutionTargetsPanel hostCeiling={ctx.config.autoRunner.maxConcurrentAttempts} />,
   },
   {
     tab: 'execution',
     surfaces: ['workspace'],
+    bare: true,
     wide: true,
     title: 'Execution Targets',
-    description: 'Restrict which targets this Workspace may use. local is always available.',
+    description: '',
     body: (ctx) =>
       ctx.surface === 'workspace' ? (
         <WorkspaceExecutionTargets

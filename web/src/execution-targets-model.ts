@@ -64,7 +64,6 @@ export function draftBody(draft: TargetDraft): ExecutionTargetBody {
   };
 }
 
-/** Only the fields that differ from the saved target, so an untouched editor sends an empty patch. */
 export function draftPatch(draft: TargetDraft, saved: ExecutionTarget): Partial<ExecutionTargetBody> {
   const next = draftBody(draft);
   const before = draftBody(draftFromTarget(saved));
@@ -138,7 +137,6 @@ export function testingMessage(namespace: string): TextPart[] {
 
 const podCountText = (count: number) => `${count} ${count === 1 ? 'pod' : 'pods'}`;
 
-/** Maps a connection-test outcome to the panel the editor shows; each failure names what failed and what to do. */
 export function resultPanel(result: ConnectionTestResult): ResultPanel {
   const secret = result.secretName;
   const access = secret ? ([t('the kubeconfig Secret '), c(secret)] as TextPart[]) : [t('the service account')];
@@ -240,21 +238,36 @@ export function deleteCopy(name: string, impact: DeletionImpact | null): DeleteC
   };
 }
 
+export interface WorkspaceRefusal {
+  parts: TextPart[];
+  link: string | null;
+}
+
 export interface WorkspaceRowView {
   name: string;
   builtIn: boolean;
   on: boolean;
-  note: string;
-  refusal: { text: string; link: string | null } | null;
+  note: TextPart[];
+  refusal: WorkspaceRefusal | null;
 }
 
-const REPOSITORY_HINT = ' Add a Code Repository in Workspace settings first.';
-
-/** Splits the server's Code Repository refusal so its trailing instruction becomes an in-page link. */
-export function refusalView(refusal: string): { text: string; link: string | null } {
-  return refusal.endsWith(REPOSITORY_HINT)
-    ? { text: refusal.slice(0, -REPOSITORY_HINT.length), link: 'Add one in Workspace settings.' }
-    : { text: refusal, link: null };
+export function workspaceRefusal(name: string, codeRepository: string | null): WorkspaceRefusal {
+  if (codeRepository === null) {
+    return {
+      parts: [c(name), t(" needs a Code Repository: the remote is the base branch's source of truth.")],
+      link: 'Add one in Workspace settings.',
+    };
+  }
+  return {
+    parts: [
+      t('Kubernetes targets are not available to a Workspace in '),
+      c('direct'),
+      t(' mode. Switch the Isolation Mode to '),
+      c('worktree'),
+      t(' first.'),
+    ],
+    link: null,
+  };
 }
 
 export function isTargetOn(override: string[] | null, item: Pick<WorkspaceTargetItem, 'name' | 'builtIn' | 'globallyEnabled'>): boolean {
@@ -262,7 +275,6 @@ export function isTargetOn(override: string[] | null, item: Pick<WorkspaceTarget
   return override === null ? item.globallyEnabled : override.includes(item.name);
 }
 
-/** Turns one target on or off; an allow list that matches every enabled target collapses back to inherit (`null`). */
 export function toggleTarget(override: string[] | null, items: WorkspaceTargetItem[], name: string, on: boolean): string[] | null {
   const kubernetes = items.filter((item) => !item.builtIn);
   const current = new Set(override ?? kubernetes.filter((item) => item.globallyEnabled).map((item) => item.name));
@@ -278,14 +290,11 @@ export function workspaceRows(items: WorkspaceTargetItem[], override: string[] |
   return items.map((item) => {
     const on = isTargetOn(override, item);
     const explicitOn = on && override !== null && !item.builtIn;
-    const info = `Code Repository ${codeRepository ?? 'none'} · Isolation Mode ${isolationMode}`;
     const note = item.builtIn
-      ? 'Always on'
+      ? [t('Always on')]
       : !item.globallyEnabled
-        ? 'Disabled globally. Turning it on here has no effect until it is enabled.'
-        : item.refusal && !explicitOn
-          ? item.refusal
-          : info;
-    return { name: item.name, builtIn: item.builtIn, on, note, refusal: explicitOn && item.refusal ? refusalView(item.refusal) : null };
+        ? [t('Disabled globally. Turning it on here has no effect until it is enabled.')]
+        : [t('Code Repository '), c(codeRepository ?? 'none'), t(' · Isolation Mode '), c(isolationMode)];
+    return { name: item.name, builtIn: item.builtIn, on, note, refusal: explicitOn && item.refusal ? workspaceRefusal(item.name, codeRepository) : null };
   });
 }

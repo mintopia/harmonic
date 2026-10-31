@@ -58,9 +58,6 @@ jobs:
       - name: Verify packed tarball boots with --omit=dev
         run: scripts/verify-pack-install.sh
 
-  # Real-cluster check for Kubernetes Execution Targets (ADR-0056): the
-  # connection test against a kind cluster, with a valid and a corrupted
-  # kubeconfig. Skipped locally unless HARMONIC_KIND_KUBECONFIG is set.
   kind:
     runs-on: ubuntu-latest
     steps:

@@ -8,7 +8,7 @@ import {
   draftErrors,
   draftFromTarget,
   draftPatch,
-  refusalView,
+  workspaceRefusal,
   resultPanel,
   rowView,
   toggleTarget,
@@ -138,13 +138,15 @@ describe('delete confirmation copy', () => {
   });
 });
 
+const plain = (parts: { text: string }[]) => parts.map((p) => p.text).join('');
+
 describe('Workspace allow list', () => {
   it('an inheriting Workspace shows enabled targets on and disabled ones off', () => {
     const rows = workspaceRows(items, null, 'mintopia/harmonic', 'worktree');
     expect(rows.map((r) => r.on)).toEqual([true, true, false]);
-    expect(rows[0]!.note).toBe('Always on');
-    expect(rows[1]!.note).toBe('Code Repository mintopia/harmonic · Isolation Mode worktree');
-    expect(rows[2]!.note).toContain('Disabled globally');
+    expect(plain(rows[0]!.note)).toBe('Always on');
+    expect(plain(rows[1]!.note)).toBe('Code Repository mintopia/harmonic · Isolation Mode worktree');
+    expect(plain(rows[2]!.note)).toContain('Disabled globally');
   });
 
   it('turning one off from inherit lists the rest; turning back on collapses to inherit', () => {
@@ -157,14 +159,16 @@ describe('Workspace allow list', () => {
   });
 
   it('shows the refusal inline only for an explicitly allowed target', () => {
-    const refused = [item('local', { builtIn: true }), item('k8s-prod', { refusal: "Execution Target 'k8s-prod' needs a Code Repository: the remote is the base branch's source of truth. Add a Code Repository in Workspace settings first." })];
+    const refused = [item('local', { builtIn: true }), item('k8s-prod', { refusal: 'refused' })];
     expect(workspaceRows(refused, null, null, 'worktree')[1]!.refusal).toBeNull();
     const row = workspaceRows(refused, ['k8s-prod'], null, 'worktree')[1]!;
     expect(row.refusal?.link).toBe('Add one in Workspace settings.');
-    expect(row.refusal?.text).toBe("Execution Target 'k8s-prod' needs a Code Repository: the remote is the base branch's source of truth.");
+    expect(plain(row.refusal!.parts)).toBe("k8s-prod needs a Code Repository: the remote is the base branch's source of truth.");
   });
 
-  it('leaves the direct-mode refusal as the server wrote it', () => {
-    expect(refusalView('Kubernetes is not available in direct mode.')).toEqual({ text: 'Kubernetes is not available in direct mode.', link: null });
+  it('words the direct-mode refusal from the Isolation Mode', () => {
+    const refusal = workspaceRefusal('k8s-prod', 'mintopia/harmonic');
+    expect(refusal.link).toBeNull();
+    expect(plain(refusal.parts)).toBe('Kubernetes targets are not available to a Workspace in direct mode. Switch the Isolation Mode to worktree first.');
   });
 });

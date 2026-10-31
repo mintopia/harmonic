@@ -557,7 +557,6 @@ export const secrets = sqliteTable('secrets', {
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.name] })]);
 export type SecretRow = typeof secrets.$inferSelect;
 
-/** An instance-wide named credential (not tied to a Workspace), encrypted like `secrets`. */
 export const globalSecrets = sqliteTable('global_secrets', {
   name: text('name').primaryKey(),
   ciphertext: text('ciphertext').notNull(),
@@ -569,7 +568,6 @@ export const globalSecrets = sqliteTable('global_secrets', {
 export const EXECUTION_TARGET_AUTH_METHODS = ['kubeconfig', 'in-cluster'] as const;
 export type ExecutionTargetAuthMethod = (typeof EXECUTION_TARGET_AUTH_METHODS)[number];
 
-/** A named Kubernetes Execution Target (ADR-0056); `local` is built in and has no row. */
 export const executionTargets = sqliteTable('execution_targets', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),

@@ -131,7 +131,6 @@ export interface ExecutionTargetServiceDeps {
   testTimeoutMs?: number;
 }
 
-/** Global Kubernetes Execution Targets (ADR-0056); `local` is built in and never a row. */
 export class ExecutionTargetService {
   private readonly db: AsyncDbHandle;
   private readonly secrets: GlobalSecretService;
@@ -179,7 +178,6 @@ export class ExecutionTargetService {
     return row;
   }
 
-  /** The Kubernetes targets, oldest first, without the built-in `local`. */
   async list(): Promise<ExecutionTargetView[]> {
     const rows = await this.db.read((db) => db.select().from(executionTargets).orderBy(executionTargets.createdAt, executionTargets.id).all());
     return Promise.all(rows.map((row) => this.view(row)));
@@ -194,7 +192,6 @@ export class ExecutionTargetService {
     return this.view(await this.row(name));
   }
 
-  /** The stored row, for engine and Workspace validation; `null` for `local` and unknown names. */
   async find(name: string): Promise<ExecutionTargetView | null> {
     if (name === LOCAL_TARGET) return null;
     const row = await this.db.read((db) => db.select().from(executionTargets).where(eq(executionTargets.name, name)).get());
@@ -280,7 +277,6 @@ export class ExecutionTargetService {
     return impact;
   }
 
-  /** Keeps Workspace allow-lists pointing at live names after a rename (`to`) or a delete (`null`). */
   private async rewriteWorkspaceLists(from: string, to: string | null): Promise<void> {
     await forEachYielding(await this.workspaces.list(), async (workspace) => {
       const list = workspace.executionTargets;
@@ -295,7 +291,7 @@ export class ExecutionTargetService {
     return this.runTest({ authMethod: row.authMethod, namespace: row.namespace, secretName: row.kubeconfigSecret, kubeconfig: undefined });
   }
 
-  /** Tests unsaved settings; a missing `kubeconfig` falls back to the named target's stored Secret. */
+  /** A missing `kubeconfig` falls back to the stored Secret. */
   async testDraft(draft: ConnectionTestDraft): Promise<ConnectionTestResult> {
     const stored = draft.name ? await this.find(draft.name) : null;
     const secretName = draft.kubeconfig === undefined ? (stored?.kubeconfig?.secretName ?? null) : null;

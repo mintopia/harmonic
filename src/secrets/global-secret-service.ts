@@ -9,7 +9,7 @@ export interface GlobalSecretStatus {
   updatedAt: number;
 }
 
-/** Instance-wide named credentials (not tied to a Workspace), encrypted at rest like Workspace Secrets. Only `reveal` returns a value. */
+/** Only `reveal` returns a value. */
 export class GlobalSecretService {
   constructor(private readonly db: AsyncDbHandle, private readonly key: Buffer) {}
 

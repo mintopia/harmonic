@@ -18,7 +18,6 @@ import {
   testingMessage,
   type DraftField,
   type TargetDraft,
-  type TextPart,
 } from '../execution-targets-model';
 import { btnDestructive, btnGhost, btnPrimary, btnQuiet, btnQuietDestructive, card, field, panelTitle, sectionTitle, statePillShape } from '../ui';
 import { Modal } from './Modal';
@@ -26,28 +25,13 @@ import { Icon } from './Icon';
 import { LoadError } from './LoadError';
 import { Switch } from './Switch';
 import { FieldError, fieldLabel } from './SettingsSection';
+import { Parts } from './execution-target-parts';
 
 const smallBtn =
   'inline-flex min-h-8 items-center rounded-md border border-edge bg-surface px-2.5 py-0.5 text-small font-medium text-ink transition-colors hover:border-faint disabled:opacity-50';
 const smallBtnFail = `${smallBtn} !text-fail`;
 const help = 'mt-1 text-small text-faint';
 const codeInline = 'rounded-sm bg-sunken px-1.5 font-data text-small';
-
-function Parts({ parts }: { parts: TextPart[] }) {
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.code ? (
-          <code key={i} className="rounded-sm bg-surface px-1.5 font-data text-small">
-            {part.text}
-          </code>
-        ) : (
-          <span key={i}>{part.text}</span>
-        ),
-      )}
-    </>
-  );
-}
 
 function StatusPill({ label }: { label: string }) {
   const tone = label === 'disabled' ? 'bg-raised text-muted' : 'bg-merged-tint text-merged';
@@ -61,7 +45,7 @@ function StatusPill({ label }: { label: string }) {
 
 const ROW_GRID = 'grid grid-cols-1 items-center gap-3 px-3.5 py-2.5 md:grid-cols-[190px_130px_120px_minmax(0,1fr)_190px]';
 
-export function ExecutionTargetsPanel() {
+export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) {
   const targets = useAsyncResource(() => api.executionTargets(), []);
   const [editing, setEditing] = useState<ExecutionTarget | 'new' | null>(null);
   const [deleting, setDeleting] = useState<{ target: ExecutionTarget; impact: DeletionImpact | null } | null>(null);
@@ -126,16 +110,17 @@ export function ExecutionTargetsPanel() {
           </div>
           {list.map((target) => {
             const view = rowView(target);
+            const dim = target.enabled || target.builtIn ? '' : 'opacity-70';
             return (
-              <div key={target.name} role="row" className={`${ROW_GRID} rounded-lg bg-surface shadow-card ${target.enabled || target.builtIn ? '' : '[&>*:not(:first-child):not(:last-child)]:opacity-70'}`}>
-                <div role="cell" className="flex items-center gap-2.5">
+              <div key={target.name} role="row" className={`${ROW_GRID} rounded-lg bg-surface shadow-card`}>
+                <div role="cell" className={`flex items-center gap-2.5 ${dim}`}>
                   <span className="whitespace-nowrap font-data font-semibold">{view.name}</span>
                   <StatusPill label={view.statusLabel} />
                 </div>
-                <div role="cell">{target.builtIn ? 'the Harmonic host' : <code className={codeInline}>{target.namespace}</code>}</div>
+                <div role="cell" className={dim}>{target.builtIn ? 'the Harmonic host' : <code className={codeInline}>{target.namespace}</code>}</div>
                 <div role="cell" className="flex flex-col gap-1">
                   {target.builtIn ? (
-                    <span className="text-[13px]">Host Ceiling</span>
+                    <span className="text-[13px]">Host Ceiling <b>{hostCeiling}</b></span>
                   ) : (
                     <>
                       <span className="text-[13px]"><b>{target.running}</b>/{target.concurrencyLimit} running</span>
@@ -145,7 +130,7 @@ export function ExecutionTargetsPanel() {
                     </>
                   )}
                 </div>
-                <div role="cell">
+                <div role="cell" className={dim}>
                   {target.builtIn ? (
                     <span className="text-small text-muted">Not editable. Bounded by the Host Ceiling.</span>
                   ) : (

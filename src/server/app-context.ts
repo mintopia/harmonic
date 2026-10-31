@@ -55,7 +55,7 @@ export interface AppOptions {
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
   /** Event-loop stall monitor overrides; `enabled: false` turns the probe off. */
   reliabilityTuning?: { eventLoop?: { enabled?: boolean; probeMs?: number; stallMs?: number } } | undefined;
-  /** Test-only Kubernetes client factory for Execution Target connection tests; absent uses the real client. */
+  /** Test-only; absent uses the real client. */
   kubernetesClientFactory?: KubernetesClientFactory | undefined;
   /** Test-only critic drive override; absent uses the real ACP critic drive. */
   criticDrive?: CriticHarnessDrive | undefined;

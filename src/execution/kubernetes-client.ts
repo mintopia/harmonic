@@ -10,14 +10,12 @@ export interface KubernetesAccess {
   kubeconfig: string | null;
 }
 
-/** The two read-only calls a connection test needs; failures throw whatever the transport throws, see {@link classifyConnectionError}. */
 export interface KubernetesClient {
   countPods(namespace: string): Promise<number>;
   /** `null` when the credentials may not read Namespaces, so existence is unknown. */
   namespaceExists(namespace: string): Promise<boolean | null>;
 }
 
-/** Throws {@link InvalidKubeconfigError} when the access cannot be turned into a client. */
 export type KubernetesClientFactory = (access: KubernetesAccess) => KubernetesClient;
 
 export class InvalidKubeconfigError extends Error {

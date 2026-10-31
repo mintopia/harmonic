@@ -8,7 +8,7 @@ export interface SealedSecret {
   nonce: string;
 }
 
-/** AES-256-GCM; `aad` binds the ciphertext to its row so a copy under another key fails to decrypt. The tag is appended to `ciphertext`; both fields are base64. */
+/** `aad` binds the ciphertext to its row; the tag is appended to `ciphertext`. */
 export function sealSecret(key: Buffer, aad: string, value: string): SealedSecret {
   const nonce = randomBytes(NONCE_BYTES);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
@@ -17,7 +17,6 @@ export function sealSecret(key: Buffer, aad: string, value: string): SealedSecre
   return { ciphertext, nonce: nonce.toString('base64') };
 }
 
-/** Throws when the key or `aad` does not match. */
 export function openSecret(key: Buffer, aad: string, sealed: SealedSecret): string {
   const blob = Buffer.from(sealed.ciphertext, 'base64');
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(sealed.nonce, 'base64'));

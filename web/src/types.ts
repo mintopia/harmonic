@@ -451,7 +451,7 @@ export interface Workspace extends PromptFragmentOverrides {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
-  /** Allowed Kubernetes Execution Target names (`local` is always available); `null` inherits every enabled target. */
+  /** `local` is always available; null inherits every enabled target. */
   executionTargets: string[] | null;
   /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
   modelOptions: ModelOptionOverlayEntry[] | null;

@@ -88,7 +88,7 @@ const workspaceSchema = z
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     /** Model Option overlay; null inherits every global Model Option in order, enabled. */
-    /** Allowed Kubernetes Execution Target names (`local` is always available); null inherits every enabled target. */
+    /** `local` is always available; null inherits every enabled target. */
     executionTargets: z.array(z.string()).nullable().meta({ example: null }),
     modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
