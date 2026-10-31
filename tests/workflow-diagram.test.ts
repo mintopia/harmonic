@@ -76,7 +76,6 @@ describe('buildWorkflowDiagram', () => {
       'review>merge:outcome:pass',
       'review>build:back:fail · inconclusive',
       'attempts>escalation:escalation:max reached',
-      'rebase>escalation:escalation:fail',
       'merge>escalation:escalation:conflict',
     ]);
   });

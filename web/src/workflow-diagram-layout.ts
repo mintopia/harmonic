@@ -67,5 +67,11 @@ export async function layoutWorkflowDiagram(model: WorkflowDiagramModel): Promis
     const nxt = points[Math.floor(points.length / 2)] ?? mid;
     return { edge, points, labelAt: { x: (mid.x + nxt.x) / 2, y: (mid.y + nxt.y) / 2 } };
   });
-  return { nodes, edges, width: res.width ?? 0, height: res.height ?? 0 };
+  let width = res.width ?? 0;
+  let height = res.height ?? 0;
+  for (const { edge, points, labelAt } of edges) {
+    for (const p of points) { width = Math.max(width, p.x + 8); height = Math.max(height, p.y + 8); }
+    if (edge.label) width = Math.max(width, labelAt.x + 6 + edge.label.length * 6.4 + 8);
+  }
+  return { nodes, edges, width, height };
 }

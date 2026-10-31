@@ -19,7 +19,7 @@ const entry = (over: Partial<WorkflowLibraryEntry>): WorkflowLibraryEntry => ({
   ...over,
 });
 
-const YAML = 'name: docs-only\ndescription: d\nsteps:\n  - id: a\n    retries: 1\n';
+const YAML = ['name: docs-only', 'description: d', 'steps:', '  - id: a', '    uses: rebase # retries: 1', '  - attempts:', '      max: 2', '      steps:', '        - id: b', '          uses: agent', ''].join('\n');
 
 beforeEach(() => {
   if (!Range.prototype.getClientRects) {
@@ -109,7 +109,7 @@ describe('Workflows page', () => {
     expect((button(host, 'Save · 1 error') as HTMLButtonElement).disabled).toBe(true);
 
     await act(async () => {
-      view.dispatch({ changes: { from: 0, insert: ' ' } });
+      view.dispatch({ changes: { from: 0, insert: '# x\n' } });
       await flush();
     });
     expect(host.querySelector('.cm-issue-line')).toBeNull();

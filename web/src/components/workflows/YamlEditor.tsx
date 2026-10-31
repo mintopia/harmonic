@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
+import { acceptCompletion, type CompletionContext } from '@codemirror/autocomplete';
+import { keymap } from '@codemirror/view';
+import { completeWorkflow } from '../../../../src/domain/workflow-completion.js';
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import type { WorkflowIssue } from '../../types';
@@ -25,6 +28,12 @@ class IssueWidget extends WidgetType {
     return el;
   }
 }
+
+const completionSource = (ctx: CompletionContext) => {
+  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos);
+  if (!hit) return null;
+  return { from: hit.from, options: hit.options.map((o) => ({ label: o.label, detail: o.detail, type: 'keyword' })), validFor: /^[\w-]*$/ };
+};
 
 const setIssues = StateEffect.define<readonly WorkflowIssue[]>();
 
@@ -58,6 +67,8 @@ const issueTheme = EditorView.theme({
   '.cm-issue-mark': { textDecoration: 'underline wavy var(--hm-fail)' },
   '.cm-issue-message': { backgroundColor: 'var(--hm-fail-tint)', color: 'var(--hm-fail)', padding: '3px 12px 4px', fontFamily: 'var(--font-sans, inherit)', fontSize: '12px' },
   '&': { backgroundColor: 'transparent' },
+  '.cm-completionIcon': { display: 'none' },
+  '.cm-tooltip-autocomplete::after': { content: '"Closed set of Workflow Actions · Tab to accept"', display: 'block', padding: '3px 8px', fontSize: '11px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
 });
 
 export function YamlEditor({
@@ -97,6 +108,8 @@ export function YamlEditor({
       issueTheme,
       issueField,
       language.of([]),
+      EditorState.languageData.of(() => [{ autocomplete: completionSource }]),
+      keymap.of([{ key: 'Tab', run: acceptCompletion }]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly),

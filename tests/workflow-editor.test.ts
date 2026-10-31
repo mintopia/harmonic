@@ -1,34 +1,48 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
 import { EditorView } from '@codemirror/view';
-import { WorkflowEditor } from '../web/src/components/WorkflowEditor.js';
-import { cleanup, mountComponent } from './component-smoke-harness.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../web/src/api.js';
+import { WorkflowsPage } from '../web/src/components/workflows/WorkflowsPage.js';
+import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 
-afterEach(cleanup);
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const good = ['name: w', 'description: d', 'steps:', '  - id: a', '    uses: rebase', '  - attempts:', '      max: 2', '      steps:', '        - id: b', '          uses: agent', ''].join('\n');
-const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
-const props = { name: 'w', version: 1, bundled: false, initialText: good, onSave: async () => {}, onExport: () => {}, onDuplicate: () => {} };
 
-describe('WorkflowEditor', () => {
-  it('marks an invalid key before save and disables Save', async () => {
-    const container = await mountComponent(createElement(WorkflowEditor, props));
-    await wait(400);
-    const save = [...container.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Save'))!;
-    expect(container.querySelector('[data-testid="workflow-error"]')).toBeNull();
-    const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)!;
-    await act(async () => { view.dispatch({ changes: { from: view.state.doc.length, insert: '          retries: 3\n' } }); });
-    await wait(400);
-    expect(container.querySelector('[data-testid="workflow-error"]')?.textContent).toContain('Line 11, col 11');
-    expect(container.querySelector('.cm-lintRange-error')).not.toBeNull();
-    expect(save.disabled).toBe(true);
-    expect(save.textContent).toContain('1 error');
+beforeEach(() => {
+  if (!Range.prototype.getClientRects) {
+    Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: function* () {} }) as unknown as DOMRectList;
+    Range.prototype.getBoundingClientRect = () => new DOMRect();
+  }
+  vi.spyOn(api, 'workflows').mockResolvedValue({
+    total: 1,
+    workflows: [{ name: 'w', description: '', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] }],
   });
+  vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'w', description: '', bundled: false, version: 1, text: good });
+});
+afterEach(async () => {
+  await cleanup();
+  vi.restoreAllMocks();
+});
 
-  it('is read-only when bundled', async () => {
-    const container = await mountComponent(createElement(WorkflowEditor, { ...props, bundled: true }));
-    expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
-    expect([...container.querySelectorAll('button')].some((b) => b.textContent?.startsWith('Save'))).toBe(false);
+const button = (host: HTMLElement, text: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.trim().startsWith(text)) as HTMLButtonElement | undefined;
+
+describe('Workflow editor live validation', () => {
+  it('flags an invalid key before save, disables Save, and keeps the diagram', async () => {
+    const host = await mountComponent(createElement(WorkflowsPage));
+    await act(async () => {
+      (host.querySelector('tbody tr td button') as HTMLElement).click();
+      await flush();
+    });
+    const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
+    expect(host.querySelector('[data-testid="workflow-diagram"], [aria-label*="iagram"]')).not.toBeNull();
+    await act(async () => {
+      view.dispatch({ changes: { from: view.state.doc.length, insert: '          retries: 3\n' } });
+      await flush();
+    });
+    expect(host.querySelector('.cm-issue-message')?.textContent).toContain('Line 11');
+    expect(button(host, 'Save')!.disabled).toBe(true);
+    expect(button(host, 'Save')!.textContent).toContain('1 error');
   });
 });

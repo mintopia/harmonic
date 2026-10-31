@@ -9,6 +9,11 @@ const EDGE_STYLE: Record<DiagramEdgeKind, { stroke: string; dash?: string; text:
   done: { stroke: 'var(--hm-faint)', dash: '2 3', text: 'var(--hm-faint)' },
 };
 
+function conditionLabel(condition: string): string {
+  const bare = condition.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+  return bare.length > 22 ? `${bare.slice(0, 21)}…` : bare;
+}
+
 function NodeBox({ p }: { p: PlacedNode }) {
   const { node, x, y, width, height } = p;
   const group = node.kind === 'attempts' || node.kind === 'parallel';
@@ -34,7 +39,7 @@ function NodeBox({ p }: { p: PlacedNode }) {
         <>
           <text x={cx} y={y + (node.detail ? 19 : height / 2 + 4)} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--hm-ink)">{node.label}</text>
           {node.detail && <text x={cx} y={y + 33} textAnchor="middle" fontSize={9.5} fontFamily="var(--hm-mono, monospace)" fill="var(--hm-muted)">{node.detail}</text>}
-          {node.condition && <text x={cx} y={y + 47} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${node.condition}`}</text>}
+          {node.condition && <text x={cx} y={y + 47} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       )}
     </g>
@@ -49,7 +54,28 @@ function EdgePath({ p }: { p: PlacedEdge }) {
     <g data-edge={`${p.edge.from}>${p.edge.to}`} data-kind={p.edge.kind}>
       <path d={d} fill="none" stroke={style.stroke} strokeDasharray={style.dash} strokeWidth={1.3} markerEnd={`url(#wfd-arrow-${p.edge.kind})`} />
       {p.edge.label && <text x={p.labelAt.x + 6} y={p.labelAt.y} fontSize={10.5} fontWeight={700} fill={style.text}>{p.edge.label}</text>}
+      {p.edge.kind === 'back' && <text x={p.labelAt.x + 6} y={p.labelAt.y + 11} fontSize={9.5} fill="var(--hm-muted)">next Attempt</text>}
     </g>
+  );
+}
+
+const LEGEND: { kind: DiagramEdgeKind; label: string }[] = [
+  { kind: 'outcome', label: 'outcome edge' },
+  { kind: 'back', label: 'back edge to next Attempt' },
+  { kind: 'escalation', label: 'to Escalation' },
+  { kind: 'done', label: 'bounded attempts: loop' },
+];
+
+function Legend() {
+  return (
+    <ul aria-label="Diagram legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', margin: '12px 0 0', padding: 0, listStyle: 'none', fontSize: 10.5, color: 'var(--hm-muted)' }}>
+      {LEGEND.map(({ kind, label }) => (
+        <li key={kind} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <svg width={18} height={6} aria-hidden="true"><line x1={0} y1={3} x2={18} y2={3} stroke={EDGE_STYLE[kind].stroke} strokeDasharray={EDGE_STYLE[kind].dash} strokeWidth={1.3} /></svg>
+          {label}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -94,7 +120,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
         {!model ? (
           <p style={{ margin: 0, fontSize: 12, color: 'var(--hm-muted)' }}>Nothing to draw yet.</p>
         ) : ready ? (
-          <svg role="img" aria-label="Workflow step diagram graphic" width={ready.width} height={ready.height} viewBox={`0 0 ${ready.width} ${ready.height}`}>
+          <svg role="img" aria-label="Workflow step diagram graphic" width="100%" style={{ maxWidth: ready.width, display: 'block' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
             <defs>
               {(Object.keys(EDGE_STYLE) as DiagramEdgeKind[]).map((k) => (
                 <marker key={k} id={`wfd-arrow-${k}`} viewBox="0 0 8 8" refX={7} refY={4} markerWidth={7} markerHeight={7} orient="auto">
@@ -109,6 +135,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
           <Fallback nodes={model.nodes} />
         )}
       </div>
+      {model && <div style={{ opacity: stale ? 0.45 : 1 }}><Legend /></div>}
     </section>
   );
 }

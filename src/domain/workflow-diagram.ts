@@ -56,7 +56,8 @@ export function buildWorkflowDiagram(def: WorkflowDefinition): WorkflowDiagramMo
   }
   def.steps.forEach((step, i) => {
     if (hasBlock && i >= start && i < end) return;
-    edges.push({ from: step.id, to: 'escalation', kind: 'escalation', label: step.uses === 'merge' ? 'conflict' : 'fail' });
+    if (step.uses === 'merge') edges.push({ from: step.id, to: 'escalation', kind: 'escalation', label: 'conflict' });
+    else if (step.uses === 'post-merge-check') edges.push({ from: step.id, to: 'escalation', kind: 'escalation', label: 'fail' });
   });
   const last = def.steps[def.steps.length - 1];
   if (def.cleanup && last) {
