@@ -85,7 +85,7 @@ const workflowStepsResponseSchema = z.object({
 async function pinnedWorkflow(library: { getVersion(name: string, version: number): Promise<{ text: string }> }, ref: string): Promise<WorkflowDefinition | null> {
   const { name, version } = parseWorkflowRef(ref);
   try {
-    return parseWorkflow((await library.getVersion(name, version)).text);
+    return parseWorkflow((await library.getVersion(name, version)).text, { lenient: true });
   } catch {
     return null;
   }

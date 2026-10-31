@@ -194,3 +194,24 @@ describe('critic steps and parallel groups', () => {
     expect(() => parseWorkflow(wf(`  - id: panel\n    parallel:\n${critic('a')}${critic('a')}`))).toThrow(/duplicate step id: a/);
   });
 });
+
+describe('stored workflows saved before the stricter with: rules', () => {
+  const legacy = `name: legacy\ndescription: old\nsteps:\n${inBlock('  - id: ship\n    uses: merge\n    with:\n      mode: squash\n')}`;
+
+  it('still load and parse leniently, while a new save is refused', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-workflow-legacy-'));
+    try {
+      mkdirSync(join(root, 'workflows', '.versions', 'legacy'), { recursive: true });
+      writeFileSync(join(root, 'workflows', 'legacy.yaml'), legacy);
+      writeFileSync(join(root, 'workflows', '.versions', 'legacy', '1.yaml'), legacy);
+      const library = new WorkflowLibrary(root);
+      await library.load();
+      expect(library.list().map((e) => e.name)).toContain('legacy');
+      expect(() => parseWorkflow(legacy, { lenient: true })).not.toThrow();
+      expect(() => parseWorkflow(legacy)).toThrow(/unknown key: mode/);
+      await expect(library.save('legacy', legacy)).rejects.toThrow(/unknown key: mode/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -20,6 +20,8 @@ export interface MergeIntoBaseArgs {
    * in with a merge commit: integration-branch refreshes, where the "branch" is
    * the default branch being merged into `epic/<ref>`. */
   mode?: 'fast-forward' | 'merge';
+  /** With `mode: 'merge'`, always create a merge commit even when the base has not moved. */
+  noFastForward?: boolean;
   /**
    * The merge mutex is held over the target checkout, permitting a coherent
    * in-place merge of a **checked-out** target. When the target is not
@@ -140,7 +142,7 @@ async function mergeIntoBaseUnchecked(args: MergeIntoBaseArgs): Promise<MergeInt
         },
       },
       async (adminPath) => {
-        const merged = await Git.mergeNoEdit(adminPath, expectedOid);
+        const merged = await Git.mergeNoEdit(adminPath, expectedOid, args.noFastForward);
         return merged.ok
           ? { kind: 'merged', oid: await Git.revParse(adminPath, 'HEAD') }
           : { kind: 'conflict', ...(merged.detail === undefined ? {} : { detail: merged.detail }) };

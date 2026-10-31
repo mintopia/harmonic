@@ -243,6 +243,14 @@ export class VerificationCoordinator {
     return resolvedTask.preMerge.commands.find((command) => command.id === id);
   }
 
+  async preMergeCommands(task: TaskRow): Promise<VerificationCommand[]> {
+    return (await this.resolveTaskVerifiers(task)).resolvedTask.preMerge.commands;
+  }
+
+  async postMergeCommands(task: TaskRow): Promise<VerificationCommand[]> {
+    return (await this.resolveTaskVerifiers(task)).resolvedTask.postMerge.commands;
+  }
+
   async criticEnabledFor(task: TaskRow): Promise<boolean> {
     const { resolvedTask } = await this.resolveTaskVerifiers(task);
     return resolvedTask.preMerge.critics.length > 0;

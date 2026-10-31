@@ -102,7 +102,7 @@ is historical and retains the terminology used at the reset.
 | 0050 | [The Prompts tab is organised by Prompt Anatomy](0050-prompts-tab-is-organised-by-prompt-anatomy.md) (superseded by 0054) |
 | 0051 | [An Epic's blocked-by links hold its Members](0051-epic-blocked-by-links-hold-members.md) |
 | 0052 | [A Route Classifier picks a Model Option when no operator setting or Routing Label applies](0052-route-classifier-picks-a-model-option.md) (amended 2026-10-31: Model Option codes, Ticket overrides) |
-| 0053 | [Task Execution Workflows define a Ticket's whole execution process](0053-task-execution-workflows.md) (amended 2026-10-31: steps reference Model Options by code) |
+| 0053 | [Task Execution Workflows define a Ticket's whole execution process](0053-task-execution-workflows.md) (amended 2026-10-31: steps reference Model Options by code; bundled `implement` and `research` workflows) |
 | 0054 | [The Prompt Library replaces Prompt Fragments and Prompt Anatomy](0054-prompt-library.md) |
 | 0055 | [Existing execution settings migrate to Task Execution Workflows at first boot](0055-migration-to-task-execution-workflows.md) |
 | 0056 | [Kubernetes Execution Targets run workflow steps in pods behind a Repository Proxy](0056-kubernetes-execution-targets-and-repository-proxy.md) |

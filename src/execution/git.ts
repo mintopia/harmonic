@@ -660,13 +660,13 @@ export const Git = {
    * fast-forwards, otherwise a merge commit is created — either way HEAD ends
    * at a descendant of the base.
    */
-  async mergeNoEdit(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+  async mergeNoEdit(worktreeDir: string, branch: string, noFastForward = false): Promise<{ ok: boolean; detail?: string }> {
     return withGitOperation(
       'git.merge',
       { 'git.branch': branch, 'git.ref': 'HEAD' },
       async () => {
         try {
-          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          await gitRefWrite(worktreeDir, ...IDENTITY, 'merge', ...(noFastForward ? ['--no-ff'] : []), '--no-edit', branch);
           return { ok: true };
         } catch (err) {
           const detail = err instanceof GitError ? err.message : String(err);
