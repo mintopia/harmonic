@@ -100,46 +100,6 @@ describe('boot crash-recovery', () => {
   });
 
   it(
-    'reconciles a worktree Run crashed after its merge landed but before settle ran: re-runs the post-merge check and completes it — idempotent across repeat boots',
-    async () => {
-      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });
-      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
-      const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: [{ kind: 'local', enabled: true, command: passingVerifier() }] });
-
-      const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' } }) });
-      const taskId: number = created.body.id;
-      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-      const attemptId: number = started.body.id;
-      await waitForTaskDone(server, taskId);
-      const dataDir = server.dataDir;
-      const runBefore = await server.api('GET', `/api/attempts/${attemptId}`);
-      expect(runBefore.body.state).toBe('completed');
-      const mainTipAfterMerge = git(repo, 'rev-parse', 'main');
-
-      await server.app.close();
-      const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-      await sqlite.execute({ sql: "UPDATE attempts SET state = 'running', ended_at = NULL WHERE id = ?", args: [attemptId] });
-      await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
-      sqlite.close();
-
-      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
-
-      const run = await server.api('GET', `/api/attempts/${attemptId}`);
-      expect(run.body.state).toBe('completed');
-      const task = await server.api('GET', `/api/tasks/${taskId}`);
-      expect(task.body.state).toBe('done');
-      expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
-
-      await server.app.close();
-      server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 }, { dataDir });
-      const runAgain = await server.api('GET', `/api/attempts/${attemptId}`);
-      expect(runAgain.body.state).toBe('completed');
-      expect(git(repo, 'rev-parse', 'main')).toBe(mainTipAfterMerge);
-    },
-  );
-
-  it(
     'settles a merged Task whose settle died after the Attempt passed but before the Task reached done — done, not re-picked, no double-merge (#427)',
     async () => {
       server = await startServer({ ...stubHarness(), defaults: { isolationMode: 'worktree' }, maxAttempts: 1 });

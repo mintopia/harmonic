@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { baselineConfig, verificationCommandSchema } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import { execFileSync } from 'node:child_process';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -13,9 +13,8 @@ import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, startServer, stubHarness, seedWorkspace } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness, seedWorkspace } from './helpers.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
-import { trackerRef } from '../src/tracker/adapter.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -271,11 +270,8 @@ describe('Auto-Runner operations (issue #289)', () => {
 });
 
 describe('Run operations (issue #290)', () => {
-  it('closes the Run operation at escalation and merges the operator Accept as its own operation on that Run', async () => {
+  it('closes the Run operation at escalation', async () => {
     const { exporter, registry } = installOperations();
-    // Escalate at the review Step (failing critic) so Accept runs Accept-and-Merge
-    // (ADR-0038), the operator merge that emits its own harmonic.merge span on the
-    // escalated Attempt — the advance path a verification failure would take does not.
     const criticDrive: CriticHarnessDrive = { run: async () => ({ output: JSON.stringify({ verdict: 'fail', summary: 'needs work' }), permissionRequests: [] }) };
     const server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { criticDrive });
     try {
@@ -303,86 +299,8 @@ describe('Run operations (issue #290)', () => {
         expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === attemptId)).toBeDefined();
       });
       expect(registry.list().find((operation) => operation.name === 'harmonic.attempt' && operation.attributes['attempt.id'] === attemptId)).toBeUndefined();
-
-      const escalatedAttempt = await server.app.ctx.attempts.currentForTask(task.body.id);
-      expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
-      await vi.waitFor(() => {
-        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['attempt.id'] === escalatedAttempt.id);
-        expect(merge).toBeDefined();
-        expect(merge?.attributes['merge.mechanism']).toBe('policy');
-      });
     } finally {
       await server.close();
     }
   });
-});
-
-describe('Automated merge policy operations (issue #387)', () => {
-  it('nests the harmonic.merge span tree under the real Attempt operation when a worktree task auto-merges', async () => {
-    const { exporter } = installOperations();
-    const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-policy-'));
-    execFileSync('git', ['init', '-b', 'main', repo]);
-    execFileSync('git', ['-C', repo, 'config', 'user.name', 'Test']);
-    execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
-    writeFileSync(join(repo, 'README.md'), '# repo\n');
-    mkdirSync(join(repo, 'docs', 'agents'), { recursive: true });
-    writeFileSync(join(repo, 'docs', 'agents', 'issue-tracker.md'), '# Issue tracker: local-markdown\n\nPath: tickets\n');
-    execFileSync('git', ['-C', repo, 'add', '-A']);
-    execFileSync('git', ['-C', repo, 'commit', '-m', 'init']);
-
-    const server = await startServer({
-      ...stubHarness(),
-      defaults: { isolationMode: 'worktree' },
-      maxAttempts: 2,
-      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
-    });
-    try {
-      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
-      await server.app.ctx.workspaces.update(wsId, {
-        workingDir: repo,
-        taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }],
-      });
-      await server.app.ctx.settingsStore.updateGlobal({
-        merge: { postMergeCheck: false },
-        drive: { prompt: JSON.stringify({ writeFiles: { 'impl.txt': 'implementation\n' }, mcpFinish: true }) },
-      });
-
-      const ref = 999_001;
-      const task = await server.app.ctx.tasks.upsertMirrored({
-        trackerRef: trackerRef(ref),
-        prompt: `ticket ${ref}\n\nbody`,
-        issueWorkflow: 'implement',
-        wayfinderType: null,
-        mapRef: null,
-        closed: false,
-      });
-      seedLocalMarkdownTicket(task.workingDir, ref, 'closed');
-      execFileSync('git', ['-C', task.workingDir, 'add', '-A']);
-      execFileSync('git', ['-C', task.workingDir, 'commit', '-q', '-m', `ticket ${ref}`]);
-
-      await server.app.ctx.tasks.setState(task.id, 'working');
-      const run = await server.app.ctx.runner.launchClaimed(task.id);
-
-      await vi.waitFor(
-        async () => {
-          const t = await server.app.ctx.tasks.get(task.id);
-          if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.attempts.get(run.id)).reason}`);
-          expect(t.state).toBe('done');
-        },
-        { timeout: 20_000 },
-      );
-
-      const spans = exporter.getFinishedSpans();
-      const attempt = spans.find((span) => span.name === 'harmonic.attempt' && span.attributes['attempt.id'] === run.id);
-      const merge = spans.find((span) => span.name === 'harmonic.merge' && span.attributes['merge.mechanism'] === 'policy');
-      if (!attempt || !merge) {
-        throw new Error(`missing span(s); exported spans: ${JSON.stringify(spans.map((s) => s.name))}`);
-      }
-      expect(merge.attributes['merge.mechanism']).toBe('policy');
-      expect(merge.parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
-    } finally {
-      await server.close();
-      rmSync(repo, { recursive: true, force: true });
-    }
-  }, 30_000);
 });

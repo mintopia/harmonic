@@ -428,6 +428,48 @@ describe('WorkflowEngine', () => {
       expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
     });
 
+    const scripted = (result: { halt?: 'paused' | 'settled'; escalate?: string }, seen: { task?: number; stepRowId?: number }[] = []): Partial<WorkflowEngineDeps['agent']> => ({
+      drive: { run: async (req) => { seen.push({ task: req.task?.id, stepRowId: req.stepRowId }); return { output: '', permissionRequests: [], sessionId: 's1', ...result }; } },
+    });
+    const twoSteps = '  - id: build\n    uses: agent\n    with:\n      prompt: hi\n  - id: after\n    run: echo after\n';
+
+    it('hands the Task, Attempt and step row to the agent drive', async () => {
+      const seen: { task?: number; stepRowId?: number }[] = [];
+      const { task, run } = await startTask(flow(twoSteps));
+      await agentEngine(scripted({}, seen)).run(task, run);
+      const rows = await stepRows(task.id);
+      expect(seen).toEqual([{ task: task.id, stepRowId: rows[0]!.id }]);
+    });
+
+    it.each(['paused', 'settled'] as const)('halts on a %s turn: the step row stays unfinished, nothing escalates or completes, later steps do not run', async (halt) => {
+      const { task, run } = await startTask(flow(twoSteps));
+      await agentEngine(scripted({ halt })).run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((row) => [row.stepId, row.outcome])).toEqual([['build', null]]);
+      expect(escalations).toEqual([]);
+      expect(completions).toBe(0);
+    });
+
+    it('re-runs a halted agent step when the run resumes', async () => {
+      const { task, run } = await startTask(flow(twoSteps));
+      await agentEngine(scripted({ halt: 'paused' })).run(task, run);
+      await agentEngine(scripted({})).run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((row) => [row.stepId, row.outcome])).toEqual([['build', null], ['build', 'pass'], ['after', 'pass']]);
+      expect(completions).toBe(1);
+    });
+
+    it('escalates at once with the agent reason and burns no further Attempt', async () => {
+      const { task, run } = await startTask(flow(twoSteps, 3));
+      const seen: { task?: number; stepRowId?: number }[] = [];
+      await agentEngine(scripted({ escalate: 'agent asked for help' }, seen)).run(task, run);
+      expect(seen).toHaveLength(1);
+      expect(escalations).toHaveLength(1);
+      expect(escalations[0]).toContain('agent asked for help');
+      expect((await stepRows(task.id)).map((row) => row.stepId)).toEqual(['build']);
+      expect(completions).toBe(0);
+    });
+
     it('runs a critic step from an option', async () => {
       optionList = [opt('cheap')];
       const verdict = scenario({}, { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify({ verdict: 'pass', summary: 'fine', findings: [] }) } }] });

@@ -561,18 +561,18 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
 
   const workflowVarsOf = async (id: number): Promise<z.infer<typeof workflowVarsResponseSchema>> => {
     const task = await ctx.tasks.get(id);
-    let name: string | null = null;
-    let version: number | null = null;
+    let name: string;
+    let version: number;
     if (task.workflowRef !== null) {
       ({ name, version } = parseWorkflowRef(task.workflowRef));
     } else {
       const names = new Set(ctx.workflows.list().map((entry) => entry.name));
       const workspace = task.workspaceId == null ? null : await ctx.workspaces.get(task.workspaceId);
-      name = resolveTaskWorkflow(task, workspace, ctx.settingsStore.getGlobal(), (n) => names.has(n))?.name ?? null;
-      version = name === null ? null : ctx.workflows.get(name).version;
+      name = resolveTaskWorkflow(task, workspace, ctx.settingsStore.getGlobal(), (n) => names.has(n)).name;
+      version = ctx.workflows.get(name).version;
     }
-    const definition = name === null || version === null ? null : await pinnedWorkflow(ctx.workflows, `${name}@${version}`);
-    if (name === null || !definition) return { workflowRef: task.workflowRef, workflow: null, vars: [], snapshot: task.workflowVars };
+    const definition = await pinnedWorkflow(ctx.workflows, `${name}@${version}`);
+    if (!definition) return { workflowRef: task.workflowRef, workflow: null, vars: [], snapshot: task.workflowVars };
     const workspace = task.workspaceId == null ? null : await ctx.workspaces.get(task.workspaceId);
     const workspaceVars = workspaceVarsFor(workspace, name);
     const ticketVars = task.workflowVarOverrides;

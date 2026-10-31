@@ -1,5 +1,5 @@
 import type { ClassifierInput } from '../../src/domain/route-classifier.js';
-import { expandFragments, promptForTask, renderFragment, type DriveFields } from '../../src/execution/prompt-template.js';
+import { appendFeedback, expandFragments, fillTemplate, promptForTask, renderFragment, type DriveFields } from '../../src/execution/prompt-template.js';
 import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, type PromptFragmentName, type PromptFragments } from '../../src/domain/prompt-fragments.js';
 import {
   ORIGIN,
@@ -23,15 +23,10 @@ import {
   buildClassifierPrompt,
   buildCriticPrompt,
   composeAttemptPrompt,
-  composeCommitNudge,
-  composeContinuePrompt,
-  composeDriveOpening,
   composeEpicResolvePrompt,
   composePauseMessage,
   composePeerContext,
   peerFrame,
-  placePriorContext,
-  planAttemptContext,
   renderConflictPrompt,
   renderEpicRefreshPrompt,
   type ConflictPromptContext,
@@ -65,6 +60,7 @@ export interface LabeledPreview {
 }
 
 const SAMPLE_TASK_ID = '123';
+const withTaskId = (text: string, taskId: string): string => text.replace(/\{taskId\}/g, taskId);
 
 const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
 const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
@@ -357,31 +353,21 @@ const assembleImplementation: Assembler = (tools, _view, c) => {
   const feedback = flag('feedback') ? SAMPLE_FEEDBACK : null;
   const opening =
     selectOption(ORIGIN, c.choices.origin, 'native') === 'mirrored'
-      ? composeDriveOpening(
-          { prompt: tools.expanded('drivePrompt'), unattendedReminder: tools.expanded('unattendedReminder') },
-          SAMPLE_DRIVE_FIELDS,
-          feedback,
-        )
+      ? `${appendFeedback(fillTemplate(tools.expanded('drivePrompt'), SAMPLE_DRIVE_FIELDS), feedback)}\n\n${withTaskId(tools.expanded('unattendedReminder'), SAMPLE_DRIVE_FIELDS.taskId)}`
       : promptForTask(
           { id: 172, prompt: 'Example task prompt.', workingDir: '/repo', harness: 'claude', model: 'sonnet', feedback },
           tools.expanded('taskPrompt'),
         );
   const heal = flag('selfHeal') ? SAMPLE_HEAL : undefined;
   const seeded = flag('operatorSeeded');
-  const plan = planAttemptContext({
-    seeded,
-    healing: heal !== undefined,
-    continuesOpenAttempt: false,
-    freshSession: true,
-    condensedContinuation: true,
-  });
   const prior = flag('priorSession') ? renderFragment('priorSession', tools.fragments, SAMPLE_PRIOR_SESSION) : null;
   return composeAttemptPrompt(
     {
       opening,
       seed: seeded ? SAMPLE_SEED : undefined,
-      seedMode: plan.seedMode,
-      ...placePriorContext(plan.priorSlot, prior),
+      seedMode: 'append' as const,
+      freshSessionContext: seeded && !heal ? prior : null,
+      condensed: heal ? prior : null,
       heal,
       peerText: flag('agentMessages') ? composePeerContext(flag('heldPeerMessages') ? SAMPLE_PEERS : [], tools.fragments) : '',
       rebaseConflict: flag('rebaseConflict'),
@@ -394,12 +380,9 @@ const assembleImplementation: Assembler = (tools, _view, c) => {
 const assembleNudge: Assembler = (tools, _view, c) => {
   switch (selectOption(NUDGE_EVENT, c.choices.event, 'continue')) {
     case 'continue':
-      return composeContinuePrompt(
-        { continuePrompt: tools.expanded('continuePrompt'), unattendedReminder: tools.expanded('unattendedReminder') },
-        SAMPLE_TASK_ID,
-      );
+      return `${withTaskId(tools.expanded('continuePrompt'), SAMPLE_TASK_ID)}\n\n${withTaskId(tools.expanded('unattendedReminder'), SAMPLE_TASK_ID)}`;
     case 'commit':
-      return composeCommitNudge(tools.raw('commitNudge'), tools.fragments);
+      return expandFragments(tools.raw('commitNudge'), tools.fragments);
     case 'pause':
       return composePauseMessage(tools.raw('pauseMessage'), tools.fragments);
     case 'peer':

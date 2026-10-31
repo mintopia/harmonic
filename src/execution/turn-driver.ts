@@ -7,44 +7,42 @@ import type { LiveUsageTailer } from './live-usage-tailer.js';
 import type { UsageSampler } from './usage-sampler.js';
 import { GuardrailSupervisor } from './guardrail-supervisor.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
-import { promptForTask } from './prompt-template.js';
 import { indexWorktree } from './code-index.js';
-import type { VerificationCoordinator } from './verification-coordinator.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { AcpDriver } from '../acp/driver.js';
 import type { SessionStore } from '../domain/sessions.js';
-import { type DeterministicContinuation } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SettleProjection, DispositionKind } from '../domain/attempt-settle.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { PromptFragments } from '../domain/prompt-fragments.js';
-import { resolvePromptFragments, resolveScoped, resolveTaskPrompt } from '../domain/setting-override.js';
+import { resolvePromptFragments } from '../domain/setting-override.js';
 import { messageText, resolveAgentMessages } from '../domain/agent-messages.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
-import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
+import { BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
 import type { RunBoundaryResult } from './run-control.js';
 import type { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { logger } from '../logger.js';
-import type { SpanContext } from '@opentelemetry/api';
 import type { AgentMessageRow } from '../db/schema.js';
-import { composeAttemptPrompt, composePeerContext, planAttemptContext, placePriorContext } from './prompt-assembly.js';
+import { composeAttemptPrompt, composePeerContext } from './prompt-assembly.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
 import type { TaskArchive } from '../archive/task-archive.js';
-import { TurnCompletion, noteModelMismatch, type TurnOutcome, type RunEventRecorder, type TurnCompletionDeps } from './turn-completion.js';
+import { TurnCompletion, noteModelMismatch, type RunEventRecorder, type TurnCompletionDeps } from './turn-completion.js';
+import type { PromptResult } from '../acp/driver.js';
+import type { AgentDriveRequest, AgentDriveResult } from './workflow-engine.js';
 
 const STDERR_TAIL_CAP = 8000;
 
-interface HealContext {
-  reason: string;
-  output: string;
-  attempt: number;
-  continuation: DeterministicContinuation;
-  condensedContext: string | null;
-}
+const haltResult = (halt: 'paused' | 'settled'): AgentDriveResult => ({ output: '', permissionRequests: [], halt });
+
+const emptyDrive = (turn: TurnState, sessionId: string): AgentDriveResult => ({
+  output: turn.output,
+  permissionRequests: [],
+  sessionId: sessionId || null,
+});
 
 interface TurnRuntime {
   active: ActiveRun;
@@ -62,8 +60,8 @@ interface StderrTail {
 }
 
 type SpawnTurnResult =
-  | { ok: true; workspace: Workspace; mcpServers: unknown[]; child: ChildProcess; stderr: StderrTail; rebaseConflict: boolean }
-  | { ok: false; outcome: TurnOutcome };
+  | { ok: true; workspace: Workspace; mcpServers: unknown[]; child: ChildProcess; stderr: StderrTail }
+  | { ok: false };
 
 export interface TurnDriverDeps {
   taskService: TaskService;
@@ -76,8 +74,6 @@ export interface TurnDriverDeps {
   getConfig: () => AppConfig;
 
   activeRuns: ActiveRuns;
-  mergeCoordinator: MergeCoordinator;
-  verification: VerificationCoordinator;
   sessionContinuation: SessionContinuation;
   archive?: TaskArchive | undefined;
 
@@ -86,7 +82,6 @@ export interface TurnDriverDeps {
   keys: RunnerOptions['keys'];
   getWorkspace: RunnerOptions['getWorkspace'];
   agentMessages: RunnerOptions['agentMessages'];
-  postMerge: RunnerOptions['postMerge'];
   gitBreaker: GitCircuitBreaker | undefined;
   onGloballyPaused: ((taskId: number) => Promise<void>) | undefined;
   spendPollMs: number;
@@ -100,9 +95,6 @@ export interface TurnDriverDeps {
     task: TaskRow, harness: HarnessConfig, cwd: string,
     extraEnv: Record<string, string>, unattended: boolean,
   ) => ChildProcess;
-  updateStep: (
-    taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1],
-  ) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
   checkRunBoundary: (taskId: number) => Promise<RunBoundaryResult>;
   latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
   recordRunEvent: (
@@ -114,11 +106,6 @@ export interface TurnDriverDeps {
     projection: SettleProjection, patch?: Partial<AttemptRow>,
   ) => Promise<void>;
   settleEscalated: (task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>) => Promise<void>;
-  settleAutoCompleted: (task: TaskRow, run: AttemptRow, patch: Partial<AttemptRow>) => Promise<void>;
-  diffSnapshotFor: (
-    task: TaskRow, attemptId: number,
-  ) => Promise<Pick<AttemptRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>>;
-  worktreePathForTask: (task: TaskRow) => string;
   kill: (active: ActiveRun) => void;
 }
 
@@ -126,104 +113,23 @@ export class TurnDriver {
   private readonly completion: TurnCompletion;
 
   constructor(private readonly deps: TurnDriverDeps) {
-    const completionDeps: TurnCompletionDeps = {
-      attempts: deps.attempts,
-      usage: deps.usage,
-      activeRuns: deps.activeRuns,
-      mergeCoordinator: deps.mergeCoordinator,
-      verification: deps.verification,
-      autoDrive: deps.autoDrive,
-      taskService: deps.taskService,
-      getConfig: deps.getConfig,
-      getWorkspace: deps.getWorkspace,
-      postMerge: deps.postMerge,
-      isShuttingDown: deps.isShuttingDown,
-      settleEscalated: deps.settleEscalated,
-      settleAutoCompleted: deps.settleAutoCompleted,
-      diffSnapshotFor: deps.diffSnapshotFor,
-      worktreePathForTask: deps.worktreePathForTask,
-      updateStep: deps.updateStep,
-    };
+    const completionDeps: TurnCompletionDeps = { attempts: deps.attempts };
     this.completion = new TurnCompletion(completionDeps);
   }
 
-  /** @see {@link TurnCompletion.advanceAccepted} */
-  async driveAccept(input: {
-    task: TaskRow;
-    run: AttemptRow;
-    record: RunEventRecorder;
-    parent: SpanContext;
-    signal: AbortSignal;
-    startAt: 'commands' | 'critics';
-  }): Promise<void> {
-    return this.completion.advanceAccepted(input);
-  }
-
-  async drive(task: TaskRow, run: AttemptRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
-    const workspace = await this.deps.getWorkspace?.(task.workspaceId);
-    const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.deps.getConfig().maxAttempts);
-    let attemptNumber = run.number;
-    const budgetBase = await this.deps.attempts.budgetBase(task.id);
-    let healCtx: HealContext | undefined;
-    try {
-      for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, attemptNumber);
-      if (outcome.kind === 'terminal') return;
-      run = await this.deps.attempts.get(run.id);
-      const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
-      if (attemptNumber - budgetBase >= maxAttempts) {
-        await this.deps.settleEscalated(task, run, `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, { feedback });
-        return;
-      }
-      await this.deps.attempts.finish(run.id, 'failed', Date.now(), feedback);
-      const continuation = await this.deps.sessionContinuation.decideContinuation(task, run, workspace);
-      attemptNumber += 1;
-      const closedRunId = run.id;
-      this.deps.activeRuns.releaseAttempt(closedRunId);
-      const nextAttempt = await this.deps.attempts.ensureForRun(task.id, attemptNumber, Date.now());
-      run = await this.deps.attempts.update(nextAttempt.id, {
-        branch: run.branch,
-        baseBranch: run.baseBranch,
-        sessionRowId: run.sessionRowId,
-        sessionId: run.sessionId,
-        verifiedHeadOid: run.verifiedHeadOid,
-      });
-      await this.deps.attempts.setContinuation(run.id, continuation);
-      healCtx = {
-        reason: outcome.reason,
-        output: outcome.output,
-        attempt: attemptNumber - 1,
-        continuation,
-        condensedContext: continuation.path === 'new-session-condensed' ? await this.deps.sessionContinuation.condensedContext(run, resolvePromptFragments(await this.deps.getWorkspace?.(task.workspaceId), this.deps.getConfig())) : null,
-      };
-      }
-    } finally {
-      this.deps.activeRuns.releaseAttempt(run.id);
-      // A pending pause only ever gets consumed at the next driveOnce boundary; if
-      // this drive loop instead ended some other way (settled done/escalated,
-      // cancelled, completed) that marker would otherwise leak onto whatever this
-      // Task's id is next used for.
-      this.deps.activeRuns.clearPendingPause(task.id);
-    }
-  }
-
-  private async driveOnce(
-    task: TaskRow,
-    run: AttemptRow,
-    harness: HarnessConfig,
-    parent: SpanContext,
-    healCtx?: HealContext,
-    attemptNumber = run.number,
-  ): Promise<TurnOutcome> {
+  async runAgentTurn(req: AgentDriveRequest): Promise<AgentDriveResult> {
+    const { task, run } = req;
+    if (!task || !run) throw new Error('runAgentTurn requires a task and run');
+    const harness = req.harness;
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       this.deps.recordRunEvent(task, run, type, payload);
     };
     const boundary = await this.deps.checkRunBoundary(task.id);
     if (boundary.stop) {
       if (boundary.reason !== 'settled') record('lifecycle', { event: 'paused' });
-      return { kind: 'terminal' };
+      return haltResult(boundary.reason === 'settled' ? 'settled' : 'paused');
     }
-    const attemptAtStart = await this.deps.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
+    const attemptAtStart = await this.deps.attempts.ensureForRun(task.id, run.number, run.startedAt);
     const toolCalls = this.deps.activeRuns.getToolCallTotals(run.id) ?? (await this.deps.attempts.listToolCalls(attemptAtStart.id));
     this.deps.activeRuns.setToolCallTotals(run.id, toolCalls);
     const progressEvents = this.deps.activeRuns.getProgressTrace(run.id) ?? [];
@@ -232,36 +138,15 @@ export class TurnDriver {
     const flushToolCalls = async () => {
       await this.deps.attempts.replaceToolCalls(turn.attemptAtStart.id, turn.toolCalls);
     };
-
-    const opensAttempt = (await this.deps.attempts.listSteps(turn.attemptAtStart.id)).length === 0;
-
-    const advanceTask = async (to: 'verifying' | 'merging') => {
-      const attempt = await this.deps.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
-      const rows = await this.deps.attempts.listSteps(attempt.id);
-      const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
-      if (to === 'verifying' && implementation) {
-        await this.deps.updateStep(task.id, implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-      }
-    };
-
-    let escalating: string | null = null;
     const autoDriven = this.deps.autoDrive?.handles(task) ?? false;
+    const continueSessionId = req.continueSessionId ?? (task.continuationChoice !== 'condensed' ? run.sessionId : null);
 
-    const spawned = await this.spawnTurn({ task, run, harness, healCtx, attemptNumber, opensAttempt, turn, autoDriven, record });
-    if (!spawned.ok) return spawned.outcome;
-    const { workspace, mcpServers, child, stderr, rebaseConflict } = spawned;
+    const spawned = await this.spawnTurn({ task, run, harness, resume: continueSessionId != null, turn, autoDriven });
+    if (!spawned.ok) return haltResult('settled');
+    const { workspace, mcpServers, child, stderr } = spawned;
 
     const { active, driver, guardrails, listeners, finalize } = this.createTurnRuntime({
-      task,
-      run,
-      harness,
-      workspace,
-      turn,
-      autoDriven,
-      attemptNumber,
-      record,
-      flushToolCalls,
-      child,
+      task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child,
     });
 
     try {
@@ -273,53 +158,28 @@ export class TurnDriver {
           this.deps.events.onAttemptEvent?.(pausedEvent);
         }
         await finalize();
-        return { kind: 'terminal' };
+        return haltResult(boundary.reason === 'settled' ? 'settled' : 'paused');
       }
       const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
-        task,
-        run,
-        harness,
-        workspace,
-        mcpServers,
-        turn,
-        driver,
-        listeners,
-        guardrails,
-        autoDriven,
-        healCtx,
-        rebaseConflict,
-        opensAttempt,
-        record,
+        task, run, harness, workspace, mcpServers, turn, driver, listeners, guardrails, autoDriven, continueSessionId, opening: req.prompt, record,
       });
       const messageStore = this.deps.agentMessages;
       const driven = await this.completion.drivePromptCycle({
-        task, driver, active, guardrails, listeners, autoDriven, promptText, operatorSeed, record,
+        driver, active, guardrails, listeners, promptText, operatorSeed, record,
         onFirstPrompt: messageStore && heldMessages.length > 0 ? () => messageStore.markDelivered(heldMessages, task.id) : undefined,
       });
-      escalating = driven.escalating;
       if (active.externallySettled) {
         await finalize();
-        return { kind: 'terminal' };
+        return haltResult('settled');
       }
 
       if (active.pauseRequested) {
-        // A pause requested before drivePromptCycle ever sent a prompt already
-        // consumed the seed out of the pending map (see initializeTurn); put it
-        // back for the resumed turn rather than lose it (ADR-0005 §6).
+        // A pause before the first prompt consumed the seed from the pending map; put it back.
         if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
           this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
         }
         if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
-        const usage = await this.deps.usage.collectUsageSafe({
-          harnessId: task.harness,
-          harness,
-          cwd: workspace.cwd,
-          attemptId: run.id,
-          promptResult: driven.result,
-        });
-        if (usage?.contextTokens != null) this.deps.activeRuns.setLastTurnContextTokens(run.id, usage.contextTokens);
-        noteModelMismatch(task, usage, record);
-        await this.deps.attempts.update(run.id, { stopReason: driven.result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
+        await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
         record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
         if (!active.pauseFactRecorded) {
           const pausedEvent = await this.deps.attempts.appendEvent(run.id, {
@@ -330,46 +190,31 @@ export class TurnDriver {
         }
         await finalize();
         if (active.globalPauseRequested) await this.deps.onGloballyPaused?.(task.id);
-        return { kind: 'terminal' };
+        return haltResult('paused');
       }
 
-      return await this.completion.finishDrivenTurn({
-        task,
-        run,
-        harness,
-        parent,
-        workspace,
-        active,
-        listeners,
-        autoDriven,
-        attemptNumber,
-        driven,
-        record,
-        finalize,
-        advanceTask,
-      });
+      record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
+      if (!driven.escalating && !listeners.stoppedShort) {
+        await this.completion.stampVerifiedHead({ run, workspace });
+      }
+      await finalize();
+      await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
+      if (driven.escalating) {
+        record('lifecycle', { event: 'escalated', reason: driven.escalating });
+        return { ...emptyDrive(turn, driver.sessionId), escalate: driven.escalating };
+      }
+      if (listeners.stoppedShort) {
+        record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
+        throw new Error(listeners.stoppedShort);
+      }
+      return emptyDrive(turn, driver.sessionId);
     } catch (err) {
+      await finalize();
+      if (active.externallySettled || this.deps.isShuttingDown()) return haltResult('settled');
       const base = err instanceof Error ? err.message : String(err);
       await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, 500))]);
       const tail = stderr.tail.trim();
-      const reason = tail ? `${base}\n\nharness stderr:\n${tail}` : base;
-      await finalize();
-      if (active.externallySettled) return { kind: 'terminal' };
-      if (this.deps.isShuttingDown()) return { kind: 'terminal' };
-      const usage = await this.deps.usage.collectUsageSafe({ harnessId: task.harness, harness, cwd: workspace.cwd, attemptId: run.id, promptResult: undefined });
-      noteModelMismatch(task, usage, record);
-      const patch = { usage: usage ? JSON.stringify(usage) : null };
-      if (escalating) {
-        record('lifecycle', { event: 'escalated', reason: escalating });
-        await this.deps.settleEscalated(task, run, escalating, patch);
-        return { kind: 'terminal' };
-      }
-      if ((await this.deps.attempts.get(run.id)).state !== 'running') {
-        await this.deps.attempts.update(run.id, patch);
-        return { kind: 'terminal' };
-      }
-      await this.deps.attempts.update(run.id, patch);
-      return { kind: 'actionable-fail', reason, output: '' };
+      throw new Error(tail ? `${base}\n\nharness stderr:\n${tail}` : base);
     } finally {
       guardrails.disarm();
       driver.fail(new Error('run finished'));
@@ -379,39 +224,35 @@ export class TurnDriver {
     }
   }
 
-  /** Prepare the workspace, rebase if needed, and spawn the harness process. On
-   * failure, settles the run appropriately and returns the outcome to bubble up. */
+  private async recordTurnUsage(input: {
+    task: TaskRow;
+    run: AttemptRow;
+    harness: HarnessConfig;
+    workspace: Workspace;
+    result: PromptResult | undefined;
+    record: RunEventRecorder;
+  }): Promise<void> {
+    const { task, run, harness, workspace, result, record } = input;
+    const usage = await this.deps.usage.collectUsageSafe({ harnessId: task.harness, harness, cwd: workspace.cwd, attemptId: run.id, promptResult: result });
+    if (usage?.contextTokens != null) this.deps.activeRuns.setLastTurnContextTokens(run.id, usage.contextTokens);
+    noteModelMismatch(task, usage, record);
+    await this.deps.attempts.update(run.id, { stopReason: result?.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
+  }
+
+  /** Prepares the workspace and spawns the harness; a handled failure settles the run and reports `ok: false`. */
   private async spawnTurn(input: {
     task: TaskRow;
     run: AttemptRow;
     harness: HarnessConfig;
-    healCtx: HealContext | undefined;
-    attemptNumber: number;
-    opensAttempt: boolean;
+    resume: boolean;
     turn: TurnState;
     autoDriven: boolean;
-    record: RunEventRecorder;
   }): Promise<SpawnTurnResult> {
-    const { task, run, harness, healCtx, attemptNumber, opensAttempt, turn, autoDriven, record } = input;
+    const { task, run, harness, resume, turn, autoDriven } = input;
     const stderr: StderrTail = { tail: '', flushed: Promise.resolve() };
-    let rebaseConflict = false;
     try {
-      const workspace = await this.deps.prepareWorkspace(task, run, healCtx !== undefined);
-      if (opensAttempt && workspace.worktree) {
-        const baseBranch = (await this.deps.attempts.get(run.id)).baseBranch ?? await this.deps.mergeCoordinator.resolveBaseBranch(task);
-        const rebase = await this.deps.mergeCoordinator.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
-        if (!rebase.ok) {
-          if (!rebase.conflict) throw new Error(`rebase onto ${baseBranch} failed: ${rebase.detail}`);
-          rebaseConflict = true;
-          record('lifecycle', { event: 'rebase-conflict', baseBranch });
-        }
-      }
-      const steps = await this.deps.attempts.listSteps(turn.attemptAtStart.id);
-      if (!steps.some((row) => row.type === 'implementation' && row.state === 'running')) {
-        const implementation = await this.deps.attempts.createStep(turn.attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
-        await this.deps.updateStep(task.id, implementation.id, { state: 'running', startedAt: Date.now() });
-      }
-      turn.archive = this.deps.archive?.implementationStep(task, attemptNumber);
+      const workspace = await this.deps.prepareWorkspace(task, run, resume);
+      turn.archive = this.deps.archive?.implementationStep(task, run.number);
       this.deps.gitBreaker?.recordSuccess(repoKey(task.workingDir));
       let mcpServers: unknown[] = [];
       const mcpUrl = this.deps.mcpUrl();
@@ -421,7 +262,7 @@ export class TurnDriver {
         workspace.env.HARMONIC_MCP_URL = mcpUrl;
         mcpServers = adapterFor(task.harness).mcpServers({ url: mcpUrl, token: runKey });
       }
-      if (this.deps.isShuttingDown()) return { ok: false, outcome: { kind: 'terminal' } };
+      if (this.deps.isShuttingDown()) return { ok: false };
       const child = this.deps.spawnHarness(task, harness, workspace.cwd, workspace.env, autoDriven);
       const childStderr = child.stderr;
       if (childStderr) {
@@ -434,7 +275,7 @@ export class TurnDriver {
           childStderr.on('error', () => resolve());
         });
       }
-      return { ok: true, workspace, mcpServers, child, stderr, rebaseConflict };
+      return { ok: true, workspace, mcpServers, child, stderr };
     } catch (err) {
       this.deps.fireAndForget(() => this.deps.keys?.revoke(run.id), { op: 'runner.revokeKeyOnStartError', level: 'error', context: { attemptId: run.id, taskId: task.id } });
       if (err instanceof EpicBaseNotReady) {
@@ -454,9 +295,9 @@ export class TurnDriver {
           await this.deps.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.message });
         }
       } else {
-        return { ok: false, outcome: { kind: 'actionable-fail', reason: err instanceof Error ? err.message : String(err), output: '' } };
+        throw err;
       }
-      return { ok: false, outcome: { kind: 'terminal' } };
+      return { ok: false };
     }
   }
 
@@ -611,11 +452,8 @@ export class TurnDriver {
     listeners: TurnListeners;
     guardrails: GuardrailSupervisor;
     autoDriven: boolean;
-    healCtx: HealContext | undefined;
-    rebaseConflict: boolean;
-    /** No Step recorded yet on this Attempt: this is its own opening turn, distinct
-     * from a manual resume/steer-continue reusing an already-open Attempt's row. */
-    opensAttempt: boolean;
+    continueSessionId: string | null;
+    opening: string;
     record: RunEventRecorder;
   }): Promise<{ promptText: string; operatorSeed: string | undefined; heldMessages: AgentMessageRow[] }> {
     const {
@@ -629,9 +467,8 @@ export class TurnDriver {
       listeners,
       guardrails,
       autoDriven,
-      healCtx,
-      rebaseConflict,
-      opensAttempt,
+      continueSessionId,
+      opening,
       record,
     } = input;
     const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
@@ -648,8 +485,6 @@ export class TurnDriver {
       },
     };
     const codeIndexRepoId = workspace.cwd !== task.workingDir ? await indexWorktree(workspace.cwd) : null;
-    const continueSessionId =
-      healCtx === undefined || healCtx.continuation.path === 'continued-session' ? run.sessionId : null;
     if (continueSessionId) {
       const outcome = await driver.load({
         sessionId: continueSessionId,
@@ -735,43 +570,23 @@ export class TurnDriver {
     }
     const workspaceRow = await this.deps.getWorkspace?.(task.workspaceId);
     const fragments = resolvePromptFragments(workspaceRow, this.deps.getConfig());
-    const opening = autoDriven
-      ? await this.deps.autoDrive!.prompt(task)
-      : promptForTask(
-          { ...task, workingDir: workspace.cwd },
-          resolveTaskPrompt(workspaceRow, this.deps.getConfig()),
-        );
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
-    const plan = planAttemptContext({
-      seeded: operatorSeed !== undefined,
-      healing: healCtx !== undefined,
-      continuesOpenAttempt: run.sessionRowId !== null && !opensAttempt,
-      freshSession: run.sessionRowId === null,
-      condensedContinuation: task.continuationChoice === 'condensed',
-    });
-    const prior = plan.priorSlot === null ? null : healCtx ? (healCtx.condensedContext ?? null) : await this.priorSessionContext(task, fragments);
-    const { freshSessionContext, condensed } = placePriorContext(plan.priorSlot, prior);
     const peer = await this.peerContext(task, fragments);
     const promptText = composeAttemptPrompt(
       {
         opening,
         seed: operatorSeed,
-        seedMode: plan.seedMode,
-        freshSessionContext,
-        heal: healCtx ? { attempt: healCtx.attempt, reason: healCtx.reason, output: healCtx.output } : undefined,
-        condensed,
+        seedMode: 'append',
+        heal: undefined,
+        freshSessionContext: null,
+        condensed: null,
         peerText: peer.text,
-        rebaseConflict,
+        rebaseConflict: false,
         codeIndexRepoId,
       },
       fragments,
     );
     return { promptText, operatorSeed, heldMessages: peer.held };
-  }
-
-  private async priorSessionContext(task: TaskRow, fragments: PromptFragments): Promise<string | null> {
-    const src = await this.deps.sessionContinuation.resolveContinuationSource(task);
-    return src ? this.deps.sessionContinuation.condensedContext(src.prior, fragments) : null;
   }
 
   /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */

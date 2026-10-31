@@ -79,8 +79,8 @@ describe('workflow var overrides', () => {
     expect(cleared.body.vars[0]).toMatchObject({ ticket: null, source: 'workspace' });
   });
 
-  it('refuses overrides on a Ticket without a workflow', async () => {
+  it('refuses an override the Ticket\'s resolved workflow does not declare', async () => {
     const id = (await server.api('POST', '/api/tasks', { prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree' })).body.id as number;
-    expect((await server.api('PUT', `/api/tasks/${id}/workflow-vars`, { vars: { a: 1 } })).status).toBe(409);
+    expect((await server.api('PUT', `/api/tasks/${id}/workflow-vars`, { vars: { a: 1 } })).status).toBe(400);
   });
 });

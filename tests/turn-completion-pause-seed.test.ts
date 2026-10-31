@@ -4,7 +4,6 @@ import type { ActiveRun } from '../src/execution/active-runs.js';
 import type { AcpDriver } from '../src/acp/driver.js';
 import type { GuardrailSupervisor } from '../src/execution/guardrail-supervisor.js';
 import type { TurnListeners } from '../src/execution/turn-listeners.js';
-import type { TaskRow } from '../src/db/schema.js';
 
 function baseActive(over: Partial<ActiveRun> = {}): ActiveRun {
   return {
@@ -22,7 +21,6 @@ function baseActive(over: Partial<ActiveRun> = {}): ActiveRun {
 }
 
 describe('TurnCompletion.drivePromptCycle — a pause requested before the first prompt', () => {
-  const task = { id: 7 } as TaskRow;
   const measureAgentTurn = vi.fn(async (_id: number, turn: () => Promise<unknown>) => turn());
   const completion = new TurnCompletion({ attempts: { measureAgentTurn } } as unknown as TurnCompletionDeps);
 
@@ -32,12 +30,10 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     const record = vi.fn();
 
     const result = await completion.drivePromptCycle({
-      task,
       driver,
       active,
       guardrails: {} as unknown as GuardrailSupervisor,
       listeners: {} as unknown as TurnListeners,
-      autoDriven: false,
       promptText: 'do the ticket',
       operatorSeed: 'urgent: stop touching the migrations',
       record,
@@ -58,12 +54,10 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     const record = vi.fn();
 
     const result = await completion.drivePromptCycle({
-      task,
       driver,
       active,
       guardrails,
       listeners,
-      autoDriven: false,
       promptText: 'do the ticket\n\n## Operator message\n\nurgent: stop touching the migrations',
       operatorSeed: 'urgent: stop touching the migrations',
       record,
@@ -90,7 +84,7 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     const listeners = { stoppedShort: null } as unknown as TurnListeners;
 
     await completion.drivePromptCycle({
-      task, driver, active, guardrails, listeners, autoDriven: false,
+      driver, active, guardrails, listeners,
       promptText: 'first turn', record: vi.fn(),
     });
 
@@ -110,7 +104,7 @@ describe('TurnCompletion.drivePromptCycle — a pause requested before the first
     const listeners = { stoppedShort: null } as unknown as TurnListeners;
 
     await completion.drivePromptCycle({
-      task, driver, active, guardrails, listeners, autoDriven: false,
+      driver, active, guardrails, listeners,
       promptText: 'first turn', record,
     });
 

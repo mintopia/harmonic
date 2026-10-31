@@ -103,7 +103,7 @@ describe('a Ticket with a chosen workflow', () => {
       await server.api('PATCH', '/api/config', { defaults: { workflow: null } });
     }
   });
-  it('unpins a Ticket on Retry when nothing resolves a workflow any more', async () => {
+  it('re-pins a Ticket on Retry to the bundled implement workflow when nothing else resolves one any more', async () => {
     await server.api('PATCH', '/api/config', { defaults: { workflow: 'failing' } });
     const id = (await create()).body.id as number;
     await server.api('POST', `/api/tasks/${id}/run`);
@@ -111,7 +111,7 @@ describe('a Ticket with a chosen workflow', () => {
     expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: 'failing@1', workflowChosen: 'global' });
     await server.api('PATCH', '/api/config', { defaults: { workflow: null } });
     expect((await server.api('POST', `/api/tasks/${id}/retry`, { guidance: 'again', startNow: false })).status).toBeLessThan(300);
-    expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: null, workflowChosen: null, workflowLabel: null });
+    expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: 'implement@1', workflowChosen: 'global', workflowLabel: null });
   });
   it('validates Workflow Labels and Workspace workflow overrides against the library', async () => {
     const bad = (body: object) => server.api('PATCH', '/api/config', body);

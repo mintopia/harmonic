@@ -3,18 +3,12 @@ import { baselineConfig } from '../src/config.js';
 import type { PromptFragments } from '../src/domain/prompt-fragments.js';
 import {
   composeAttemptPrompt,
-  composeCommitNudge,
-  composeContinuePrompt,
-  composeDriveOpening,
   composeEpicResolvePrompt,
   composePauseMessage,
   composePeerContext,
   peerFrame,
-  placePriorContext,
-  planAttemptContext,
   renderConflictPrompt,
   renderEpicRefreshPrompt,
-  type AttemptContextFacts,
   type AttemptPromptInput,
   type PeerEntry,
 } from '../src/execution/prompt-assembly.js';
@@ -127,24 +121,6 @@ describe('peer context', () => {
   });
 });
 
-describe('Drive opening and Continue prompt', () => {
-  const fields = { taskId: '5', skill: '/implement', ref: '42', url: 'http://x/42', title: 'T', description: 'B' };
-  const drive = { prompt: '{skill} {ref} {title}', unattendedReminder: 'Task {taskId} {taskId}.' };
-
-  it('fills the template and appends the reminder with the Task id', () => {
-    expect(composeDriveOpening(drive, fields)).toBe('/implement 42 T\n\nTask 5 5.');
-  });
-
-  it('inserts trimmed feedback between the template and the reminder', () => {
-    expect(composeDriveOpening(drive, fields, '  fix it  ')).toBe('/implement 42 T\n\n## Feedback from the previous attempt\n\nfix it\n\nTask 5 5.');
-    expect(composeDriveOpening(drive, fields, '   ')).toBe('/implement 42 T\n\nTask 5 5.');
-  });
-
-  it('puts the unattended reminder after the Continue prompt', () => {
-    expect(composeContinuePrompt({ continuePrompt: 'Go on, task {taskId}.', unattendedReminder: 'Task {taskId}.' }, 5)).toBe('Go on, task 5.\n\nTask 5.');
-  });
-});
-
 describe('resolver prompts', () => {
   it('renderConflictPrompt expands fragments, then fills merge placeholders', () => {
     const out = renderConflictPrompt(
@@ -179,44 +155,9 @@ describe('resolver prompts', () => {
   });
 });
 
-describe('attempt context planning', () => {
-  const facts = (over: Partial<AttemptContextFacts> = {}): AttemptContextFacts => ({
-    seeded: false,
-    healing: false,
-    continuesOpenAttempt: false,
-    freshSession: false,
-    condensedContinuation: false,
-    ...over,
-  });
-
-  it.each([
-    ['a seeded fresh Session puts the prior context in place of the opening', facts({ seeded: true, freshSession: true }), 'freshSessionContext'],
-    ['a seeded turn in an open Session needs no prior context', facts({ seeded: true }), null],
-    ['a self-heal condenses the prior Session', facts({ healing: true }), 'condensed'],
-    ['a self-heal outranks a fresh-Session seed', facts({ healing: true, seeded: true, freshSession: true }), 'condensed'],
-    ['a condensed continuation condenses the prior Session', facts({ condensedContinuation: true }), 'condensed'],
-    ['an unseeded plain turn needs none', facts(), null],
-  ] as const)('%s', (_name, input, slot) => {
-    expect(planAttemptContext(input).priorSlot).toBe(slot);
-  });
-
-  it('replaces the whole prompt only when the turn continues an open Attempt', () => {
-    expect(planAttemptContext(facts({ continuesOpenAttempt: true })).seedMode).toBe('replace-all');
-    expect(planAttemptContext(facts()).seedMode).toBe('append');
-  });
-
-  it('places the prior context in exactly the planned slot, treating empty text as absent', () => {
-    expect(placePriorContext('freshSessionContext', 'ctx')).toEqual({ freshSessionContext: 'ctx', condensed: null });
-    expect(placePriorContext('condensed', 'ctx')).toEqual({ freshSessionContext: null, condensed: 'ctx' });
-    expect(placePriorContext('condensed', '')).toEqual({ freshSessionContext: null, condensed: null });
-    expect(placePriorContext(null, 'ctx')).toEqual({ freshSessionContext: null, condensed: null });
-  });
-});
-
 describe('nudge templates', () => {
-  it('expands fragment references in the commit nudge and pause message', () => {
+  it('expands fragment references in the pause message', () => {
     const fragments = { ...defaults(), conflictResolution: 'SHARED' };
-    expect(composeCommitNudge('Commit. {fragment.conflictResolution}', fragments)).toBe('Commit. SHARED');
     expect(composePauseMessage('Stop. {fragment.conflictResolution}', fragments)).toBe('Stop. SHARED');
   });
 });

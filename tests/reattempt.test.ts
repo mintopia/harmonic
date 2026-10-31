@@ -6,7 +6,7 @@ describe('unified corrective attempts', () => {
   let server: TestServer;
 
   beforeAll(async () => {
-    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
+    server = await startServer({ ...stubHarness(), maxAttempts: 1, drive: { prompt: JSON.stringify({ exit: 'crash-before-response' }) } });
   });
   afterAll(async () => {
     await server.close();
@@ -43,8 +43,8 @@ describe('unified corrective attempts', () => {
     // ADR-0038: Reject creates a NEW Attempt (number increments) rather than
     // reusing the escalated Attempt row in place. The escalated Attempt keeps
     // its feedback; the corrective run is a fresh Attempt 2 with the guidance
-    // folded into its prompt, and it re-escalates as "attempt 1 of 1" (budget
-    // reset) once it exhausts its own Attempt budget.
+    // folded into its prompt, and it re-escalates once it exhausts its own
+    // (reset) Attempt budget.
     await waitFor(async () => {
       const attempts = await timeline(ticket.id);
       return attempts.length === 2 && attempts[1]!.state === 'escalated' ? attempts : undefined;
@@ -63,8 +63,7 @@ describe('unified corrective attempts', () => {
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);
     expect(after.body.baseBranch).toBe('integration/x');
-    // Budget reset: the new Attempt re-escalates as "attempt 1 of 1", not 2-of-N.
-    expect(after.body.escalationReason).toMatch(/attempt 1 of 1 failed/);
+    expect(after.body.escalationReason).toMatch(/workflow attempts exhausted after 1/);
   });
 
   it('a mirrored rejection enters the identical corrective Attempt loop without a detached task', async () => {

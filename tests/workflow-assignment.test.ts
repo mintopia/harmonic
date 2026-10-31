@@ -31,8 +31,12 @@ describe('resolveWorkflow precedence', () => {
   it('global default applies last', () => {
     expect(resolveWorkflow({ requested: null, trackerLabels: null, workspace: ws(), config: cfg })).toEqual({ name: 'global-wf', chosen: 'global' });
   });
-  it('null when nothing applies', () => {
-    expect(resolveWorkflow({ requested: null, trackerLabels: ['x'], workspace: null, config: config() })).toBeNull();
+  it('falls back to the bundled implement workflow when nothing applies', () => {
+    expect(resolveWorkflow({ requested: null, trackerLabels: ['x'], workspace: null, config: config() })).toEqual({ name: 'implement', chosen: 'global' });
+  });
+  it('sends a research Ticket to the bundled research workflow unless an explicit choice says otherwise', () => {
+    expect(resolveWorkflow({ requested: null, wayfinderType: 'research', trackerLabels: ['bug'], workspace, config: cfg })).toEqual({ name: 'research', chosen: 'global' });
+    expect(resolveWorkflow({ requested: 'mine', wayfinderType: 'research', trackerLabels: null, workspace: null, config: cfg })).toEqual({ name: 'mine', chosen: 'explicit' });
   });
   it('matches labels case-insensitively', () => {
     expect(resolveWorkflow({ requested: null, trackerLabels: ['BUG'], workspace: null, config: cfg })?.chosen).toBe('label');
@@ -42,7 +46,7 @@ describe('resolveWorkflow precedence', () => {
     expect(resolveWorkflow({ requested: 'gone', trackerLabels: ['bug'], workspace, config: cfg, exists })).toEqual({ name: 'global-wf', chosen: 'global' });
   });
   it('only mirrored Tickets contribute tracker labels', () => {
-    const native = { origin: 'native' as const, trackerLabels: ['bug'], workflowRequested: null };
+    const native = { origin: 'native' as const, trackerLabels: ['bug'], workflowRequested: null, wayfinderType: null };
     expect(resolveTaskWorkflow(native, null, cfg)).toEqual({ name: 'global-wf', chosen: 'global' });
     expect(resolveTaskWorkflow({ ...native, origin: 'mirrored' }, null, cfg)).toEqual({ name: 'fix', chosen: 'label', label: 'bug' });
   });
@@ -72,7 +76,7 @@ describe('Workspace overlay', () => {
   });
   it('a global disabled in the Workspace is skipped', () => {
     const overlay: WorkflowLabelOverlayEntry[] = [{ kind: 'global', ref: 'bug', enabled: false }];
-    expect(resolveWorkflow({ requested: null, trackerLabels: ['bug'], workspace: ws(null, overlay), config: cfg })).toBeNull();
+    expect(resolveWorkflow({ requested: null, trackerLabels: ['bug'], workspace: ws(null, overlay), config: cfg })).toEqual({ name: 'implement', chosen: 'global' });
   });
   it('a global added after customisation is appended', () => {
     expect(resolveWorkflowLabels(ws(null, []), cfg)).toEqual([{ label: 'bug', workflow: 'fix' }]);

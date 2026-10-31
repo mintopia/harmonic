@@ -861,15 +861,6 @@ export class TaskService {
     });
   }
 
-  async unpinWorkflow(id: number): Promise<TaskRow> {
-    return withTaskLock(id, async () => {
-      await this.db.write((db) => db.update(tasks).set({ workflowRef: null, workflowChosen: null, workflowLabel: null, workflowVars: null, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
-      const task = await this.get(id);
-      this.onChanged(task);
-      return task;
-    });
-  }
-
   private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, vars: VarRecord | null, unpinned?: SQL): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>

@@ -7,6 +7,7 @@ export type WorkflowAssignment = { name: string; chosen: WorkflowChosen; label?:
 
 export interface ResolveWorkflowInput {
   requested: string | null;
+  wayfinderType?: string | null;
   trackerLabels: readonly string[] | null;
   workspace: Partial<Pick<WorkspaceRow, 'workflow' | 'workflowLabels'>> | null;
   config: Pick<AppConfig, 'defaults' | 'workflowLabels'>;
@@ -14,9 +15,10 @@ export interface ResolveWorkflowInput {
   exists?: (name: string) => boolean;
 }
 
-export function resolveWorkflow(input: ResolveWorkflowInput): WorkflowAssignment | null {
+export function resolveWorkflow(input: ResolveWorkflowInput): WorkflowAssignment {
   const exists = input.exists ?? (() => true);
   if (input.requested != null && exists(input.requested)) return { name: input.requested, chosen: 'explicit' };
+  if (input.wayfinderType === 'research' && exists('research')) return { name: 'research', chosen: 'global' };
   const have = new Set((input.trackerLabels ?? []).map((label) => workflowLabelRef({ label })));
   if (have.size > 0) {
     const match = resolveWorkflowLabels(input.workspace, input.config).find((entry) => have.has(workflowLabelRef(entry)) && exists(entry.workflow));
@@ -26,17 +28,18 @@ export function resolveWorkflow(input: ResolveWorkflowInput): WorkflowAssignment
   if (workspaceDefault != null && exists(workspaceDefault)) return { name: workspaceDefault, chosen: 'workspace' };
   const globalDefault = input.config.defaults.workflow;
   if (globalDefault != null && exists(globalDefault)) return { name: globalDefault, chosen: 'global' };
-  return null;
+  return { name: 'implement', chosen: 'global' };
 }
 
 export function resolveTaskWorkflow(
-  task: Pick<RawTaskRow, 'origin' | 'trackerLabels' | 'workflowRequested'>,
+  task: Pick<RawTaskRow, 'origin' | 'trackerLabels' | 'workflowRequested' | 'wayfinderType'>,
   workspace: ResolveWorkflowInput['workspace'],
   config: ResolveWorkflowInput['config'],
   exists?: (name: string) => boolean,
-): WorkflowAssignment | null {
+): WorkflowAssignment {
   return resolveWorkflow({
     requested: task.workflowRequested,
+    wayfinderType: task.wayfinderType,
     trackerLabels: task.origin === 'mirrored' ? task.trackerLabels : null,
     workspace,
     config,

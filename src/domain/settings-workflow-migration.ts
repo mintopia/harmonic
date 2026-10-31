@@ -307,7 +307,6 @@ async function pinInFlight(deps: SettingsMigrationDeps): Promise<void> {
   await forEachYielding(inFlight, async (task: TaskRow) => {
     const workspace = workspaces.get(task.workspaceId ?? -1) ?? null;
     const assignment = resolveTaskWorkflow(task, workspace, config, (name) => names.has(name));
-    if (!assignment) return;
     const entry = deps.workflows.get(assignment.name);
     const vars = resolveVars(parseWorkflow(entry.text).vars, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);
     await deps.tasks.pinWorkflow(task.id, `${entry.name}@${entry.version}`, assignment.chosen, assignment.label ?? null, vars);

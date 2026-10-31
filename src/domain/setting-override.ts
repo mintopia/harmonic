@@ -10,11 +10,9 @@ import {
   type EpicVerificationCriticOverlayEntry,
   type EpicVerificationStage,
   type BudgetGuardrail,
-  type MergeFate,
   type RoutingLabel,
 } from '../config.js';
-import { composeCommitNudge, composePauseMessage } from '../execution/prompt-assembly.js';
-import { expandFragments } from '../execution/prompt-template.js';
+import { composePauseMessage } from '../execution/prompt-assembly.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   promptFragmentOverrideKey,
@@ -282,63 +280,12 @@ function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrai
   return stored ? (JSON.parse(stored) as BudgetGuardrail) : null;
 }
 
-/** A Workspace's effective auto-drive config: the five `drive.*` fields, each resolved `workspace ?? global`; the prompt templates arrive with their `{fragment.<name>}` references expanded. */
-export type ResolvedDrive = {
-  prompt: string;
-  unattendedReminder: string;
-  continuePrompt: string;
-  mergeFate: MergeFate;
-  continueAttempts: number;
-};
-
-/** Resolve a Workspace's effective auto-drive config. A missing `ws` inherits every global default. */
-export function resolveDrive(
-  ws:
-    | (Partial<PromptFragmentOverrides> &
-        Pick<
-          WorkspaceRow,
-          'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
-        >)
-    | null
-    | undefined,
-  config: Pick<AppConfig, 'drive' | 'promptFragments'>,
-): ResolvedDrive {
-  const fragments = resolvePromptFragments(ws, config);
-  return {
-    prompt: expandFragments(resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt), fragments),
-    unattendedReminder: expandFragments(resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder), fragments),
-    continuePrompt: expandFragments(resolveScoped('driveContinuePrompt', ws?.driveContinuePrompt, config.drive.continuePrompt), fragments),
-    mergeFate: resolveScoped('driveMergeFate', ws?.driveMergeFate as MergeFate | null | undefined, config.drive.mergeFate),
-    continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
-  };
-}
-
-/**
- * Resolve a Workspace's effective Task Prompt: the template wrapping a native
- * Task's own prompt (`{prompt}` / `{id}` / `{workingDir}` / …), with its
- * `{fragment.<name>}` references expanded. A missing `ws` inherits the global default.
- */
-export function resolveTaskPrompt(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'taskPrompt'>) | null | undefined,
-  config: Pick<AppConfig, 'taskPrompt' | 'promptFragments'>,
-): string {
-  return expandFragments(resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt), resolvePromptFragments(ws, config));
-}
-
 /** Resolve the message that asks an active Task to pause at its next turn boundary. */
 export function resolvePauseMessage(
   ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'pauseMessage'>) | null | undefined,
   config: Pick<AppConfig, 'pauseMessage' | 'promptFragments'>,
 ): string {
   return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
-}
-
-/** Resolve the nudge sent when an Attempt ends its turn with uncommitted changes. */
-export function resolveCommitNudge(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'driveCommitNudge'>) | null | undefined,
-  config: Pick<AppConfig, 'drive' | 'promptFragments'>,
-): string {
-  return composeCommitNudge(resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge), resolvePromptFragments(ws, config));
 }
 
 /** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */

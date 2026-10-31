@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { appConfigSchema, baselineConfig, type AppConfig } from '../src/config.js';
 import { expandFragments } from '../src/execution/prompt-template.js';
 import type { WorkspaceRow } from '../src/db/schema.js';
-import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolveDrive, resolvePauseMessage, resolveTaskPrompt, resolvePromptFragments, resolveCommitNudge, resolveMergePrompts } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails, resolvePauseMessage, resolvePromptFragments, resolveMergePrompts } from '../src/domain/setting-override.js';
 
 const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
 
@@ -169,65 +169,6 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
     });
   });
 
-  describe('resolveDrive (issue #339) — five independently-inheritable fields', () => {
-    const config = {
-      drive: {
-        prompt: 'GLOBAL PROMPT',
-        unattendedReminder: 'GLOBAL REMINDER',
-        continuePrompt: 'GLOBAL CONTINUE',
-        mergeFate: 'auto-merge' as const,
-        continueAttempts: 1,
-      },
-      promptFragments: DEFAULT_PROMPT_FRAGMENTS,
-    };
-    const noOverrides = {
-      drivePrompt: null,
-      driveUnattendedReminder: null,
-      driveContinuePrompt: null,
-      driveMergeFate: null,
-      driveContinueAttempts: null,
-    };
-
-    it('inherits every global drive default when no Workspace column is set', () => {
-      expect(resolveDrive(noOverrides, config as any)).toEqual({
-        prompt: 'GLOBAL PROMPT',
-        unattendedReminder: 'GLOBAL REMINDER',
-        continuePrompt: 'GLOBAL CONTINUE',
-        mergeFate: 'auto-merge',
-        continueAttempts: 1,
-      });
-    });
-
-    it('inherits every global drive default when no Workspace is resolved (undefined)', () => {
-      expect(resolveDrive(undefined, config as any).prompt).toBe('GLOBAL PROMPT');
-      expect(resolveDrive(undefined, config as any).mergeFate).toBe('auto-merge');
-    });
-
-    it('overrides each field independently — one set field never disturbs the others', () => {
-      const resolved = resolveDrive(
-        { ...noOverrides, driveMergeFate: 'open-PR', driveContinueAttempts: 3 },
-        config as any,
-      );
-      expect(resolved.mergeFate).toBe('open-PR');
-      expect(resolved.continueAttempts).toBe(3);
-      expect(resolved.prompt).toBe('GLOBAL PROMPT');
-      expect(resolved.continuePrompt).toBe('GLOBAL CONTINUE');
-    });
-
-    it('keeps continueAttempts 0 (a falsy-but-set value) as an override, not inherit', () => {
-      expect(resolveDrive({ ...noOverrides, driveContinueAttempts: 0 }, config as any).continueAttempts).toBe(0);
-    });
-
-    it('overrides the prompt and reminder strings when set', () => {
-      const resolved = resolveDrive(
-        { ...noOverrides, drivePrompt: 'WS PROMPT', driveUnattendedReminder: 'WS REMINDER' },
-        config as any,
-      );
-      expect(resolved.prompt).toBe('WS PROMPT');
-      expect(resolved.unattendedReminder).toBe('WS REMINDER');
-    });
-  });
-
   describe('staged verifier overlays (#523, ADR-0037)', () => {
     const command = { id: 'cmd-npm-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const critic = { id: 'critic-task', name: 'Test critic', issuePrompt: 'Review this issue change.', noIssuePrompt: 'Review this Task change.', harness: 'claude' as const, model: 'claude-opus-5', timeoutSeconds: 300 };
@@ -237,22 +178,6 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolveVerifiers(inherited, config).task.preMerge).toEqual({ commands: [command], critics: [critic] });
       expect(resolveVerifiers({ ...inherited, taskPreMergeCommands: JSON.stringify([{ kind: 'global', ref: command.id, enabled: false }]) }, config).task.preMerge).toEqual({ commands: [], critics: [critic] });
       expect(resolveVerifiers({ ...inherited, epicPreMergeCritics: JSON.stringify([{ kind: 'local', enabled: true, critic }]) }, config).epic.preMerge.critics).toEqual([critic]);
-    });
-  });
-
-  describe('resolveTaskPrompt (issue #339) — native Task framing overridable per-Workspace', () => {
-    const config = { taskPrompt: 'GLOBAL {prompt}', promptFragments: DEFAULT_PROMPT_FRAGMENTS };
-
-    it('inherits the global Task Prompt when the Workspace column is null', () => {
-      expect(resolveTaskPrompt({ taskPrompt: null }, config as any)).toBe('GLOBAL {prompt}');
-    });
-
-    it('inherits the global Task Prompt when no Workspace is resolved (undefined)', () => {
-      expect(resolveTaskPrompt(undefined, config as any)).toBe('GLOBAL {prompt}');
-    });
-
-    it('uses the Workspace Task Prompt override over the global default', () => {
-      expect(resolveTaskPrompt({ taskPrompt: 'WS {prompt}' }, config as any)).toBe('WS {prompt}');
     });
   });
 });
@@ -291,10 +216,8 @@ describe('Prompt Fragments', () => {
     expect(resolvePromptFragments(inheritAll, config).conflictResolution).toBe('GLOBAL CONFLICT');
   });
 
-  it('resolves the commit nudge and merge conflict prompts per Workspace', () => {
+  it('resolves the merge conflict prompts per Workspace', () => {
     const global = { ...baselineConfig() };
-    expect(resolveCommitNudge({ driveCommitNudge: null }, global)).toBe(global.drive.commitNudge);
-    expect(resolveCommitNudge({ driveCommitNudge: 'WS nudge' }, global)).toBe('WS nudge');
     const inherit = { ...inheritAll, mergeConflictPrompt: null, mergeEpicConflictPrompt: null };
     expect(resolveMergePrompts(inherit, global).conflictPrompt).toBe(global.merge.conflictPrompt);
     const own = resolveMergePrompts({ ...inherit, mergeConflictPrompt: 'WS A', mergeEpicConflictPrompt: 'WS B', promptFragmentConflictResolution: 'WS F' }, global);
