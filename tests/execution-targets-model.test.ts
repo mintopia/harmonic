@@ -3,6 +3,8 @@ import {
   NEW_TARGET_DRAFT,
   canTestConnection,
   connectionTestRequest,
+  credentialPanelCopy,
+  credentialRowView,
   daysAgo,
   deleteCopy,
   proxyCheckPanel,
@@ -18,7 +20,7 @@ import {
   toggleTarget,
   workspaceRows,
 } from '../web/src/execution-targets-model.js';
-import type { ConnectionTestResult, ExecutionTarget, WorkspaceTargetItem } from '../web/src/types.js';
+import type { TargetCredential, ConnectionTestResult, ExecutionTarget, WorkspaceTargetItem } from '../web/src/types.js';
 
 const prod: ExecutionTarget = {
   name: 'k8s-prod',
@@ -33,6 +35,7 @@ const prod: ExecutionTarget = {
   repositoryProxyUrl: 'https://repo-proxy.example',
   kubeconfig: { set: true, secretName: 'k8s-prod-kubeconfig', updatedAt: 1 },
   proxyKey: { set: true, secretName: 'k8s-prod-proxy-key', rotatedAt: 1 },
+  credentials: [],
   running: 2,
   createdAt: 1,
   updatedAt: 1,
@@ -204,5 +207,37 @@ describe('proxy key check panel', () => {
     });
     expect(proxyCheckPanel('agrees').tone).toBe('ok');
     expect(proxyCheckPanel('unreachable').tone).toBe('fail');
+  });
+});
+
+describe('credentials', () => {
+  const claude: TargetCredential = { harness: 'claude', kind: 'oauth-token', harnessConfigured: true, set: true, secretName: 'k8s-prod-claude-token', updatedAt: '2026-10-12T09:00:00Z' };
+  const codex: TargetCredential = { harness: 'codex', kind: 'api-key', harnessConfigured: true, set: false, secretName: 'k8s-prod-codex-key', updatedAt: null };
+
+  it('shows a set Claude subscription token with its Secret and rotation date', () => {
+    const view = credentialRowView(claude);
+    expect(view).toMatchObject({ label: 'Claude', pillLabel: 'set', pillTone: 'set', kindLabel: 'Claude subscription · OAuth token', secretName: 'k8s-prod-claude-token', rotated: 'last rotated Oct 12', note: null, replaceLabel: 'Replace…', canClear: true });
+  });
+
+  it('warns that a configured Harness without a Secret will escalate', () => {
+    const view = credentialRowView(codex);
+    expect(view).toMatchObject({ pillTone: 'unset', kindLabel: 'API key', secretName: null, replaceLabel: 'Add API key…', canClear: false });
+    expect(view.note).toBe('No Secret yet. Steps that use Codex on this target will escalate.');
+  });
+
+  it('shows an unconfigured Harness as optional', () => {
+    const view = credentialRowView({ ...codex, harness: 'opencode', harnessConfigured: false });
+    expect(view.pillTone).toBe('optional');
+    expect(view.note).toBe('Not configured as a Harness in this Harmonic, so nothing needs it.');
+  });
+
+  it('gives the Claude panel the setup-token command and other Harnesses none', () => {
+    const copy = credentialPanelCopy(claude);
+    expect(copy.title).toBe('Replace the Claude token');
+    expect(copy.fieldLabel).toBe('New Claude subscription token');
+    expect(copy.help.command).toBe('claude setup-token');
+    expect(copy.stored.map((p) => p.text).join('')).toBe('Stored as the Secret k8s-prod-claude-token. Existing pods keep the old token until they end.');
+    expect(credentialPanelCopy(codex).help.command).toBeNull();
+    expect(credentialPanelCopy(codex).title).toBe('Add the Codex API key');
   });
 });

@@ -60,7 +60,7 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   const secretKey = loadSecretKey(opts.dataDir);
   const secrets = new SecretService(asyncDb, secretKey);
   const globalSecrets = new GlobalSecretService(asyncDb, secretKey);
-  const executionTargets = new ExecutionTargetService({ db: asyncDb, secrets: globalSecrets, workspaces, ...(opts.kubernetesClientFactory ? { clientFactory: opts.kubernetesClientFactory } : {}) });
+  const executionTargets = new ExecutionTargetService({ db: asyncDb, secrets: globalSecrets, workspaces, harnessConfigured: (id) => settingsStore.getGlobal().harnesses[id] !== undefined, ...(opts.kubernetesClientFactory ? { clientFactory: opts.kubernetesClientFactory } : {}) });
   const notifications = new NotificationStore(asyncDb, {
     created: (row) => bus.emit('notification_created', row),
     read: (ids) => bus.emit('notifications_read', { ids }),

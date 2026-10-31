@@ -4,10 +4,12 @@ import { z } from 'zod';
 import type { PersistenceContext } from '../app.js';
 import {
   createExecutionTargetSchema,
+  credentialValueSchema,
   kubeconfigSchema,
   updateExecutionTargetSchema,
   executionTargetFieldsSchema,
 } from '../../execution/execution-targets.js';
+import { HARNESS_IDS } from '../../config.js';
 import { CONNECTION_OUTCOMES } from '../../execution/kubernetes-client.js';
 import { describeWorkspaceTargets } from '../../execution/workspace-execution-targets.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
@@ -24,6 +26,19 @@ const kubeconfigStatusSchema = z
     updatedAt: z.number().nullable().meta({ example: 1784030400000 }),
   })
   .meta({ id: 'ExecutionTargetKubeconfig', description: 'Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned.' });
+
+const credentialStatusSchema = z
+  .object({
+    harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+    kind: z.enum(['oauth-token', 'api-key']).meta({ example: 'oauth-token', description: 'Claude takes a `claude setup-token` value; the other Harnesses take an API key.' }),
+    harnessConfigured: z.boolean().meta({ example: true, description: 'Whether the Harness is configured in Harmonic; only configured Harnesses get their credential injected.' }),
+    set: z.boolean().meta({ example: true }),
+    secretName: z.string().meta({ example: 'k8s-prod-claude-token' }),
+    updatedAt: z.string().nullable().meta({ example: '2026-10-31T12:00:00.000Z' }),
+  })
+  .meta({ id: 'ExecutionTargetCredential', description: 'Whether a Harness credential Secret is set on the target. The value is write-only and never returned.' });
+
+const credentialParamsSchema = targetParamsSchema.extend({ harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }) });
 
 const proxyKeyStatusSchema = z
   .object({
@@ -55,6 +70,7 @@ const executionTargetSchema = z
     repositoryProxyUrl: z.string().nullable().meta({ example: 'https://repo-proxy.harmonic-agents.svc.cluster.local' }),
     kubeconfig: kubeconfigStatusSchema.nullable(),
     proxyKey: proxyKeyStatusSchema.nullable(),
+    credentials: z.array(credentialStatusSchema).describe('One entry per Harness; empty for `local`.'),
     running: z.number().meta({ example: 0, description: 'Tickets currently running on this target.' }),
     createdAt: z.number().nullable().meta({ example: 1784030400000 }),
     updatedAt: z.number().nullable().meta({ example: 1784030400000 }),
@@ -258,6 +274,39 @@ export async function executionTargetRoutes(fastify: FastifyInstance, ctx: Pick<
       },
     },
     async (req) => ctx.executionTargets.clearKubeconfig(req.params.name),
+  );
+
+  app.put(
+    '/execution-targets/:name/credentials/:harness',
+    {
+      schema: {
+        tags,
+        description: 'Set or replace a Harness credential on the target, stored as an encrypted Secret. Write-only: it is never returned.',
+        security,
+        params: credentialParamsSchema,
+        body: z.object({ value: credentialValueSchema.meta({ example: 'sk-ant-oat01-...' }) }),
+        response: {
+          200: credentialStatusSchema.describe('The credential Secret is stored.'),
+          400: errorResponse('The value is empty or too large.'),
+          404: errorResponse('No target has that name.'),
+        },
+      },
+    },
+    async (req) => ctx.executionTargets.setCredential(req.params.name, req.params.harness, req.body.value),
+  );
+
+  app.delete(
+    '/execution-targets/:name/credentials/:harness',
+    {
+      schema: {
+        tags,
+        description: 'Clear a Harness credential Secret; clearing one that is not set succeeds.',
+        security,
+        params: credentialParamsSchema,
+        response: { 200: credentialStatusSchema.describe('The credential Secret is not set.'), 404: errorResponse('No target has that name.') },
+      },
+    },
+    async (req) => ctx.executionTargets.clearCredential(req.params.name, req.params.harness),
   );
 
   app.post(

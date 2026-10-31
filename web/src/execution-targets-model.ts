@@ -1,5 +1,7 @@
 import type {
   ConnectionTestRequest,
+  CredentialHarness,
+  TargetCredential,
   ConnectionTestResult,
   DeletionImpact,
   ExecutionTarget,
@@ -341,4 +343,80 @@ export function workspaceRows(items: WorkspaceTargetItem[], override: string[] |
         : [t('Code Repository '), c(codeRepository ?? 'none'), t(' · Isolation Mode '), c(isolationMode)];
     return { name: item.name, builtIn: item.builtIn, on, note, refusal: explicitOn && item.refusal ? workspaceRefusal(item.name, codeRepository) : null };
   });
+}
+
+export const CLAUDE_TOKEN_COMMAND = 'claude setup-token';
+
+const HARNESS_LABELS: Record<CredentialHarness, string> = { claude: 'Claude', codex: 'Codex', copilot: 'Copilot', opencode: 'OpenCode' };
+
+export interface CredentialRowView {
+  harness: CredentialHarness;
+  label: string;
+  set: boolean;
+  pillLabel: 'set' | 'not set';
+  pillTone: 'set' | 'unset' | 'optional';
+  kindLabel: string;
+  secretName: string | null;
+  rotated: string | null;
+  note: string | null;
+  replaceLabel: string;
+  canClear: boolean;
+}
+
+export function credentialRowView(credential: TargetCredential): CredentialRowView {
+  const label = HARNESS_LABELS[credential.harness];
+  const subscription = credential.kind === 'oauth-token';
+  const kindLabel = credential.harness === 'claude' && subscription ? 'Claude subscription · OAuth token' : subscription ? 'OAuth token' : 'API key';
+  const note = credential.set
+    ? null
+    : credential.harnessConfigured
+      ? `No Secret yet. Steps that use ${label} on this target will escalate.`
+      : 'Not configured as a Harness in this Harmonic, so nothing needs it.';
+  return {
+    harness: credential.harness,
+    label,
+    set: credential.set,
+    pillLabel: credential.set ? 'set' : 'not set',
+    pillTone: credential.set ? 'set' : credential.harnessConfigured ? 'unset' : 'optional',
+    kindLabel,
+    secretName: credential.set ? credential.secretName : null,
+    rotated: credential.set && credential.updatedAt ? `last rotated ${formatShortDate(credential.updatedAt)}` : null,
+    note,
+    replaceLabel: credential.set ? 'Replace…' : subscription ? 'Add token…' : 'Add API key…',
+    canClear: credential.set,
+  };
+}
+
+export function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+export interface CredentialPanelCopy {
+  title: string;
+  fieldLabel: string;
+  stored: TextPart[];
+  help: { label: string; intro: string; command: string | null; footnote: string };
+}
+
+export function credentialPanelCopy(credential: TargetCredential): CredentialPanelCopy {
+  const label = HARNESS_LABELS[credential.harness];
+  const claude = credential.harness === 'claude' && credential.kind === 'oauth-token';
+  const noun = claude ? 'token' : 'API key';
+  return {
+    title: credential.set ? `Replace the ${label} ${noun}` : `Add the ${label} ${noun}`,
+    fieldLabel: claude ? 'New Claude subscription token' : `New ${label} API key`,
+    stored: [
+      { text: 'Stored as the Secret ' },
+      { text: credential.secretName, code: true },
+      { text: `. Existing pods keep the old ${noun} until they end.` },
+    ],
+    help: {
+      label: `How to get a ${noun}`,
+      intro: claude
+        ? 'A Claude subscription works in a pod through a long-lived OAuth token. Run this on a machine where you are signed in:'
+        : `Create an API key for ${label} with its provider and paste it here.`,
+      command: claude ? CLAUDE_TOKEN_COMMAND : null,
+      footnote: 'Other Harnesses use an API key instead. Do not bake either into the image; Harmonic refuses images that contain credentials.',
+    },
+  };
 }

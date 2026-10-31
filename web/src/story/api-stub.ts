@@ -286,12 +286,18 @@ const stubTarget = (name: string, enabled: boolean, running: number, limit: numb
   repositoryProxyUrl: 'https://repo-proxy.harmonic-agents.svc.cluster.local',
   kubeconfig: { set: true, secretName: `${name}-kubeconfig`, updatedAt: Date.UTC(2026, 9, 12) },
   proxyKey: { set: true, secretName: `${name}-proxy-key`, rotatedAt: Date.UTC(2026, 9, 3, 14, 20) },
+  credentials: [
+    { harness: 'claude', kind: 'oauth-token', harnessConfigured: true, set: true, secretName: `${name}-claude-token`, updatedAt: '2026-10-12T09:00:00Z' },
+    { harness: 'codex', kind: 'api-key', harnessConfigured: true, set: false, secretName: `${name}-codex-key`, updatedAt: null },
+    { harness: 'copilot', kind: 'api-key', harnessConfigured: true, set: true, secretName: `${name}-copilot-key`, updatedAt: '2026-09-29T09:00:00Z' },
+    { harness: 'opencode', kind: 'api-key', harnessConfigured: false, set: false, secretName: `${name}-opencode-key`, updatedAt: null },
+  ],
   running,
   createdAt: 1,
   updatedAt: 1,
 });
 const executionTargetFixtures: ExecutionTarget[] = [
-  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, running: 0, createdAt: null, updatedAt: null },
+  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, credentials: [], running: 0, createdAt: null, updatedAt: null },
   stubTarget('k8s-prod', true, 2, 4, 'harmonic-agents'),
   stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
 ];
@@ -321,6 +327,8 @@ export const api: typeof RealApi = {
   rotateExecutionTargetProxyKey: () => ok({ key: 'hrk_7f3a9c2e51b84d06a1e9c0b3', rotatedAt: Date.now(), revokedRunning: 2 }),
   setExecutionTargetKubeconfig: () => ok(null),
   clearExecutionTargetKubeconfig: () => ok(null),
+  setExecutionTargetCredential: () => ok(null),
+  clearExecutionTargetCredential: () => ok(null),
   testExecutionTargetConnection: (body) => {
     const outcome = (new URLSearchParams(window.location.search).get('outcome') ?? 'connected') as ConnectionOutcome;
     const secretName = body.name ? `${body.name}-kubeconfig` : null;

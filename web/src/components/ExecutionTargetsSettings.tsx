@@ -27,6 +27,7 @@ import { Switch } from './Switch';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Parts } from './execution-target-parts';
 import { RepositoryProxyKey } from './RepositoryProxyKey';
+import { TargetCredentials } from './TargetCredentials';
 
 const smallBtn =
   'inline-flex min-h-8 items-center rounded-md border border-edge bg-surface px-2.5 py-0.5 text-small font-medium text-ink transition-colors hover:border-faint disabled:opacity-50';
@@ -391,6 +392,13 @@ function TargetEditor({
       {group('Repository Proxy', input('repositoryProxyUrl', 'Repository Proxy URL', { help: <>One Repository Proxy per cluster. Install it from <code className={codeInline}>deploy/kubernetes/repository-proxy.yaml</code>.</> }))}
 
       {target && <RepositoryProxyKey target={target} onRotated={onChanged} />}
+
+      {target && (
+        <div className="border-t border-hairline py-[18px]">
+          <h3 className="mb-3 text-[13px] font-bold">Credentials</h3>
+          <TargetCredentials target={target} onChanged={onChanged} />
+        </div>
+      )}
 
       {group('Concurrency', input('concurrencyLimit', 'Concurrency limit', { short: true, inputMode: 'numeric', help: <>Pods at once on this target. Separate from the Host Ceiling, which bounds <code className={codeInline}>local</code> only.</> }))}
 

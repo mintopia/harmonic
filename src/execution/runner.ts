@@ -267,7 +267,7 @@ export class Runner {
       onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),
       boundary: async (task) => (await this.runControl.checkRunBoundary(task.id)).stop,
       agent: {
-        drive: { run: (req) => (req.task ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
+        drive: { run: (req) => (req.task && !req.pod ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
         getConfig: this.getConfig,
         prompts: () => this.promptLibrary.enginePrompts(),
         route: (task) => this.taskService.routing.ticketRoute(task),
