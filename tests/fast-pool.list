@@ -111,6 +111,7 @@ tests/session-retirement-coordinator.test.ts
 tests/session-retirement.test.ts
 tests/sessions.test.ts
 tests/setting-override.test.ts
+tests/settings-workflow-migration.test.ts
 tests/settings-registry.test.ts
 tests/settings-rename.test.ts
 tests/settings-schema-ids.test.ts

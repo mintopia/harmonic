@@ -1,0 +1,23 @@
+name: migrated-global
+description: Migrated (global)
+vars:
+  maxAttempts: 2
+steps:
+  - id: rebase
+    uses: rebase
+  - attempts:
+      max: ${{ vars.maxAttempts }}
+      steps:
+        - id: build
+          uses: agent
+          with:
+            prompt: ${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'implement-ticket-heal' || 'implement-ticket') || (attempt.number > 1 && 'implement-native-heal' || 'implement-native') }}
+            continueAttempts: 10
+            continuePrompt: commitNudge
+  - id: merge
+    uses: merge
+  - id: close-ticket
+    uses: close-ticket
+cleanup:
+  - id: cleanup
+    uses: cleanup

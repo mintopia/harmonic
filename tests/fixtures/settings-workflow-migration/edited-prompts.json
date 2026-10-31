@@ -1,0 +1,66 @@
+{
+  "drivePrompt-edited": {
+    "description": "The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task.",
+    "text": "Resolve {ref} carefully: {title}."
+  },
+  "migrated-global-critic1-issue": {
+    "description": "Critic Correctness review prompt, migrated from your settings.",
+    "text": "Review {ref}: {title}. ${{ prompts.criticRole }}"
+  },
+  "migrated-global-critic1-noissue": {
+    "description": "Critic Correctness review prompt, migrated from your settings.",
+    "text": "Review task {taskId}: {title}."
+  },
+  "migrated-global-implement-native-heal": {
+    "description": "The native opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.implement-native }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-global-implement-ticket-heal": {
+    "description": "The mirrored-Ticket opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.migrated-global-implement-ticket }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-global-implement-ticket": {
+    "description": "Opening prompt for a mirrored Ticket, from your migrated settings.",
+    "text": "${{ prompts.drivePrompt-edited }}{feedback}\n\n${{ prompts.unattendedReminder }}"
+  },
+  "migrated-w1-critic1-issue": {
+    "description": "Critic Correctness review prompt, migrated from your settings.",
+    "text": "Review {ref}: {title}. ${{ prompts.criticRole }}"
+  },
+  "migrated-w1-critic1-noissue": {
+    "description": "Critic Correctness review prompt, migrated from your settings.",
+    "text": "Review task {taskId}: {title}."
+  },
+  "migrated-w1-implement-native-heal": {
+    "description": "The native opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.implement-native }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-w1-implement-ticket-heal": {
+    "description": "The mirrored-Ticket opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.migrated-w1-implement-ticket }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-w1-implement-ticket": {
+    "description": "Opening prompt for a mirrored Ticket, from your migrated settings.",
+    "text": "${{ prompts.drivePrompt-edited }}{feedback}\n\n${{ prompts.migrated-w1-unattendedReminder }}"
+  },
+  "migrated-w1-unattendedReminder": {
+    "description": "Your edited unattended reminder.",
+    "text": "Alpha runs unattended."
+  },
+  "migrated-w3-implement-native-heal": {
+    "description": "The native opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.implement-native }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-w3-implement-ticket-heal": {
+    "description": "The mirrored-Ticket opening prompt followed by the self-heal section.",
+    "text": "${{ prompts.migrated-w3-implement-ticket }}\n\n${{ prompts.selfHeal-edited }}"
+  },
+  "migrated-w3-implement-ticket": {
+    "description": "Opening prompt for a mirrored Ticket, from your migrated settings.",
+    "text": "${{ prompts.drivePrompt-edited }}{feedback}\n\n${{ prompts.unattendedReminder }}"
+  },
+  "selfHeal-edited": {
+    "description": "Appended to the prompt when a failed Verification triggers a self-heal retry.",
+    "text": "## Previous attempt failed — fix required (self-heal {attempt})\nYour previous attempt did not pass:\n{reason}\n\n{output}\n\nFix the cause so the full verification suite passes, then finish.\nBe concise."
+  }
+}

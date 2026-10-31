@@ -311,7 +311,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     const store = new SettingsStore(path, file, clock);
     store.global = mergeConfig(store.global, overrides);
     store.globalPatch = deepDiff(baselineConfig(), store.global) ?? {};
-    store.persist();
+    store.persistUnlessCurrent();
     return store;
   }
 
@@ -330,6 +330,14 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
     this.persist();
     return this.global;
+  }
+
+  /** Sets the global default workflow without the save-time Critic Model check, which must never block a boot. */
+  async setDefaultWorkflow(name: string): Promise<void> {
+    this.reloadIfChanged();
+    this.global = mergeConfig(this.global, { defaults: { workflow: name } });
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
+    this.persist();
   }
 
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
@@ -403,12 +411,31 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.loadedMtimeMs = stat.mtimeMs;
   }
 
-  private persist(): void {
+  private snapshot(): { global: unknown; workspaces: Record<string, WorkspaceOverrides> } {
     const workspaces: Record<string, WorkspaceOverrides> = {};
     for (const [id, entry] of Object.entries(this.workspaces)) {
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
-    writeFileSync(this.path, stringify({ global: this.globalPatch, workspaces }));
+    return { global: this.globalPatch, workspaces };
+  }
+
+  private persist(): void {
+    writeFileSync(this.path, stringify(this.snapshot()));
     this.loadedMtimeMs = statSync(this.path).mtimeMs;
+  }
+
+  /** A boot that changed nothing leaves the file's bytes alone, so the keys an ADR-0042 rollback reads are never reformatted. */
+  private persistUnlessCurrent(): void {
+    try {
+      const onDisk = parse(readFileSync(this.path, 'utf8')) as RawSettingsFile | null;
+      const current = { global: onDisk?.global ?? {}, workspaces: onDisk?.workspaces ?? {} };
+      if (isDeepStrictEqual(current, parse(stringify(this.snapshot())))) {
+        this.loadedMtimeMs = statSync(this.path).mtimeMs;
+        return;
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+    }
+    this.persist();
   }
 }
