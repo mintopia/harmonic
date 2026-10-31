@@ -9,8 +9,8 @@ import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowStepsResponse } from
 import { cleanup, flush, makeConfig, makeTask, mountComponent } from './component-smoke-harness.js';
 
 const library = [
-  { name: 'Security review on label', description: '', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-  { name: 'Docs only', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+  { name: 'Security review on label', description: '', subject: 'ticket' as const, bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+  { name: 'Docs only', description: '', subject: 'ticket' as const, bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
 ];
 const base = makeConfig();
 const config: AppConfig = {

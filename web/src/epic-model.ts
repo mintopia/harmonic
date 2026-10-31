@@ -1,7 +1,7 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type { MergeStepEvent } from './merge-progress-model.js';
-import type { Task , TrackerRef } from './types.js';
+import type { EpicWorkflowRef, Task , TrackerRef } from './types.js';
 
 /** Mirrors `EpicBranchStep` in `src/domain/epic-merge-events.ts`; an
  * integration-branch cut observed outside a merge. */
@@ -76,6 +76,8 @@ export interface EpicTimelineEvent {
 }
 
 export interface Epic {
+  /** Present on the single-Epic read only; null when the library no longer holds the resolved Epic workflow. */
+  workflow?: EpicWorkflowRef | null;
   ref: TrackerRef;
   title: string;
   kind: 'map' | 'spec';

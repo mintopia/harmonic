@@ -6505,6 +6505,178 @@
           "inPlace"
         ]
       },
+      "EpicDetailInput": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "example": "42"
+          },
+          "title": {
+            "type": "string",
+            "example": "Parallel Epic operator UI"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "map",
+              "spec"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "integrating",
+              "integrated"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "Build the parallel-Epic operator UI …"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 1756000000000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1756100000000
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "develop"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicMemberInput"
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "integration": {
+            "$ref": "#/components/schemas/EpicIntegrationInput"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/EpicVerificationInput"
+          },
+          "integrate": {
+            "$ref": "#/components/schemas/EpicIntegrateStateInput"
+          },
+          "mergeSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeStepEventInput"
+            }
+          },
+          "timelineEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicTimelineEventInput"
+            }
+          },
+          "foldedCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "inPlace": {
+            "type": "boolean"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "epic"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "example": 1
+                  },
+                  "chosen": {
+                    "type": "string",
+                    "enum": [
+                      "workspace",
+                      "global"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "version",
+                  "chosen"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Epic workflow this Epic runs and which setting chose it; null when the library no longer holds it."
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "kind",
+          "state",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "baseBranch",
+          "dependsOn",
+          "members",
+          "ready",
+          "integration",
+          "verification",
+          "integrate",
+          "mergeSteps",
+          "timelineEvents",
+          "foldedCount",
+          "memberCount",
+          "inPlace",
+          "workflow"
+        ]
+      },
       "EpicAttemptInput": {
         "type": "object",
         "properties": {
@@ -7589,6 +7761,17 @@
             ],
             "example": null
           },
+          "epicWorkflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "workflowLabels": {
             "anyOf": [
               {
@@ -8367,6 +8550,7 @@
           "epicPreMergeCritics",
           "routingLabels",
           "workflow",
+          "epicWorkflow",
           "workflowLabels",
           "workflowVars",
           "modelOptions",
@@ -8895,6 +9079,18 @@
                   }
                 ],
                 "example": "implement"
+              },
+              "epicWorkflow": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "epic"
               }
             }
           },
@@ -10257,6 +10453,14 @@
           "description": {
             "type": "string"
           },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
@@ -10275,6 +10479,7 @@
         "required": [
           "name",
           "description",
+          "subject",
           "text",
           "bundled",
           "version"
@@ -10290,6 +10495,14 @@
           },
           "description": {
             "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
           },
           "text": {
             "type": "string",
@@ -10352,6 +10565,7 @@
         "required": [
           "name",
           "description",
+          "subject",
           "text",
           "bundled",
           "version",
@@ -16946,6 +17160,180 @@
         ],
         "additionalProperties": false
       },
+      "EpicDetail": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "example": "42"
+          },
+          "title": {
+            "type": "string",
+            "example": "Parallel Epic operator UI"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "map",
+              "spec"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "integrating",
+              "integrated"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "Build the parallel-Epic operator UI …"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 1756000000000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1756100000000
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "develop"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicMember"
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "integration": {
+            "$ref": "#/components/schemas/EpicIntegration"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/EpicVerification"
+          },
+          "integrate": {
+            "$ref": "#/components/schemas/EpicIntegrateState"
+          },
+          "mergeSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeStepEvent"
+            }
+          },
+          "timelineEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicTimelineEvent"
+            }
+          },
+          "foldedCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "inPlace": {
+            "type": "boolean"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "epic"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "example": 1
+                  },
+                  "chosen": {
+                    "type": "string",
+                    "enum": [
+                      "workspace",
+                      "global"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "version",
+                  "chosen"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Epic workflow this Epic runs and which setting chose it; null when the library no longer holds it."
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "kind",
+          "state",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "baseBranch",
+          "dependsOn",
+          "members",
+          "ready",
+          "integration",
+          "verification",
+          "integrate",
+          "mergeSteps",
+          "timelineEvents",
+          "foldedCount",
+          "memberCount",
+          "inPlace",
+          "workflow"
+        ],
+        "additionalProperties": false
+      },
       "EpicAttempt": {
         "type": "object",
         "properties": {
@@ -18059,6 +18447,17 @@
             ],
             "example": null
           },
+          "epicWorkflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "workflowLabels": {
             "anyOf": [
               {
@@ -18851,6 +19250,7 @@
           "epicPreMergeCritics",
           "routingLabels",
           "workflow",
+          "epicWorkflow",
           "workflowLabels",
           "workflowVars",
           "modelOptions",
@@ -19389,6 +19789,18 @@
                   }
                 ],
                 "example": "implement"
+              },
+              "epicWorkflow": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "epic"
               }
             },
             "additionalProperties": false
@@ -20799,6 +21211,14 @@
           "description": {
             "type": "string"
           },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
@@ -20817,6 +21237,7 @@
         "required": [
           "name",
           "description",
+          "subject",
           "text",
           "bundled",
           "version"
@@ -20833,6 +21254,14 @@
           },
           "description": {
             "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
           },
           "text": {
             "type": "string",
@@ -20897,6 +21326,7 @@
         "required": [
           "name",
           "description",
+          "subject",
           "text",
           "bundled",
           "version",
@@ -26153,6 +26583,18 @@
                       }
                     ]
                   },
+                  "epicWorkflow": {
+                    "example": "epic",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "workflowLabels": {
                     "anyOf": [
                       {
@@ -29750,6 +30192,18 @@
                             }
                           ],
                           "example": null
+                        },
+                        "epicWorkflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
@@ -29757,7 +30211,8 @@
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns",
-                        "workflow"
+                        "workflow",
+                        "epicWorkflow"
                       ],
                       "additionalProperties": false
                     },
@@ -30755,6 +31210,18 @@
                             }
                           ],
                           "example": null
+                        },
+                        "epicWorkflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
@@ -30762,7 +31229,8 @@
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns",
-                        "workflow"
+                        "workflow",
+                        "epicWorkflow"
                       ],
                       "additionalProperties": false
                     },
@@ -31738,6 +32206,18 @@
                           }
                         ],
                         "example": null
+                      },
+                      "epicWorkflow": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
                       }
                     },
                     "required": [
@@ -31745,7 +32225,8 @@
                       "isolationMode",
                       "priority",
                       "conflictResolveTurns",
-                      "workflow"
+                      "workflow",
+                      "epicWorkflow"
                     ]
                   },
                   "routingLabels": {
@@ -32688,6 +33169,18 @@
                             }
                           ],
                           "example": null
+                        },
+                        "epicWorkflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
@@ -32695,7 +33188,8 @@
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns",
-                        "workflow"
+                        "workflow",
+                        "epicWorkflow"
                       ],
                       "additionalProperties": false
                     },
@@ -33688,6 +34182,18 @@
                                 }
                               ],
                               "example": null
+                            },
+                            "epicWorkflow": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
                             }
                           },
                           "required": [
@@ -33695,7 +34201,8 @@
                             "isolationMode",
                             "priority",
                             "conflictResolveTurns",
-                            "workflow"
+                            "workflow",
+                            "epicWorkflow"
                           ],
                           "additionalProperties": false
                         },
@@ -34659,6 +35166,18 @@
                                 }
                               ],
                               "example": null
+                            },
+                            "epicWorkflow": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
                             }
                           },
                           "required": [
@@ -34666,7 +35185,8 @@
                             "isolationMode",
                             "priority",
                             "conflictResolveTurns",
-                            "workflow"
+                            "workflow",
+                            "epicWorkflow"
                           ],
                           "additionalProperties": false
                         },
@@ -35692,6 +36212,18 @@
                             }
                           ],
                           "example": null
+                        },
+                        "epicWorkflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
@@ -35699,7 +36231,8 @@
                         "isolationMode",
                         "priority",
                         "conflictResolveTurns",
-                        "workflow"
+                        "workflow",
+                        "epicWorkflow"
                       ],
                       "additionalProperties": false
                     },
@@ -43284,11 +43817,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The derived Epic.",
+            "description": "The derived Epic with its resolved Epic workflow.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Epic"
+                  "$ref": "#/components/schemas/EpicDetail"
                 }
               }
             }

@@ -244,3 +244,25 @@ describe('PATCH /api/config verification', () => {
     expect(patched.status).toBe(400);
   });
 });
+
+describe('PATCH /api/config workflow subjects', () => {
+  let server: TestServer;
+
+  beforeEach(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it('refuses a ticket workflow as the Epic workflow and an Epic workflow as the ticket default', async () => {
+    expect((await server.api('PATCH', '/api/config', { defaults: { epicWorkflow: 'implement' } })).status).toBe(400);
+    expect((await server.api('PATCH', '/api/config', { defaults: { workflow: 'epic' } })).status).toBe(400);
+    expect((await server.api('PATCH', '/api/config', { defaults: { epicWorkflow: 'epic' } })).status).toBe(200);
+  });
+
+  it('does not let a name stored in one slot excuse it in the other', async () => {
+    await server.api('PATCH', '/api/config', { defaults: { workflow: 'implement' } });
+    expect((await server.api('PATCH', '/api/config', { defaults: { epicWorkflow: 'implement' } })).status).toBe(400);
+  });
+});

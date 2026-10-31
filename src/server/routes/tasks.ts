@@ -498,7 +498,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req, reply) => {
-      if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow)) {
+      if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow && w.subject === 'ticket')) {
         throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
       }
       const task = await ctx.tasks.create(req.body);
@@ -568,7 +568,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     if (task.workflowRef !== null) {
       ({ name, version } = parseWorkflowRef(task.workflowRef));
     } else {
-      const names = new Set(ctx.workflows.list().map((entry) => entry.name));
+      const names = new Set(ctx.workflows.list().filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
       const workspace = task.workspaceId == null ? null : await ctx.workspaces.get(task.workspaceId);
       name = resolveTaskWorkflow(task, workspace, ctx.settingsStore.getGlobal(), (n) => names.has(n)).name;
       version = ctx.workflows.get(name).version;

@@ -40,7 +40,7 @@ export function firstWorkflowOverlayError(overlay: readonly WorkflowLabelOverlay
 export const libraryVersion = (library: readonly WorkflowLibraryEntry[], name: string | null): number | null =>
   (name === null ? undefined : library.find((entry) => entry.name === name)?.version) ?? null;
 
-export function workflowOptions(library: readonly WorkflowLibraryEntry[], current: string): string[] {
-  const names = library.map((entry) => entry.name);
+export function workflowOptions(library: readonly WorkflowLibraryEntry[], current: string, subject: 'ticket' | 'epic' = 'ticket'): string[] {
+  const names = library.filter((entry) => entry.subject === subject).map((entry) => entry.name);
   return current !== '' && !names.includes(current) ? [...names, current] : names;
 }

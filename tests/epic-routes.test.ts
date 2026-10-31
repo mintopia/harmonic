@@ -411,7 +411,7 @@ describe('epic-routes', () => {
 
           const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42`);
           expect(res.status).toBe(200);
-          expect(res.body).toEqual(one);
+          expect(res.body).toEqual({ ...one, workflow: { name: 'epic', version: 1, chosen: 'global' } });
           expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), '42');
         });
 

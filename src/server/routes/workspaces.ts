@@ -81,6 +81,7 @@ const workspaceSchema = z
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     workflow: z.string().nullable().meta({ example: null }),
+    epicWorkflow: z.string().nullable().meta({ example: null }),
     workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
     workflowVars: workspaceWorkflowVarsSchema.nullable().meta({ description: 'Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.', example: null }),
     /** Model Option overlay; null inherits every global Model Option in order, enabled. */
@@ -308,9 +309,9 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           }
         });
       }
-      if (req.body.workflowLabels || req.body.workflow) {
+      if (req.body.workflowLabels || req.body.workflow || req.body.epicWorkflow) {
         const global = ctx.settingsStore.getGlobal();
-        const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
+        const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, epicWorkflow: req.body.epicWorkflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
         if (first) throw new DomainError('validation', first);
       }
       if (req.body.workflowVars) {

@@ -563,7 +563,7 @@ export class Runner {
   private async assignWorkflow(task: TaskRow): Promise<{ ref: string; chosen: WorkflowChosen; label: string | null; vars: VarRecord; classifier: WorkflowClassifierRecord }> {
     const library = this.workflowLibrary;
     const entries = library.list();
-    const names = new Set(entries.map((entry) => entry.name));
+    const names = new Set(entries.filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
     const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
     const config = this.getConfig();
     const exists = (name: string) => names.has(name);

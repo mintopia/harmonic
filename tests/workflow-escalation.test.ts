@@ -29,7 +29,7 @@ describe('escalation resumes workflows generically', () => {
   const flow = (steps: string, max = 3, tail = ''): string => `name: flow\ndescription: test\nsteps:\n${inBlock(steps, max)}${tail}`;
   const engine = (over: Partial<WorkflowEngineDeps> = {}): WorkflowEngine =>
     new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

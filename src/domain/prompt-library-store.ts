@@ -59,6 +59,7 @@ function bundledEntries(): PromptEntry[] {
     { code: 'implement-ticket', description: 'Opening prompt for a mirrored Ticket, with feedback and the unattended reminder.', text: '${{ prompts.drivePrompt }}{feedback}\n\n${{ prompts.unattendedReminder }}' },
     { code: 'implement-native-heal', description: 'The native opening prompt followed by the self-heal section.', text: '${{ prompts.implement-native }}\n\n${{ prompts.selfHeal }}' },
     { code: 'implement-ticket-heal', description: 'The mirrored-Ticket opening prompt followed by the self-heal section.', text: '${{ prompts.implement-ticket }}\n\n${{ prompts.selfHeal }}' },
+    { code: 'epic-resolve', description: 'Opening prompt for the Epic workflow resolve step after a failed verification.', text: 'Resolve the Epic verification failures on the integration branch, then commit the fix.' },
     { code: 'criticReview', description: 'Default instruction for the critic review step.', text: 'Review the candidate against the Ticket and judge whether it does what the Ticket asked.' },
   ].map((entry) => ({ ...entry, bundled: true }));
   return [...enginePieces, ...templates, ...composites];

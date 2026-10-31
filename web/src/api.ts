@@ -326,6 +326,7 @@ export const api = {
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
       workflow?: string | null;
+      epicWorkflow?: string | null;
       workflowLabels?: WorkflowLabelOverlayEntry[] | null;
       workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
       modelOptions?: ModelOptionOverlayEntry[] | null;

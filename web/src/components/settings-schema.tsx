@@ -14,7 +14,7 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
-import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
+import { EpicWorkflowEditor, WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
 import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
@@ -847,6 +847,33 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           config={ctx.config}
           onChange={(workflowLabels) => ctx.setWorkspace({ ...ctx.workspace, workflowLabels })}
           onWorkflow={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Epic workflow',
+    wide: true,
+    description: {
+      global:
+        "The Task Execution Workflow that verifies an Epic's integration branch, resolves failures, and merges it into the base. Workflow Labels do not apply to Epics.",
+      workspace: 'Overrides the global Epic workflow for every Epic in this Workspace.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <EpicWorkflowEditor
+          surface="global"
+          value={ctx.config.defaults.epicWorkflow}
+          globalValue={ctx.config.defaults.epicWorkflow}
+          onChange={(epicWorkflow) => ctx.setConfig({ ...ctx.config, defaults: { ...ctx.config.defaults, epicWorkflow } })}
+        />
+      ) : (
+        <EpicWorkflowEditor
+          surface="workspace"
+          value={ctx.workspace.epicWorkflow ?? null}
+          globalValue={ctx.config.defaults.epicWorkflow}
+          onChange={(epicWorkflow) => ctx.setWorkspace({ ...ctx.workspace, epicWorkflow })}
         />
       ),
   },

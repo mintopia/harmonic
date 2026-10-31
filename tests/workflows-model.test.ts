@@ -15,6 +15,7 @@ import {
 const entry = (over: Partial<WorkflowLibraryEntry> = {}): WorkflowLibraryEntry => ({
   name: 'docs-only',
   description: '',
+  subject: 'ticket',
   bundled: false,
   version: 2,
   inUse: { tickets: 0, workspaces: 0 },

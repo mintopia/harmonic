@@ -15,7 +15,7 @@ function makeConfig(): AppConfig {
     harnesses: {
       claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 },
     },
-    defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2, workflow: null },
+    defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2, workflow: null, epicWorkflow: null },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
@@ -69,6 +69,7 @@ function makeWorkspace(): Workspace {
     epicPreMergeCritics: null,
     routingLabels: null,
     workflow: null,
+    epicWorkflow: null,
     workflowLabels: null,
     modelOptions: null,
     classifierEnabled: null,
