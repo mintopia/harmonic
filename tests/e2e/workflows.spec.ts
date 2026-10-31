@@ -178,7 +178,7 @@ test('the builder picks a Model Option and saves option without harness or model
     const picker = builder.getByLabel('Model Option');
     await expect(picker.locator('option').first()).toHaveText('None (use Harness and Model)');
     await picker.selectOption('fast-e2e');
-    await builder.screenshot({ path: testInfo.outputPath('947-builder-model-option.png') });
+    await builder.screenshot({ path: process.env.HARMONIC_SHOT_PATH_947_BUILDER ?? testInfo.outputPath('947-impl-builder.png') });
 
     await page.getByRole('button', { name: 'Save as v2' }).click();
     await expect(page.getByText('Saved option-e2e as v2')).toBeVisible();
@@ -190,7 +190,7 @@ test('the builder picks a Model Option and saves option without harness or model
   }
 });
 
-test('the YAML editor completes Model Option codes after option:', async ({ page }) => {
+test('the YAML editor completes Model Option codes after option:', async ({ page }, testInfo) => {
   let seeded!: Awaited<ReturnType<typeof withModelOptions>>;
   await openWorkflow(page, 'option-complete-e2e', OPTION_FLOW.replace('option-e2e', 'option-complete-e2e'), async () => {
     seeded = await withModelOptions(page, ['fast-e2e', 'frontier-e2e']);
@@ -211,6 +211,9 @@ steps:
     await expect(popup).toContainText('fast-e2e');
     await expect(popup).toContainText('frontier-e2e');
     await expect(popup).toContainText(`${seeded.harness} · ${seeded.model} · fast-e2e description`);
+    await expect(popup).toHaveClass(/cm-complete-options/);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByTestId('workflow-yaml').screenshot({ path: process.env.HARMONIC_SHOT_PATH_947_POPUP ?? testInfo.outputPath('947-impl-popup.png') });
   } finally {
     await restoreModelOptions(page, seeded.original);
   }
