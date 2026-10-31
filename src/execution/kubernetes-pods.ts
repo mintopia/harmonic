@@ -81,7 +81,6 @@ export function buildPodManifest(spec: PodSpecInput): V1Pod {
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-/** Kubernetes exec has no env or cwd options, so they ride in front of the command. */
 export function wrapExecArgv(argv: string[], options: Pick<PodExecOptions, 'env' | 'cwd'>): string[] {
   const env = Object.entries(options.env ?? {}).map(([name, value]) => `${name}=${value}`);
   const inner = env.length > 0 ? ['env', ...env, ...argv] : argv;

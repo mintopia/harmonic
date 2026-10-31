@@ -112,7 +112,6 @@ export interface WorkflowEngineDeps<S extends EngineSubject = TaskRow> {
     criticTimeoutMs?: number;
   };
   runTimeoutMs?: number;
-  /** Opens the pod a workflow with a Kubernetes `runs_on` runs its shell steps in; absent runs every workflow locally. */
   pods?: PodOpener<S>;
 }
 
@@ -204,7 +203,11 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   async run(task: S, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run, reuseSession);
     const runsOn = workflow.runsOn;
-    if (runsOn !== undefined && runsOn !== LOCAL_TARGET && this.deps.pods) {
+    if (runsOn !== undefined && runsOn !== LOCAL_TARGET) {
+      if (!this.deps.pods) {
+        await this.deps.escalate(task, run, `workflow runs_on ${runsOn} needs a Kubernetes Execution Target, which this engine cannot start`);
+        return;
+      }
       try {
         ctx.pod = await this.deps.pods.open(task, { runsOn, image: workflow.image, source: 'workflow' });
         ctx.podTarget = runsOn;
@@ -669,9 +672,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[], pod?: PodSession): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
-      if (pod && step.uses === 'rebase') return await this.rebaseInPod(pod, mask);
-      if (pod) return await this.runInPod(pod, step, env, mask);
-      if (step.uses === 'rebase') return await this.rebase(task, mask);
+      if (step.uses === 'rebase') return await (pod ? this.rebaseInPod(pod, mask) : this.rebase(task, mask));
       if (step.uses === 'verify') return { outcome: 'pass', summary: 'no verification commands configured', stdout: '', exitCode: null, output: '' };
       if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, env, secrets);
       if (step.uses === 'cleanup') return await this.cleanup(task, run);
@@ -681,7 +682,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
       }
       const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
-      return await this.runGuarded(task, command, mask);
+      return await (pod ? this.runInPod(pod, step, env, mask) : this.runGuarded(task, command, mask));
     } catch (error) {
       return { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
     }

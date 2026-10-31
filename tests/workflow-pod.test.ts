@@ -194,6 +194,34 @@ describe('a workflow whose runs_on names a Kubernetes Execution Target', () => {
     expect(api.pods.size).toBe(0);
   });
 
+  it('masks the pass in a step that prints its environment, in checkpoint errors and in clone failures', async () => {
+    const api = new FakePodApi(scripted((s) => (s === 'env' ? ok('HARMONIC_PASS=pass-token\n') : s.includes('--force origin') ? ok('', 1) : undefined)));
+    api.exec = ((orig) => async (...args: Parameters<FakePodApi['exec']>) => {
+      const result = await orig(...args);
+      return args[2].at(-1)!.includes('--force origin') ? { ...result, stderr: 'fatal: Authorization: Bearer pass-token rejected' } : result;
+    })(api.exec.bind(api));
+    const { task, run } = await start(flow('  - id: dump\n    run: env\n'));
+    await engine(api).run(task, run);
+    const [row] = await stepRows(task.id);
+    expect(JSON.stringify(row)).not.toContain('pass-token');
+    expect(JSON.parse(row!.outputs!).stdout).toBe('HARMONIC_PASS=***\n');
+    expect(JSON.parse(row!.outputs!).checkpoint.error).toContain('Bearer ***');
+    expect(escalations.join()).not.toContain('pass-token');
+
+    const failing = new FakePodApi(async () => ({ code: 128, stdout: '', stderr: 'fatal: bad header Bearer pass-token', timedOut: false }));
+    const second = await start(flow('  - id: x\n    run: "true"\n'));
+    await engine(failing).run(second.task, second.run);
+    expect(escalations.at(-1)).toContain('Bearer ***');
+    expect(escalations.at(-1)).not.toContain('pass-token');
+  });
+
+  it('escalates instead of running locally when no pods are available for a Kubernetes workflow', async () => {
+    const { task, run } = await start(flow('  - id: one\n    run: echo one\n'));
+    await engine(new FakePodApi(), { pods: undefined }).run(task, run);
+    expect(escalations[0]).toContain('runs_on k8s-prod');
+    expect(await stepRows(task.id)).toEqual([]);
+  });
+
   it('leaves a workflow without runs_on, or with runs_on: local, on the host', async () => {
     for (const top of ['', 'runs_on: local\n']) {
       const api = new FakePodApi(scripted());
