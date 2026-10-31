@@ -1,6 +1,6 @@
+import type { ReactNode } from 'react';
 import type { TaskExecution } from '../../types';
 import { DELETED_POD_CAPTION, podStateView, targetSourceLabel, type CheckpointView, type StepTarget } from '../../step-target-model';
-import { Fact } from '../Fact';
 
 const POD_TONE = { working: 'bg-running-tint text-running', off: 'bg-raised text-muted', lost: 'bg-fail-tint text-fail' } as const;
 
@@ -44,23 +44,40 @@ export function PodPill({ state }: { state: TaskExecution['podState'] }) {
   return <span className={`ml-1.5 inline-flex items-center rounded-[3px] px-[9px] py-[3px] text-[11px] font-semibold ${POD_TONE[view.tone]}`}>{view.label}</span>;
 }
 
-export function ExecutionFacts({ execution }: { execution: TaskExecution }) {
+function RowFact({ label, first, children }: { label: string; first?: boolean; children: ReactNode }) {
   return (
-    <>
-      <Fact label="Target" className="col-span-2">
-        <TargetChip target={{ kind: 'k8s', name: execution.target }} /> <span className="text-[12px] text-faint">{targetSourceLabel(execution.source)}<code className="font-data">runs_on</code></span>
-      </Fact>
-      <Fact label="Pod" className="col-span-2">
-        {execution.podName !== null && <code className="font-data">{execution.podName}</code>}
-        <PodPill state={execution.podState} />
-        {execution.podState === 'deleted' && <p className="mt-1.5 text-[12px] text-muted">{DELETED_POD_CAPTION}</p>}
-      </Fact>
-      <Fact label="Image">
-        <code className="font-data text-[12px]">{execution.image}</code>
-      </Fact>
-      <Fact label="Namespace">
-        <code className="font-data">{execution.namespace}</code>
-      </Fact>
-    </>
+    <div className={`min-w-0 ${first ? '' : 'border-l border-hairline pl-5'} pr-5`}>
+      <dt className="mb-[3px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{label}</dt>
+      <dd className="min-w-0 text-[12.5px] text-ink">{children}</dd>
+    </div>
+  );
+}
+
+export function ExecutionRow({ execution, branch, agent }: { execution: TaskExecution; branch: string | null | undefined; agent: ReactNode }) {
+  return (
+    <div className="mt-3">
+      <dl className="flex flex-wrap gap-y-3 border-t border-hairline pt-3">
+        <RowFact label="Target" first>
+          <TargetChip target={{ kind: 'k8s', name: execution.target }} /> <span className="text-[12px] text-faint">{targetSourceLabel(execution.source)}<code className="font-data">runs_on</code></span>
+        </RowFact>
+        <RowFact label="Pod">
+          {execution.podName !== null && <code className="font-data">{execution.podName}</code>}
+          <PodPill state={execution.podState} />
+        </RowFact>
+        <RowFact label="Image">
+          <code className="font-data text-[12px]">{execution.image}</code>
+        </RowFact>
+        <RowFact label="Namespace">
+          <code className="font-data">{execution.namespace}</code>
+        </RowFact>
+        {branch && (
+          <RowFact label="Branch">
+            <code className="font-data">{branch}</code>
+          </RowFact>
+        )}
+        <div className="min-w-0 border-l border-hairline pl-5">{agent}</div>
+      </dl>
+      {execution.podState === 'deleted' && <p className="mt-2 text-[12px] text-muted">{DELETED_POD_CAPTION}</p>}
+    </div>
   );
 }

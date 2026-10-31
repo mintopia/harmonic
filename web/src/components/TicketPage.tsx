@@ -24,7 +24,8 @@ import { useTicketPageData } from './useTicketPageData';
 import { StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
 import { StatePill } from './ticket/shared';
 import { Description } from './ticket/Description';
-import { Metrics, Properties } from './ticket/Metrics';
+import { AgentFact, Metrics, Properties } from './ticket/Metrics';
+import { ExecutionRow } from './ticket/TargetParts';
 import { ModelOptionOverrides } from './ticket/ModelOptionOverrides';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
@@ -201,6 +202,8 @@ export function TicketPage({
                 )}
               </span>
             </div>
+
+            {task.execution && <ExecutionRow execution={task.execution} branch={task.branch} agent={<AgentFact task={task} attempts={attempts} />} />}
 
             <div className="mt-3 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-11 max-rail:grid-cols-1 max-rail:gap-3">
               <div className="min-w-0">
