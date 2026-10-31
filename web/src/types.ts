@@ -318,6 +318,7 @@ export interface ModelOption {
   harness: string;
   model: string;
   description: string;
+  disabled?: boolean;
 }
 
 export interface WorkspaceFileEntry {
@@ -608,6 +609,8 @@ export interface Task {
    * every list surface renders, so the Board never processes the full prompt.
    * Present on both list rows and the item GET. */
   summary: string;
+  /** Ticket-scoped Model Option overrides (Ticket > Workspace > global); empty when none. */
+  modelOptionOverrides: { id: string; harness: string; model: string }[];
   /** The owning Workspace. */
   workspaceId: number;
   /** Effective (resolved) Task defaults: a pinned override, else the

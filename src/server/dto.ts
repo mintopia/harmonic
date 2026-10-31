@@ -422,8 +422,10 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'classifierEnabled' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'classifierEnabled' | TrackerFactColumns> & {
   workspaceId: number;
+  /** Ticket-scoped Model Option overrides; empty when none. */
+  modelOptionOverrides: Array<{ id: string; harness: string; model: string }>;
   /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
   isolationMode: IsolationMode;
   /** Resolved effective value; always one of `PRIORITIES` (`config.ts`) at rest. */
@@ -530,6 +532,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     humanOnly: true,
     isEpic: true,
     overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
+    modelOptionOverrides: [],
     routing: null,
     classifier: null,
     summary: ticket.title,
@@ -613,6 +616,7 @@ export function taskToApiDto(
       isolationMode: task.overrides.isolationMode as IsolationMode | null,
       priority: task.overrides.priority as Priority | null,
     },
+    modelOptionOverrides: task.modelOptionOverrides ?? [],
     workspaceId: atRestWorkspaceId(task.workspaceId),
     summary: summarize(task.prompt),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),

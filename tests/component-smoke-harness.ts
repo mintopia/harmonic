@@ -196,6 +196,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     wallClockDeadline: null,
     skipReason: null,
     routing: null,
+    modelOptionOverrides: [],
     classifier: null,
     ...overrides,
   };

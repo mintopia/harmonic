@@ -274,9 +274,9 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         });
       }
       if (req.body.modelOptions) {
-        const taken = new Set(ctx.settingsStore.getGlobal().modelOptions.map((o) => o.id));
+        const taken = new Set<string>();
         req.body.modelOptions.forEach((option, index) => {
-          if (taken.has(option.id)) throw new DomainError('validation', `modelOptions.${index}.id: model option id '${option.id}' is already used`);
+          if (taken.has(option.id)) throw new DomainError('validation', `modelOptions.${index}.id: model option code '${option.id}' is already used in this Workspace`);
           taken.add(option.id);
         });
         const [first] = modelOptionIssues(req.body.modelOptions, harnesses);

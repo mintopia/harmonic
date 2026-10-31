@@ -319,11 +319,14 @@ export const classifierEndpointSchema = z.object({
 export type ClassifierEndpoint = z.infer<typeof classifierEndpointSchema>;
 
 export const modelOptionSchema = z.object({
-  id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option id must be lowercase letters, digits and dashes' }).meta({ example: 'cheap-fix' }),
+  /** The Model Option's code: what the classifier returns and workflow steps reference. Unique within one list; an inner list may shadow an outer code. */
+  id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option code must be lowercase letters, digits and hyphens' }).meta({ example: 'cheap-fix' }),
   /** Any id: a Harness that is not configured is refused with ADR-0049's wording, not a generic enum error. */
   harness: z.string().trim().min(1).meta({ example: 'claude' }),
   model: z.string().trim().min(1).meta({ example: 'claude-haiku-5-5' }),
   description: z.string().trim().min(1).meta({ example: 'cheap, small fixes' }),
+  /** A Workspace entry with `disabled: true` switches the code off for that Workspace. */
+  disabled: z.boolean().optional().meta({ example: false }),
 });
 export type ModelOption = z.infer<typeof modelOptionSchema>;
 export const modelOptionsSchema = z.array(modelOptionSchema);
@@ -494,7 +497,7 @@ export const appConfigSchema = z.object({
   }
   const seenOptionIds = new Set<string>();
   config.modelOptions.forEach((option, index) => {
-    if (seenOptionIds.has(option.id)) ctx.addIssue({ code: 'custom', path: ['modelOptions', index, 'id'], message: `model option id '${option.id}' is already used` });
+    if (seenOptionIds.has(option.id)) ctx.addIssue({ code: 'custom', path: ['modelOptions', index, 'id'], message: `model option code '${option.id}' is already used` });
     seenOptionIds.add(option.id);
   });
   for (const issue of modelOptionIssues(config.modelOptions, config.harnesses)) {

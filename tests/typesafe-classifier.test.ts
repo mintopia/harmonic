@@ -80,6 +80,15 @@ describe('TypeSafe classifier backend', () => {
     expect(outcome.routing?.usage.totals?.inputTokens).toBe(400);
   });
 
+  it('picks from the list resolved with the Ticket overrides', async () => {
+    const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() });
+    const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS) } as never;
+    const modelOptionOverrides = [{ id: 'deep-work', harness: 'codex', model: 'gpt-5-mini' }];
+    const outcome = await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1, modelOptionOverrides });
+    expect(outcome).toMatchObject({ kind: 'chosen', option: { id: 'deep-work', harness: 'codex', model: 'gpt-5-mini' } });
+    expect(seen!.body.questions.route.criteria['deep-work']).toBe('hard, cross-cutting work');
+  });
+
   it('abstains on an unknown decision', async () => {
     respond = (res) => res.end(JSON.stringify({ answers: { route: { type: 'choice', choice: 'nope' } } }));
     const classifier = new RouteClassifier(() => ({ ...baselineConfig(), modelOptions: OPTIONS }), { typesafe: backend() });

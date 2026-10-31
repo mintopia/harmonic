@@ -22,12 +22,54 @@ export function parseModelOptions(stored: string | null | undefined): ModelOptio
   return stored == null ? null : modelOptionsSchema.parse(JSON.parse(stored));
 }
 
-/** The global options in order, then the Workspace's own; a Workspace can add but never remove a global one. */
+export interface ModelOptionOverride {
+  id: string;
+  harness: string;
+  model: string;
+}
+
+export type ModelOptionResolution =
+  | { kind: 'found'; option: ModelOption; scope: 'ticket' | 'workspace' | 'global' }
+  | { kind: 'miss'; reason: 'missing' | 'disabled'; code: string };
+
+/** Workspace entries shadow global ones by code. */
+function layered(ws: ModelOptionWorkspace | null | undefined, config: Pick<AppConfig, 'modelOptions'>) {
+  const byCode = new Map<string, { option: ModelOption; scope: 'workspace' | 'global' }>();
+  for (const option of config.modelOptions) byCode.set(option.id, { option, scope: 'global' });
+  for (const option of parseModelOptions(ws?.modelOptions) ?? []) byCode.set(option.id, { option, scope: 'workspace' });
+  return byCode;
+}
+
+/** Ticket > Workspace > global: global order first, shadowed codes replaced in place, Workspace-only codes appended, disabled codes dropped. */
 export function resolveModelOptions(
   ws: ModelOptionWorkspace | null | undefined,
   config: Pick<AppConfig, 'modelOptions'>,
+  ticketOverrides?: readonly ModelOptionOverride[] | null,
 ): ModelOption[] {
-  return [...config.modelOptions, ...(parseModelOptions(ws?.modelOptions) ?? [])];
+  const overrides = new Map((ticketOverrides ?? []).map((o) => [o.id, o]));
+  return [...layered(ws, config).values()]
+    .filter(({ option }) => !option.disabled)
+    .map(({ option }) => {
+      const override = overrides.get(option.id);
+      return override ? { ...option, harness: override.harness, model: override.model } : option;
+    });
+}
+
+export function resolveModelOption(
+  code: string,
+  from: { ticketOverrides?: readonly ModelOptionOverride[] | null; workspace?: ModelOptionWorkspace | null | undefined; config: Pick<AppConfig, 'modelOptions'> },
+): ModelOptionResolution {
+  const entry = layered(from.workspace, from.config).get(code);
+  if (!entry) return { kind: 'miss', reason: 'missing', code };
+  if (entry.option.disabled) return { kind: 'miss', reason: 'disabled', code };
+  const override = from.ticketOverrides?.find((o) => o.id === code);
+  if (override) return { kind: 'found', option: { ...entry.option, harness: override.harness, model: override.model }, scope: 'ticket' };
+  return { kind: 'found', option: entry.option, scope: entry.scope };
+}
+
+/** True when the code is defined in the Workspace overlay or the global list, disabled or not. */
+export function isModelOptionDefined(code: string, ws: ModelOptionWorkspace | null | undefined, config: Pick<AppConfig, 'modelOptions'>): boolean {
+  return layered(ws, config).has(code);
 }
 
 export function resolveClassifierSettings(ws: ClassifierWorkspace | null | undefined): ClassifierSettings {

@@ -565,6 +565,26 @@ dl.props>div:first-child{padding-left:0;border-left:0}
 </div>
 <p class="note">A Harness change starts a cold Session (no warm context carried over). A change of Model within the same Harness keeps the warm Session.</p>
 
+<div class="sublbl">2d-2. Ticket page: Model Option overrides panel</div>
+<p class="sub2">Sits under the Ticket properties. Each override changes the Harness and Model of an existing code for this Ticket only. The Add override list offers only codes already in the Workspace overlay or the global list; changing Harness resets Model to that Harness's default. Edits are staged and saved together.</p>
+<div class="card tickethead pad">
+  <h3 class="label">Model Option overrides</h3>
+  <p class="note">Overrides apply to this Ticket only; each code keeps its Workspace or global Harness and Model elsewhere.</p>
+  <div class="row"><div class="mrow"><div class="mo">
+    <div class="mo-top"><span class="ocode">opus-deep</span><span class="rowc"><button class="rm" type="button">Remove</button></span></div>
+    <div><span class="label fl">Harness</span><div class="select">Codex</div></div>
+    <div><span class="label fl">Model</span><div class="combo">gpt-5-codex</div></div>
+  </div></div></div>
+  <div class="row"><div class="mrow"><div class="mo">
+    <div class="mo-top"><span class="ocode">codex-mini</span><span class="rowc"><button class="rm" type="button">Remove</button></span></div>
+    <div><span class="label fl">Harness</span><div class="select">Codex</div></div>
+    <div><span class="label fl">Model</span><div class="combo" style="border-color:var(--fail)">gpt-9</div>
+      <p class="errmsg" role="alert">Model &lsquo;gpt-9&rsquo; is not in the Codex model catalog.</p></div>
+  </div></div></div>
+  <div><span class="label fl">Add override</span><div class="select">Choose a Model Option code&hellip;</div></div>
+  <div class="rowc"><button class="ibtn" type="button">Save overrides</button><button class="ibtn" type="button">Discard</button></div>
+</div>
+
 <div class="sublbl">2e. Board card chip</div>
 <p class="sub2">The classifier chip mirrors the Routing Label chip. An abstained card shows a muted <em>default</em> chip rather than nothing, so it is visibly not classified.</p>
 <div class="cards">

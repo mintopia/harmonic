@@ -480,9 +480,14 @@ function EpicStory() {
 function TicketStory() {
   const routed = params.get('routing');
   const routedTask = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
-  const shown = params.get('state') === 'escalated'
-    ? { ...routedTask, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
+  const withOverrides = params.get('overrides') === '1'
+    ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
     : routedTask;
+  const shown = params.get('state') === 'ready'
+    ? { ...withOverrides, state: 'ready' as const }
+    : params.get('state') === 'escalated'
+      ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
+      : withOverrides;
   return (
     <StoryFrame style={{ height: '100vh' }}>
       <TicketPage

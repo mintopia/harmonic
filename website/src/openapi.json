@@ -2709,6 +2709,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -3021,6 +3050,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -3431,6 +3461,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -3742,6 +3801,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -4137,6 +4197,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -4450,6 +4539,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -7362,6 +7452,10 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "cheap, small fixes"
+                    },
+                    "disabled": {
+                      "example": false,
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -8825,6 +8919,10 @@
                   "type": "string",
                   "minLength": 1,
                   "example": "cheap, small fixes"
+                },
+                "disabled": {
+                  "example": false,
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -13119,6 +13217,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -13433,6 +13561,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -13847,6 +13976,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -14160,6 +14319,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -14559,6 +14719,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -14874,6 +15064,7 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
           "classifier",
@@ -17882,6 +18073,10 @@
                       "type": "string",
                       "minLength": 1,
                       "example": "cheap, small fixes"
+                    },
+                    "disabled": {
+                      "example": false,
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -19366,6 +19561,10 @@
                   "type": "string",
                   "minLength": 1,
                   "example": "cheap, small fixes"
+                },
+                "disabled": {
+                  "example": false,
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -21437,6 +21636,42 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "modelOptionOverrides": {
+                    "example": [
+                      {
+                        "id": "cheap-fix",
+                        "harness": "claude",
+                        "model": "claude-haiku-5-5"
+                      }
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "example": "cheap-fix"
+                        },
+                        "harness": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude-haiku-5-5"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "harness",
+                        "model"
+                      ]
+                    }
                   }
                 }
               }
@@ -25918,6 +26153,10 @@
                               "type": "string",
                               "minLength": 1,
                               "example": "cheap, small fixes"
+                            },
+                            "disabled": {
+                              "example": false,
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -28370,6 +28609,10 @@
                             "type": "string",
                             "minLength": 1,
                             "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -29777,6 +30020,10 @@
                             "type": "string",
                             "minLength": 1,
                             "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -31160,6 +31407,10 @@
                           "type": "string",
                           "minLength": 1,
                           "example": "cheap, small fixes"
+                        },
+                        "disabled": {
+                          "example": false,
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -32493,6 +32744,10 @@
                             "type": "string",
                             "minLength": 1,
                             "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -33895,6 +34150,10 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "example": "cheap, small fixes"
+                              },
+                              "disabled": {
+                                "example": false,
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -35268,6 +35527,10 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "example": "cheap, small fixes"
+                              },
+                              "disabled": {
+                                "example": false,
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -36703,6 +36966,10 @@
                             "type": "string",
                             "minLength": 1,
                             "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
                           }
                         },
                         "required": [
