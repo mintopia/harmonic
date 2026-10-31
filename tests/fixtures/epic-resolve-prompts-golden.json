@@ -1,0 +1,4 @@
+{
+  "default": "Resolve the Epic verification failures, then commit the fix.\n\n## Failing Epic verification\nverification block: command \"npm test\" failed\ntests/export.test.ts: exporter output is not wired to the --export flag\n\nWork in the checked-out integration branch `epic/42`. Fix the failure and commit the result. Do not create or switch branches, and do not push.",
+  "tokens": "Resolve Epic #42 \"Epic #42\" (https://github.com/example/repo/issues/42).\n\nMembers #43 (exporter) and #44 (CLI flag) must work together end to end.\n\n## Failing Epic verification\nverification block: command \"npm test\" failed\ntests/export.test.ts: exporter output is not wired to the --export flag\n\nWork in the checked-out integration branch `epic/42`. Fix the failure and commit the result. Do not create or switch branches, and do not push."
+}
