@@ -80,6 +80,16 @@ describe('workflow builder model', () => {
     expect(setAttemptsMax(SAMPLE, ['steps', 1], '5')).toContain('max: 5');
   });
 
+  it('option and harness/model are mutually exclusive', () => {
+    const path = ['steps', 1, 'attempts', 'steps', 0];
+    const step = (text: string) => (readBuilder(text)!.steps[1] as { children: { option?: string; harness?: string; model?: string }[] }).children[0]!;
+    const picked = setStepField(setStepField(SAMPLE, path, 'harness', 'codex'), path, 'option', 'fast');
+    expect([step(picked).option, step(picked).harness, step(picked).model]).toEqual(['fast', undefined, undefined]);
+    const back = setStepField(picked, path, 'model', 'haiku');
+    expect([step(back).option, step(back).model]).toEqual([undefined, 'haiku']);
+    expect(step(setStepField(picked, path, 'option', '')).option).toBeUndefined();
+  });
+
   it('an invariant-breaking change yields a validation issue on the block', () => {
     const next = setAttemptsMax(SAMPLE, ['steps', 1], '');
     const { issues } = validateWorkflowText(next);

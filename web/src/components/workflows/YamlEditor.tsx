@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Compartment, EditorState, RangeSet, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, WidgetType, gutterLineClass, type DecorationSet } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
-import { acceptCompletion, type CompletionContext } from '@codemirror/autocomplete';
+import { acceptCompletion, autocompletion, type CompletionContext } from '@codemirror/autocomplete';
 import { keymap } from '@codemirror/view';
-import { completeWorkflow } from '../../../../src/domain/workflow-completion.js';
+import { completeWorkflow, type CompletionModelOption } from '../../../../src/domain/workflow-completion.js';
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { messageParts, type WorkflowEditorIssue } from '../../workflow-editor-model';
@@ -43,10 +43,17 @@ class IssueWidget extends WidgetType {
   }
 }
 
-const completionSource = (ctx: CompletionContext) => {
-  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos);
+const completionSource = (modelOptions: () => readonly CompletionModelOption[]) => (ctx: CompletionContext) => {
+  const hit = completeWorkflow(ctx.state.doc.toString(), ctx.pos, modelOptions());
   if (!hit) return null;
   return { from: hit.from, options: hit.options.map((o) => ({ label: o.label, detail: o.detail, type: 'keyword' })), validFor: /^[\w-]*$/ };
+};
+
+const completionKind = (state: EditorState): string => {
+  const line = state.doc.lineAt(state.selection.main.head);
+  const before = line.text.slice(0, state.selection.main.head - line.from);
+  if (/^\s*(?:-[ \t]+)*uses:/.test(before)) return 'cm-complete-actions';
+  return /^\s*(?:-[ \t]+)*option:/.test(before) ? 'cm-complete-options' : '';
 };
 
 const setIssues = StateEffect.define<readonly WorkflowEditorIssue[]>();
@@ -113,19 +120,23 @@ const issueTheme = EditorView.theme({
   '.cm-completionLabel': { fontFamily: 'var(--font-code, monospace)', fontSize: '12px', color: 'var(--hm-ink)' },
   '.cm-completionMatchedText': { color: 'var(--hm-accent)', fontWeight: 700, textDecoration: 'none' },
   '.cm-completionDetail': { marginLeft: 'auto', paddingLeft: '16px', fontStyle: 'normal', fontSize: '11px', color: 'var(--hm-muted)', textAlign: 'right' },
-  '.cm-tooltip-autocomplete::after': { content: '"Closed set of Workflow Actions · Tab to accept"', display: 'block', marginTop: '4px', padding: '4px 10px 2px', fontSize: '10px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
+  '.cm-tooltip-autocomplete::after': { content: '"Tab to accept"', display: 'block', marginTop: '4px', padding: '4px 10px 2px', fontSize: '10px', color: 'var(--hm-faint)', borderTop: '1px solid var(--hm-hairline)' },
+  '.cm-tooltip-autocomplete.cm-complete-actions::after': { content: '"Closed set of Workflow Actions · Tab to accept"' },
+  '.cm-tooltip-autocomplete.cm-complete-options::after': { content: '"Model Options · Tab to accept"' },
 });
 
 export function YamlEditor({
   text,
   readOnly,
   issues,
+  modelOptions,
   onChange,
   onSave,
 }: {
   text: string;
   readOnly: boolean;
   issues: readonly WorkflowEditorIssue[];
+  modelOptions: readonly CompletionModelOption[];
   onChange: (text: string) => void;
   onSave: () => void;
 }) {
@@ -135,7 +146,9 @@ export function YamlEditor({
   const onSaveRef = useRef(onSave);
   const textRef = useRef(text);
   const issuesRef = useRef(issues);
+  const modelOptionsRef = useRef(modelOptions);
   useEffect(() => {
+    modelOptionsRef.current = modelOptions;
     onChangeRef.current = onChange;
     onSaveRef.current = onSave;
     textRef.current = text;
@@ -146,15 +159,17 @@ export function YamlEditor({
     if (!host.current) return;
     let disposed = false;
     const language = new Compartment();
+    const source = completionSource(() => modelOptionsRef.current);
     const extensions: Extension[] = [
       syntaxHighlighting(paperHighlight),
       basicSetup,
+      autocompletion({ tooltipClass: completionKind }),
       paperTheme,
       issueTheme,
       issueField,
       gutterField,
       language.of([]),
-      EditorState.languageData.of(() => [{ autocomplete: completionSource }]),
+      EditorState.languageData.of(() => [{ autocomplete: source }]),
       keymap.of([{ key: 'Tab', run: acceptCompletion }]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),

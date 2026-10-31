@@ -5,6 +5,13 @@ export interface WorkflowCompletionOption {
   detail: string;
 }
 
+export interface CompletionModelOption {
+  id: string;
+  harness: string;
+  model: string;
+  description: string;
+}
+
 export interface WorkflowCompletion {
   from: number;
   options: WorkflowCompletionOption[];
@@ -55,6 +62,7 @@ const ATTEMPTS_KEYS: WorkflowCompletionOption[] = [
 
 const WITH_KEYS: WorkflowCompletionOption[] = [
   { label: 'prompt', detail: 'the prompt text' },
+  { label: 'option', detail: 'a Model Option code, instead of harness and model' },
   { label: 'harness', detail: 'which Harness runs it' },
   { label: 'model', detail: 'which Model to use' },
   { label: 'continueAttempts', detail: 'how many times to continue' },
@@ -63,6 +71,7 @@ const WITH_KEYS: WorkflowCompletionOption[] = [
 
 const KEY_LINE = /^(\s*)((?:-[ \t]+)*)([A-Za-z][\w-]*)?$/;
 const USES_LINE = /^\s*(?:-[ \t]+)*uses:[ \t]*([\w-]*)$/;
+const OPTION_LINE = /^(\s*)((?:-[ \t]+)*)option:[ \t]*([\w-]*)$/;
 const KEYED = /^(\s*)((?:-[ \t]+)*)([A-Za-z][\w-]*):/;
 
 interface KeyedLine {
@@ -103,7 +112,7 @@ function stepUses(lines: string[], withLine: KeyedLine): string | undefined {
 const prefixed = (options: WorkflowCompletionOption[], typed: string): WorkflowCompletionOption[] => options.filter((o) => o.label.startsWith(typed) && o.label !== typed);
 
 /** Never throws: indentation-based, so half-typed YAML still completes. */
-export function completeWorkflow(text: string, offset: number): WorkflowCompletion | null {
+export function completeWorkflow(text: string, offset: number, modelOptions: readonly CompletionModelOption[] = []): WorkflowCompletion | null {
   if (offset < 0 || offset > text.length) return null;
   const lines = text.split('\n');
   const before = text.slice(0, offset);
@@ -114,6 +123,16 @@ export function completeWorkflow(text: string, offset: number): WorkflowCompleti
   if (uses) {
     const typed = uses[1]!;
     const options = [...WORKFLOW_ACTIONS].sort((a, b) => actionRank(a) - actionRank(b)).filter((a) => a.startsWith(typed) && a !== typed).map((label) => ({ label, detail: ACTION_DETAIL[label] }));
+    return options.length ? { from: offset - typed.length, options } : null;
+  }
+
+  const option = OPTION_LINE.exec(upToCursor);
+  if (option) {
+    const typed = option[3]!;
+    const parent = parentOf(lines, lineIndex, option[1]!.length + option[2]!.length);
+    const action = parent?.key === 'with' ? stepUses(lines, parent) : undefined;
+    if (action !== 'agent' && action !== 'critic') return null;
+    const options = modelOptions.filter((o) => o.id.startsWith(typed) && o.id !== typed).map((o) => ({ label: o.id, detail: `${o.harness} · ${o.model} · ${o.description}` }));
     return options.length ? { from: offset - typed.length, options } : null;
   }
 

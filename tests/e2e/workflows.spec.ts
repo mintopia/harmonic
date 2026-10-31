@@ -72,11 +72,12 @@ async function dragTo(page: Page, from: Locator, to: Locator) {
   await page.mouse.up();
 }
 
-async function openWorkflow(page: Page, name: string, yaml: string) {
+async function openWorkflow(page: Page, name: string, yaml: string, beforeOpen?: () => Promise<void>) {
   await page.goto('/');
   await page.locator('input[type="password"]').fill('verify-pass');
   await page.locator('button[type="submit"]').click();
   await page.waitForSelector('aside');
+  await beforeOpen?.();
   await page.goto('/workflows');
   await page.locator('input[type="file"]').setInputFiles({ name: `${name}.yaml`, mimeType: 'application/yaml', buffer: Buffer.from(yaml) });
   await page.locator('tbody tr', { hasText: name }).getByRole('button', { name }).click();
@@ -129,4 +130,91 @@ test('the builder matches the #929 mockup layout', async ({ page }, testInfo) =>
   await expect(builder.getByText('In sync with YAML')).toBeVisible();
   await expect(builder.locator('[data-block]')).toHaveCount(4);
   await builder.screenshot({ path: process.env.HARMONIC_SHOT_PATH ?? testInfo.outputPath('929-impl.png') });
+});
+
+const OPTION_FLOW = `name: option-e2e
+description: model options
+steps:
+  - attempts:
+      max: 1
+      steps:
+        - id: implement
+          uses: agent
+          with:
+            prompt: implement
+            harness: claude
+            model: sonnet-5
+`;
+
+async function withModelOptions(page: Page, codes: string[]) {
+  return page.evaluate(async (wanted) => {
+    const config = await (await fetch('/api/config')).json();
+    const original = config.modelOptions;
+    const harness = Object.keys(config.harnesses).find((h) => config.harnesses[h].models.length > 0)!;
+    const model = config.harnesses[harness].models[0].id;
+    const modelOptions = wanted.map((id: string) => ({ id, harness, model, description: `${id} description` }));
+    const res = await fetch('/api/config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...config, modelOptions }) });
+    if (!res.ok) throw new Error(`PUT /api/config ${res.status}: ${await res.text()}`);
+    return { original, harness, model };
+  }, codes);
+}
+
+async function restoreModelOptions(page: Page, original: unknown) {
+  await page.evaluate(async (modelOptions) => {
+    const config = await (await fetch('/api/config')).json();
+    await fetch('/api/config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...config, modelOptions }) });
+  }, original);
+}
+
+test('the builder picks a Model Option and saves option without harness or model', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1800 });
+  let seeded!: Awaited<ReturnType<typeof withModelOptions>>;
+  await openWorkflow(page, 'option-e2e', OPTION_FLOW, async () => {
+    seeded = await withModelOptions(page, ['fast-e2e', 'frontier-e2e']);
+  });
+  try {
+    const builder = page.getByRole('region', { name: 'Workflow builder' });
+    await builder.locator('[data-block="steps/0/attempts/steps/0"]').getByRole('button', { name: /^agent implement/ }).click();
+    const picker = builder.getByLabel('Model Option');
+    await expect(picker.locator('option').first()).toHaveText('None (use Harness and Model)');
+    await picker.selectOption('fast-e2e');
+    await builder.screenshot({ path: process.env.HARMONIC_SHOT_PATH_947_BUILDER ?? testInfo.outputPath('947-impl-builder.png') });
+
+    await page.getByRole('button', { name: 'Save as v2' }).click();
+    await expect(page.getByText('Saved option-e2e as v2')).toBeVisible();
+    const saved = await page.evaluate(async () => (await (await fetch('/api/workflows/option-e2e')).json()).text as string);
+    expect(saved).toContain('option: fast-e2e');
+    expect(saved).not.toMatch(/harness:|model:/);
+  } finally {
+    await restoreModelOptions(page, seeded.original);
+  }
+});
+
+test('the YAML editor completes Model Option codes after option:', async ({ page }, testInfo) => {
+  let seeded!: Awaited<ReturnType<typeof withModelOptions>>;
+  await openWorkflow(page, 'option-complete-e2e', OPTION_FLOW.replace('option-e2e', 'option-complete-e2e'), async () => {
+    seeded = await withModelOptions(page, ['fast-e2e', 'frontier-e2e']);
+  });
+  try {
+    const editor = page.getByRole('textbox', { name: 'Workflow YAML' });
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.insertText(`name: option-complete-e2e
+steps:
+  - id: implement
+    uses: agent
+    with:
+      prompt: implement
+      option: `);
+    await page.keyboard.type('f');
+    const popup = page.locator('.cm-tooltip-autocomplete');
+    await expect(popup).toContainText('fast-e2e');
+    await expect(popup).toContainText('frontier-e2e');
+    await expect(popup).toContainText(`${seeded.harness} · ${seeded.model} · fast-e2e description`);
+    await expect(popup).toHaveClass(/cm-complete-options/);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByTestId('workflow-yaml').screenshot({ path: process.env.HARMONIC_SHOT_PATH_947_POPUP ?? testInfo.outputPath('947-impl-popup.png') });
+  } finally {
+    await restoreModelOptions(page, seeded.original);
+  }
 });
