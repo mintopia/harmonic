@@ -16,7 +16,7 @@ export interface WorkflowEntry {
 export interface WorkflowLibraryOptions {
   /** `<name>@<version>` refs that Tickets currently pin; those versions are never pruned. */
   referencedVersions?: () => Promise<ReadonlySet<string>>;
-  /** The step that publishes the temp file over the current one. */
+  /** Fault-injection seam; production always uses the filesystem rename. */
   rename?: (from: string, to: string) => Promise<void>;
 }
 
