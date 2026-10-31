@@ -42,6 +42,6 @@ export function checkpointView(step: Pick<WorkflowStepRun, 'outputs'>): Checkpoi
     branch: checkpoint.branch,
     sha: checkpoint.sha === null ? null : checkpoint.sha.slice(0, 7),
     forced: checkpoint.forced,
-    noChanges: !checkpoint.forced && checkpoint.changed === false,
+    noChanges: !checkpoint.forced && checkpoint.unchanged === true,
   };
 }

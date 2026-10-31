@@ -81,7 +81,7 @@ export interface StepCheckpoint {
   branch: string;
   sha: string | null;
   forced: boolean;
-  changed?: boolean;
+  unchanged?: boolean;
 }
 
 export interface TaskExecution {
