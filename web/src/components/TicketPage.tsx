@@ -184,7 +184,7 @@ export function TicketPage({
               </button>
             )}
             <div className="flex flex-wrap items-start gap-4 pb-1">
-              <h1 className="min-w-0 max-w-[680px] flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full">
+              <h1 className={`min-w-0 max-w-[680px] ${task.execution ? '' : 'flex-1'} text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full`}>
                 {cardTitle(task.summary)}
               </h1>
               <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">

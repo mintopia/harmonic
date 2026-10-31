@@ -163,6 +163,81 @@ function StepRow({ step, info, child, open, now, execution }: { step: WorkflowSt
   );
 }
 
+const MARKER_TONE = { done: 'bg-merged-tint text-merged', bad: 'bg-fail-tint text-fail', run: 'bg-running-tint text-running', idle: 'bg-raised text-muted' } as const;
+
+function markerTone(step: WorkflowStepRun | undefined): keyof typeof MARKER_TONE {
+  if (step === undefined || step.outcome === 'skipped') return 'idle';
+  if (step.outcome === null) return 'run';
+  return step.outcome === 'pass' ? 'done' : 'bad';
+}
+
+function kindLabel(info: StepInfo | undefined, fallback: string): string {
+  const uses = info?.uses ?? fallback;
+  const detail = info?.detail ?? null;
+  if (detail === null) return uses;
+  return uses === 'agent' || /^prompt /.test(detail) ? `${uses} · ${detail}` : `${uses}: ${detail}`;
+}
+
+function NumberedStep({ number, last, step, id, info, execution }: { number: number; last: boolean; step: WorkflowStepRun | undefined; id: string; info: StepInfo | undefined; execution: TaskExecution | null | undefined }) {
+  const target = step ? stepTarget(step, execution) : null;
+  const checkpoint = step ? checkpointView(step) : null;
+  const tone = markerTone(step);
+  const hasPane = step !== undefined && step.outcome !== null && step.outcome !== 'skipped';
+  const running = step !== undefined && step.outcome === null;
+  const head = (
+    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+      <span className={`font-semibold ${step?.outcome === 'skipped' ? 'text-faint' : 'text-ink'}`}>{id}</span>
+      <span className="font-data text-[12px] text-faint">{kindLabel(info, step?.action ?? id)}</span>
+      {info?.condition != null && <span className="rounded-full bg-tool-tint px-[7px] font-data text-[10px] font-semibold leading-[18px] text-tool">if: {info.condition}</span>}
+      {target && <TargetChip target={target} />}
+      {step !== undefined && step.outcome !== null && step.outcome !== 'pass' && step.outcome !== 'skipped' && (
+        <span className="rounded-[3px] bg-fail-tint px-[7px] py-px text-[10px] font-bold uppercase tracking-[0.04em] text-fail">{step.outcome}</span>
+      )}
+      {running && <span className="rounded-[3px] bg-running-tint px-[9px] py-[3px] text-[11px] font-semibold text-running">running</span>}
+    </div>
+  );
+  const tail = checkpoint && <CheckpointLine view={checkpoint} className="mt-[3px] pl-0" />;
+  return (
+    <li className={`relative grid grid-cols-[24px_1fr] gap-3 ${last ? '' : 'pb-3 before:absolute before:bottom-0 before:left-[11px] before:top-6 before:w-px before:bg-edge'}`}>
+      <span
+        role="img"
+        aria-label={step === undefined ? 'not started' : running ? 'running' : step.outcome === 'skipped' ? 'skipped' : tone === 'done' ? 'passed' : 'failed'}
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${MARKER_TONE[tone]}`}
+      >
+        {number}
+      </span>
+      {hasPane ? (
+        <details className="group min-w-0">
+          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            {head}
+            {tail}
+          </summary>
+          <div className="mt-2 overflow-x-auto rounded-[3px] bg-sunken py-2 font-data text-[12px] leading-[19px]">
+            {logLines(step).map((line, index) => (
+              <div key={index} className="grid grid-cols-[52px_1fr] text-ink">
+                <span className="select-none pr-3 text-right text-faint">{index + 1}</span>
+                <span className="whitespace-pre">{line}</span>
+              </div>
+            ))}
+            <p className="break-words px-3.5 pt-1 text-faint">{outputsSummary(step)}</p>
+            {step.resolvedPrompt !== null && (
+              <details className="px-3.5 pt-1">
+                <summary className="cursor-pointer font-sans text-[12px] font-semibold text-muted">Resolved Prompt</summary>
+                <pre className="mt-1 whitespace-pre-wrap break-words text-[12px] text-ink">{step.resolvedPrompt}</pre>
+              </details>
+            )}
+          </div>
+        </details>
+      ) : (
+        <div className="min-w-0">
+          {head}
+          {tail}
+        </div>
+      )}
+    </li>
+  );
+}
+
 function PendingRow({ id, info, child, notRun }: { id: string; info: StepInfo | undefined; child: boolean; notRun: boolean }) {
   return (
     <li className="border-b border-hairline">
@@ -274,7 +349,13 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
     return items;
   };
 
+  const numbered = execution != null;
   const renderItems = (items: Item[], openIndex: number) => {
+    if (numbered) {
+      return items.map((item, index) => (
+        <NumberedStep key={item.key} number={index + 1} last={index === items.length - 1} step={item.run} id={item.id} info={info[item.id]} execution={execution} />
+      ));
+    }
     let previousParent: string | undefined;
     return items.map((item, index) => {
       const parent = parentOf.get(item.id);
@@ -290,17 +371,20 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
     });
   };
 
+  const plain = execution != null && numbers.length <= 1;
   const lastGroupIndex = shown.length - 1;
   const cleanupPending = attemptSelector ? cleanup.filter((id) => !ranAnywhere.has(id)) : [];
   const failedStep = (attempt: number) => data.steps.find((step) => step.attempt === attempt && (step.outcome === 'fail' || step.outcome === 'inconclusive' || step.outcome === 'conflict'));
 
   return (
     <section aria-label="Task Execution Workflow steps" className="mt-5 overflow-hidden rounded-lg bg-surface shadow-card">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-hairline px-3.5 py-3">
-        <h3 className="text-[13px] font-bold text-ink">Steps</h3>
-        <span className="text-[12px] text-muted">{headerText(data.workflowRef, data.latestVersion)}</span>
-      </div>
-      {selectable && <AttemptSelector numbers={numbers} tones={tones} selected={selected} max={max} onSelect={setPicked} />}
+      {!plain && (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-hairline px-3.5 py-3">
+          <h3 className="text-[13px] font-bold text-ink">Steps</h3>
+          <span className="text-[12px] text-muted">{headerText(data.workflowRef, data.latestVersion)}</span>
+        </div>
+      )}
+      {selectable && !plain && <AttemptSelector numbers={numbers} tones={tones} selected={selected} max={max} onSelect={setPicked} />}
       {data.steps.length === 0 ? (
         <p className="px-3.5 py-3 text-[13px] text-muted">No step has run yet.</p>
       ) : (
@@ -310,7 +394,7 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
           const failed = group.attempt === null ? undefined : failedStep(group.attempt);
           return (
             <div key={`${group.attempt ?? 'outside'}:${group.firstIndex}`}>
-              {group.attempt !== null && (
+              {group.attempt !== null && !plain && (
                 <h4 className="flex items-center gap-2 border-b border-hairline bg-sunken px-2.5 py-2 text-[12px] font-semibold text-ink">
                   <span>{selectable && max !== null ? `Attempt ${group.attempt} of ${max}` : `Attempt ${group.attempt}`}</span>
                   <span className="flex-1" />
@@ -328,7 +412,7 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
                   )}
                 </h4>
               )}
-              <ol>{renderItems(items, lastLogged)}</ol>
+              <ol className={numbered ? 'px-5 py-5' : undefined}>{renderItems(items, lastLogged)}</ol>
             </div>
           );
         })

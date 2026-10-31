@@ -82,6 +82,7 @@ export interface StepCheckpoint {
   sha: string | null;
   forced: boolean;
   unchanged?: boolean;
+  files?: number;
 }
 
 export interface TaskExecution {

@@ -35,6 +35,7 @@ export function CheckpointLine({ view, className = '' }: { view: CheckpointView;
         </>
       )}
       {view.noChanges && ' · no changes'}
+      {view.files !== null && ` · ${view.files} ${view.files === 1 ? 'file' : 'files'}`}
     </div>
   );
 }

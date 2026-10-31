@@ -33,6 +33,7 @@ export interface CheckpointView {
   sha: string | null;
   forced: boolean;
   noChanges: boolean;
+  files: number | null;
 }
 
 export function checkpointView(step: Pick<WorkflowStepRun, 'outputs'>): CheckpointView | null {
@@ -43,5 +44,6 @@ export function checkpointView(step: Pick<WorkflowStepRun, 'outputs'>): Checkpoi
     sha: checkpoint.sha === null ? null : checkpoint.sha.slice(0, 7),
     forced: checkpoint.forced,
     noChanges: !checkpoint.forced && checkpoint.unchanged === true,
+    files: checkpoint.files ?? null,
   };
 }

@@ -435,7 +435,9 @@ function TicketStory() {
   const withOverrides = params.get('overrides') === '1'
     ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
     : routedTask;
-  const shown = params.get('state') === 'ready'
+  const shown = params.get('pod') !== null
+    ? { ...withOverrides, state: 'working' as const, summary: 'Rework retry backoff in the mirror poller', branch: 'harmonic/task-482' }
+    : params.get('state') === 'ready'
     ? { ...withOverrides, state: 'ready' as const }
     : params.get('state') === 'escalated'
       ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }

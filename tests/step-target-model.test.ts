@@ -24,3 +24,11 @@ describe('step target model', () => {
     expect(targetSourceLabel('step')).toBe('from step ');
   });
 });
+
+describe('checkpoint file count', () => {
+  it('carries the file count when the engine reports one', () => {
+    const view = checkpointView({ outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'b', sha: '7be03d1aa0', forced: false, unchanged: false, files: 6 } } });
+    expect(view).toMatchObject({ files: 6 });
+    expect(checkpointView({ outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'b', sha: null, forced: false } } })).toMatchObject({ files: null });
+  });
+});
