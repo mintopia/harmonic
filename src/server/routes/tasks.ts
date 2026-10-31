@@ -291,6 +291,16 @@ const taskSchema = taskWithDepsSchema
     contextWindow: z.number().nullable().meta({ example: 200000 }),
     /** Why the scheduler is skipping this Task (blocker, capacity, disabled Workspace, missing integration branch); null when not waiting. */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
+    /** The Kubernetes Execution Target this Ticket waits for, with its load and the Ticket's place in line; null when not waiting on one. */
+    targetWait: z
+      .object({
+        target: z.string().meta({ example: 'k8s-prod' }),
+        disabled: z.boolean().meta({ example: false }),
+        running: z.number().meta({ example: 1 }),
+        limit: z.number().nullable().meta({ example: 1 }),
+        position: z.number().meta({ example: 2 }),
+      })
+      .nullable(),
     /** The latest attempt's verified head ref; null when no attempt has produced a verified head yet. */
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     /** Whether the branch holds commits ahead of base an Accept could merge. */

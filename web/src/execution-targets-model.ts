@@ -195,19 +195,19 @@ export interface RowView {
   name: string;
   builtIn: boolean;
   statusLabel: 'built in' | 'enabled' | 'disabled';
-  runningLabel: string | null;
+  runningLabel: string;
   runningPercent: number;
   full: boolean;
   toggleLabel: 'Enable' | 'Disable' | null;
 }
 
-export function rowView(target: ExecutionTarget): RowView {
-  const limit = target.concurrencyLimit ?? 0;
+export function rowView(target: ExecutionTarget, hostCeiling = 0): RowView {
+  const limit = target.builtIn ? hostCeiling : (target.concurrencyLimit ?? 0);
   return {
     name: target.name,
     builtIn: target.builtIn,
     statusLabel: target.builtIn ? 'built in' : target.enabled ? 'enabled' : 'disabled',
-    runningLabel: target.builtIn ? null : `${target.running}/${limit} running`,
+    runningLabel: `${target.running}/${limit} running`,
     runningPercent: limit > 0 ? Math.min(100, Math.round((target.running / limit) * 100)) : 0,
     full: limit > 0 && target.running >= limit,
     toggleLabel: target.builtIn ? null : target.enabled ? 'Disable' : 'Enable',

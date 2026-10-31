@@ -517,6 +517,21 @@ export class Runner {
     await this.settleEscalated(task, run, reason, {});
   }
 
+  async escalateForTarget(taskId: number, reason: string): Promise<void> {
+    const task = await this.taskService.get(taskId);
+    if (task.state === 'ready') return this.escalateUnspawned(taskId, reason);
+    await this.settleTaskRun(taskId, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: `escalated to human: ${reason}` });
+  }
+
+  /** The Kubernetes Execution Target a Ticket runs on: its pinned workflow, else the one it would be assigned without the classifier. */
+  async kubernetesTargetOfTask(task: TaskRow): Promise<string | undefined> {
+    if (task.workflowRef !== null) return kubernetesTargetOf(this.workflowLibrary, task.workflowRef.split('@')[0] ?? '');
+    const names = new Set(this.workflowLibrary.list().filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
+    const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
+    const assignment = resolveTaskWorkflow(task, workspace, this.getConfig(), (name) => names.has(name));
+    return kubernetesTargetOf(this.workflowLibrary, assignment.name);
+  }
+
   /** @see {@link WorkspaceProvisioner.cleanupClosed} */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
     if (task.workflowRef !== null && run) {

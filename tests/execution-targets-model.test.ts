@@ -37,6 +37,7 @@ const prod: ExecutionTarget = {
   proxyKey: { set: true, secretName: 'k8s-prod-proxy-key', rotatedAt: 1 },
   credentials: [],
   running: 2,
+  waiting: 0,
   createdAt: 1,
   updatedAt: 1,
 };
@@ -126,6 +127,10 @@ describe('row view', () => {
   it('shows running over limit and flags a full target', () => {
     expect(rowView(prod)).toMatchObject({ statusLabel: 'enabled', runningLabel: '2/4 running', runningPercent: 50, full: false, toggleLabel: 'Disable' });
     expect(rowView({ ...prod, enabled: false, running: 4 })).toMatchObject({ statusLabel: 'disabled', full: true, toggleLabel: 'Enable' });
+  });
+
+  it('counts the built-in local target against the Host Ceiling', () => {
+    expect(rowView({ ...prod, builtIn: true, concurrencyLimit: null, running: 1 }, 3)).toMatchObject({ runningLabel: '1/3 running', runningPercent: 33, full: false, toggleLabel: null });
   });
 });
 

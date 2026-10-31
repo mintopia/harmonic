@@ -72,6 +72,7 @@ const executionTargetSchema = z
     proxyKey: proxyKeyStatusSchema.nullable(),
     credentials: z.array(credentialStatusSchema).describe('One entry per Harness; empty for `local`.'),
     running: z.number().meta({ example: 0, description: 'Tickets currently running on this target.' }),
+    waiting: z.number().meta({ example: 0, description: 'Ready Tickets waiting for this target, because it is full or disabled.' }),
     createdAt: z.number().nullable().meta({ example: 1784030400000 }),
     updatedAt: z.number().nullable().meta({ example: 1784030400000 }),
   })

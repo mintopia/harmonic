@@ -62,7 +62,7 @@ const task = ({
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+  skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
 });
 
 describe('CardNode', () => {

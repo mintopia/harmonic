@@ -124,6 +124,7 @@ export interface ExecutionTargetView {
   proxyKey: ProxyKeyStatus | null;
   credentials: HarnessCredentialStatus[];
   running: number;
+  waiting: number;
   createdAt: number | null;
   updatedAt: number | null;
 }
@@ -150,6 +151,16 @@ export interface DeletionImpact {
   total: number;
 }
 
+export interface TicketsOnTarget {
+  running: number[];
+  waiting: number[];
+}
+
+export interface TargetTickets {
+  byTarget(): Promise<Map<string, TicketsOnTarget>>;
+  escalate(taskId: number, reason: string): Promise<void>;
+}
+
 export const LOCAL_TARGET_VIEW: ExecutionTargetView = {
   name: LOCAL_TARGET,
   builtIn: true,
@@ -165,6 +176,7 @@ export const LOCAL_TARGET_VIEW: ExecutionTargetView = {
   proxyKey: null,
   credentials: [],
   running: 0,
+  waiting: 0,
   createdAt: null,
   updatedAt: null,
 };
@@ -188,6 +200,7 @@ export class ExecutionTargetService {
   private readonly testTimeoutMs: number;
   private readonly passes: RepositoryPassService;
   private readonly harnessConfigured: (harness: HarnessId) => boolean;
+  private tickets: TargetTickets | undefined;
 
   constructor(deps: ExecutionTargetServiceDeps) {
     this.db = deps.db;
@@ -199,7 +212,7 @@ export class ExecutionTargetService {
     this.passes = new RepositoryPassService(deps.secrets);
   }
 
-  private async view(row: ExecutionTargetRow): Promise<ExecutionTargetView> {
+  private async view(row: ExecutionTargetRow, byTarget?: Map<string, TicketsOnTarget>): Promise<ExecutionTargetView> {
     const status = row.kubeconfigSecret ? await this.secrets.status(row.kubeconfigSecret) : null;
     const keyName = signingKeySecretName(row.name);
     const key = await this.secrets.status(keyName);
@@ -231,15 +244,30 @@ export class ExecutionTargetService {
       kubeconfig: { set: status !== null, secretName: row.kubeconfigSecret, updatedAt: status?.updatedAt ?? null },
       proxyKey: { set: key !== null, secretName: keyName, rotatedAt: key?.updatedAt ?? null },
       credentials,
-      running: await this.runningCount(row.name),
+      ...(await this.counts(row.name, byTarget)),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
   }
 
-  // ponytail: always 0 until `runs_on` ties Tickets to targets.
-  private async runningCount(_name: string): Promise<number> {
-    return 0;
+  attachTickets(tickets: TargetTickets): void {
+    this.tickets = tickets;
+  }
+
+  private async ticketsOn(name: string, byTarget?: Map<string, TicketsOnTarget>): Promise<TicketsOnTarget> {
+    const all = byTarget ?? (await this.tickets?.byTarget());
+    return all?.get(name) ?? { running: [], waiting: [] };
+  }
+
+  private async counts(name: string, byTarget?: Map<string, TicketsOnTarget>): Promise<{ running: number; waiting: number }> {
+    const { running, waiting } = await this.ticketsOn(name, byTarget);
+    return { running: running.length, waiting: waiting.length };
+  }
+
+  async definitions(): Promise<Pick<ExecutionTargetRow, 'name' | 'enabled' | 'concurrencyLimit'>[]> {
+    return this.db.read((db) =>
+      db.select({ name: executionTargets.name, enabled: executionTargets.enabled, concurrencyLimit: executionTargets.concurrencyLimit }).from(executionTargets).all(),
+    );
   }
 
   async podAccess(name: string): Promise<{ target: PodTarget & { defaultImage: string }; access: KubernetesAccess }> {
@@ -269,11 +297,13 @@ export class ExecutionTargetService {
 
   async list(): Promise<ExecutionTargetView[]> {
     const rows = await this.db.read((db) => db.select().from(executionTargets).orderBy(executionTargets.createdAt, executionTargets.id).all());
-    return Promise.all(rows.map((row) => this.view(row)));
+    const byTarget = await this.tickets?.byTarget();
+    return Promise.all(rows.map((row) => this.view(row, byTarget)));
   }
 
   async listWithLocal(): Promise<ExecutionTargetView[]> {
-    return [LOCAL_TARGET_VIEW, ...(await this.list())];
+    const local = { ...LOCAL_TARGET_VIEW, ...(await this.counts(LOCAL_TARGET)) };
+    return [local, ...(await this.list())];
   }
 
   async get(name: string): Promise<ExecutionTargetView> {
@@ -395,7 +425,7 @@ export class ExecutionTargetService {
   async rotateProxyKey(name: string): Promise<ProxyKeyRotation> {
     const current = await this.row(name);
     const rotated = await this.passes.rotate(current.name);
-    return { ...rotated, revokedRunning: await this.runningCount(current.name) };
+    return { ...rotated, revokedRunning: (await this.ticketsOn(current.name)).running.length };
   }
 
   async checkProxyKey(name: string): Promise<ProxyKeyCheck> {
@@ -403,21 +433,24 @@ export class ExecutionTargetService {
     return this.passes.checkProxy(current.name, current.repositoryProxyUrl);
   }
 
-  // ponytail: escalates nothing until `runs_on` ties Tickets to targets.
   async deletionImpact(name: string): Promise<DeletionImpact> {
     await this.row(name);
-    return { running: 0, waiting: 0, total: 0 };
+    const { running, waiting } = await this.ticketsOn(name);
+    return { running: running.length, waiting: waiting.length, total: running.length + waiting.length };
   }
 
   async delete(name: string): Promise<DeletionImpact> {
     const current = await this.row(name);
-    const impact = await this.deletionImpact(name);
+    const { running, waiting } = await this.ticketsOn(name);
     await this.db.write((db) => db.delete(executionTargets).where(eq(executionTargets.id, current.id)).run());
     if (current.kubeconfigSecret) await this.secrets.clear(current.kubeconfigSecret);
     await this.secrets.clear(signingKeySecretName(name));
     for (const harness of HARNESS_IDS) await this.secrets.clear(credentialSecretName(name, harness));
     await this.rewriteWorkspaceLists(name, null);
-    return impact;
+    const fix = 'Change `runs_on` in the workflow, or add the target back in Settings > Execution.';
+    await forEachYielding(running, (id) => this.tickets?.escalate(id, `Execution Target '${name}' was deleted. Its running Attempt was stopped. ${fix}`));
+    await forEachYielding(waiting, (id) => this.tickets?.escalate(id, `Execution Target '${name}' was deleted. No Attempt was started. ${fix}`));
+    return { running: running.length, waiting: waiting.length, total: running.length + waiting.length };
   }
 
   private async rewriteWorkspaceLists(from: string, to: string | null): Promise<void> {

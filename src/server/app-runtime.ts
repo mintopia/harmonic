@@ -2,6 +2,7 @@ import { defaultBranchPostMerge, type PostMergeHook } from '../execution/branch-
 import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
+import { LOCAL_TARGET } from '../execution/execution-targets.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
@@ -13,6 +14,8 @@ import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { TargetGate } from '../execution/target-gate.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { GlobalPause } from '../execution/global-pause.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
@@ -410,6 +413,19 @@ export async function createRuntime(deps: {
       await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
     },
   };
+  deps.stores.executionTargets.attachTickets({
+    byTarget: async () => {
+      const found = new Map<string, { running: number[]; waiting: number[] }>();
+      await forEachYielding(await tasks.list({ state: ['ready', 'working'] }), async (task) => {
+        const target = (await runner.kubernetesTargetOfTask(task)) ?? LOCAL_TARGET;
+        const entry = found.get(target) ?? { running: [], waiting: [] };
+        (task.state === 'working' ? entry.running : entry.waiting).push(task.id);
+        found.set(target, entry);
+      });
+      return found;
+    },
+    escalate: (taskId, reason) => runner.escalateForTarget(taskId, reason),
+  });
   const autoRunner = new AutoRunner(
     tasks,
     attempts,
@@ -420,6 +436,7 @@ export async function createRuntime(deps: {
       mirror,
       epicBaseNotReady: (task) => epicServiceRef?.epicBaseNotReady(task) ?? 'ready',
       gitBreaker,
+      targetGate: new TargetGate({ targets: deps.stores.executionTargets, targetOf: (task) => runner.kubernetesTargetOfTask(task) }),
       onSkipReasonChanged: (task) => bus.emit('task_changed', task),
     },
   );

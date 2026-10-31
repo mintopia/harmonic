@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, Task } from '../types';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
+import { TargetWaitChip, TargetWaitProps } from './TargetWaitChip';
 import { Icon } from './Icon';
 import { useAsyncResource } from '../useAsyncResource';
 import { gateForAttempt } from '../ticket-gate-model';
@@ -189,6 +190,7 @@ export function TicketPage({
               </h1>
               <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
                 <StatePill state={task.state} />
+                <TargetWaitChip wait={task.targetWait} />
                 {task.mergeStatus && (
                   <span className={mergeStatusPill(task.mergeStatus)}>{task.mergeStatus.replace(/-/g, ' ')}</span>
                 )}
@@ -202,6 +204,8 @@ export function TicketPage({
                 )}
               </span>
             </div>
+
+            {task.targetWait && <TargetWaitProps wait={task.targetWait} />}
 
             {task.execution && <ExecutionRow execution={task.execution} branch={task.branch} agent={<AgentFact task={task} attempts={attempts} />} />}
 
@@ -225,7 +229,7 @@ export function TicketPage({
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 
-            {task.skipReason && (
+            {task.skipReason && !task.targetWait && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
                 {skipHolderId === null ? (

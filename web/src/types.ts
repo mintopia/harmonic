@@ -794,6 +794,8 @@ export interface Task {
    * Context is already occupied (e.g. "Work Context held by task
    * 12 (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
+  /** The Kubernetes Execution Target this Ticket waits for; null when it waits on none. */
+  targetWait: { target: string; disabled: boolean; running: number; limit: number | null; position: number } | null;
   /** Epoch ms; null unless working with a budgeted running Attempt. */
   wallClockDeadline: number | null;
 }
@@ -1392,6 +1394,7 @@ export interface ExecutionTarget {
   proxyKey: { set: boolean; secretName: string; rotatedAt: number | null } | null;
   credentials: TargetCredential[];
   running: number;
+  waiting: number;
   createdAt: number | null;
   updatedAt: number | null;
 }
