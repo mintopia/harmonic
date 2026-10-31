@@ -182,7 +182,6 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         ? { ok: true, label: r.label, kind: r.name, source: r.source, code: null, reason: null }
         : { ok: false, label: null, kind: null, source: null, code: r.code, reason: r.reason };
 
-  /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const assertModelOptionOverlay = (overlay: ModelOptionOverlayEntry[]) => {
     const taken = new Set(ctx.settingsStore.getGlobal().modelOptions.map((o) => o.id));
     overlay.forEach((entry, index) => {
@@ -195,6 +194,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     if (first) throw new DomainError('validation', `modelOptions.${locals[first.index]!.index}.modelOption.${first.field}: ${first.message}`);
   };
 
+  /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
     ...maskWorkspaceSecrets(ws),
     taskPreMergeCommands: ws.taskPreMergeCommands ? JSON.parse(ws.taskPreMergeCommands) : null,
