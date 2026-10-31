@@ -1,3 +1,4 @@
+import type { ClassifierInput } from '../../src/domain/route-classifier.js';
 import { expandFragments, promptForTask, renderFragment, type DriveFields } from '../../src/execution/prompt-template.js';
 import { PROMPT_FRAGMENTS, PROMPT_FRAGMENT_NAMES, type PromptFragmentName, type PromptFragments } from '../../src/domain/prompt-fragments.js';
 import {
@@ -19,6 +20,7 @@ import {
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS, type PromptTemplateId } from '../../src/domain/prompt-templates.js';
 import { resolvePromptFragments } from '../../src/domain/setting-override.js';
 import {
+  buildClassifierPrompt,
   buildCriticPrompt,
   composeAttemptPrompt,
   composeCommitNudge,
@@ -316,6 +318,16 @@ const SAMPLE_PEERS = [{ taskId: 87, harness: 'codex', text: 'I renamed the share
 const SAMPLE_PRIOR_SESSION = { harness: 'claude', model: 'sonnet', sessionId: 'sess-4f2a91', head: SAMPLE_VERIFIED_HEAD_OID, events: 42 };
 const SAMPLE_CODE_INDEX_REPO = 'local/task-172';
 const SAMPLE_EPIC_REASON = 'Example verifier feedback.';
+const SAMPLE_CLASSIFIER_INPUT: ClassifierInput = {
+  title: SAMPLE_DRIVE_FIELDS.title,
+  description: SAMPLE_DRIVE_FIELDS.description,
+  labels: ['bug'],
+  attemptNumber: 1,
+  options: [
+    { id: 'quick-fix', description: 'Small, well-scoped changes', harness: 'claude', model: 'sonnet' },
+    { id: 'deep-work', description: 'Large or ambiguous changes', harness: 'claude', model: 'opus' },
+  ],
+};
 const SAMPLE_CRITIC_PROMPT = "(each critic's own prompt)";
 
 interface Toolkit {
@@ -431,12 +443,15 @@ const assembleCritic: Assembler = (tools, view, c) => {
   });
 };
 
+const assembleClassifier: Assembler = (tools) => buildClassifierPrompt(SAMPLE_CLASSIFIER_INPUT, tools.fragments);
+
 const ASSEMBLERS: Record<AnatomyId, Assembler> = {
   implementation: assembleImplementation,
   nudges: assembleNudge,
   mergeConflicts: assembleMergeConflict,
   epicFix: assembleEpicFix,
   criticReview: assembleCritic,
+  routeClassifier: assembleClassifier,
 };
 
 /** Compile one anatomy's prompt through the runtime's own compose functions with sample values, as segments keyed by the part that produced each span. */

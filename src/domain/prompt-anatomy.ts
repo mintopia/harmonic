@@ -30,7 +30,7 @@ export interface AnatomyChoice {
 
 export type AnatomyNode = AnatomyPart | AnatomyChoice;
 
-export type AnatomyId = 'implementation' | 'nudges' | 'mergeConflicts' | 'epicFix' | 'criticReview';
+export type AnatomyId = 'implementation' | 'nudges' | 'mergeConflicts' | 'epicFix' | 'criticReview' | 'routeClassifier';
 
 export interface AnatomyFlag {
   readonly id: string;
@@ -248,6 +248,14 @@ export const PROMPT_ANATOMIES: readonly PromptAnatomy[] = [
       fragment('criticSecurity'),
       fragment('criticVerdictContract'),
     ],
+  },
+  {
+    id: 'routeClassifier',
+    title: 'Route Classifier',
+    description: 'What the Route Classifier receives when it picks a Model Option for a Ticket.',
+    flags: [],
+    selectorDefaults: {},
+    parts: [fragment('routeClassifier')],
   },
 ];
 

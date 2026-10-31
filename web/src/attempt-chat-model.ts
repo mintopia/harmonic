@@ -21,6 +21,8 @@ export type ChatRow =
 const RESOLVED_PROMPT_LABEL: Record<string, string> = {
   'merge-conflict-resolve': 'Merge conflict resolver',
   'epic-resolve': 'Epic resolver',
+  'route-classified': 'Route Classifier',
+  'route-classifier-abstained': 'Route Classifier',
 };
 
 /** A tool card's outcome badge — settled ok / failed, or still in flight. */

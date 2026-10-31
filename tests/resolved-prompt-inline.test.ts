@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ResolvedPromptInline } from '../web/src/components/ticket/ResolvedPromptInline.js';
+import { ChatTranscript } from '../web/src/components/ticket/ChatTranscript.js';
 import { chatRows } from '../web/src/attempt-chat-model.js';
 import type { AttemptLogEvent } from '../web/src/types.js';
 import { cleanup, mountComponent } from './component-smoke-harness.js';
@@ -101,5 +102,24 @@ describe('chatRows resolved-prompt rows', () => {
       { kind: 'note', label: 'continue', text: null, key: 1 },
       { kind: 'note', label: 'commit-nudge', text: null, key: 2 },
     ]);
+  });
+});
+
+describe('Route Classifier Activity entry', () => {
+  const classified = {
+    id: 1,
+    seq: 1,
+    ts: 1,
+    type: 'lifecycle',
+    payload: { event: 'route-classified', optionId: 'deep-work', reason: 'hard', locator: 'routing/classifier/prompt.md', promptIndex: 0 },
+  } as unknown as AttemptLogEvent;
+
+  it('opens to the Resolved Prompt the classifier was sent', async () => {
+    fetchMock.mockResolvedValue(reply(200, 'You route software tickets.\n- deep-work: hard work'));
+    const host = await mountComponent(createElement(ChatTranscript, { events: [classified], unavailable: false, model: 'm', agent: 'Claude', attemptId: 7 }));
+    await act(async () => {});
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/api/attempts/7/resolved-prompt?locator=routing%2Fclassifier%2Fprompt.md&index=0');
+    expect(host.textContent).toContain('Prompt sent · Route Classifier');
+    expect(host.textContent).toContain('- deep-work: hard work');
   });
 });

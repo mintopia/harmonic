@@ -7494,6 +7494,17 @@
             ],
             "example": null
           },
+          "promptFragmentRouteClassifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentEpicFailingVerification": {
             "anyOf": [
               {
@@ -7885,6 +7896,7 @@
           "promptFragmentCriticRole",
           "promptFragmentCriticSecurity",
           "promptFragmentCriticVerdictContract",
+          "promptFragmentRouteClassifier",
           "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
@@ -8669,6 +8681,11 @@
                 "type": "string",
                 "minLength": 1,
                 "example": "Critic verdict contract"
+              },
+              "routeClassifier": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Route Classifier instructions"
               },
               "epicFailingVerification": {
                 "type": "string",
@@ -17636,6 +17653,17 @@
             ],
             "example": null
           },
+          "promptFragmentRouteClassifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentEpicFailingVerification": {
             "anyOf": [
               {
@@ -18028,6 +18056,7 @@
           "promptFragmentCriticRole",
           "promptFragmentCriticSecurity",
           "promptFragmentCriticVerdictContract",
+          "promptFragmentRouteClassifier",
           "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
@@ -18829,6 +18858,11 @@
                 "type": "string",
                 "minLength": 1,
                 "example": "Critic verdict contract"
+              },
+              "routeClassifier": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Route Classifier instructions"
               },
               "epicFailingVerification": {
                 "type": "string",
@@ -25676,6 +25710,18 @@
                       }
                     ]
                   },
+                  "promptFragmentRouteClassifier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Route Classifier instructions"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "promptFragmentEpicFailingVerification": {
                     "anyOf": [
                       {
@@ -27869,6 +27915,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -27898,6 +27949,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -29270,6 +29322,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -29299,6 +29356,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -30641,6 +30699,11 @@
                         "minLength": 1,
                         "example": "Critic verdict contract"
                       },
+                      "routeClassifier": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Route Classifier instructions"
+                      },
                       "epicFailingVerification": {
                         "type": "string",
                         "minLength": 1,
@@ -30670,6 +30733,7 @@
                       "criticRole",
                       "criticSecurity",
                       "criticVerdictContract",
+                      "routeClassifier",
                       "epicFailingVerification"
                     ]
                   },
@@ -31974,6 +32038,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -32003,6 +32072,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -33370,6 +33440,11 @@
                               "minLength": 1,
                               "example": "Critic verdict contract"
                             },
+                            "routeClassifier": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Route Classifier instructions"
+                            },
                             "epicFailingVerification": {
                               "type": "string",
                               "minLength": 1,
@@ -33399,6 +33474,7 @@
                             "criticRole",
                             "criticSecurity",
                             "criticVerdictContract",
+                            "routeClassifier",
                             "epicFailingVerification"
                           ],
                           "additionalProperties": false
@@ -34737,6 +34813,11 @@
                               "minLength": 1,
                               "example": "Critic verdict contract"
                             },
+                            "routeClassifier": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Route Classifier instructions"
+                            },
                             "epicFailingVerification": {
                               "type": "string",
                               "minLength": 1,
@@ -34766,6 +34847,7 @@
                             "criticRole",
                             "criticSecurity",
                             "criticVerdictContract",
+                            "routeClassifier",
                             "epicFailingVerification"
                           ],
                           "additionalProperties": false
@@ -36166,6 +36248,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -36195,6 +36282,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
