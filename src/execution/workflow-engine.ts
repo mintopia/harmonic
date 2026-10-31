@@ -377,6 +377,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
         return null;
       }
       if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
+      if (ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
     } finally {
       await ownPod?.dispose();
     }
@@ -397,7 +398,18 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
 
   private podFor(ctx: RunContext<S>, step: WorkflowStepDefinition): PodSession | undefined {
     if (!ctx.pod) return undefined;
-    return this.stepRunsInPod(step) && (step.runs_on === undefined || step.runs_on === ctx.podTarget) ? ctx.pod : undefined;
+    return this.stepRunsInPod(step) && step.runs_on === undefined ? ctx.pod : undefined;
+  }
+
+  private async resyncWorkflowPod(workflowPod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {
+    let failure: string | null;
+    try {
+      failure = await workflowPod.sync();
+    } catch (error) {
+      failure = errorMessage(error);
+    }
+    if (failure === null || result.outcome !== 'pass') return result;
+    return { ...result, outcome: 'inconclusive', summary: mask(`workflow pod could not pick up the step's checkpoint: ${failure}`) };
   }
 
   private async checkpointed(pod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {

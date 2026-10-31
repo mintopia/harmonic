@@ -197,6 +197,23 @@ echo "\${tip%%[[:space:]]*}"`,
     });
   }
 
+  sync(): Promise<string | null> {
+    return this.serialised(async () => {
+      const synced = await this.shell(
+        `${GIT}
+set -eu
+cd "$HARMONIC_WORKDIR"
+gitWithPass fetch -q origin "+refs/heads/$HARMONIC_BRANCH:refs/remotes/origin/$HARMONIC_BRANCH"
+git reset -q --hard "refs/remotes/origin/$HARMONIC_BRANCH"
+git rev-parse HEAD`,
+        { HARMONIC_WORKDIR: this.workdir },
+      );
+      if (synced.code !== 0) return this.failureText(synced) || (synced.timedOut ? 'timed out' : 'the sync failed');
+      this.remoteTip = synced.stdout.trim().split('\n').at(-1) || null;
+      return null;
+    });
+  }
+
   checkpoint(): Promise<Checkpoint> {
     return this.serialised(async () => {
       const { branch } = this.spec;
