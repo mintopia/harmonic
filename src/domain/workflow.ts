@@ -110,8 +110,6 @@ export interface WorkflowDefinition {
   readonly name: string;
   readonly description: string;
   readonly subject: WorkflowSubject;
-  readonly runsOn?: string | undefined;
-  readonly image?: string | undefined;
   /** Every step in execution order, the `attempts:` block's steps included. */
   readonly steps: readonly WorkflowStepDefinition[];
   readonly attempts: AttemptsBlock;
@@ -151,7 +149,7 @@ export function parseWorkflow(text: string, options: { lenient?: boolean } = {})
   }
   const definition = workflowSchema.parse(doc.toJS());
   const { located, block } = layout(definition);
-  return { name: definition.name, description: definition.description, subject: definition.subject ?? 'ticket', runsOn: definition.runs_on, image: definition.image, cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
+  return { name: definition.name, description: definition.description, subject: definition.subject ?? 'ticket', cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
 }
 
 /** Checks every `option:` code against `isUsable`. */
@@ -202,8 +200,6 @@ function runsOnRefs(root: unknown): { path: PropertyKey[]; target: string }[] {
 export interface TargetCheck {
   /** True when `name` is `local` or a defined Execution Target. */
   known: (name: string) => boolean | Promise<boolean>;
-  /** True when `name` is a Kubernetes (non-`local`) Execution Target. */
-  isKubernetes: (name: string) => boolean | Promise<boolean>;
   /** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
   directWorkspaces: () => string[] | Promise<string[]>;
 }
@@ -217,7 +213,7 @@ export async function targetProblems(text: string, check: TargetCheck): Promise<
   for (const { path, target } of runsOnRefs(doc.toJS())) {
     let message: string | undefined;
     if (!(await check.known(target))) message = `runs_on: unknown Execution Target '${target}'`;
-    else if (await check.isKubernetes(target)) {
+    else if (target !== 'local') {
       direct ??= await check.directWorkspaces();
       if (direct.length > 0) message = `runs_on: Kubernetes Execution Target '${target}' is not available to Workspace ${direct.map((n) => `'${n}'`).join(', ')} in direct mode, which would use this workflow as its default or through a Workflow Label. Switch the Workspace to worktree Isolation Mode first.`;
     }

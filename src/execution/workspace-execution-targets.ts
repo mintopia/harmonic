@@ -112,15 +112,8 @@ export function directWorkspacesUsing(
 }
 
 /** The refusal for assigning a Kubernetes workflow to a Ticket that runs in `direct` mode; null when allowed. */
-export async function kubernetesWorkflowRefusal(
-  workflow: string,
-  runsOn: readonly string[],
-  isolationMode: string,
-  targets: Pick<ExecutionTargetService, 'find'>,
-): Promise<string | null> {
-  if (isolationMode !== 'direct') return null;
-  for (const target of runsOn) {
-    if (await targets.find(target)) return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to a Ticket in direct mode. Switch the Isolation Mode to worktree first.`;
-  }
-  return null;
+export function kubernetesWorkflowRefusal(workflow: string, runsOn: readonly string[], isolationMode: 'direct' | 'worktree'): string | null {
+  const target = runsOn.find((name) => name !== LOCAL_TARGET);
+  if (isolationMode !== 'direct' || target === undefined) return null;
+  return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to a Ticket in direct mode. Switch the Isolation Mode to worktree first.`;
 }

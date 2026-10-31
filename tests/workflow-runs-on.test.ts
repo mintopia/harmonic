@@ -24,8 +24,6 @@ const target = {
 describe('runs_on and image in the workflow schema', () => {
   it('accepts workflow-level and step-level runs_on and image', () => {
     const def = parseWorkflow(flow('x', 'runs_on: k8s-prod\nimage: img:1\n', '    runs_on: local\n    image: img:2\n'));
-    expect(def.runsOn).toBe('k8s-prod');
-    expect(def.image).toBe('img:1');
     expect(def.steps[0]).toMatchObject({ runs_on: 'local', image: 'img:2' });
   });
 });
@@ -38,7 +36,6 @@ describe('save-time refusals', () => {
     new WorkflowLibrary(root, {
       targetCheck: () => ({
         known: (name) => name === 'local' || name === 'k8s-prod',
-        isKubernetes: (name) => name !== 'local',
         directWorkspaces: () => direct,
       }),
     });

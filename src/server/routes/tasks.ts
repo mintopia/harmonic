@@ -472,8 +472,8 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       }
       if (req.body.workflow !== undefined) {
         const workspace = resolveWorkspace(await ctx.workspaces.list(), req.body.workspaceId);
-        const isolationMode = req.body.isolationMode ?? workspace.isolationMode ?? ctx.settingsStore.getGlobal().defaults.isolationMode;
-        const refusal = await kubernetesWorkflowRefusal(req.body.workflow, workflowRunsOn(ctx.workflows.get(req.body.workflow).text), isolationMode, ctx.executionTargets);
+        const isolationMode = req.body.isolationMode ?? (workspace.isolationMode as 'direct' | 'worktree' | null) ?? ctx.settingsStore.getGlobal().defaults.isolationMode;
+        const refusal = kubernetesWorkflowRefusal(req.body.workflow, workflowRunsOn(ctx.workflows.get(req.body.workflow).text), isolationMode);
         if (refusal) throw new DomainError('validation', refusal);
       }
       const task = await ctx.tasks.create(req.body);

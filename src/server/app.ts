@@ -90,7 +90,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     targetCheck: (name) => ({
       known: async (target) => target === LOCAL_TARGET || (await stores.executionTargets.find(target)) !== null,
-      isKubernetes: (target) => target !== LOCAL_TARGET,
       directWorkspaces: async () => directWorkspacesUsing(name, await stores.workspaces.list(), stores.settingsStore.getGlobal()),
     }),
     referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
