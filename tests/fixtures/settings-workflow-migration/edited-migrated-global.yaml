@@ -1,0 +1,37 @@
+name: migrated-global
+description: Migrated (global)
+vars:
+  maxAttempts: 3
+steps:
+  - id: rebase
+    uses: rebase
+  - attempts:
+      max: ${{ vars.maxAttempts }}
+      steps:
+        - id: build
+          uses: agent
+          with:
+            prompt: ${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'migrated-global-implement-ticket-heal' || 'migrated-global-implement-ticket') || (attempt.number > 1 && 'migrated-global-implement-native-heal' || 'implement-native') }}
+            continueAttempts: 4
+            continuePrompt: commitNudge
+        - id: verify-1
+          run: npm test
+        - id: verify-2
+          run: cd packages/api && env CI=1 node scripts/lint.mjs '--mode strict'
+        - id: critic-1
+          uses: critic
+          with:
+            harness: claude
+            model: claude-sonnet-5-5
+            prompt: ${{ ticket.origin == 'mirrored' && 'migrated-global-critic1-issue' || 'migrated-global-critic1-noissue' }}
+  - id: merge
+    uses: merge
+  - id: post-merge-check
+    uses: post-merge-check
+    with:
+      run: npm run smoke
+  - id: close-ticket
+    uses: close-ticket
+cleanup:
+  - id: cleanup
+    uses: cleanup

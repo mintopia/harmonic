@@ -13,6 +13,7 @@ import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
 import { resolveModelOption } from '../domain/model-options.js';
+import { migrateSettingsToWorkflows } from '../domain/settings-workflow-migration.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
 import { isNotNull } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
@@ -86,6 +87,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   await workflowLibrary.load();
   promptLibrary.attachWorkflows(workflowLibrary);
+  await migrateSettingsToWorkflows({ db: asyncDb, settings: stores.settingsStore, prompts: promptLibrary, workflows: workflowLibrary, workspaces: stores.workspaces, tasks: stores.tasks });
   const runtime = await createRuntime({
     opts,
     promptLibrary,

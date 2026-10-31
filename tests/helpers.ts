@@ -13,6 +13,7 @@ import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
+import { SETTINGS_MIGRATION_MARKER } from '../src/domain/settings-workflow-migration.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { BackgroundWork } from '../src/error-handling.js';
 import { spawn } from 'node:child_process';
@@ -323,6 +324,9 @@ async function migratedDbTemplate(): Promise<string> {
     const handle = await openAsyncDb(dir);
     await handle.close();
     dbTemplatePath = join(dir, 'harmonic.db');
+    const raw = new DatabaseSync(dbTemplatePath);
+    raw.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(SETTINGS_MIGRATION_MARKER, 'done');
+    raw.close();
   }
   return dbTemplatePath;
 }
