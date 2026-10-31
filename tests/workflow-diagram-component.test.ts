@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { buildWorkflowDiagram } from '../src/domain/workflow-diagram.js';
 import { WorkflowDiagram } from '../web/src/components/WorkflowDiagram.js';
@@ -39,5 +40,14 @@ describe('WorkflowDiagram', () => {
     expect(container.textContent).toContain('Stale');
     expect(container.textContent).toContain('Showing last valid parse. Fix the 3 errors to refresh the diagram.');
     expect(container.querySelector('[data-stale="true"]')).not.toBeNull();
+  });
+
+  it('shows the condition on the bundled implement review group', async () => {
+    const text = new WorkflowLibrary(null).list().find((w) => w.name === 'implement' && w.bundled)!.text;
+    const implement = buildWorkflowDiagram(parseWorkflow(text));
+    const container = await mountComponent(createElement(WorkflowDiagram, { model: implement, stale: false, errorCount: 0 }));
+    const group = container.querySelector('[data-node="review"][data-kind="parallel"]');
+    expect(group?.textContent).toContain('PARALLEL');
+    expect(group?.textContent).toContain('if: vars.review');
   });
 });

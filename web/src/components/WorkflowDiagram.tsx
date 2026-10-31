@@ -36,6 +36,7 @@ function NodeBox({ p }: { p: PlacedNode }) {
       {group ? (
         <text x={x + 10} y={y + 18} fontSize={11} fontWeight={600} letterSpacing={0.5} fill={node.kind === 'attempts' ? 'var(--hm-accent)' : 'var(--hm-muted)'}>
           {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${fit(node.detail, 14)}` : ''}` : 'PARALLEL'}
+          {node.kind === 'parallel' && node.condition && <tspan fontWeight={700} letterSpacing={0} fill="var(--hm-ink)">{` · ◇ if: ${fit(conditionLabel(node.condition), 16)}`}</tspan>}
         </text>
       ) : node.kind === 'cleanup' ? (
         <>
@@ -101,7 +102,6 @@ function Legend() {
   );
 }
 
-/** Read-only live diagram of a Workflow's control flow; dimmed while the editor holds errors and the last valid parse is shown. */
 export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowDiagramModel | null; stale: boolean; errorCount: number }) {
   const ready = useMemo(() => (model ? computeLayout(model) : null), [model]);
   return (

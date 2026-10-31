@@ -37,7 +37,6 @@ function stepNode(step: WorkflowStepDefinition, parent?: string): DiagramNode {
   return node;
 }
 
-/** Derives the read-only control-flow diagram from a parsed Workflow: sequential pass edges, the bounded Attempts loop, and escalation exits. */
 export function buildWorkflowDiagram(def: WorkflowDefinition): WorkflowDiagramModel {
   const nodes: DiagramNode[] = [];
   const edges: DiagramEdge[] = [];

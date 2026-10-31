@@ -5,8 +5,7 @@ export interface PlacedLabel { x: number; y: number; anchor: 'start' | 'middle' 
 export interface PlacedEdge { edge: DiagramEdge; points: { x: number; y: number }[]; label?: PlacedLabel; subLabel?: PlacedLabel }
 export interface DiagramLayout { nodes: PlacedNode[]; edges: PlacedEdge[]; width: number; height: number }
 
-/** Horizontal stretch so node text fits at natural size. */
-const SX = 1.18;
+const TEXT_STRETCH_X = 1.18;
 const CX = 190;
 const STEP_W = 160;
 const STEP_H = 40;
@@ -26,7 +25,6 @@ interface Box { x: number; y: number; w: number; h: number }
 
 const midY = (b: Box): number => b.y + b.h / 2;
 
-/** Deterministic layout: one column of steps, Attempts and Parallel groups as boxes around their members, Escalation to the right beside the first step that escalates. */
 export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
   const boxes = new Map<string, Box>();
   const parallelChild = new Set<string>();
@@ -98,7 +96,7 @@ export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
   const escCx = escX + ESC_W / 2;
   const backX = (groupRight || right + 22) - 18;
 
-  const px = (v: number): number => v * SX;
+  const px = (v: number): number => v * TEXT_STRETCH_X;
   const edges: PlacedEdge[] = model.edges.map((edge) => {
     const a = boxes.get(edge.from);
     const b = boxes.get(edge.to);
@@ -124,7 +122,7 @@ export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
       }
       const endY = startY < b.y ? b.y : b.y + b.h;
       const points = [{ x: a.x + a.w, y: startY }, { x: escCx, y: startY }, { x: escCx, y: endY }];
-      const lx = fromGroup ? a.x + a.w + 9 / SX : (a.x + a.w + escCx) / 2;
+      const lx = fromGroup ? a.x + a.w + 9 / TEXT_STRETCH_X : (a.x + a.w + escCx) / 2;
       return { edge, points: points.map((p) => ({ x: px(p.x), y: p.y })), ...(edge.label ? { label: label(edge.label, lx, startY - 6, fromGroup ? 'start' : 'middle') } : {}) };
     }
     const y1 = a.y + a.h;
@@ -133,7 +131,7 @@ export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
     const topBorder = groupBoxes.some((g) => g.y > y1 && g.y < y2);
     const bottomBorder = groupBoxes.find((g) => g.y + g.h > y1 && g.y + g.h < y2);
     const labelY = topBorder ? y2 - 8 : bottomBorder ? bottomBorder.y + bottomBorder.h + 14 : (y1 + y2) / 2 + 4;
-    return { edge, points: [{ x: px(CX), y: y1 }, { x: px(CX), y: y2 }], ...(edge.label ? { label: label(edge.label, CX + 10 / SX, labelY, 'start') } : {}) };
+    return { edge, points: [{ x: px(CX), y: y1 }, { x: px(CX), y: y2 }], ...(edge.label ? { label: label(edge.label, CX + 10 / TEXT_STRETCH_X, labelY, 'start') } : {}) };
   });
 
   const nodes: PlacedNode[] = model.nodes.flatMap((node) => {

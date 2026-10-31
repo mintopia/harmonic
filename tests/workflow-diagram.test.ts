@@ -1,7 +1,21 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { buildWorkflowDiagram } from '../src/domain/workflow-diagram.js';
 import { computeLayout } from '../web/src/workflow-diagram-layout.js';
+
+const bundledWorkflows = new WorkflowLibrary(null).list().filter((w) => w.bundled);
+const bundled = (name: string): string => bundledWorkflows.find((w) => w.name === name)!.text;
+
+const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'settings-workflow-migration');
+const layoutSources = [
+  ...bundledWorkflows.map((w) => ({ name: `bundled ${w.name}`, text: w.text })),
+  ...readdirSync(FIXTURE_DIR)
+    .filter((f) => f.endsWith('.yaml'))
+    .map((f) => ({ name: `fixture ${f}`, text: readFileSync(join(FIXTURE_DIR, f), 'utf8') })),
+];
 
 const edgeKeys = (text: string) => buildWorkflowDiagram(parseWorkflow(text)).edges.map((e) => `${e.from}>${e.to}:${e.kind}:${e.label ?? ''}`);
 
@@ -58,26 +72,57 @@ const CLEANUP = `${IMPLEMENT}cleanup:
 
 describe('buildWorkflowDiagram', () => {
   it('draws the bundled implement workflow', () => {
-    const m = buildWorkflowDiagram(parseWorkflow(IMPLEMENT));
+    const m = buildWorkflowDiagram(parseWorkflow(bundled('implement')));
     expect(m.nodes.map((n) => `${n.id}:${n.kind}:${n.parent ?? ''}`)).toEqual([
       'attempts:attempts:',
       'rebase:step:',
       'build:step:attempts',
       'verify:step:attempts',
-      'review:step:attempts',
+      'review:parallel:attempts',
+      'critic:step:review',
       'merge:step:',
+      'post-merge-check:step:',
+      'close-ticket:step:',
       'escalation:escalation:',
+      'cleanup:cleanup:',
     ]);
-    expect(m.nodes.find((n) => n.id === 'review')?.detail).toBe('critic · claude claude-sonnet-5-5\nprompt Review it.');
-    expect(edgeKeys(IMPLEMENT)).toEqual([
+    expect(m.nodes.find((n) => n.id === 'review')?.condition).toBe('${{ vars.review }}');
+    expect(edgeKeys(bundled('implement'))).toEqual([
       'rebase>build:outcome:pass',
       'build>verify:outcome:pass',
       'verify>review:outcome:pass',
       'review>merge:outcome:pass',
+      'merge>post-merge-check:outcome:pass',
+      'post-merge-check>close-ticket:outcome:pass',
       'review>build:back:fail · inconclusive',
       'attempts>escalation:escalation:max reached',
       'merge>escalation:escalation:conflict',
+      'post-merge-check>escalation:escalation:fail',
+      'close-ticket>cleanup:done:done',
     ]);
+  });
+
+  it('draws the bundled research workflow', () => {
+    const m = buildWorkflowDiagram(parseWorkflow(bundled('research')));
+    expect(m.nodes.map((n) => `${n.id}:${n.kind}:${n.parent ?? ''}`)).toEqual([
+      'attempts:attempts:',
+      'research:step:attempts',
+      'artifact:step:',
+      'escalation:escalation:',
+    ]);
+    expect(edgeKeys(bundled('research'))).toEqual([
+      'research>artifact:outcome:pass',
+      'research>research:back:fail · inconclusive',
+      'attempts>escalation:escalation:max reached',
+    ]);
+  });
+
+  it.each(layoutSources.map((s) => [s.name, s.text] as const))('lays out every node and edge of %s', (_name, text) => {
+    const model = buildWorkflowDiagram(parseWorkflow(text));
+    const layout = computeLayout(model);
+    expect(layout.nodes.map((n) => n.node.id).sort()).toEqual(model.nodes.map((n) => n.id).sort());
+    expect(layout.edges).toHaveLength(model.edges.length);
+    for (const e of layout.edges) expect(e.points.length, `${e.edge.from}>${e.edge.to}`).toBeGreaterThanOrEqual(2);
   });
 
   it('groups parallel steps and keeps if conditions', () => {
