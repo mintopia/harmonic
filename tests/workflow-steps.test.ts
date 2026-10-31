@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
 import type { WorkflowStepRun, WorkflowStepsResponse } from '../web/src/types.js';
@@ -54,6 +54,21 @@ describe('WorkflowSteps', () => {
     expect(rows[2]!.textContent).toContain('running');
     expect(rows[2]!.textContent).not.toContain('exit');
     expect(host.textContent).toContain('implement@2');
+  });
+
+  it('renders a re-run step as a second row without duplicate keys', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const host = await mountComponent(
+      createElement(WorkflowSteps, {
+        data: response([
+          step({ stepId: 'build', outcome: null, endedAt: null }),
+          step({ stepId: 'build', startedAt: 1, endedAt: 2 }),
+        ]),
+      }),
+    );
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+    expect(errors.mock.calls.flat().join(' ')).not.toContain('same key');
+    errors.mockRestore();
   });
 });
 

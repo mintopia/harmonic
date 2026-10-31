@@ -54,7 +54,7 @@ export interface RunnerOptions {
   /** Held Agent Messages injected at Attempt start. */
   agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
-  /** Runs a Ticket's chosen Task Execution Workflow; absent → such a Ticket escalates unspawned. */
+  /** Runs a Ticket's chosen Task Execution Workflow; absent → starting such a Ticket throws invalid_state. */
   workflows?: { library: WorkflowLibrary; secrets: SecretService };
   /** Source of the Epic fix prompt text; absent → bundled prompts only. */
   promptLibrary?: PromptLibrary;

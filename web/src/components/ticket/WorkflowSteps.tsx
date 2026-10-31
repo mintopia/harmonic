@@ -57,8 +57,8 @@ export function WorkflowSteps({ data }: { data: WorkflowStepsResponse | null }) 
         <p className="text-[13px] text-muted">No step has run yet.</p>
       ) : (
         <ol className="space-y-2">
-          {data.steps.map((step) => (
-            <StepRow key={step.stepId} step={step} />
+          {data.steps.map((step, index) => (
+            <StepRow key={`${step.stepId}:${index}`} step={step} />
           ))}
         </ol>
       )}
