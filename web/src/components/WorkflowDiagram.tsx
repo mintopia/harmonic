@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import type { DiagramEdgeKind, DiagramNode, WorkflowDiagramModel } from '../../../src/domain/workflow-diagram.js';
-import { layoutWorkflowDiagram, type DiagramLayout, type PlacedEdge, type PlacedNode } from '../workflow-diagram-layout.js';
+import { useMemo } from 'react';
+import type { DiagramEdgeKind, WorkflowDiagramModel } from '../../../src/domain/workflow-diagram.js';
+import { computeLayout, type PlacedEdge, type PlacedNode } from '../workflow-diagram-layout.js';
 
 const EDGE_STYLE: Record<DiagramEdgeKind, { stroke: string; dash?: string; text: string }> = {
   outcome: { stroke: 'var(--hm-muted)', text: 'var(--hm-done)' },
@@ -83,7 +83,7 @@ const LEGEND: { kind: DiagramEdgeKind; label: string }[] = [
   { kind: 'outcome', label: 'outcome edge' },
   { kind: 'back', label: 'back edge to next Attempt' },
   { kind: 'escalation', label: 'to Escalation' },
-  { kind: 'done', label: 'bounded attempts: loop' },
+  { kind: 'done', label: 'to cleanup when done' },
 ];
 
 function Legend() {
@@ -99,29 +99,9 @@ function Legend() {
   );
 }
 
-function Fallback({ nodes }: { nodes: DiagramNode[] }) {
-  return (
-    <ul style={{ margin: 0, padding: '0 0 0 18px', fontSize: 12, color: 'var(--hm-muted)' }}>
-      {nodes.map((n) => (
-        <li key={n.id}>{n.label}{n.detail ? ` · ${n.detail.replace(/\n/g, ', ')}` : ''}</li>
-      ))}
-    </ul>
-  );
-}
-
 /** Read-only live diagram of a Workflow's control flow; dimmed while the editor holds errors and the last valid parse is shown. */
 export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowDiagramModel | null; stale: boolean; errorCount: number }) {
-  const [layout, setLayout] = useState<{ model: WorkflowDiagramModel; value: DiagramLayout } | null>(null);
-  useEffect(() => {
-    if (!model) return;
-    let live = true;
-    layoutWorkflowDiagram(model).then(
-      (value) => { if (live) setLayout({ model, value }); },
-      () => {},
-    );
-    return () => { live = false; };
-  }, [model]);
-  const ready = layout !== null && layout.model === model ? layout.value : null;
+  const ready = useMemo(() => (model ? computeLayout(model) : null), [model]);
   return (
     <section aria-label="Workflow step diagram" style={{ background: 'var(--hm-surface)', border: '1px solid var(--hm-hairline)', borderRadius: 6, padding: 16 }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -139,7 +119,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
       <div data-stale={stale} style={{ opacity: stale ? 0.45 : 1, overflow: 'auto' }}>
         {!model ? (
           <p style={{ margin: 0, fontSize: 12, color: 'var(--hm-muted)' }}>Nothing to draw yet.</p>
-        ) : ready ? (
+        ) : ready && (
           <svg role="img" aria-label="Workflow step diagram graphic" width={ready.width} height={ready.height} style={{ display: 'block', flex: 'none' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
             <defs>
               {(Object.keys(EDGE_STYLE) as DiagramEdgeKind[]).map((k) => (
@@ -151,8 +131,6 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
             {[...ready.nodes].sort((a, b) => Number(b.node.kind === 'attempts' || b.node.kind === 'parallel') - Number(a.node.kind === 'attempts' || a.node.kind === 'parallel')).map((p) => <NodeBox key={p.node.id} p={p} />)}
             {ready.edges.map((p, i) => <EdgePath key={i} p={p} />)}
           </svg>
-        ) : (
-          <Fallback nodes={model.nodes} />
         )}
       </div>
       {model && <div style={{ opacity: stale ? 0.45 : 1 }}><Legend /></div>}

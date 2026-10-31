@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { serverRefusalIssues, validateWorkflowText } from '../web/src/workflow-editor-model.js';
+import { messageParts, validateWorkflowText } from '../web/src/workflow-editor-model.js';
 
 const good = ['name: w', 'description: d', 'steps:', '  - id: a', '    uses: rebase', '  - attempts:', '      max: 2', '      steps:', '        - id: b', '          uses: agent', ''].join('\n');
 const bad = good.replace('uses: agent', 'uses: agent\n          retries: 3');
@@ -29,17 +29,12 @@ describe('validateWorkflowText', () => {
     expect(r.stale).toBe(false);
   });
 
-  it('maps server issues, falling back to line 1', () => {
-    expect(serverRefusalIssues({ message: 'm', issues: [{ message: 'x', line: 3, column: 2 }] })).toEqual([{ line: 3, column: 2, message: 'x', source: 'server' }]);
-    expect(serverRefusalIssues({ message: 'name taken' })[0]).toMatchObject({ line: 1, source: 'server' });
-  });
 });
 
 describe('messageParts', () => {
-  it('chips the token and the suggestion', async () => {
-    const { messageParts } = await import('../web/src/workflow-editor-model.js');
+  it('chips the token and the suggestion', () => {
     expect(messageParts('unknown key: retries (did you mean attempts?)')).toEqual([
-      { text: 'unknown key ', code: false }, { text: 'retries', code: true }, { text: ' (did you mean ', code: false }, { text: 'attempts', code: true }, { text: '?)', code: false },
+      { text: 'unknown key: ', code: false }, { text: 'retries', code: true }, { text: ' (did you mean ', code: false }, { text: 'attempts', code: true }, { text: '?)', code: false },
     ]);
     expect(messageParts('invalid expression')).toEqual([{ text: 'invalid expression', code: false }]);
   });

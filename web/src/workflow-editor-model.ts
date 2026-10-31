@@ -19,10 +19,6 @@ export function toEditorIssues(issues: readonly ErrorIssue[], source: WorkflowEd
   return issues.map((i) => ({ line: i.line, column: i.column, message: i.message, source }));
 }
 
-export function serverRefusalIssues(error: { message: string; issues?: readonly ErrorIssue[] }): WorkflowEditorIssue[] {
-  return error.issues?.length ? toEditorIssues(error.issues, 'server') : [{ line: 1, column: 1, message: error.message, source: 'server' }];
-}
-
 export function validateWorkflowText(text: string, prev: WorkflowDiagramModel | null): WorkflowEditorValidation {
   try {
     return { issues: [], diagram: buildWorkflowDiagram(parseWorkflow(text)), stale: false };
@@ -39,7 +35,7 @@ export interface MessagePart { text: string; code: boolean }
 export function messageParts(message: string): MessagePart[] {
   const m = /^unknown key: (\S+?)(?: \(did you mean (\S+?)\?\))?$/.exec(message);
   if (!m) return [{ text: message, code: false }];
-  const parts: MessagePart[] = [{ text: 'unknown key ', code: false }, { text: m[1]!, code: true }];
+  const parts: MessagePart[] = [{ text: 'unknown key: ', code: false }, { text: m[1]!, code: true }];
   if (m[2] !== undefined) parts.push({ text: ' (did you mean ', code: false }, { text: m[2], code: true }, { text: '?)', code: false });
   return parts;
 }

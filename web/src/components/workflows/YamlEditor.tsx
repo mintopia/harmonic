@@ -8,7 +8,7 @@ import { completeWorkflow } from '../../../../src/domain/workflow-completion.js'
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import type { WorkflowIssue } from '../../types';
-import { issueText } from './workflows-model';
+import { messageParts } from '../../workflow-editor-model';
 import { paperHighlight, paperTheme } from '../CodeViewer';
 
 class IssueWidget extends WidgetType {
@@ -24,7 +24,16 @@ class IssueWidget extends WidgetType {
     el.setAttribute('role', 'alert');
     el.dataset.line = String(this.issue.line);
     el.dataset.column = String(this.issue.column);
-    el.textContent = issueText(this.issue);
+    el.append(`Line ${this.issue.line}, col ${this.issue.column}: `);
+    for (const part of messageParts(this.issue.message)) {
+      if (!part.code) el.append(part.text);
+      else {
+        const chip = document.createElement('code');
+        chip.className = 'cm-issue-chip';
+        chip.textContent = part.text;
+        el.append(chip);
+      }
+    }
     return el;
   }
 }
@@ -65,6 +74,7 @@ const issueField = StateField.define<DecorationSet>({
 const issueTheme = EditorView.theme({
   '.cm-issue-line': { backgroundColor: 'var(--hm-fail-tint)' },
   '.cm-issue-mark': { textDecoration: 'underline wavy var(--hm-fail)' },
+  '.cm-issue-chip': { fontFamily: 'var(--font-code, monospace)', background: 'var(--hm-surface)', padding: '0 4px', borderRadius: '3px' },
   '.cm-issue-message': { backgroundColor: 'var(--hm-fail-tint)', color: 'var(--hm-fail)', padding: '3px 12px 4px', fontFamily: 'var(--font-sans, inherit)', fontSize: '12px' },
   '&': { backgroundColor: 'transparent' },
   '.cm-completionIcon': { display: 'none' },

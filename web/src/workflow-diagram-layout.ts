@@ -27,10 +27,6 @@ interface Box { x: number; y: number; w: number; h: number }
 const midY = (b: Box): number => b.y + b.h / 2;
 
 /** Deterministic layout: one column of steps, Attempts and Parallel groups as boxes around their members, Escalation to the right beside the first step that escalates. */
-export function layoutWorkflowDiagram(model: WorkflowDiagramModel): Promise<DiagramLayout> {
-  return Promise.resolve(computeLayout(model));
-}
-
 export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
   const boxes = new Map<string, Box>();
   const parallelChild = new Set<string>();
