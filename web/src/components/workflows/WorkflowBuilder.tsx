@@ -66,8 +66,8 @@ function Grip() {
   );
 }
 
-function Drag({ id, data, children, className }: { id: string; data: DragItem; children: (grip: ReactNode) => ReactNode; className?: string }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data });
+function Drag({ id, data, children, className, disabled }: { id: string; data: DragItem; children: (grip: ReactNode) => ReactNode; className?: string; disabled: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data, disabled });
   return (
     <div ref={setNodeRef} className={`${className ?? ''} ${isDragging ? 'opacity-40' : ''}`}>
       {children(
@@ -167,15 +167,15 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
   return (
     <div className="mt-2 border-t border-hairline pt-1">
       <Labelled label="Step ID">
-        <input className={field} value={step.id} onChange={(e) => set('id', e.target.value)} />
+        <input disabled={ctx.readOnly} className={field} value={step.id} onChange={(e) => set('id', e.target.value)} />
       </Labelled>
       {isRun ? (
         <Labelled label="Command">
-          <input className={`${field} font-data`} value={step.run ?? ''} onChange={(e) => set('run', e.target.value)} />
+          <input disabled={ctx.readOnly} className={`${field} font-data`} value={step.run ?? ''} onChange={(e) => set('run', e.target.value)} />
         </Labelled>
       ) : (
         <Labelled label="Action">
-          <select className={`${selectField} w-full`} value={step.uses ?? ''} onChange={(e) => set('uses', e.target.value)}>
+          <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.uses ?? ''} onChange={(e) => set('uses', e.target.value)}>
             {step.uses === undefined && <option value="" />}
             {WORKFLOW_ACTIONS.map((a) => (
               <option key={a}>{a}</option>
@@ -186,7 +186,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
       {agentLike && (
         <>
           <Labelled label="Harness">
-            <select className={`${selectField} w-full`} value={step.harness ?? ''} onChange={(e) => set('harness', e.target.value)}>
+            <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.harness ?? ''} onChange={(e) => set('harness', e.target.value)}>
               <option value="">Default</option>
               {harnesses.map((h) => (
                 <option key={h} value={h}>
@@ -196,10 +196,10 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
             </select>
           </Labelled>
           <Labelled label="Model">
-            <input className={field} value={step.model ?? ''} placeholder="Default" onChange={(e) => set('model', e.target.value)} />
+            <input disabled={ctx.readOnly} className={field} value={step.model ?? ''} placeholder="Default" onChange={(e) => set('model', e.target.value)} />
           </Labelled>
           <Labelled label="Prompt (prompt library code)">
-            <select className={`${selectField} w-full`} value={step.prompt ?? ''} onChange={(e) => set('prompt', e.target.value)}>
+            <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.prompt ?? ''} onChange={(e) => set('prompt', e.target.value)}>
               <option value="">None</option>
               {prompts.map((p) => (
                 <option key={p}>{p}</option>
@@ -209,7 +209,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
         </>
       )}
       <Labelled label="Run only if (if:)">
-        <input className={`${field} font-data`} value={step.condition ?? ''} onChange={(e) => set('condition', e.target.value)} />
+        <input disabled={ctx.readOnly} className={`${field} font-data`} value={step.condition ?? ''} onChange={(e) => set('condition', e.target.value)} />
       </Labelled>
     </div>
   );
@@ -221,7 +221,7 @@ function StepBlock({ step, ctx, index, siblings, container }: { step: BuilderSte
   const errors = ctx.issues.get(key) ?? [];
   const detail = stepDetail(step);
   return (
-    <Drag id={`block|${key}`} data={{ source: 'block', node: step }} className={`rounded-md bg-surface shadow-card ${errors.length > 0 ? 'border border-fail' : open ? 'border border-accent' : 'border border-transparent'} px-3 py-1.5`}>
+    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: step }} className={`rounded-md bg-surface shadow-card ${errors.length > 0 ? 'border border-fail' : open ? 'border border-accent' : 'border border-transparent'} px-3 py-1.5`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -262,7 +262,7 @@ function ParallelBlock({ group, ctx, index, siblings, container }: { group: Buil
   const open = ctx.selected === key;
   const set = (value: string) => ctx.change(setStepField(ctx.text, group.path, 'condition', value));
   return (
-    <Drag id={`block|${key}`} data={{ source: 'block', node: group }} className={`rounded-md bg-sunken px-2 py-1.5 ${errors.length > 0 ? 'border border-fail' : 'border border-transparent'}`}>
+    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: group }} className={`rounded-md bg-sunken px-2 py-1.5 ${errors.length > 0 ? 'border border-fail' : 'border border-transparent'}`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -277,7 +277,7 @@ function ParallelBlock({ group, ctx, index, siblings, container }: { group: Buil
           {open && (
             <div className="px-1 pb-1">
               <Labelled label="Run only if (if:)">
-                <input className={`${field} font-data`} value={group.condition ?? ''} onChange={(e) => set(e.target.value)} />
+                <input disabled={ctx.readOnly} className={`${field} font-data`} value={group.condition ?? ''} onChange={(e) => set(e.target.value)} />
               </Labelled>
             </div>
           )}
@@ -294,7 +294,7 @@ function AttemptsBlock({ block, ctx, index, siblings, container }: { block: Buil
   const errors = ctx.issues.get(key) ?? [];
   const inner = [...block.path, 'attempts', 'steps'];
   return (
-    <Drag id={`block|${key}`} data={{ source: 'block', node: block }} className={`rounded-md border border-dashed px-2 py-1.5 ${errors.length > 0 ? 'border-fail' : 'border-accent'}`}>
+    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: block }} className={`rounded-md border border-dashed px-2 py-1.5 ${errors.length > 0 ? 'border-fail' : 'border-accent'}`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -303,7 +303,7 @@ function AttemptsBlock({ block, ctx, index, siblings, container }: { block: Buil
             <span className="flex-1" />
             <label className="flex items-center gap-2 text-small text-muted">
               max
-              <input aria-label="Attempts max" className={`${field} w-44 font-data ${errors.length > 0 ? 'border-fail' : ''}`} value={block.max} onChange={(e) => ctx.change(setAttemptsMax(ctx.text, block.path, e.target.value))} />
+              <input aria-label="Attempts max" disabled={ctx.readOnly} className={`${field} w-44 font-data ${errors.length > 0 ? 'border-fail' : ''}`} value={block.max} onChange={(e) => ctx.change(setAttemptsMax(ctx.text, block.path, e.target.value))} />
             </label>
             {!ctx.readOnly && <Controls node={block} ctx={ctx} siblings={siblings} index={index} container={container} />}
           </div>

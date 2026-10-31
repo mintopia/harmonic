@@ -72,16 +72,20 @@ async function dragTo(page: Page, from: Locator, to: Locator) {
   await page.mouse.up();
 }
 
-test('the block builder drags a step into a parallel group and saves it in the YAML', async ({ page }) => {
+async function openWorkflow(page: Page, name: string, yaml: string) {
   await page.goto('/');
   await page.locator('input[type="password"]').fill('verify-pass');
   await page.locator('button[type="submit"]').click();
   await page.waitForSelector('aside');
   await page.goto('/workflows');
-  await page.locator('input[type="file"]').setInputFiles({ name: 'group-e2e.yaml', mimeType: 'application/yaml', buffer: Buffer.from(GROUPED) });
-  await page.locator('tbody tr', { hasText: 'group-e2e' }).getByRole('button', { name: 'group-e2e' }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: `${name}.yaml`, mimeType: 'application/yaml', buffer: Buffer.from(yaml) });
+  await page.locator('tbody tr', { hasText: name }).getByRole('button', { name }).click();
+}
 
+test('the block builder drags a step into a parallel group and saves it in the YAML', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1800 });
+  await openWorkflow(page, 'group-e2e', GROUPED);
+
   const build = page.locator('[data-block="steps/0/attempts/steps/0"]');
   await dragTo(page, build.getByLabel('Drag to move'), page.locator('[data-slot$="\\"parallel\\"]|1"]'));
 
@@ -93,13 +97,36 @@ test('the block builder drags a step into a parallel group and saves it in the Y
 });
 
 test('an invariant-breaking builder change shows the server error and cannot be saved', async ({ page }) => {
+  await openWorkflow(page, 'bound-e2e', GROUPED.replace('group-e2e', 'bound-e2e'));
+  await page.getByLabel('Attempts max').fill('');
+  await expect(page.getByRole('alert').filter({ hasText: 'Not saved' }).first()).toContainText('attempts.max');
+  await expect(page.getByRole('button', { name: /^Save/ })).toBeDisabled();
+});
+
+test('a bundled workflow shows the blocks but offers no editing', async ({ page }) => {
   await page.goto('/');
   await page.locator('input[type="password"]').fill('verify-pass');
   await page.locator('button[type="submit"]').click();
   await page.waitForSelector('aside');
   await page.goto('/workflows');
-  await page.locator('tbody tr', { hasText: 'group-e2e' }).getByRole('button', { name: 'group-e2e' }).click();
-  await page.getByLabel('Attempts max').fill('');
-  await expect(page.getByRole('alert').filter({ hasText: 'Not saved' }).first()).toContainText('attempts.max');
-  await expect(page.getByRole('button', { name: /^Save/ })).toBeDisabled();
+  await page.locator('tbody tr', { hasText: 'implement' }).first().getByRole('button').first().click();
+  const builder = page.getByRole('region', { name: 'Workflow builder' });
+  await expect(builder.locator('[data-block]').first()).toBeVisible();
+  await expect(builder.locator('[data-palette]')).toHaveCount(0);
+  await expect(builder.getByRole('button', { name: /^Remove/ })).toHaveCount(0);
+  await expect(builder.getByLabel('Attempts max')).toBeDisabled();
+  await builder.locator('[data-block="steps/0"]').getByRole('button', { name: /rebase/ }).click();
+  await expect(builder.getByText('Step ID')).toBeVisible();
+  expect(await builder.locator('input:not([disabled]), select:not([disabled])').count()).toBe(0);
+});
+
+test('the builder matches the #929 mockup layout', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1800 });
+  await openWorkflow(page, 'shot-e2e', GROUPED.replace('group-e2e', 'shot-e2e'));
+  await page.locator('[data-block="steps/0/attempts/steps/0"]').getByRole('button').first().click();
+  const builder = page.getByRole('region', { name: 'Workflow builder' });
+  await expect(builder.getByText('WORKFLOW ACTIONS', { exact: false })).toBeVisible();
+  await expect(builder.getByText('In sync with YAML')).toBeVisible();
+  await expect(builder.locator('[data-block]')).toHaveCount(4);
+  await builder.screenshot({ path: 'docs/mockups/workflows/screenshots/929-impl.png' });
 });
