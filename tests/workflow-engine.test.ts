@@ -49,7 +49,7 @@ describe('WorkflowEngine', () => {
   async function startTask(text: string): Promise<{ task: TaskRow; run: Awaited<ReturnType<AttemptStore['create']>> }> {
     workflows.set('flow@1', text);
     const created = await tasks.create({ prompt: 'p', workflow: 'flow' });
-    const task = await tasks.pinWorkflow(created.id, 'flow@1');
+    const task = await tasks.pinWorkflow(created.id, 'flow@1', 'explicit');
     return { task, run: await attempts.create(task.id) };
   }
   const stepRows = async (taskId: number) => new WorkflowStepRunStore(db).listForTask(taskId);

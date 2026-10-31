@@ -47,6 +47,8 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
   routingLabels: null,
+  workflow: null,
+  workflowLabels: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,

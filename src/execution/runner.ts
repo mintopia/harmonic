@@ -49,6 +49,8 @@ import { startOperation } from '../telemetry/operations.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
 import { killProcessGroup } from './process-groups.js';
+import { resolveTaskWorkflow } from '../domain/workflow-assignment.js';
+import type { WorkflowChosen } from '../db/schema.js';
 import { WorkflowEngine } from './workflow-engine.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
@@ -489,6 +491,7 @@ export class Runner {
   /** Resume an escalated ticket, optionally recording guidance for its next Attempt. */
   async resumeWithGuidance(task: TaskRow, guidance: string, options: { startNow: boolean; reuseSession: boolean }): Promise<void> {
     const { startNow, reuseSession } = options;
+    await this.repinWorkflow(task);
     const trimmed = guidance.trim();
     if (!trimmed && !startNow) {
       await this.taskService.requeue(task.id);
@@ -615,7 +618,8 @@ export class Runner {
         default:
           baseGate satisfies never;
       }
-      if (task.workflowRequested !== null) return await this.beginWorkflowRun(task, resumedAttempt);
+      const workflowTask = resumedAttempt ? (task.workflowRef !== null ? task : null) : await this.workflowTaskFor(task);
+      if (workflowTask) return await this.beginWorkflowRun(workflowTask, resumedAttempt);
       const config = this.getConfig();
       const route = await this.taskService.routing.ticketRoute(task);
       if (!route.ok) {
@@ -702,12 +706,36 @@ export class Runner {
     }
   }
 
-  private async beginWorkflowRun(requested: TaskRow, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+  private async assignWorkflow(task: TaskRow): Promise<{ ref: string; chosen: WorkflowChosen; label: string | null } | null> {
+    if (!this.workflows) {
+      if (task.workflowRequested !== null) throw new DomainError('invalid_state', `task ${task.id} chose a workflow but no workflow library is configured`);
+      return null;
+    }
+    const { library } = this.workflows;
+    const names = new Set(library.list().map((entry) => entry.name));
+    const assignment = resolveTaskWorkflow(task, (await this.getWorkspace?.(task.workspaceId)) ?? null, this.getConfig(), (name) => names.has(name));
+    return assignment && { ref: `${assignment.name}@${library.get(assignment.name).version}`, chosen: assignment.chosen, label: assignment.label ?? null };
+  }
+
+  private async workflowTaskFor(task: TaskRow): Promise<TaskRow | null> {
+    if (task.workflowRef !== null) return task;
+    const assigned = await this.assignWorkflow(task);
+    return assigned && (await this.taskService.pinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label));
+  }
+
+  private async repinWorkflow(task: TaskRow): Promise<void> {
+    if (task.workflowRef === null) return;
+    const assigned = await this.assignWorkflow(task);
+    if (!assigned) {
+      await this.taskService.unpinWorkflow(task.id);
+      return;
+    }
+    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label);
+  }
+
+  private async beginWorkflowRun(task: TaskRow, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
     const engine = this.workflowEngine;
-    if (!engine || !this.workflows) throw new DomainError('invalid_state', `task ${requested.id} chose a workflow but no workflow library is configured`);
-    const name = requested.workflowRequested!;
-    const currentRef = `${name}@${this.workflows.library.get(name).version}`;
-    const task = requested.workflowRef === null || (!resumedAttempt && requested.workflowRef !== currentRef) ? await this.taskService.pinWorkflow(requested.id, currentRef, !resumedAttempt) : requested;
+    if (!engine || !this.workflows) throw new DomainError('invalid_state', `task ${task.id} is pinned to a workflow but no workflow library is configured`);
     const run = resumedAttempt
       ? await this.attempts.update(resumedAttempt.id, { state: 'running', startedAt: Date.now(), endedAt: null, reason: null, detail: null })
       : await this.attempts.create(task.id);

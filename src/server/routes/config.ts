@@ -18,13 +18,28 @@ import {
   type DeepPartial,
   promptFragmentsShape,
   routingLabelSchema,
+  workflowLabelSchema,
 } from '../../config.js';
+import { workflowReferenceProblems } from '../../domain/workflow-labels.js';
+import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
+import { DomainError } from '../../domain/errors.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
 const harnessPermissionModesSchema = z.record(
   z.string(),
   z.object({ modes: z.record(z.string(), z.string()), defaultMode: z.string() }),
 );
+
+/** Rejects workflow names the library lacks; names the stored config already references are tolerated so a stale one cannot block unrelated saves. */
+function assertWorkflowRefs(ctx: Pick<ExecutionContext, 'settingsStore'> & { workflows: WorkflowLibrary }, workflow: string | null | undefined, labels: readonly { label: string; workflow: string }[] | undefined): void {
+  const stored = ctx.settingsStore.getGlobal();
+  const known = new Set([stored.defaults.workflow, ...stored.workflowLabels.map((l) => l.workflow)]);
+  const problems = workflowReferenceProblems(ctx.workflows, {
+    workflow: workflow != null && !known.has(workflow) ? workflow : null,
+    labels: (labels ?? []).filter((l) => !known.has(l.workflow)),
+  });
+  if (problems[0]) throw new DomainError('validation', problems[0]);
+}
 
 function harnessPermissionModes() {
   return Object.fromEntries(
@@ -78,11 +93,13 @@ const configPatchBodySchema = z
         isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
         priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
         conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
+        workflow: z.string().min(1).nullable().meta({ example: 'implement' }),
       })
       .partial()
       .optional(),
     /** Replaces the whole ordered list; labels are unique case-insensitively and each Harness must be configured. */
     routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }).optional(),
+    workflowLabels: z.array(workflowLabelSchema).meta({ example: [{ label: 'bug', workflow: 'implement' }] }).optional(),
     chat: z
       .object({
         /** Default Harness a new Conversation starts with. */
@@ -144,7 +161,7 @@ const configPatchBodySchema = z
   .partial()
   .meta({ id: 'ConfigPatch' });
 
-export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary }): Promise<void> {
+export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary; workflows: WorkflowLibrary }): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -192,6 +209,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
       },
     },
     async (req) => {
+      assertWorkflowRefs(ctx, req.body.defaults?.workflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
       await syncEditedPrompts(ctx.prompts, updated, namedPromptCodes(req.body));
       ctx.autoRunner.poke();
@@ -217,6 +235,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async (req) => {
       const before = withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts);
+      assertWorkflowRefs(ctx, req.body.defaults.workflow, req.body.workflowLabels);
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
       await syncEditedPrompts(ctx.prompts, updated, changedPromptCodes(before, updated));
       ctx.autoRunner.poke();

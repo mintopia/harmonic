@@ -55,17 +55,24 @@ export const stackedCell = 'col-span-2 col-start-3 @[44rem]:col-span-1 @[44rem]:
 /** Trailing controls (Remove, or Global chip + switch): top-right of a stacked row. */
 export const trailingCell = 'col-start-4 row-start-1 justify-self-end @[44rem]:col-start-auto @[44rem]:row-start-auto';
 
+export const workflowCellsGrid =
+  'grid grid-cols-[16px_24px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 px-3 py-2.5 @[44rem]:grid-cols-[16px_24px_minmax(120px,1fr)_20px_minmax(170px,1fr)_104px] @[44rem]:gap-y-0';
+
 export function RoutingRowShell({
   id,
   index,
   locked,
   error,
+  noun = 'Routing Label',
+  grid = cellsGrid,
   children,
 }: {
   id: string;
   index: number;
   locked?: boolean;
   error?: ReactNode;
+  noun?: string;
+  grid?: string;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -77,11 +84,11 @@ export function RoutingRowShell({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`relative rounded-lg bg-surface ${isDragging ? 'z-10 shadow-float ring-1 ring-accent/40' : 'shadow-card'} ${locked ? 'opacity-85' : ''}`}
     >
-      <div className={cellsGrid}>
+      <div className={grid}>
         <button
           type="button"
           ref={setActivatorNodeRef}
-          aria-label={`Reorder Routing Label ${n}`}
+          aria-label={`Reorder ${noun} ${n}`}
           className="flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-faint hover:text-muted focus-visible:text-accent"
           {...attributes}
           {...listeners}
@@ -171,11 +178,11 @@ export function RouteCells({
   );
 }
 
-export function RemoveButton({ index, onRemove }: { index: number; onRemove: () => void }) {
+export function RemoveButton({ index, onRemove, noun = 'Routing Label' }: { index: number; onRemove: () => void; noun?: string }) {
   return (
     <button
       type="button"
-      aria-label={`Remove Routing Label ${index + 1}`}
+      aria-label={`Remove ${noun} ${index + 1}`}
       className={`-my-2 shrink-0 py-2 text-small text-faint hover:text-fail ${trailingCell}`}
       onClick={onRemove}
     >
@@ -184,7 +191,9 @@ export function RemoveButton({ index, onRemove }: { index: number; onRemove: () 
   );
 }
 
-export function Precedence() {
+const ROUTING_STEPS = ['Operator setting on the Ticket', 'Routing Label', 'Workspace default', 'Global default'];
+
+export function Precedence({ steps = ROUTING_STEPS, accent = 'Routing Label' }: { steps?: readonly string[]; accent?: string }) {
   const step = 'font-semibold text-ink';
   const arrow = (
     <span className="text-faint" aria-hidden="true">
@@ -194,13 +203,12 @@ export function Precedence() {
   return (
     <div className="mb-3.5 flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-sunken px-3 py-2 text-small text-muted">
       <span className="mr-1 text-label font-semibold uppercase text-faint">Precedence</span>
-      <b className={step}>Operator setting on the Ticket</b>
-      {arrow}
-      <b className="font-semibold text-accent">Routing Label</b>
-      {arrow}
-      <b className={step}>Workspace default</b>
-      {arrow}
-      <b className={step}>Global default</b>
+      {steps.map((name, i) => (
+        <Fragment key={name}>
+          {i > 0 && arrow}
+          <b className={name === accent ? 'font-semibold text-accent' : step}>{name}</b>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -212,6 +220,7 @@ export function RoutingListFrame({
   onRemove,
   renderRow,
   emptyText,
+  noun = 'Routing Label',
 }: {
   count: number;
   onMove: (from: number, to: number) => void;
@@ -219,6 +228,7 @@ export function RoutingListFrame({
   onRemove: (index: number) => void;
   renderRow: (row: { id: string; index: number; touched: boolean; touch: () => void; remove: () => void }) => ReactNode;
   emptyText: string;
+  noun?: string;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -252,9 +262,9 @@ export function RoutingListFrame({
   return (
     <>
       <div className="mb-1.5 flex items-center justify-between">
-        <span className={fieldLabel}>Routing Labels</span>
+        <span className={fieldLabel}>{noun}s</span>
         <button type="button" className="text-small font-semibold text-accent hover:text-accent-hot" onClick={add}>
-          + Add Routing Label
+          + Add {noun}
         </button>
       </div>
       {count === 0 ? (

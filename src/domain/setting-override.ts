@@ -162,30 +162,63 @@ export function routingLabelIssues(labels: readonly Pick<RoutingLabel, 'label'>[
   return routingLabelOverlayIssues(labels.map((routingLabel) => ({ kind: 'local', enabled: true, routingLabel })), []);
 }
 
-/**
- * Problems that make a Workspace overlay unsavable: an enabled local label may
- * not be blank, repeat an enabled Global label (a disabled Global frees its
- * label), or repeat an earlier enabled local one. Disabled locals are not checked.
- */
-export function routingLabelOverlayIssues(
-  overlay: readonly (
-    | { kind: 'global'; ref: string; enabled: boolean }
-    | { kind: 'local'; enabled: boolean; routingLabel: Pick<RoutingLabel, 'label'> }
-  )[],
-  globals: readonly Pick<RoutingLabel, 'label'>[],
+type LabelOverlayEntry<K extends string> =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | ({ kind: 'local'; enabled: boolean } & { [P in K]: { label: string } });
+
+export function labelOverlayIssues<K extends string>(
+  itemKey: K,
+  overlay: readonly LabelOverlayEntry<K>[],
+  globals: readonly { label: string }[],
 ): RoutingLabelIssue[] {
   const disabled = new Set(overlay.flatMap((e) => (e.kind === 'global' && !e.enabled ? [e.ref] : [])));
   const globalRefs = new Set(globals.map(routingLabelRef).filter((ref) => !disabled.has(ref)));
   const seen = new Set<string>();
   return overlay.flatMap((entry, index): RoutingLabelIssue[] => {
     if (entry.kind !== 'local' || !entry.enabled) return [];
-    const ref = routingLabelRef(entry.routingLabel);
+    const ref = routingLabelRef(entry[itemKey]);
     if (ref === '') return [{ index, kind: 'blank' }];
     if (globalRefs.has(ref)) return [{ index, kind: 'duplicate-global', globalRef: ref }];
     if (seen.has(ref)) return [{ index, kind: 'duplicate' }];
     seen.add(ref);
     return [];
   });
+}
+
+export function routingLabelOverlayIssues(
+  overlay: readonly LabelOverlayEntry<'routingLabel'>[],
+  globals: readonly Pick<RoutingLabel, 'label'>[],
+): RoutingLabelIssue[] {
+  return labelOverlayIssues('routingLabel', overlay, globals);
+}
+
+export const workflowLabelRef = routingLabelRef;
+export type WorkflowLabelIssue = RoutingLabelIssue;
+export const workflowLabelIssueMessage = routingLabelIssueMessage;
+export const describeWorkflowLabelIssue = describeRoutingLabelIssue;
+
+export function workflowLabelIssues<T extends { label: string }>(labels: readonly T[]): WorkflowLabelIssue[] {
+  return workflowLabelOverlayIssues(labels.map((workflowLabel) => ({ kind: 'local', enabled: true, workflowLabel })), []);
+}
+
+export function workflowLabelOverlayIssues(
+  overlay: readonly LabelOverlayEntry<'workflowLabel'>[],
+  globals: readonly { label: string }[],
+): WorkflowLabelIssue[] {
+  return labelOverlayIssues('workflowLabel', overlay, globals);
+}
+
+export function mergeLabelOverlay<T extends { label: string }, E extends { kind: 'global' | 'local'; enabled: boolean }>(
+  overlay: readonly E[] | null,
+  globals: readonly T[],
+  ref: (entry: E & { kind: 'global' }) => string,
+  local: (entry: E & { kind: 'local' }) => T,
+): T[] {
+  const merged = mergeOverlay<T, E>(overlay, globals, routingLabelRef, ref, local);
+  if (overlay == null) return merged;
+  const globalSet = new Set<T>(globals);
+  const enabledGlobalRefs = new Set(merged.filter((item) => globalSet.has(item)).map(routingLabelRef));
+  return merged.filter((item) => globalSet.has(item) || !enabledGlobalRefs.has(routingLabelRef(item)));
 }
 
 function resolveTaskStage(

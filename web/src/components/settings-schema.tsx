@@ -14,6 +14,7 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
+import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -879,6 +880,30 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           overlay={ctx.workspace.routingLabels}
           config={ctx.config}
           onChange={(routingLabels) => ctx.setWorkspace({ ...ctx.workspace, routingLabels })}
+        />
+      ),
+  },
+  {
+    tab: 'execution',
+    surfaces: BOTH,
+    title: 'Workflow Labels',
+    wide: true,
+    description: {
+      global:
+        'Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.',
+      workspace:
+        'Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'global' ? (
+        <WorkflowLabelsEditor config={ctx.config} onChange={ctx.setConfig} />
+      ) : (
+        <WorkflowLabelOverlayEditor
+          overlay={ctx.workspace.workflowLabels}
+          workflow={ctx.workspace.workflow}
+          config={ctx.config}
+          onChange={(workflowLabels) => ctx.setWorkspace({ ...ctx.workspace, workflowLabels })}
+          onWorkflow={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
         />
       ),
   },

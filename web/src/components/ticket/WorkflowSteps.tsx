@@ -1,5 +1,6 @@
 import type { StepState, WorkflowStepOutcome, WorkflowStepRun, WorkflowStepsResponse } from '../../types';
 import { stateTone } from '../../attempt-timeline-model';
+import { newerVersion, parseWorkflowRef } from '../../workflow-ref-model';
 import { NAV_DOT, NAV_WORD, sectionCaps } from './shared';
 
 const OUTCOME_STATE: Record<WorkflowStepOutcome, StepState> = {
@@ -63,13 +64,20 @@ export function groupByAttempt(steps: WorkflowStepRun[]): { attempt: number | nu
   return groups;
 }
 
+function headerText(ref: string, latestVersion: number | null): string {
+  const { name, version } = parseWorkflowRef(ref);
+  const head = version === null ? name : `${name} v${version}`;
+  const newer = newerVersion(ref, latestVersion);
+  return newer === null ? head : `${head} · snapshotted v${version}; v${newer} exists and applies from the next Retry`;
+}
+
 export function WorkflowSteps({ data }: { data: WorkflowStepsResponse | null }) {
   if (!data?.workflowRef) return null;
   return (
     <section aria-label="Task Execution Workflow steps" className="mt-5">
       <div className="mb-2 flex items-center gap-2">
-        <h3 className={sectionCaps}>Task Execution Workflow steps</h3>
-        <span className="font-data text-[12px] text-muted">{data.workflowRef}</span>
+        <h3 className={sectionCaps}>Steps</h3>
+        <span className="text-[12px] text-muted">{headerText(data.workflowRef, data.latestVersion)}</span>
       </div>
       {data.steps.length === 0 ? (
         <p className="text-[13px] text-muted">No step has run yet.</p>

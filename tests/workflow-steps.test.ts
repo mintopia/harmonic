@@ -24,7 +24,7 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
   };
 }
 
-const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', outline: [], cleanupCount: 0, steps });
+const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', outline: [], cleanupCount: 0, latestVersion: null, steps });
 
 describe('WorkflowSteps', () => {
   it('groups steps under their Attempt number', async () => {
@@ -46,7 +46,7 @@ describe('WorkflowSteps', () => {
   });
 
   it('renders nothing without a workflowRef', async () => {
-    const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] } }));
+    const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] } }));
     expect(host.innerHTML).toBe('');
     const empty = await mountComponent(createElement(WorkflowSteps, { data: null }));
     expect(empty.innerHTML).toBe('');
@@ -73,7 +73,7 @@ describe('WorkflowSteps', () => {
     expect(rows[1]!.textContent).toContain('exit 1 · 1 line · last: boom');
     expect(rows[2]!.textContent).toContain('running');
     expect(rows[2]!.textContent).not.toContain('exit');
-    expect(host.textContent).toContain('implement@2');
+    expect(host.textContent).toContain('implement v2');
   });
 
   it('shows an agent step\'s Resolved Prompt and none for other steps', async () => {
@@ -107,14 +107,14 @@ describe('Properties workflow row', () => {
     const host = await mountComponent(
       createElement(Properties, { task: makeTask({ workflowRef: 'implement@2', workflowChosen: 'explicit' }), allTasks: [], workspaceName: 'ws' }),
     );
-    expect(host.textContent).toContain('Task Execution Workflow');
+    expect(host.textContent).toContain('Workflow');
     expect(host.textContent).toContain('implement');
     expect(host.textContent).toContain('v2');
-    expect(host.textContent).toContain('chosen by operator');
+    expect(host.textContent).toContain('operator choice on this Ticket');
   });
 
   it('omits the row when no workflow is pinned', async () => {
     const host = await mountComponent(createElement(Properties, { task: makeTask(), allTasks: [], workspaceName: 'ws' }));
-    expect(host.textContent).not.toContain('Task Execution Workflow');
+    expect(host.textContent).not.toContain('Workflow');
   });
 });

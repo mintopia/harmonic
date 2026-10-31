@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
-import { routingLabelIssueMessage, routingLabelIssues } from './domain/setting-override.js';
+import { routingLabelIssueMessage, routingLabelIssues, workflowLabelIssues } from './domain/setting-override.js';
 import {
   PROMPT_FRAGMENT_NAMES,
   PROMPT_FRAGMENTS,
@@ -305,6 +305,16 @@ export const routingLabelOverlayEntrySchema = overlayEntrySchema('routingLabel',
 export type RoutingLabelOverlayEntry = z.infer<typeof routingLabelOverlayEntrySchema>;
 export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema);
 
+export const workflowLabelSchema = z.object({
+  label: z.string().trim().min(1).meta({ example: 'bug' }),
+  workflow: z.string().min(1).meta({ example: 'implement' }),
+});
+export type WorkflowLabel = z.infer<typeof workflowLabelSchema>;
+
+export const workflowLabelOverlayEntrySchema = overlayEntrySchema('workflowLabel', workflowLabelSchema);
+export type WorkflowLabelOverlayEntry = z.infer<typeof workflowLabelOverlayEntrySchema>;
+export const workflowLabelOverrideSchema = z.array(workflowLabelOverlayEntrySchema);
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -326,9 +336,11 @@ export const appConfigSchema = z.object({
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
     /** Agentic resolve-turns a rebase conflict gets before it escalates; 0 escalates on the first conflict. */
     conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
+    workflow: z.string().min(1).nullable().meta({ example: null }),
   }),
   /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets; the first match in list order wins. */
   routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),
+  workflowLabels: z.array(workflowLabelSchema).meta({ example: [{ label: 'bug', workflow: 'implement' }] }),
   /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
@@ -450,6 +462,13 @@ export const appConfigSchema = z.object({
       code: 'custom',
       path: ['routingLabels', issue.index, 'label'],
       message: routingLabelIssueMessage(issue, config.routingLabels[issue.index]?.label ?? ''),
+    });
+  }
+  for (const issue of workflowLabelIssues(config.workflowLabels)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['workflowLabels', issue.index, 'label'],
+      message: routingLabelIssueMessage(issue, config.workflowLabels[issue.index]?.label ?? ''),
     });
   }
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);

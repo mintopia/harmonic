@@ -317,6 +317,7 @@ CREATE TABLE `tasks` (
 	`workflow_ref` text,
 	`workflow_requested` text,
 	`workflow_chosen` text,
+	`workflow_label` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,
