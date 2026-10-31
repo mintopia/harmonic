@@ -585,7 +585,7 @@ export class Runner {
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
       if (!resumedAttempt) {
-        if (classification) await this.recordClassification(bound, classification);
+        if (classification) await this.recordClassification(task, bound, classification);
         await this.recordRouteChange(task, bound);
       }
       if ((await this.checkRunBoundary(task.id)).stop) {
@@ -661,7 +661,7 @@ export class Runner {
     }
   }
 
-  private async recordClassification(bound: AttemptRow, outcome: ClassifierOutcome): Promise<void> {
+  private async recordClassification(task: TaskRow, bound: AttemptRow, outcome: ClassifierOutcome): Promise<void> {
     await bestEffort(async () => {
       if (outcome.routing) {
         await this.attempts.update(bound.id, {
@@ -669,10 +669,12 @@ export class Runner {
           routingCost: outcome.routing.cost ? JSON.stringify(outcome.routing.cost) : null,
         });
       }
+      const archived = outcome.prompt === undefined ? null : await this.archive?.appendRoutingPrompt(task, bound.number, outcome.prompt);
+      const promptRef = archived ? { locator: archived.locator, promptIndex: archived.promptIndex } : {};
       const payload =
         outcome.kind === 'chosen'
-          ? { event: 'route-classified', optionId: outcome.option.id, harness: outcome.option.harness, model: outcome.option.model, reason: outcome.reason }
-          : { event: 'route-classifier-abstained', message: `Route Classifier abstained: ${outcome.reason}`, reason: outcome.reason };
+          ? { ...promptRef, event: 'route-classified', optionId: outcome.option.id, harness: outcome.option.harness, model: outcome.option.model, reason: outcome.reason }
+          : { ...promptRef, event: 'route-classifier-abstained', message: `Route Classifier abstained: ${outcome.reason}`, reason: outcome.reason };
       const persisted = await this.attempts.appendEvent(bound.id, { type: 'lifecycle', payload });
       this.events.onAttemptEvent?.(persisted);
     }, { op: 'runner.beginRun.recordClassification', level: 'warn', context: { attemptId: bound.id } });

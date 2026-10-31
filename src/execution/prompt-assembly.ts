@@ -1,4 +1,5 @@
 import type { PromptFragments } from '../domain/prompt-fragments.js';
+import type { ClassifierInput } from '../domain/route-classifier.js';
 import { appendFeedback, codeIndexRepoGuidance, expandFragments, fillTemplate, renderFragment, type DriveFields } from './prompt-template.js';
 
 const harnessLabel = (harness: string): string => harness.charAt(0).toUpperCase() + harness.slice(1);
@@ -224,4 +225,12 @@ ${renderFragment('criticRole', fragments)}
 ${renderFragment('criticSecurity', fragments)}
 
 ${renderFragment('criticVerdictContract', fragments)}`;
+}
+
+export function buildClassifierPrompt(input: ClassifierInput, fragments: PromptFragments): string {
+  const { options, ...ticket } = input;
+  return renderFragment('routeClassifier', fragments, {
+    options: options.map((o) => `- ${o.id}: ${o.description} (${o.harness} ${o.model})`).join('\n'),
+    ticket: JSON.stringify(ticket, null, 2),
+  });
 }

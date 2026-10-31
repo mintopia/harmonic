@@ -235,6 +235,19 @@ const trackerKindFixtures: TrackerKindInfo[] = [
   },
 ];
 
+const storyClassifierPrompt = [
+  'You route software tickets to an AI model. Choose exactly one option from the list below.',
+  'Prefer the cheapest option that can plausibly finish the ticket.',
+  'Reply with only a JSON object: {"optionId": "<id from the options list>", "reason": "<one short line>"}.',
+  '',
+  'Options:',
+  '- cheap-fix: cheap, small fixes (claude claude-haiku-4-5)',
+  '- deep-work: hard, cross-cutting work (claude claude-opus-5-5)',
+  '',
+  'Ticket:',
+  '{ "title": "Fix the flaky login test", "labels": ["bug"], "attemptNumber": 1 }',
+].join('\n');
+
 const storyResolvedPrompts = [
   'Your implementation left uncommitted changes. Commit the completed work now, then finish.',
   [
@@ -385,7 +398,9 @@ export const api: typeof RealApi = {
   epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   resolvedPrompt: (_owner: ResolvedPromptOwner, locator: string, index?: number) =>
-    index === undefined
+    locator === 'routing/classifier/prompt.md'
+      ? ok(storyClassifierPrompt)
+      : index === undefined
       ? ok(f.criticPrompts[locator] ?? '')
       : index === 9
         ? Promise.reject(new ApiError(404, 'not archived'))

@@ -6,6 +6,8 @@ import type { AppConfig, ModelOption } from '../config.js';
 import type { WorkspaceRow } from '../db/schema.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { defaultRoute } from './routing.js';
+import { buildClassifierPrompt } from '../execution/prompt-assembly.js';
+import { resolvePromptFragments } from './setting-override.js';
 import { harnessConfig } from './route.js';
 import { parseClassifierEndpoint, resolveClassifierSettings, resolveModelOptions, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
 import { costOfUsages, pricesForHarness, type Cost } from './pricing.js';
@@ -39,7 +41,7 @@ export interface ClassifierBackendResult {
 }
 
 export interface ClassifierBackend {
-  classify(input: ClassifierInput, ctx: { timeoutMs: number; workspace: WorkspaceRow }): Promise<ClassifierBackendResult>;
+  classify(input: ClassifierInput, ctx: { timeoutMs: number; workspace: WorkspaceRow; prompt: string }): Promise<ClassifierBackendResult>;
 }
 
 export interface RoutingUsage {
@@ -48,20 +50,8 @@ export interface RoutingUsage {
 }
 
 export type ClassifierOutcome =
-  | { kind: 'chosen'; option: ModelOption; reason: string; routing: RoutingUsage | null }
-  | { kind: 'abstained'; reason: string; routing: RoutingUsage | null };
-
-export const DEFAULT_CLASSIFIER_INSTRUCTIONS = [
-  'You route software tickets to an AI model. Choose exactly one option from the list below.',
-  'Prefer the cheapest option that can plausibly finish the ticket. If this is a retry (attemptNumber above 1),',
-  'use the previous verdict and failure reason to decide whether a stronger option is needed.',
-  'Reply with only a JSON object: {"optionId": "<id from the options list>", "reason": "<one short line>"}.',
-  'Do not use tools. Do not add any other text.',
-].join('\n');
-
-export function buildClassifierPrompt(input: ClassifierInput, instructions = DEFAULT_CLASSIFIER_INSTRUCTIONS): string {
-  return `${instructions}\n\nTicket:\n${JSON.stringify(input, null, 2)}\n`;
-}
+  | { kind: 'chosen'; option: ModelOption; reason: string; routing: RoutingUsage | null; prompt?: string }
+  | { kind: 'abstained'; reason: string; routing: RoutingUsage | null; prompt?: string };
 
 function balancedObjects(text: string): string[] {
   const found: string[] = [];
@@ -124,30 +114,29 @@ function usageToPriced(result: ClassifierBackendResult, config: Pick<AppConfig, 
 export async function runClassifier(
   backend: ClassifierBackend,
   input: ClassifierInput,
-  ctx: { timeoutMs: number; workspace: WorkspaceRow; config: Pick<AppConfig, 'harnesses'> },
+  ctx: { timeoutMs: number; workspace: WorkspaceRow; config: Pick<AppConfig, 'harnesses'>; prompt: string },
   options: readonly ModelOption[],
 ): Promise<ClassifierOutcome> {
   let result: ClassifierBackendResult;
   try {
-    result = await withTimeout(backend.classify(input, { timeoutMs: ctx.timeoutMs, workspace: ctx.workspace }), ctx.timeoutMs);
+    result = await withTimeout(backend.classify(input, { timeoutMs: ctx.timeoutMs, workspace: ctx.workspace, prompt: ctx.prompt }), ctx.timeoutMs);
   } catch (error) {
-    return { kind: 'abstained', reason: error instanceof Error ? error.message : String(error), routing: null };
+    return { kind: 'abstained', reason: error instanceof Error ? error.message : String(error), routing: null, prompt: ctx.prompt };
   }
   const routing = usageToPriced(result, ctx.config);
   const parsed = classifierOutputSchema.safeParse(result.output);
-  if (!parsed.success) return { kind: 'abstained', reason: 'invalid output: expected {optionId, reason}', routing };
+  if (!parsed.success) return { kind: 'abstained', reason: 'invalid output: expected {optionId, reason}', routing, prompt: ctx.prompt };
   const option = options.find((o) => o.id === parsed.data.optionId);
-  if (!option) return { kind: 'abstained', reason: `invalid output: option '${parsed.data.optionId}' is not in the list`, routing };
-  return { kind: 'chosen', option, reason: parsed.data.reason, routing };
+  if (!option) return { kind: 'abstained', reason: `invalid output: option '${parsed.data.optionId}' is not in the list`, routing, prompt: ctx.prompt };
+  return { kind: 'chosen', option, reason: parsed.data.reason, routing, prompt: ctx.prompt };
 }
 
 export function createHarnessClassifierBackend(deps: {
   drive: CriticHarnessDrive;
   getConfig: () => AppConfig;
-  instructions?: () => string;
 }): ClassifierBackend {
   return {
-    async classify(input, { timeoutMs, workspace }) {
+    async classify(_input, { timeoutMs, workspace, prompt }) {
       const config = deps.getConfig();
       const { harness: harnessId, model } = defaultRoute(config, workspace, null);
       const harness = harnessConfig(config, harnessId);
@@ -159,7 +148,7 @@ export function createHarnessClassifierBackend(deps: {
           harnessId,
           model,
           cwd,
-          prompt: buildClassifierPrompt(input, deps.instructions?.()),
+          prompt,
           timeoutMs,
           denyPermissions: true,
         });
@@ -179,11 +168,10 @@ export function createHarnessClassifierBackend(deps: {
 export function createOpenAiCompatibleClassifierBackend(deps: {
   reveal: (workspaceId: number, name: string) => Promise<string | null>;
   fetch?: typeof fetch;
-  instructions?: () => string;
 }): ClassifierBackend {
   const doFetch = deps.fetch ?? fetch;
   return {
-    async classify(input, { timeoutMs, workspace }) {
+    async classify(input, { timeoutMs, workspace, prompt }) {
       const endpoint = parseClassifierEndpoint(workspace.classifierEndpoint);
       if (!endpoint) throw new Error('no OpenAI-compatible endpoint is configured for this Workspace');
       const apiKey = await deps.reveal(workspace.id, endpoint.apiKeySecret);
@@ -194,7 +182,7 @@ export function createOpenAiCompatibleClassifierBackend(deps: {
         signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           model: endpoint.model,
-          messages: [{ role: 'user', content: buildClassifierPrompt(input, deps.instructions?.()) }],
+          messages: [{ role: 'user', content: prompt }],
           response_format: {
             type: 'json_schema',
             json_schema: {
@@ -284,6 +272,11 @@ export class RouteClassifier {
       ...(request.previousFailureReason === undefined ? {} : { previousFailureReason: request.previousFailureReason }),
       options: options.map(({ id, description, harness, model }) => ({ id, description, harness, model })),
     });
-    return runClassifier(backend, input, { timeoutMs: settings.timeoutSeconds * 1000, workspace: request.workspace, config }, options);
+    return runClassifier(backend, input, {
+      timeoutMs: settings.timeoutSeconds * 1000,
+      workspace: request.workspace,
+      config,
+      prompt: buildClassifierPrompt(input, resolvePromptFragments(request.workspace, config)),
+    }, options);
   }
 }
