@@ -68,7 +68,7 @@ describe('buildWorkflowDiagram', () => {
       'merge:step:',
       'escalation:escalation:',
     ]);
-    expect(m.nodes.find((n) => n.id === 'review')?.detail).toBe('critic · claude claude-sonnet-5-5');
+    expect(m.nodes.find((n) => n.id === 'review')?.detail).toBe('critic · claude claude-sonnet-5-5\nprompt Review it.');
     expect(edgeKeys(IMPLEMENT)).toEqual([
       'rebase>build:outcome:pass',
       'build>verify:outcome:pass',
@@ -86,7 +86,7 @@ describe('buildWorkflowDiagram', () => {
     expect(group?.kind).toBe('parallel');
     expect(group?.parent).toBe('attempts');
     const security = m.nodes.find((n) => n.id === 'security');
-    expect(security).toMatchObject({ parent: 'checks', condition: "${{ contains(ticket.labels, 'security') }}", detail: 'critic · codex gpt-5-codex' });
+    expect(security).toMatchObject({ parent: 'checks', condition: "${{ contains(ticket.labels, 'security') }}", detail: 'critic · codex gpt-5-codex\nprompt critic-security' });
     expect(m.nodes.find((n) => n.id === 'verify')?.detail).toBe('command · npm test');
     const edges = edgeKeys(PARALLEL);
     expect(edges).toContain('verify>checks:outcome:pass');

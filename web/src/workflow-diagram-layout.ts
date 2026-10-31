@@ -5,7 +5,7 @@ export interface PlacedLabel { x: number; y: number; anchor: 'start' | 'middle' 
 export interface PlacedEdge { edge: DiagramEdge; points: { x: number; y: number }[]; label?: PlacedLabel; subLabel?: PlacedLabel }
 export interface DiagramLayout { nodes: PlacedNode[]; edges: PlacedEdge[]; width: number; height: number }
 
-/** Horizontal stretch applied to the whole layout so node text fits; the geometry below is in the unstretched units of the #920 mockup. */
+/** Horizontal stretch so node text fits at natural size. */
 const SX = 1.18;
 const CX = 190;
 const STEP_W = 160;

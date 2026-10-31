@@ -25,6 +25,12 @@ const ACTION_DETAIL: Record<(typeof WORKFLOW_ACTIONS)[number], string> = {
   cleanup: 'remove worktree and branch',
 };
 
+const ACTION_ORDER: readonly (typeof WORKFLOW_ACTIONS)[number][] = ['command', 'critic', 'comment', 'cleanup', 'close-ticket'];
+const actionRank = (a: string): number => {
+  const i = (ACTION_ORDER as readonly string[]).indexOf(a);
+  return i === -1 ? ACTION_ORDER.length : i;
+};
+
 const STEP_KEYS: WorkflowCompletionOption[] = [
   { label: 'id', detail: 'unique step name' },
   { label: 'uses', detail: 'a Workflow Action' },
@@ -107,7 +113,7 @@ export function completeWorkflow(text: string, offset: number): WorkflowCompleti
   const uses = USES_LINE.exec(upToCursor);
   if (uses) {
     const typed = uses[1]!;
-    const options = WORKFLOW_ACTIONS.filter((a) => a.startsWith(typed) && a !== typed).map((label) => ({ label, detail: ACTION_DETAIL[label] }));
+    const options = [...WORKFLOW_ACTIONS].sort((a, b) => actionRank(a) - actionRank(b)).filter((a) => a.startsWith(typed) && a !== typed).map((label) => ({ label, detail: ACTION_DETAIL[label] }));
     return options.length ? { from: offset - typed.length, options } : null;
   }
 

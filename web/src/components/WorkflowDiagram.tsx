@@ -34,30 +34,30 @@ function NodeBox({ p }: { p: PlacedNode }) {
     <g data-node={node.id} data-kind={node.kind}>
       <rect x={x} y={y} width={width} height={height} rx={4} fill={fill} stroke={stroke} strokeDasharray={dash} strokeWidth={1.2} />
       {group ? (
-        <text x={x + 10} y={y + 18} fontSize={10} fontWeight={700} letterSpacing={0.6} fill={node.kind === 'attempts' ? 'var(--hm-accent)' : 'var(--hm-muted)'}>
+        <text x={x + 10} y={y + 18} fontSize={11} fontWeight={600} letterSpacing={0.5} fill={node.kind === 'attempts' ? 'var(--hm-accent)' : 'var(--hm-muted)'}>
           {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${node.detail}` : ''}` : 'PARALLEL'}
         </text>
       ) : node.kind === 'cleanup' ? (
         <>
-          <text x={x + 10} y={y + 17} fontSize={10} fontWeight={700} letterSpacing={0.6} fill="var(--hm-muted)">CLEANUP</text>
+          <text x={x + 10} y={y + 17} fontSize={11} fontWeight={600} letterSpacing={0.5} fill="var(--hm-muted)">CLEANUP</text>
           {(node.detail ?? '').split('\n').map((line, i) => (
-            <text key={line + i} x={x + 10} y={y + 32 + i * 12} fontSize={10} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
+            <text key={line + i} x={x + 10} y={y + 32 + i * 12} fontSize={11} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
           ))}
-          <text x={x + 10} y={y + 32 + Math.max(1, (node.detail ?? '').split('\n').length) * 12} fontSize={10} fill="var(--hm-faint)">runs on done and on Close</text>
+          <text x={x + 10} y={y + 32 + Math.max(1, (node.detail ?? '').split('\n').length) * 12} fontSize={11} fill="var(--hm-faint)">runs on done and on Close</text>
         </>
       ) : p.inParallel ? (
         <>
-          <text x={x + 12} y={y + 17} fontSize={12} fontWeight={700} fill="var(--hm-ink)">{node.label}</text>
+          <text x={x + 12} y={y + 17} fontSize={13} fontWeight={600} fill="var(--hm-ink)">{node.label}</text>
           {(node.detail ?? '').split('\n').map((line, i) => (
-            <text key={line + i} x={x + 12} y={y + 31 + i * 13} fontSize={9.5} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
+            <text key={line + i} x={x + 12} y={y + 32 + i * 13} fontSize={11} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
           ))}
-          {node.condition && <text x={x + 12} y={y + height - 12} fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
+          {node.condition && <text x={x + 12} y={y + height - 12} fontSize={11} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       ) : (
         <>
-          <text x={cx} y={y + (node.detail ? 17 : height / 2 + 4)} textAnchor="middle" fontSize={12} fontWeight={700} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-ink)'}>{node.label}</text>
-          {node.detail && <text x={cx} y={y + 30} textAnchor="middle" fontSize={9.5} fontFamily={node.kind === 'escalation' ? undefined : mono} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-muted)'}>{node.detail}</text>}
-          {node.condition && <text x={cx} y={y + 44} textAnchor="middle" fontSize={9.5} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
+          <text x={cx} y={y + (node.detail ? 17 : height / 2 + 4)} textAnchor="middle" fontSize={13} fontWeight={600} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-ink)'}>{node.label}</text>
+          {node.detail && <text x={cx} y={y + 31} textAnchor="middle" fontSize={11} fontFamily={node.kind === 'escalation' ? undefined : mono} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-muted)'}>{node.detail}</text>}
+          {node.condition && <text x={cx} y={y + 44} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       )}
     </g>
@@ -74,7 +74,7 @@ function EdgePath({ p }: { p: PlacedEdge }) {
     <g data-edge={`${p.edge.from}>${p.edge.to}`} data-kind={p.edge.kind}>
       <path d={d} fill="none" stroke={style.stroke} strokeDasharray={style.dash} strokeWidth={1.3} markerEnd={`url(#wfd-arrow-${p.edge.kind})`} />
       {p.label && <text x={p.label.x} y={p.label.y} textAnchor={p.label.anchor} fontSize={11} fontWeight={700} fill={style.text} style={HALO}>{p.label.text}</text>}
-      {p.subLabel && <text x={p.subLabel.x} y={p.subLabel.y} textAnchor={p.subLabel.anchor} fontSize={9.5} fill="var(--hm-muted)" style={HALO}>{p.subLabel.text}</text>}
+      {p.subLabel && <text x={p.subLabel.x} y={p.subLabel.y} textAnchor={p.subLabel.anchor} fontSize={11} fill="var(--hm-muted)" style={HALO}>{p.subLabel.text}</text>}
     </g>
   );
 }
@@ -140,7 +140,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
         {!model ? (
           <p style={{ margin: 0, fontSize: 12, color: 'var(--hm-muted)' }}>Nothing to draw yet.</p>
         ) : ready ? (
-          <svg role="img" aria-label="Workflow step diagram graphic" width="100%" style={{ maxWidth: ready.width, display: 'block' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
+          <svg role="img" aria-label="Workflow step diagram graphic" width={ready.width} height={ready.height} style={{ display: 'block', flex: 'none' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
             <defs>
               {(Object.keys(EDGE_STYLE) as DiagramEdgeKind[]).map((k) => (
                 <marker key={k} id={`wfd-arrow-${k}`} viewBox="0 0 8 8" refX={7} refY={4} markerWidth={7} markerHeight={7} orient="auto">

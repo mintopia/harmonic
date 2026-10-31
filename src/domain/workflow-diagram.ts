@@ -18,7 +18,9 @@ function stepDetail(step: WorkflowStepDefinition): string | undefined {
     : uses === 'critic' ? [text(w.harness), text(w.model)].filter((p) => p !== undefined).join(' ')
     : uses === 'agent' && text(w.prompt) !== undefined ? `prompt ${text(w.prompt)}`
     : undefined;
-  return tail ? `${uses} · ${tail}` : uses;
+  const head = tail ? `${uses} · ${tail}` : uses;
+  const prompt = uses === 'critic' ? text(w.prompt) : undefined;
+  return prompt !== undefined ? `${head}\nprompt ${prompt}` : head;
 }
 
 function stepNode(step: WorkflowStepDefinition, parent?: string): DiagramNode {

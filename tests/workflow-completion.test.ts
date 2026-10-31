@@ -9,7 +9,7 @@ describe('completeWorkflow', () => {
     const text = 'steps:\n  - id: a\n    uses: c';
     const hit = at(text)!;
     expect(hit.from).toBe(text.length - 1);
-    expect(hit.options.map((o) => o.label)).toEqual(['command', 'critic', 'close-ticket', 'comment', 'cleanup']);
+    expect(hit.options.map((o) => o.label)).toEqual(['command', 'critic', 'comment', 'cleanup', 'close-ticket']);
     expect(hit.options.find((o) => o.label === 'command')!.detail).toBe('shell verify command');
     expect(labels('steps:\n  - uses: ')).toHaveLength(12);
   });
