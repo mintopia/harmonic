@@ -196,9 +196,11 @@ export const PROMPT_ANATOMIES: readonly PromptAnatomy[] = [
     parts: [
       ORIGIN,
       fragment('selfHeal', {
+        library: 'selfHeal',
         when: 'selfHeal',
       }),
       fragment('operatorMessage', {
+        library: 'operatorMessage',
         when: 'operatorSeeded',
         note: 'A steer into an already-open Attempt replaces the whole prompt with this message; a fresh Session replaces the opening with the prior-session context.',
       }),

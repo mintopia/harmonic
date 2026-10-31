@@ -6,6 +6,7 @@ import { loadBaselineConfig, type AppConfig } from '../src/config.js';
 import { changedPromptCodes, convertEditedPrompts, namedPromptCodes, syncEditedPrompts, withLibraryPrompts } from '../src/domain/prompt-library-sources.js';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { resolveCommitNudge, resolveDrive, resolvePauseMessage, resolveTaskPrompt } from '../src/domain/setting-override.js';
+import { PROMPT_ANATOMIES, type AnatomyNode } from '../src/domain/prompt-anatomy.js';
 import { composeContinuePrompt, composeDriveOpening } from '../src/execution/prompt-assembly.js';
 
 const fields = { taskId: '7', skill: 'review', ref: '#12', url: 'https://example.test/12', title: 'Fix it', description: 'Body' };
@@ -77,5 +78,22 @@ describe('implementation and nudge prompts from the Prompt Library (#904)', () =
     expect(library.operatorText('commitNudge-edited')).toBe('NEW NUDGE');
     expect(library.hasOperatorEntry('peerLine-edited')).toBe(false);
     expect([...changedPromptCodes(loadBaselineConfig(), updated)].sort()).toEqual(['commitNudge', 'peerLine']);
+  });
+});
+
+describe('Prompts tab anatomy for the implementation and nudge prompts (#904)', () => {
+  it('marks every Library-backed prompt in these anatomies as a Library entry', () => {
+    const keys = new Set<string>();
+    const walk = (nodes: readonly AnatomyNode[]): void => {
+      for (const node of nodes) {
+        if (node.kind === 'oneOf') node.options.forEach((o) => walk(o.parts));
+        else {
+          if (node.library === undefined) keys.add(node.key);
+          walk(node.nested ?? []);
+        }
+      }
+    };
+    for (const anatomy of PROMPT_ANATOMIES.filter((a) => a.id === 'implementation' || a.id === 'nudges')) walk(anatomy.parts);
+    expect([...keys]).toEqual([]);
   });
 });
