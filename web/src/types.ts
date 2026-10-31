@@ -54,6 +54,7 @@ export interface WorkflowStepRun {
   /** null while the step is still running. */
   outcome: WorkflowStepOutcome | null;
   summary: string | null;
+  resolvedPrompt: string | null;
   outputs: { stdout: string; exitCode: number | null };
   startedAt: number | null;
   endedAt: number | null;

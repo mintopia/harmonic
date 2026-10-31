@@ -40,6 +40,12 @@ function StepRow({ step }: { step: WorkflowStepRun }) {
         </span>
       </div>
       {step.summary && <p className="mt-2 whitespace-pre-wrap break-words text-[13px] text-muted">{step.summary}</p>}
+      {step.resolvedPrompt !== null && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[12px] font-semibold text-muted">Resolved Prompt</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-words font-data text-[12px] text-ink">{step.resolvedPrompt}</pre>
+        </details>
+      )}
       {step.outcome !== null && <p className="mt-2 break-words font-data text-[12px] text-faint">{outputsSummary(step)}</p>}
     </li>
   );

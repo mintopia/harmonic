@@ -21001,6 +21001,17 @@
                             ],
                             "example": "command exited 0"
                           },
+                          "resolvedPrompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The prompt an agent step sent, Prompt Library includes expanded; null for other actions."
+                          },
                           "outputs": {
                             "type": "object",
                             "properties": {
@@ -21051,6 +21062,7 @@
                           "position",
                           "outcome",
                           "summary",
+                          "resolvedPrompt",
                           "outputs",
                           "startedAt",
                           "endedAt"

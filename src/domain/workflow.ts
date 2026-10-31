@@ -59,14 +59,40 @@ export function parseWorkflow(text: string): WorkflowDefinition {
   return workflowSchema.parse(doc.toJS()) as WorkflowDefinition;
 }
 
-function stepInvariants(wf: z.infer<typeof workflowSchema>): { path: PropertyKey[]; message: string }[] {
-  const problems: { path: PropertyKey[]; message: string }[] = [];
+const agentWithSchema = z
+  .object({
+    prompt: z.string().min(1).optional(),
+    harness: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    continueAttempts: z.number().int().min(0).optional(),
+    continuePrompt: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type AgentStepWith = z.infer<typeof agentWithSchema>;
+
+export function agentStepWith(input: unknown): AgentStepWith | null {
+  const parsed = agentWithSchema.safeParse(input ?? {});
+  return parsed.success ? parsed.data : null;
+}
+
+function stepInvariants(wf: z.infer<typeof workflowSchema>): Problem[] {
+  const problems: Problem[] = [];
   const seen = new Set<string>();
   wf.steps.forEach((step, i) => {
     if (seen.has(step.id)) problems.push({ path: ['steps', i, 'id'], message: `duplicate step id: ${step.id}` });
     seen.add(step.id);
     if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path: ['steps', i], message: `step ${step.id} needs exactly one of run or uses` });
     if (step.with !== undefined && step.uses === undefined) problems.push({ path: ['steps', i, 'with'], message: 'with is only valid beside uses' });
+    if (step.uses === 'agent') {
+      const parsed = agentWithSchema.safeParse(step.with ?? {});
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          if (issue.code === 'unrecognized_keys') for (const key of issue.keys) problems.push({ path: ['steps', i, 'with', key], message: `unknown key: ${key}`, key: true });
+          else problems.push({ path: ['steps', i, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` });
+        }
+      }
+    }
   });
   return problems;
 }

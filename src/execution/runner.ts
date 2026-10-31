@@ -11,6 +11,7 @@ import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import { PromptLibrary } from '../domain/prompt-library-store.js';
+import { PROMPT_CODE_PATTERN, resolvePrompt } from '../domain/prompt-library.js';
 import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
@@ -206,6 +207,17 @@ export class Runner {
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),
+      agent: {
+        drive: this.criticDrive,
+        getConfig: this.getConfig,
+        route: (task) => this.taskService.routing.ticketRoute(task),
+        resolvePrompt: async (text) => {
+          const entries = await this.promptLibrary.list();
+          const lookup = new Map(entries.map((entry) => [entry.code, entry.text]));
+          const isCode = PROMPT_CODE_PATTERN.test(text) && lookup.has(text);
+          return resolvePrompt(isCode ? lookup.get(text)! : text, lookup, isCode ? [text] : []);
+        },
+      },
     });
   }
 
