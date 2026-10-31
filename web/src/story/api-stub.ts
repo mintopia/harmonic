@@ -1,5 +1,5 @@
 /* eslint-disable */
-import type { TrackerRef } from '../types.js';
+import type { Prompt, TrackerRef } from '../types.js';
 import * as f from './fixtures';
 
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
@@ -257,7 +257,21 @@ const storyResolvedPrompts = [
   'Whole-Epic verification failed: `npm test` regressed in tests/guardrails.test.ts. Fix the failure on `epic/166` and commit.',
 ];
 
+const promptFixtures: Prompt[] = [
+  { code: 'implement', description: 'The implementation turn: what to build and how to report', text: 'Implement ${{ ticket.title }} as described in the Ticket.\nRun the checks the repository defines.', bundled: true, resolved: '', usedBy: [] },
+  { code: 'verify-fix', description: 'Fix failing verification output', text: 'Fix what failed.', bundled: true, resolved: '', usedBy: [] },
+  { code: 'team-style', description: 'House style for commits, tests and reports', text: 'Work on ${{ ticket.title }} in the house style.\n${{ prompts.security-checklist }}', bundled: false, resolved: '', usedBy: ['release-notes'] },
+  { code: 'security-checklist', description: 'Checks every change must pass before review', text: 'Confirm that no Secret appears in logs.\n${{ prompts.docs-tone }}', bundled: false, resolved: '', usedBy: ['team-style'] },
+  { code: 'docs-tone', description: 'Voice and structure for user documentation', text: 'Write plainly.', bundled: false, resolved: '', usedBy: ['security-checklist'] },
+  { code: 'release-notes', description: 'Release notes wording', text: 'Notes.\nUse ${{ prompts.team-style }}', bundled: false, resolved: '', usedBy: [] },
+];
+
 export const api: typeof RealApi = {
+  prompts: () => ok({ prompts: promptFixtures, total: promptFixtures.length }),
+  createPrompt: (body) => ok({ ...body, bundled: false, resolved: body.text, usedBy: [] }),
+  updatePrompt: (code, body) => ok({ code, ...body, bundled: false, resolved: body.text, usedBy: [] }),
+  deletePrompt: () => ok({ ok: true as const }),
+  duplicatePrompt: (code, copy) => ok({ ...(promptFixtures.find((p) => p.code === code) ?? (promptFixtures[0] as Prompt)), code: copy ?? `${code}-copy`, bundled: false }),
   scheduledJobs: () => ok({ jobs: [] }),
   operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),

@@ -1299,3 +1299,12 @@ export interface ConfigLayers {
   global: AppConfig;
   harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
 }
+
+export interface Prompt {
+  code: string;
+  description: string;
+  text: string;
+  bundled: boolean;
+  resolved: string;
+  usedBy: string[];
+}

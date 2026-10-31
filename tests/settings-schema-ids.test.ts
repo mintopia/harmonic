@@ -187,11 +187,12 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the Prompts tab as one bare full-width section on both surfaces', () => {
+  it('declares the Prompts tab as bare full-width sections: anatomy on both surfaces, then the global Prompt Library', () => {
     const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts');
-    expect(sections).toHaveLength(1);
-    expect(sections[0]).toMatchObject({ bare: true, wide: true });
+    expect(sections.map((s) => s.title)).toEqual(['Prompts', 'Prompt Library']);
+    for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true });
     expect(sections[0]?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
+    expect(sections[1]?.surfaces).toEqual(['global']);
   });
 
   it('keeps prompt part field ids unique per surface and disjoint from the schema fields', () => {
