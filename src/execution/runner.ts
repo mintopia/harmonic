@@ -28,7 +28,7 @@ import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
 import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
 import { DomainError, GitError } from '../domain/errors.js';
-import { kubernetesTargetOf, kubernetesWorkflowRefusal } from './workspace-execution-targets.js';
+import { kubernetesTargetOf, kubernetesWorkflowRefusal, mixedWorkflowRefusal } from './workspace-execution-targets.js';
 import { mergeRemoteTicketBranch } from './remote-merge.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
@@ -606,6 +606,10 @@ export class Runner {
     const assignment = resolveTaskWorkflow(task, workspace, config, exists, classified);
     const refusal = kubernetesWorkflowRefusal(library, assignment.name, task.isolationMode as 'direct' | 'worktree');
     if (refusal) throw new DomainError('validation', refusal);
+    if (workspace) {
+      const mixedRefusal = await mixedWorkflowRefusal(library, assignment.name, { name: workspace.name ?? `#${task.workspaceId}`, workingDir: workspace.workingDir ?? task.workingDir, codeRepository: workspace.codeRepository ?? null });
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
+    }
     const version = library.get(assignment.name).version;
     const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
     const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);

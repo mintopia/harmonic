@@ -2,7 +2,7 @@ import type { WorkspaceRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import type { UpdateWorkspaceInput } from '../domain/workspaces.js';
 import type { AppConfig } from '../config.js';
-import { workflowRunsOn } from '../domain/workflow.js';
+import { mixedWorkflowReason, workflowIsMixed, workflowRunsOn } from '../domain/workflow.js';
 import { resolveWorkflowLabels } from '../domain/workflow-labels.js';
 import { resolveCodeRepository } from '../repository/resolve.js';
 import { LOCAL_TARGET, type ExecutionTargetService } from './execution-targets.js';
@@ -140,4 +140,31 @@ export function directWorkspaceRefusal(library: WorkflowTexts, ws: WorkflowUse &
     if (target !== undefined) return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to Workspace '${ws.name}' in direct mode: it is the Workspace's default workflow or a Workflow Label's. Switch the Isolation Mode to worktree first.`;
   }
   return null;
+}
+
+/** Names of Workspaces without a Code Repository that would run workflow `name` as their default or through a Workflow Label. */
+export async function repositoryLessWorkspacesUsing(
+  name: string,
+  workspaces: readonly (WorkflowUse & Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository'>)[],
+  config: GuardConfig,
+  resolveRepository: typeof resolveCodeRepository = resolveCodeRepository,
+): Promise<string[]> {
+  const bare: string[] = [];
+  for (const ws of workspaces) {
+    if (workspaceWorkflowNames(ws, config).includes(name) && (await resolveRepository(ws.workingDir, ws.codeRepository)) === null) bare.push(ws.name);
+  }
+  return bare;
+}
+
+/** The refusal for assigning a mixed local and Kubernetes workflow to a Workspace without a Code Repository; null when allowed. */
+export async function mixedWorkflowRefusal(
+  library: WorkflowTexts,
+  workflow: string,
+  workspace: Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository'>,
+  resolveRepository: typeof resolveCodeRepository = resolveCodeRepository,
+): Promise<string | null> {
+  const entry = library.list().find((e) => e.name === workflow);
+  if (entry === undefined || !workflowIsMixed(entry.text)) return null;
+  if ((await resolveRepository(workspace.workingDir, workspace.codeRepository)) !== null) return null;
+  return `Workflow '${workflow}': ${mixedWorkflowReason(`'${workspace.name}'`)}`;
 }

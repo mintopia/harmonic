@@ -200,9 +200,36 @@ function runsOnRefs(root: unknown): { path: PropertyKey[]; target: string }[] {
   return found;
 }
 
+/** Whether a step runs where the Ticket's work lives (a Harness, command or rebase) rather than in Harmonic itself. */
+export function stepRunsInWorkspace(step: Pick<WorkflowStepDefinition, 'uses' | 'run'>): boolean {
+  return step.uses === 'rebase' || step.uses === 'agent' || step.uses === 'critic' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
+}
+
+/** The target a step runs on: its own `runs_on:`, else the workflow's, else `local`. */
+export function stepTarget(step: Pick<WorkflowStepDefinition, 'runs_on'>, workflowRunsOn: string | undefined): string {
+  return step.runs_on ?? workflowRunsOn ?? 'local';
+}
+
+/** True when the workflow runs some work steps `local` and others on a Kubernetes Execution Target. */
+export function workflowIsMixed(text: string): boolean {
+  return definitionIsMixed(parseWorkflow(text, { lenient: true }));
+}
+
+export function definitionIsMixed(workflow: WorkflowDefinition): boolean {
+  const targets = new Set<string>();
+  const visit = (step: WorkflowStepDefinition): void => {
+    if (step.parallel) step.parallel.forEach(visit);
+    else if (stepRunsInWorkspace(step)) targets.add(stepTarget(step, workflow.runsOn));
+  };
+  [...workflow.steps, ...(workflow.cleanup ?? [])].forEach(visit);
+  return targets.has('local') && targets.size > 1;
+}
+
 export interface TargetCheck {
   /** True when `name` is `local` or a defined Execution Target. */
   known: (name: string) => boolean | Promise<boolean>;
+  /** Names of Workspaces without a Code Repository that would run workflow `name` as their default or through a Workflow Label. */
+  repositoryLessWorkspaces?: () => string[] | Promise<string[]>;
   /** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
   directWorkspaces: () => string[] | Promise<string[]>;
 }
@@ -226,7 +253,16 @@ export async function targetProblems(text: string, check: TargetCheck): Promise<
     issues.push({ message, line: pos.line, column: pos.col });
   }
   if (issues.length > 0) throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
+  if (check.repositoryLessWorkspaces && workflowIsMixed(text)) {
+    const bare = await check.repositoryLessWorkspaces();
+    if (bare.length > 0) {
+      throw new DomainError('validation', `workflow refused: ${mixedWorkflowReason(bare.map((n) => `'${n}'`).join(', '))} It would use this workflow as its default or through a Workflow Label.`);
+    }
+  }
 }
+
+export const mixedWorkflowReason = (workspaces: string): string =>
+  `a workflow mixing local and Kubernetes steps needs a Code Repository, because the steps hand over through the Ticket branch on the remote. Workspace ${workspaces} has none. Add a Code Repository in Workspace settings first.`;
 
 /** The distinct targets the workflow-level and step-level `runs_on:` name. */
 export function workflowRunsOn(text: string): string[] {

@@ -247,6 +247,21 @@ export const Git = {
     }
   },
 
+  /** The tip oid of `branch` on `remote`, or null when the remote has no such branch. */
+  async remoteBranchTip(dir: string, remote: string, branch: string): Promise<string | null> {
+    const out = await git(dir, 'ls-remote', '--heads', remote, `refs/heads/${branch}`);
+    return out.split(/\s/)[0] || null;
+  },
+
+  /** Force-push the checked-out HEAD to `refs/heads/<branch>` on `remote`; the Ticket branch is Harmonic's own, and a checkpoint overwrites it. */
+  async pushHeadToRemoteBranch(dir: string, remote: string, branch: string): Promise<string> {
+    await git(dir, 'push', '--force', remote, `HEAD:refs/heads/${branch}`);
+    return Git.revParse(dir, 'HEAD');
+  },
+
+  /** Move the checked-out branch and the working tree to `oid`. */
+  resetHardTo: (dir: string, oid: string) => withRepoLock(dir, () => git(dir, 'reset', '--hard', oid)),
+
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
    * created or moved, so a verifier sees a stable tree it cannot merge. */
   addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>

@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { resolveWorkspace } from '../../domain/workspaces.js';
-import { kubernetesWorkflowRefusal } from '../../execution/workspace-execution-targets.js';
+import { kubernetesWorkflowRefusal, mixedWorkflowRefusal } from '../../execution/workspace-execution-targets.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -488,6 +488,8 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const workflow = req.body.workflow ?? resolveWorkflow({ requested: null, trackerLabels: null, workspace, config }).name;
       const refusal = kubernetesWorkflowRefusal(ctx.workflows, workflow, isolationMode);
       if (refusal) throw new DomainError('validation', refusal);
+      const mixedRefusal = await mixedWorkflowRefusal(ctx.workflows, workflow, workspace);
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
