@@ -13,7 +13,7 @@ const STEP_H = 40;
 const GAP = 30;
 const GROUP_X = 10;
 const GROUP_MIN_W = 400;
-const GROUP_TOP = 34;
+const GROUP_TOP = 46;
 const GROUP_BOTTOM = 18;
 const CHILD_W = 165;
 const CHILD_H = 70;
@@ -129,7 +129,11 @@ export function computeLayout(model: WorkflowDiagramModel): DiagramLayout {
     }
     const y1 = a.y + a.h;
     const y2 = b.y;
-    return { edge, points: [{ x: px(CX), y: y1 }, { x: px(CX), y: y2 }], ...(edge.label ? { label: label(edge.label, CX + 10 / SX, (y1 + y2) / 2 + 4, 'start') } : {}) };
+    const groupBoxes = model.nodes.filter((n) => n.kind === 'attempts' || n.kind === 'parallel').flatMap((n) => (boxes.has(n.id) ? [boxes.get(n.id)!] : []));
+    const topBorder = groupBoxes.some((g) => g.y > y1 && g.y < y2);
+    const bottomBorder = groupBoxes.find((g) => g.y + g.h > y1 && g.y + g.h < y2);
+    const labelY = topBorder ? y2 - 8 : bottomBorder ? bottomBorder.y + bottomBorder.h + 14 : (y1 + y2) / 2 + 4;
+    return { edge, points: [{ x: px(CX), y: y1 }, { x: px(CX), y: y2 }], ...(edge.label ? { label: label(edge.label, CX + 10 / SX, labelY, 'start') } : {}) };
   });
 
   const nodes: PlacedNode[] = model.nodes.flatMap((node) => {

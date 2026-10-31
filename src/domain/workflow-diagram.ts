@@ -16,12 +16,15 @@ function stepDetail(step: WorkflowStepDefinition): string | undefined {
     uses === 'run' ? text(step.run)
     : uses === 'command' ? text(w.command)
     : uses === 'critic' ? [text(w.harness), text(w.model)].filter((p) => p !== undefined).join(' ')
-    : uses === 'agent' && text(w.prompt) !== undefined ? `prompt ${text(w.prompt)}`
+    : uses === 'agent' && text(w.prompt) !== undefined ? `prompt ${clipTo(text(w.prompt)!, 14)}`
     : undefined;
   const head = tail ? `${uses} · ${tail}` : uses;
   const prompt = uses === 'critic' ? text(w.prompt) : undefined;
-  return prompt !== undefined ? `${head}\nprompt ${prompt}` : head;
+  return (prompt !== undefined ? `${head}\nprompt ${prompt}` : head).split('\n').map(clip).join('\n');
 }
+
+const clipTo = (value: string, max: number): string => (value.length > max ? `${value.slice(0, max - 1)}…` : value);
+const clip = (value: string): string => (value.length > 34 ? `${value.slice(0, 33)}…` : value);
 
 function stepNode(step: WorkflowStepDefinition, parent?: string): DiagramNode {
   const node: DiagramNode = { id: step.id, kind: step.parallel ? 'parallel' : 'step', label: step.id };

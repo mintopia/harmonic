@@ -35,7 +35,7 @@ function NodeBox({ p }: { p: PlacedNode }) {
       <rect x={x} y={y} width={width} height={height} rx={4} fill={fill} stroke={stroke} strokeDasharray={dash} strokeWidth={1.2} />
       {group ? (
         <text x={x + 10} y={y + 18} fontSize={11} fontWeight={600} letterSpacing={0.5} fill={node.kind === 'attempts' ? 'var(--hm-accent)' : 'var(--hm-muted)'}>
-          {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${node.detail}` : ''}` : 'PARALLEL'}
+          {node.kind === 'attempts' ? `ATTEMPTS${node.detail ? ` · ${fit(node.detail, 14)}` : ''}` : 'PARALLEL'}
         </text>
       ) : node.kind === 'cleanup' ? (
         <>
@@ -49,20 +49,22 @@ function NodeBox({ p }: { p: PlacedNode }) {
         <>
           <text x={x + 12} y={y + 17} fontSize={13} fontWeight={600} fill="var(--hm-ink)">{node.label}</text>
           {(node.detail ?? '').split('\n').map((line, i) => (
-            <text key={line + i} x={x + 12} y={y + 32 + i * 13} fontSize={11} fontFamily={mono} fill="var(--hm-muted)">{line}</text>
+            <text key={line + i} x={x + 12} y={y + 32 + i * 13} fontSize={10} fontFamily={mono} fill="var(--hm-muted)">{fit(line, 28)}</text>
           ))}
           {node.condition && <text x={x + 12} y={y + height - 12} fontSize={11} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       ) : (
         <>
           <text x={cx} y={y + (node.detail ? 17 : height / 2 + 4)} textAnchor="middle" fontSize={13} fontWeight={600} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-ink)'}>{node.label}</text>
-          {node.detail && <text x={cx} y={y + 31} textAnchor="middle" fontSize={11} fontFamily={node.kind === 'escalation' ? undefined : mono} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-muted)'}>{node.detail}</text>}
+          {node.detail && <text x={cx} y={y + 31} textAnchor="middle" fontSize={11} fontFamily={node.kind === 'escalation' ? undefined : mono} fill={node.kind === 'escalation' ? 'var(--hm-await)' : 'var(--hm-muted)'}>{fit(node.detail, 26)}</text>}
           {node.condition && <text x={cx} y={y + 44} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--hm-ink)">{`◇ if: ${conditionLabel(node.condition)}`}</text>}
         </>
       )}
     </g>
   );
 }
+
+const fit = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 const HALO = { paintOrder: 'stroke', stroke: 'var(--hm-surface)', strokeWidth: 4, strokeLinejoin: 'round' } as const;
 

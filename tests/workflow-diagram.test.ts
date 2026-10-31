@@ -132,4 +132,23 @@ describe('buildWorkflowDiagram', () => {
       }
     }
   });
+
+  it('keeps edge labels off group borders', () => {
+    const layout = computeLayout(buildWorkflowDiagram(parseWorkflow(PARALLEL)));
+    const groups = layout.nodes.filter((n) => n.node.kind === 'attempts' || n.node.kind === 'parallel');
+    for (const { label } of layout.edges) {
+      if (!label) continue;
+      for (const g of groups) {
+        for (const border of [g.y, g.y + g.height]) expect(border > label.y - 10 && border < label.y).toBe(false);
+      }
+    }
+  });
+
+  it('clips long critic prompts so they stay inside the node', () => {
+    const wf = PARALLEL.replace('prompt: critic-correctness', 'prompt: Review the candidate against the Ticket and judge it');
+    const details = buildWorkflowDiagram(parseWorkflow(wf)).nodes.map((n) => n.detail ?? '');
+    const prompt = details.flatMap((d) => d.split('\n')).find((l) => l.startsWith('prompt Review'))!;
+    expect(prompt.length).toBeLessThanOrEqual(34);
+    expect(prompt.endsWith('…')).toBe(true);
+  });
 });

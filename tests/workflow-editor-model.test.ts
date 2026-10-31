@@ -31,6 +31,13 @@ describe('validateWorkflowText', () => {
 
 });
 
+describe('step-list unknown key hint', () => {
+  it('suggests attempts for retries as a step entry', () => {
+    const r = validateWorkflowText(['name: w', 'description: d', 'steps:', '  - retries: 2', ''].join('\n'), null);
+    expect(r.issues[0]!.message).toContain('(did you mean attempts?)');
+  });
+});
+
 describe('messageParts', () => {
   it('chips the token and the suggestion', () => {
     expect(messageParts('unknown key: retries (did you mean attempts?)')).toEqual([

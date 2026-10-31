@@ -125,7 +125,7 @@ export function parseWorkflow(text: string, options: { lenient?: boolean } = {})
       ? invariants
       : parsed.error.issues.flatMap((i): Problem[] =>
           i.code === 'unrecognized_keys'
-            ? i.keys.map((k) => ({ path: [...i.path, k], message: unknownKey(k, i.path.length === 0 ? TOP_KEYS : STEP_KEYS), key: true }))
+            ? i.keys.map((k) => ({ path: [...i.path, k], message: unknownKey(k, i.path.length === 0 ? TOP_KEYS : i.path.length === 2 && i.path[0] === 'steps' ? [...STEP_KEYS, 'attempts'] : STEP_KEYS), key: true }))
             : [{ path: i.path, message: i.path[i.path.length - 1] === 'uses' ? actionHint(i.message, valueAt(js, i.path)) : i.message }],
         );
     for (const problem of problems) {
