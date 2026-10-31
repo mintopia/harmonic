@@ -167,6 +167,21 @@ export class AutoDrive {
     return result.ok;
   }
 
+  /** Posts a comment on the Task's ticket. Returns false when there is no ticket or the tracker cannot comment; throws when the tracker call fails. */
+  async commentOnTicket(task: TaskRow, body: string): Promise<boolean> {
+    if (task.trackerRef == null) return false;
+    const adapter = await this.resolveAdapter(task.workingDir, undefined, workspaceTrackerSettings(await this.getWorkspace?.(task.workspaceId)));
+    if (!adapter.comment) return false;
+    const { title } = splitTitleBody(task.prompt);
+    const ref = { ref: task.trackerRef, title, state: 'open' as const };
+    if (adapter.persistsInWorkingTree) {
+      await this.commitLifecycleWrite(task, ref, () => adapter.comment!(ref, body), body);
+    } else {
+      await adapter.comment(ref, body);
+    }
+    return true;
+  }
+
   retryTicketClose(task: TaskRow): Promise<{ ok: true } | { ok: false; error: unknown }> {
     return this.attemptClose(task, completionComment(task));
   }
