@@ -9,6 +9,7 @@ import { LoadError } from '../LoadError';
 import { Icon } from '../Icon';
 import { downloadText } from './download';
 import { YamlEditor } from './YamlEditor';
+import { WorkflowBuilder } from './WorkflowBuilder';
 import { WorkflowDiagram } from '../WorkflowDiagram';
 import { messageParts, toEditorIssues, validateWorkflowText } from '../../workflow-editor-model';
 import type { WorkflowDiagramModel } from '../../../../src/domain/workflow-diagram.js';
@@ -166,6 +167,7 @@ function EditorBody({
           </ul>
         </div>
       )}
+      <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} onChange={(text) => dispatch({ type: 'edit', text })} />
       <div className="px-3.5">
         <YamlEditor text={state.text} readOnly={readOnly} issues={issues} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
       </div>
