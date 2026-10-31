@@ -7,15 +7,19 @@ export const WORKFLOW_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 
 export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close-ticket', 'comment', 'cleanup'] as const;
 
-const stepSchema = z
+const stepIdSchema = z.string().regex(WORKFLOW_NAME_PATTERN, 'a step id starts with a lowercase letter and holds lowercase letters, digits, - or _');
+
+const leafStepSchema = z
   .object({
-    id: z.string().regex(WORKFLOW_NAME_PATTERN, 'a step id starts with a lowercase letter and holds lowercase letters, digits, - or _'),
+    id: stepIdSchema,
     run: z.string().min(1).optional(),
     uses: z.enum(WORKFLOW_ACTIONS).optional(),
     with: z.record(z.string(), z.unknown()).optional(),
     if: z.string().min(1).optional(),
   })
   .strict();
+
+const stepSchema = leafStepSchema.extend({ parallel: z.array(leafStepSchema).min(1, 'a parallel group needs at least one step').optional() }).strict();
 
 const workflowSchema = z
   .object({
@@ -40,6 +44,7 @@ export interface WorkflowStepDefinition {
   uses?: (typeof WORKFLOW_ACTIONS)[number] | undefined;
   with?: Record<string, unknown> | undefined;
   if?: string | undefined;
+  parallel?: readonly WorkflowStepDefinition[] | undefined;
 }
 
 export interface WorkflowDefinition {
@@ -92,24 +97,50 @@ export function agentStepWith(input: unknown): AgentStepWith | null {
   return parsed.success ? parsed.data : null;
 }
 
+const criticWithSchema = z
+  .object({
+    prompt: z.string('a critic needs its own prompt').min(1),
+    harness: z.string('a critic needs its own harness').min(1),
+    model: z.string('a critic needs its own model').min(1),
+  })
+  .strict();
+
+export type CriticStepWith = z.infer<typeof criticWithSchema>;
+
+export function criticStepWith(input: unknown): CriticStepWith | null {
+  const parsed = criticWithSchema.safeParse(input ?? {});
+  return parsed.success ? parsed.data : null;
+}
+
+function withProblems(path: PropertyKey[], schema: z.ZodType, input: unknown): Problem[] {
+  const parsed = schema.safeParse(input ?? {});
+  if (parsed.success) return [];
+  return parsed.error.issues.flatMap((issue): Problem[] =>
+    issue.code === 'unrecognized_keys'
+      ? issue.keys.map((key) => ({ path: [...path, 'with', key], message: `unknown key: ${key}`, key: true }))
+      : [{ path: [...path, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` }],
+  );
+}
+
+const PARALLEL_ACTIONS: ReadonlySet<string> = new Set(['critic', 'command']);
+
 function stepInvariants(wf: z.infer<typeof workflowSchema>): Problem[] {
   const problems: Problem[] = [];
   const seen = new Set<string>();
+  const check = (step: z.infer<typeof leafStepSchema> & { parallel?: unknown }, path: PropertyKey[], group?: string): void => {
+    if (seen.has(step.id)) problems.push({ path: [...path, 'id'], message: `duplicate step id: ${step.id}` });
+    seen.add(step.id);
+    const forms = [step.run, step.uses, step.parallel].filter((form) => form !== undefined).length;
+    if (forms !== 1) problems.push({ path, message: `step ${step.id} needs exactly one of run, uses or parallel` });
+    if (step.with !== undefined && step.uses === undefined) problems.push({ path: [...path, 'with'], message: 'with is only valid beside uses' });
+    if (step.uses === 'agent') problems.push(...withProblems(path, agentWithSchema, step.with));
+    if (group !== undefined && step.uses !== undefined && !PARALLEL_ACTIONS.has(step.uses)) problems.push({ path: [...path, 'uses'], message: `${step.uses} cannot run inside parallel group ${group}: only critic and command steps run together` });
+    if (step.uses === 'critic') problems.push(...withProblems(path, criticWithSchema, step.with));
+  };
   for (const list of ['steps', 'cleanup'] as const) {
     (wf[list] ?? []).forEach((step, i) => {
-      if (seen.has(step.id)) problems.push({ path: [list, i, 'id'], message: `duplicate step id: ${step.id}` });
-      seen.add(step.id);
-      if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path: [list, i], message: `step ${step.id} needs exactly one of run or uses` });
-      if (step.with !== undefined && step.uses === undefined) problems.push({ path: [list, i, 'with'], message: 'with is only valid beside uses' });
-      if (step.uses === 'agent') {
-        const parsed = agentWithSchema.safeParse(step.with ?? {});
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            if (issue.code === 'unrecognized_keys') for (const key of issue.keys) problems.push({ path: [list, i, 'with', key], message: `unknown key: ${key}`, key: true });
-            else problems.push({ path: [list, i, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` });
-          }
-        }
-      }
+      check(step, [list, i]);
+      step.parallel?.forEach((child, j) => check(child, [list, i, 'parallel', j], step.id));
     });
   }
   return problems;
@@ -174,11 +205,16 @@ function expressionProblems(wf: z.infer<typeof workflowSchema>, doc: ReturnType<
   const checkText = (path: PropertyKey[], value: string): void => {
     for (const span of findInterpolations(value)) check(path, span.source);
   };
+  const checkStep = (step: z.infer<typeof leafStepSchema>, path: PropertyKey[]): void => {
+    if (step.if !== undefined) check([...path, 'if'], conditionBody(step.if).source);
+    if (step.run !== undefined) checkText([...path, 'run'], step.run);
+    for (const [key, value] of Object.entries(step.with ?? {})) if (typeof value === 'string') checkText([...path, 'with', key], value);
+  };
   for (const [list, steps] of [['steps', wf.steps], ['cleanup', wf.cleanup ?? []]] as const) {
     steps.forEach((step, i) => {
-      if (step.if !== undefined) check([list, i, 'if'], conditionBody(step.if).source);
-      if (step.run !== undefined) checkText([list, i, 'run'], step.run);
-      for (const [key, value] of Object.entries(step.with ?? {})) if (typeof value === 'string') checkText([list, i, 'with', key], value);
+      checkStep(step, [list, i]);
+      step.parallel?.forEach((child, j) => checkStep(child, [list, i, 'parallel', j]));
+      for (const child of step.parallel ?? []) earlier.add(child.id);
       earlier.add(step.id);
     });
   }

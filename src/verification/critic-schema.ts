@@ -7,6 +7,7 @@ export type Verdict = 'pass' | 'fail' | 'inconclusive';
 export const criticVerdictSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive']),
   summary: z.string().min(1),
+  findings: z.array(z.string()).optional(),
 });
 export function verdictContractError(contract: string): string | undefined {
   const missing = ['verdict', 'summary'].filter((key) => !contract.includes(`"${key}"`));

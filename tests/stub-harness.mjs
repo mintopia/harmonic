@@ -134,7 +134,8 @@ async function handlePrompt(msg) {
     .split('\n\n## Branch consolidation required')[0]
     .split('\n\n## Rebase conflict')[0]
     .split('\n\n## Feedback from the previous attempt')[0]
-    .split('\n\n## Prior session (condensed)')[0];
+    .split('\n\n## Prior session (condensed)')[0]
+    .split('\n\n## Critic instructions')[0];
   let scenario;
   try {
     scenario = JSON.parse(jsonText);
@@ -299,6 +300,14 @@ async function handlePrompt(msg) {
         { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
       ],
     });
+    // `writeIfPermitted` scripts a write that happens only when the permission was granted.
+    if (outcome?.outcome === 'selected' && outcome.optionId !== 'reject') {
+      for (const [rel, content] of Object.entries(scenario.writeIfPermitted ?? {})) {
+        const path = resolve(process.cwd(), rel);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+      }
+    }
     notify('session/update', {
       sessionId: msg.params.sessionId,
       update: {

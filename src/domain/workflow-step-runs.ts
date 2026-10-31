@@ -10,6 +10,9 @@ export interface WorkflowStepOutputs {
   url?: string;
   number?: number;
   branch?: string;
+  verdict?: 'pass' | 'fail' | 'inconclusive';
+  reason?: string;
+  findings?: string[];
 }
 
 export interface WorkflowStepRunStart {

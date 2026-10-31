@@ -31,6 +31,10 @@ steps:
     uses: verify
   - id: review
     uses: critic
+    with:
+      harness: claude
+      model: claude-sonnet-5-5
+      prompt: Review the candidate against the Ticket and judge whether it does what the Ticket asked.
   - id: merge
     uses: merge
 `;

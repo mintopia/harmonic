@@ -225,3 +225,16 @@ ${renderFragment('criticSecurity', fragments)}
 
 ${renderFragment('criticVerdictContract', fragments)}`;
 }
+
+const FINDINGS_NOTE = 'You may add an optional "findings" key to that object: an array of short strings, one per concrete problem you found.';
+
+/** The prompt a workflow critic step sends: the step's own prompt, then the engine's read-only restraint and JSON verdict contract. Neither is editable. */
+export function buildWorkflowCriticPrompt(prompt: string, fragments: PromptFragments): string {
+  return [
+    prompt,
+    `## Critic instructions\n${renderFragment('criticRole', fragments)}`,
+    renderFragment('criticSecurity', fragments),
+    renderFragment('criticVerdictContract', fragments),
+    FINDINGS_NOTE,
+  ].join('\n\n');
+}

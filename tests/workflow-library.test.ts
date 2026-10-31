@@ -141,3 +141,26 @@ describe('agent step options', () => {
     expect(() => parseWorkflow(flow('    with:\n      continueAttempts: -1\n'))).toThrow(/with\.continueAttempts/);
   });
 });
+
+describe('critic steps and parallel groups', () => {
+  const wf = (steps: string): string => `name: f\ndescription: d\nsteps:\n${steps}`;
+  const criticStep = (withBlock: string): string => `  - id: review\n    uses: critic\n${withBlock}`;
+
+  it('accepts a critic with its own prompt, harness and model', () => {
+    expect(() => parseWorkflow(wf(criticStep('    with:\n      prompt: hi\n      harness: claude\n      model: m\n')))).not.toThrow();
+  });
+
+  it('refuses a critic without an explicit Harness, Model or prompt, at the with block', () => {
+    expect(() => parseWorkflow(wf(criticStep('    with:\n      prompt: hi\n      model: m\n')))).toThrow(/with\.harness: a critic needs its own harness/);
+    expect(() => parseWorkflow(wf(criticStep('    with:\n      prompt: hi\n      harness: claude\n')))).toThrow(/with\.model: a critic needs its own model/);
+    expect(() => parseWorkflow(wf(criticStep('')))).toThrow(/a critic needs its own prompt/);
+  });
+
+  it('accepts a parallel group of critics and refuses mutating or empty groups', () => {
+    const critic = (id: string): string => `      - id: ${id}\n        uses: critic\n        with:\n          prompt: hi\n          harness: claude\n          model: m\n`;
+    expect(() => parseWorkflow(wf(`  - id: panel\n    parallel:\n${critic('a')}${critic('b')}`))).not.toThrow();
+    expect(() => parseWorkflow(wf(`  - id: panel\n    parallel:\n${critic('a')}      - id: m\n        uses: merge\n`))).toThrow(/merge cannot run inside parallel group panel/);
+    expect(() => parseWorkflow(wf('  - id: panel\n    parallel: []\n'))).toThrow(/at least one step/);
+    expect(() => parseWorkflow(wf(`  - id: panel\n    parallel:\n${critic('a')}${critic('a')}`))).toThrow(/duplicate step id: a/);
+  });
+});
