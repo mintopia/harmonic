@@ -7,6 +7,7 @@ const OUTCOME_STATE: Record<WorkflowStepOutcome, StepState> = {
   fail: 'failed',
   inconclusive: 'failed',
   conflict: 'failed',
+  skipped: 'skipped',
 };
 
 const OUTCOME_WORD: Record<WorkflowStepOutcome, string> = {
@@ -14,6 +15,7 @@ const OUTCOME_WORD: Record<WorkflowStepOutcome, string> = {
   fail: 'failed',
   inconclusive: 'inconclusive',
   conflict: 'conflict',
+  skipped: 'skipped',
 };
 
 function outputsSummary(step: WorkflowStepRun): string {
@@ -40,7 +42,7 @@ function StepRow({ step }: { step: WorkflowStepRun }) {
         </span>
       </div>
       {step.summary && <p className="mt-2 whitespace-pre-wrap break-words text-[13px] text-muted">{step.summary}</p>}
-      {step.outcome !== null && <p className="mt-2 break-words font-data text-[12px] text-faint">{outputsSummary(step)}</p>}
+      {step.outcome !== null && step.outcome !== 'skipped' && <p className="mt-2 break-words font-data text-[12px] text-faint">{outputsSummary(step)}</p>}
     </li>
   );
 }

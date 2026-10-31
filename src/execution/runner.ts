@@ -192,18 +192,19 @@ export class Runner {
     this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
   }
 
-  private createWorkflowEngine({ library, secrets }: NonNullable<RunnerOptions['workflows']>): WorkflowEngine {
+  private createWorkflowEngine({ library, secrets, workspaceName }: NonNullable<RunnerOptions['workflows']>): WorkflowEngine {
     return new WorkflowEngine({
       library,
       stepRuns: new WorkflowStepRunStore(this.asyncDb),
       spawn: this.commandSpawn ?? createChildProcessSpawn(this.spawnProcessGroup),
       commandById: (task, id) => this.verification.preMergeCommandById(task, id),
-      secretValues: async (task) => {
-        if (task.workspaceId == null) return [];
+      secrets: async (task) => {
+        if (task.workspaceId == null) return {};
         const workspaceId = task.workspaceId;
-        const values = await Promise.all((await secrets.list(workspaceId)).map((secret) => secrets.reveal(workspaceId, secret.name)));
-        return values.filter((value): value is string => value !== null);
+        const entries = await Promise.all((await secrets.list(workspaceId)).map(async (secret) => [secret.name, await secrets.reveal(workspaceId, secret.name)] as const));
+        return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry[1] !== null));
       },
+      workspaceName: async (task) => (task.workspaceId == null ? '' : workspaceName(task.workspaceId)),
       cwdFor: (task) => this.workspaceProvisioner.dispatchCwd(task),
       baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
       mergeBranch: (task, run) =>

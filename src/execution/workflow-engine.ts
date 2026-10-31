@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
+import { evaluateCondition, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
 import { parseWorkflow, type WorkflowDefinition } from '../domain/workflow.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
@@ -19,7 +20,8 @@ export interface WorkflowEngineDeps {
   stepRuns: WorkflowStepRunStore;
   spawn: CommandSpawn;
   commandById: (task: TaskRow, id: string) => Promise<VerificationCommand | undefined>;
-  secretValues: (task: TaskRow) => Promise<string[]>;
+  secrets: (task: TaskRow) => Promise<Record<string, string>>;
+  workspaceName?: (task: TaskRow) => Promise<string>;
   cwdFor: (task: TaskRow) => string;
   baseBranchFor: (task: TaskRow) => Promise<string>;
   mergeBranch?: (task: TaskRow, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
@@ -59,18 +61,42 @@ export class WorkflowEngine {
     const ref = task.workflowRef!;
     const { name, version } = parseWorkflowRef(ref);
     const workflow = parseWorkflow((await this.deps.library.getVersion(name, version)).text);
-    const passed = await this.deps.stepRuns.passedStepIds(task.id, ref);
-    const secrets = await this.deps.secretValues(task);
+    const latest = await this.deps.stepRuns.latestByStep(task.id, ref);
+    const secretMap = await this.deps.secrets(task);
+    const secrets = Object.values(secretMap);
+    const mask = (text: string): string => maskSecrets(text, secrets);
+    const stepsContext: Record<string, Value> = {};
+    for (const [stepId, prior] of latest) {
+      if (prior.outcome === null) continue;
+      stepsContext[stepId] = { outcome: prior.outcome, outputs: prior.outputs ? (JSON.parse(prior.outputs) as Value) : {} };
+    }
+    const context: ExpressionContext = {
+      steps: stepsContext,
+      ticket: { title: task.trackerTitle ?? task.prompt, body: task.trackerBody ?? '', labels: task.trackerLabels ?? [], ref: task.trackerRef ?? '' },
+      attempt: { number: run.number, failureReason: run.feedback ?? task.feedback ?? '' },
+      workspace: { id: task.workspaceId ?? null, name: (await this.deps.workspaceName?.(task)) ?? '' },
+      vars: workflow.vars,
+      secrets: secretMap,
+    };
     for (const [position, step] of workflow.steps.entries()) {
-      if (passed.has(step.id)) continue;
+      const prior = latest.get(step.id)?.outcome;
+      if (prior === 'pass' || prior === 'skipped') continue;
       const action = step.run !== undefined ? 'run' : step.uses!;
       const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action });
       this.deps.onStepChanged?.(task.id);
-      const result = await this.execute(task, run, step, secrets);
+      let result: StepResult;
+      try {
+        result = step.if !== undefined && !evaluateCondition(step.if, context)
+          ? { outcome: 'skipped', summary: `if: ${step.if.trim()} was false`, stdout: '', exitCode: null, output: '' }
+          : await this.execute(task, run, ...resolveStep(step, context), secrets);
+      } catch (error) {
+        result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
+      }
       const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
       await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
+      stepsContext[step.id] = { outcome: result.outcome, outputs: { stdout: result.stdout, exitCode: result.exitCode } };
       this.deps.onStepChanged?.(task.id);
-      if (result.outcome !== 'pass') {
+      if (result.outcome !== 'pass' && result.outcome !== 'skipped') {
         if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
         const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
         await this.deps.escalate(task, run, `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`);
@@ -115,7 +141,7 @@ export class WorkflowEngine {
     return done('pass', `opened ${url}`, { url, ...(number === null ? {} : { number }) });
   }
 
-  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowDefinition['steps'][number], secrets: string[]): Promise<StepResult> {
+  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowDefinition['steps'][number], env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await this.rebase(task, mask);
@@ -126,7 +152,7 @@ export class WorkflowEngine {
       const cwd = this.deps.cwdFor(task);
       let command: VerificationCommand;
       if (step.run !== undefined) {
-        command = { id: step.id, command: 'sh', args: ['-c', step.run], env: {}, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
+        command = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
       } else {
         const id = step.with?.id;
         const found = typeof id === 'string' ? await this.deps.commandById(task, id) : undefined;
@@ -154,6 +180,18 @@ export class WorkflowEngine {
       return { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
     }
   }
+}
+
+/** Expression values reach a `run:` script as env vars, never as shell text, so ticket or step output cannot inject commands. */
+function resolveStep(step: WorkflowDefinition['steps'][number], context: ExpressionContext): [WorkflowDefinition['steps'][number], Record<string, string>] {
+  const withValues = step.with && Object.fromEntries(Object.entries(step.with).map(([key, value]) => [key, typeof value === 'string' ? interpolate(value, context) : value]));
+  const env: Record<string, string> = {};
+  const run = step.run === undefined ? undefined : interpolate(step.run, context, (value) => {
+    const name = `HARMONIC_EXPR_${Object.keys(env).length}`;
+    env[name] = value;
+    return `"\${${name}}"`;
+  });
+  return [{ ...step, run, with: withValues }, env];
 }
 
 async function markGit(cwd: string): Promise<GitMark> {

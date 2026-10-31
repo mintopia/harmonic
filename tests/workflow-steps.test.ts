@@ -25,6 +25,13 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
 const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', steps });
 
 describe('WorkflowSteps', () => {
+  it('shows a step skipped by if: as skipped', async () => {
+    const host = await mountComponent(createElement(WorkflowSteps, { data: response([step({ stepId: 'maybe', outcome: 'skipped', summary: 'if: false was false', outputs: { stdout: '', exitCode: null } })]) }));
+    expect(host.textContent).toContain('skipped');
+    expect(host.querySelector('[role="img"][aria-label="skipped"]')).not.toBeNull();
+    expect(host.textContent).not.toContain('no exit code');
+  });
+
   it('renders nothing without a workflowRef', async () => {
     const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, steps: [] } }));
     expect(host.innerHTML).toBe('');

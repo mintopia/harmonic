@@ -20980,7 +20980,8 @@
                                   "pass",
                                   "fail",
                                   "inconclusive",
-                                  "conflict"
+                                  "conflict",
+                                  "skipped"
                                 ]
                               },
                               {

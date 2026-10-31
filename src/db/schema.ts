@@ -294,7 +294,7 @@ export type StepRow = typeof steps.$inferSelect;
 
 export const WORKFLOW_CHOSEN = ['explicit', 'label', 'workspace', 'global'] as const;
 export type WorkflowChosen = (typeof WORKFLOW_CHOSEN)[number];
-export const WORKFLOW_STEP_OUTCOMES = ['pass', 'fail', 'inconclusive', 'conflict'] as const;
+export const WORKFLOW_STEP_OUTCOMES = ['pass', 'fail', 'inconclusive', 'conflict', 'skipped'] as const;
 export type WorkflowStepOutcome = (typeof WORKFLOW_STEP_OUTCOMES)[number];
 
 /** One execution of a Task Execution Workflow step; `outcome` is null while the step runs. */

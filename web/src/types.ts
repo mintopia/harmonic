@@ -38,7 +38,7 @@ export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
 
 export type WorkflowChosen = 'explicit' | 'label' | 'workspace' | 'global';
-export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict';
+export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict' | 'skipped';
 
 export interface WorkflowLibraryEntry {
   name: string;
