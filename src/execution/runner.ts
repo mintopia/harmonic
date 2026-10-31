@@ -227,6 +227,7 @@ export class Runner {
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),
+      boundary: async (task) => (await this.runControl.checkRunBoundary(task.id)).stop,
       agent: {
         drive: this.criticDrive,
         getConfig: this.getConfig,
@@ -530,6 +531,13 @@ export class Runner {
     await this.driveAccept(working, running, failedStep.type === 'implementation' ? 'commands' : 'critics');
   }
 
+  /** Accept on a workflow-run Ticket (ADR-0053): the failed step becomes `pass` and the same Attempt continues from the next step. */
+  async acceptWorkflowStep(task: TaskRow, run: AttemptRow): Promise<void> {
+    await this.workflowEngine!.acceptFailed(task);
+    const working = await this.taskService.setState(task.id, 'working');
+    await this.beginRun(working, undefined, await this.attempts.get(run.id));
+  }
+
   private async driveAccept(task: TaskRow, run: AttemptRow, startAt: 'commands' | 'critics'): Promise<void> {
     const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
     try {
@@ -564,6 +572,10 @@ export class Runner {
 
   /** @see {@link WorkspaceProvisioner.cleanupClosed} */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
+    if (task.workflowRef !== null && run && this.workflowEngine) {
+      const engine = this.workflowEngine;
+      await bestEffort(() => engine.close(task, run), { op: 'runner.workflow.closeCleanup', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
+    }
     return this.workspaceProvisioner.cleanupClosed(task, run);
   }
 
@@ -695,14 +707,15 @@ export class Runner {
     const engine = this.workflowEngine;
     if (!engine || !this.workflows) throw new DomainError('invalid_state', `task ${requested.id} chose a workflow but no workflow library is configured`);
     const name = requested.workflowRequested!;
-    const task = requested.workflowRef === null ? await this.taskService.pinWorkflow(requested.id, `${name}@${this.workflows.library.get(name).version}`) : requested;
+    const currentRef = `${name}@${this.workflows.library.get(name).version}`;
+    const task = requested.workflowRef === null || (!resumedAttempt && requested.workflowRef !== currentRef) ? await this.taskService.pinWorkflow(requested.id, currentRef, !resumedAttempt) : requested;
     const run = resumedAttempt
       ? await this.attempts.update(resumedAttempt.id, { state: 'running', startedAt: Date.now(), endedAt: null, reason: null, detail: null })
       : await this.attempts.create(task.id);
     await this.workspaceProvisioner.prepareWorkspace(task, run);
     this.drives.add((async () => {
       try {
-        await engine.run(task, run);
+        await engine.run(task, run, resumedAttempt !== undefined);
       } catch (error) {
         logger.error(`task ${task.id} attempt ${run.id}: workflow engine crashed: ${errorMessage(error)}`);
         await bestEffort(async () => {

@@ -444,6 +444,7 @@ export async function createRuntime(deps: {
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
     advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
+    acceptWorkflow: (task, run) => runner.acceptWorkflowStep(task, run),
   });
   touchStartupProgress(opts.dataDir);
   await drainRetirement();

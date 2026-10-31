@@ -818,14 +818,14 @@ export class TaskService {
     });
   }
 
-  /** Snapshots the workflow version a Ticket starts on; a Ticket already pinned keeps its version. */
-  async pinWorkflow(id: number, ref: string): Promise<TaskRow> {
+  /** Snapshots the workflow version a Ticket starts on; a Ticket already pinned keeps its version unless `replace` (a Retry re-resolves it). */
+  async pinWorkflow(id: number, ref: string, replace = false): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
           .set({ workflowRef: ref, workflowChosen: 'explicit', updatedAt: Date.now() })
-          .where(and(eq(tasks.id, id), isNull(tasks.workflowRef)))
+          .where(replace ? eq(tasks.id, id) : and(eq(tasks.id, id), isNull(tasks.workflowRef)))
           .returning()
           .get(),
       );

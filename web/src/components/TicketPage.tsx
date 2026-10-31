@@ -31,6 +31,7 @@ import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
+import { workflowEscalationNotes } from '../task-actions-model';
 import { WorkflowSteps } from './ticket/WorkflowSteps';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
@@ -137,6 +138,7 @@ export function TicketPage({
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
   const failedStep = latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null;
+  const workflowNotes = task.state === 'escalated' ? workflowEscalationNotes(workflowSteps?.steps ?? []) : null;
   const panel = contentPanel(resolved);
   const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
   const selectRunById = (runId: number) => {
@@ -255,7 +257,7 @@ export function TicketPage({
                       ? 'Verifying candidate'
                       : task.mergeStatus === 'merging'
                         ? 'Merging'
-                        : 'Escalated'}
+                        : (workflowNotes?.heading ?? 'Escalated')}
                 </span>
                 {escalationReason && (
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">
@@ -263,6 +265,15 @@ export function TicketPage({
                   </div>
                 )}
               </div>
+              {workflowNotes && (
+                <dl className="mt-2 grid gap-1 text-small text-ink" aria-label="What each action does">
+                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).map(([name, text]) => (
+                    <div key={name}>
+                      <dt className="inline font-semibold">{name}</dt> <dd className="inline text-muted">{text}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
               {gateModel.kind !== 'result' && (
                 <TaskActions

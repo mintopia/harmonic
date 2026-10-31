@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptPresentation, acceptedOutcome, escalationActions, taskActions } from '../web/src/task-actions-model.js';
+import { acceptPresentation, acceptedOutcome, escalationActions, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
@@ -96,5 +96,22 @@ describe('Accept disposition', () => {
     expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: null })).toBe('continuing the pipeline');
     expect(acceptedOutcome({ state: 'done', mergeStatus: null, currentStep: null })).toBe('completed');
     expect(acceptedOutcome({ state: 'escalated', mergeStatus: null, currentStep: null })).toBe('needs your attention');
+  });
+});
+
+describe('workflowEscalationNotes', () => {
+  it('names the failed step and what Accept, Retry and Close do to it', () => {
+    const notes = workflowEscalationNotes([
+      { stepId: 'implement', action: 'agent', outcome: 'pass', attempt: 1 },
+      { stepId: 'security', action: 'critic', outcome: 'fail', attempt: 1 },
+    ]);
+    expect(notes?.heading).toBe('Escalated at step security');
+    expect(notes?.accept).toContain('security (critic) as pass');
+    expect(notes?.retry).toContain('counter reset');
+    expect(notes?.close).toContain('cleanup:');
+  });
+
+  it('ignores a step that failed and later passed, and returns null when nothing is failed', () => {
+    expect(workflowEscalationNotes([{ stepId: 'a', action: 'run', outcome: 'fail', attempt: 1 }, { stepId: 'a', action: 'run', outcome: 'pass', attempt: 2 }])).toBeNull();
   });
 });
