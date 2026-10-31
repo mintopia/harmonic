@@ -69,7 +69,8 @@ export interface WorkflowDefinition {
 }
 
 /** Parses and validates workflow YAML, throwing a `validation` DomainError whose issues carry 1-based line and column. */
-export function parseWorkflow(text: string): WorkflowDefinition {
+/** `lenient` skips the `with:` key rules added after workflows were first stored, so a saved or pinned workflow keeps running. */
+export function parseWorkflow(text: string, options: { lenient?: boolean } = {}): WorkflowDefinition {
   const lineCounter = new LineCounter();
   const doc = parseDocument(text, { lineCounter, prettyErrors: false });
   const at = (offset: number): { line: number; column: number } => {
@@ -80,7 +81,7 @@ export function parseWorkflow(text: string): WorkflowDefinition {
   if (issues.length === 0) {
     const parsed = workflowSchema.safeParse(doc.toJS());
     const shaped = parsed.success ? layout(parsed.data) : undefined;
-    const invariants: Problem[] = parsed.success && shaped ? [...shaped.problems, ...stepInvariants(shaped.located, parsed.data), ...expressionProblems(shaped.located, parsed.data, doc, text)] : [];
+    const invariants: Problem[] = parsed.success && shaped ? [...shaped.problems, ...stepInvariants(shaped.located, parsed.data, options.lenient === true), ...expressionProblems(shaped.located, parsed.data, doc, text)] : [];
     const problems: Problem[] = parsed.success ? invariants : parsed.error.issues.flatMap((i): Problem[] => (i.code === 'unrecognized_keys' ? i.keys.map((k) => ({ path: [...i.path, k], message: `unknown key: ${k}`, key: true })) : [{ path: i.path, message: i.message }]));
     for (const problem of problems) {
       const node = problem.offset ?? (problem.key ? keyOffset(doc, problem.path) : nearestNode(doc, problem.path));
@@ -203,6 +204,10 @@ export function criticStepWith(input: unknown): CriticStepWith | null {
   return parsed.success ? parsed.data : null;
 }
 
+const emptyWithSchema = z.object({}).strict();
+const postMergeCheckWithSchema = z.object({ run: z.string().min(1).optional() }).strict();
+const EMPTY_WITH_ACTIONS: ReadonlySet<string> = new Set(['verify', 'rebase', 'merge', 'cleanup', 'artifact']);
+
 function withProblems(path: PropertyKey[], schema: z.ZodType, input: unknown): Problem[] {
   const parsed = schema.safeParse(input ?? {});
   if (parsed.success) return [];
@@ -219,7 +224,7 @@ function allLocated(located: Located[], wf: z.infer<typeof workflowSchema>): Loc
   return [...located, ...(wf.cleanup ?? []).map((step, i) => ({ step, path: ['cleanup', i] as PropertyKey[] }))];
 }
 
-function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>): Problem[] {
+function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>, lenient: boolean): Problem[] {
   const problems: Problem[] = [];
   const seen = new Set<string>();
   const check = (step: WorkflowStepDefinition, path: PropertyKey[], group?: string): void => {
@@ -231,6 +236,8 @@ function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>):
     if (step.uses === 'agent') problems.push(...withProblems(path, agentWithSchema, step.with));
     if (group !== undefined && step.uses !== undefined && !PARALLEL_ACTIONS.has(step.uses)) problems.push({ path: [...path, 'uses'], message: `${step.uses} cannot run inside parallel group ${group}: only critic and command steps run together` });
     if (step.uses === 'critic') problems.push(...withProblems(path, criticWithSchema, step.with));
+    if (!lenient && step.uses === 'post-merge-check') problems.push(...withProblems(path, postMergeCheckWithSchema, step.with));
+    if (!lenient && step.uses !== undefined && EMPTY_WITH_ACTIONS.has(step.uses)) problems.push(...withProblems(path, emptyWithSchema, step.with));
   };
   for (const { step, path } of allLocated(located, wf)) {
     check(step, path);
@@ -254,7 +261,7 @@ function keyOffset(doc: ReturnType<typeof parseDocument>, path: PropertyKey[]): 
   return parent?.items?.find((pair) => pair.key?.value === keys.at(-1))?.key?.range?.[0];
 }
 
-const TICKET_FIELDS = ['title', 'body', 'labels', 'ref'];
+const TICKET_FIELDS = ['title', 'body', 'labels', 'ref', 'origin'];
 const ATTEMPT_FIELDS = ['number', 'previousVerdict', 'failureReason'];
 const WORKSPACE_FIELDS = ['id', 'name'];
 

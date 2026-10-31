@@ -1,3 +1,4 @@
+import { findInterpolations, interpolate, type ExpressionContext } from '../domain/workflow-expression.js';
 import type { PromptFragments } from '../domain/prompt-fragments.js';
 import type { ClassifierInput } from '../domain/route-classifier.js';
 import { appendFeedback, codeIndexRepoGuidance, expandFragments, fillTemplate, renderFragment, type DriveFields } from './prompt-template.js';
@@ -246,4 +247,16 @@ export function buildClassifierPrompt(input: ClassifierInput, fragments: PromptF
     options: options.map((o) => `- ${o.id}: ${o.description} (${o.harness} ${o.model})`).join('\n'),
     ticket: JSON.stringify(ticket, null, 2),
   });
+}
+
+/** Single pass, so Ticket text can never inject a placeholder. */
+export function renderAgentPrompt(text: string, fields: Record<string, string | number>, context?: ExpressionContext): string {
+  const spans = context ? findInterpolations(text) : [];
+  let out = '';
+  let last = 0;
+  for (const span of spans) {
+    out += fillTemplate(text.slice(last, span.start), fields) + interpolate(text.slice(span.start, span.end), context!);
+    last = span.end;
+  }
+  return out + fillTemplate(text.slice(last), fields);
 }

@@ -8,6 +8,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import type { TaskRow } from '../src/db/schema.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
+import { parseWorkflow } from '../src/domain/workflow.js';
 import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
 import { mergeIntoBase } from '../src/execution/branch-merge.js';
@@ -38,10 +39,12 @@ describe('WorkflowEngine', () => {
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       commandById: async (_task, id) => (commands[id] ? { id, env: {}, ...commands[id] } : undefined),
+      preMergeCommands: async () => [],
+      postMergeCommands: async () => [],
       secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
-      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text },
+      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) },
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -190,16 +193,42 @@ describe('WorkflowEngine', () => {
     for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
   });
 
-  it('records an action it cannot run yet as inconclusive and escalates', async () => {
-    const { task, run } = await startTask(flow('  - id: check\n    uses: verify\n'));
-    await engine().run(task, run);
-    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'verify', outcome: 'inconclusive', summary: 'action not yet supported' });
-    expect(escalations).toHaveLength(1);
+  describe('uses: verify', () => {
+    const verifyFlow = (): string => flow('  - id: check\n    uses: verify\n');
+    const sh = (id: string, script: string) => ({ id, command: 'sh', args: ['-c', script], env: {}, timeoutSeconds: 30 });
+
+    it('passes with a summary when no verification commands are configured', async () => {
+      const { task, run } = await startTask(verifyFlow());
+      await engine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ action: 'verify', outcome: 'pass', summary: 'no verification commands configured' });
+      expect(completions).toBe(1);
+    });
+
+    it('runs the commands in order and stops at the first that does not pass', async () => {
+      const log = join(dir, 'log');
+      const { task, run } = await startTask(verifyFlow());
+      await engine({ preMergeCommands: async () => [sh('a', `echo a >> ${log}`), sh('b', `echo b >> ${log}; exit 1`), sh('c', `echo c >> ${log}`)] }).run(task, run);
+      expect(readFileSync(log, 'utf8')).toBe('a\nb\n');
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail' });
+      expect(escalations).toHaveLength(1);
+    });
+
+    it('fails a command that makes a commit', async () => {
+      const { task, run } = await startTask(verifyFlow());
+      await engine({ preMergeCommands: async () => [sh('a', 'git commit -q --allow-empty -m sneaky')] }).run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail', summary: ONLY_THE_AGENT_COMMITS });
+    });
+  });
+
+  it('rejects a with block on an action that reads none', () => {
+    for (const action of ['verify', 'rebase', 'merge', 'cleanup', 'artifact']) {
+      expect(() => parseWorkflow(flow(`  - id: x\n    uses: ${action}\n    with:\n      extra: 1\n`))).toThrow(/unknown key: extra/);
+    }
   });
 
   describe('branch actions', () => {
     const realMerge: WorkflowEngineDeps['mergeBranch'] = async (_task, r) =>
-      mergeIntoBase({ repoDir: repo, baseBranch: r.baseBranch!, branch: r.branch!, expectedOid: git(repo, 'rev-parse', r.branch!), mode: 'merge', mutexHeld: true });
+      mergeIntoBase({ repoDir: repo, baseBranch: r.baseBranch!, branch: r.branch!, expectedOid: git(repo, 'rev-parse', r.branch!), mode: 'merge', noFastForward: true, mutexHeld: true });
     const commitFile = (name: string, body: string): void => {
       writeFileSync(join(repo, name), body);
       git(repo, 'add', name);
@@ -223,6 +252,29 @@ describe('WorkflowEngine', () => {
       expect(git(repo, 'branch', '--show-current')).toBe('main');
       expect(readFileSync(join(repo, 'feat.txt'), 'utf8')).toBe('feat\n');
       expect(completions).toBe(1);
+    });
+
+    it('makes a two-parent merge commit even when the base has not moved', async () => {
+      fork();
+      const { task, run } = await startTask(flow('  - id: m\n    uses: merge\n'));
+      await engine({ mergeBranch: realMerge }).run(task, onBranch(run));
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      expect(git(repo, 'rev-list', '--parents', '-n', '1', 'main').split(' ')).toHaveLength(3);
+    });
+
+    it('passes merge and artifact for a Ticket that works in place', async () => {
+      const { task, run } = await startTask(flow('  - id: m\n    uses: merge\n  - id: keep\n    uses: artifact\n'));
+      await engine().run(task, run);
+      expect((await stepRows(task.id)).map((r) => [r.outcome, r.summary])).toEqual([['pass', 'the Ticket works in place'], ['pass', 'the Ticket works in place']]);
+      expect(completions).toBe(1);
+    });
+
+    it('is inconclusive for merge and artifact when a worktree Ticket has no recorded branch', async () => {
+      const { task, run } = await startTask(flow('  - id: m\n    uses: merge\n'));
+      await engine({ cwdFor: () => join(dir, 'worktree') }).run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'inconclusive', summary: 'the Ticket has no branch' });
+      expect(escalations).toHaveLength(1);
+      expect(completions).toBe(0);
     });
 
     it('records a conflict and leaves the base unchanged', async () => {
@@ -346,6 +398,7 @@ describe('WorkflowEngine', () => {
           getConfig: stubConfig,
           route: async () => { routeCalls += 1; return resolveRoute(stubConfig(), 'claude', 'stub-model', null); },
           resolvePrompt: async (text) => text,
+          promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }),
           ...over,
         },
       });
@@ -372,6 +425,22 @@ describe('WorkflowEngine', () => {
       await agentEngine({ resolvePrompt: async (text) => (text === 'my-code' ? 'expanded library text' : text) }).run(task, run);
       expect((await stepRows(task.id))[0]!.resolvedPrompt).toBe('expanded library text');
       expect(driven[0]!.prompt).toBe('expanded library text');
+    });
+
+    it('fills the prompt fields once and never expands a value that carries a placeholder', async () => {
+      const prompt = JSON.stringify('id={taskId} t={title} h={harness} m={model} a={attempt} f={feedback}|');
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n`));
+      const promptFields = async (t: TaskRow) => ({ taskId: String(t.id), skill: '/implement', ref: '', url: '', title: '{taskId} ${{ prompts.x }}', description: '' });
+      await agentEngine({ promptFields, resolvePrompt: async (text) => text }).run({ ...task, feedback: 'fix it' } as TaskRow, run);
+      expect(driven[0]!.prompt).toBe(`id=${task.id} t={taskId} \${{ prompts.x }} h=claude m=stub-model a=0 f=\n\n## Feedback from the previous attempt\n\nfix it|`);
+    });
+
+    it('sends a filled continuePrompt through the Library', async () => {
+      const prompt = scenario({ 'a.txt': '1' }, { commit: false });
+      const nudge = scenario({ 'b.txt': '2' });
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n      continueAttempts: 1\n      continuePrompt: nudge-code\n`));
+      await agentEngine({ resolvePrompt: async (text) => (text === 'nudge-code' ? nudge : text) }).run(task, run);
+      expect(driven[1]!.prompt).toBe(nudge);
     });
 
     it('resolves the Ticket route once for two implicit steps and shares one warm Session', async () => {
@@ -524,6 +593,15 @@ describe('WorkflowEngine', () => {
       expect(completions).toBe(1);
     });
 
+    it('feeds the failure tail separately from the reason', async () => {
+      const script = `if [ ! -f ${counter()} ]; then touch ${counter()}; echo the-tail; exit 1; fi; echo why=\${{ attempt.failureReason }}`;
+      const { task, run } = await startTask(flow(`  - id: try\n    run: ${JSON.stringify(script)}\n`, 2));
+      await engine().run(task, run);
+      const out = (await stepRows(task.id))[1]!.outputs!;
+      expect(out).toContain('why=workflow step try fail');
+      expect(out).not.toContain('the-tail');
+    });
+
     it('counts an inconclusive outcome as a failure', async () => {
       const { task, run } = await startTask(flow('  - id: try\n    uses: command\n    with:\n      id: missing\n', 2));
       await engine().run(task, run);
@@ -626,6 +704,18 @@ describe('WorkflowEngine', () => {
       expect(escalations).toHaveLength(1);
     });
 
+    it('post-merge-check without run uses the resolved post-merge commands, and an empty list passes', async () => {
+      const bare = `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: check\n    uses: post-merge-check\n')}`;
+      const { task, run } = await startTask(bare);
+      await engine().run(task, { ...run, branch: 'feat', baseBranch: 'main' });
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      const second = await startTask(bare);
+      const seen = join(dir, 'seen-pm');
+      await engine({ postMergeCommands: async () => [{ id: 'pm', command: 'sh', args: ['-c', `pwd > ${seen}; exit 1`], env: {}, timeoutSeconds: 30 }] }).run(second.task, { ...second.run, branch: 'feat', baseBranch: 'main' });
+      expect((await stepRows(second.task.id)).at(-1)).toMatchObject({ outcome: 'fail' });
+      expect(readFileSync(seen, 'utf8').trim()).not.toBe(repo);
+    });
+
     it('cleanup removes the Ticket worktree directory and its branch', async () => {
       const wt = join(dir, 'ticket-wt');
       git(repo, 'worktree', 'add', '-q', '-b', 'harmonic/task-9', wt);
@@ -652,11 +742,29 @@ describe('WorkflowEngine', () => {
       expect((await stepRows(task.id)).map((r) => r.outcome)).toEqual(['pass', 'pass']);
     });
 
-    it('close-ticket fails the step when the tracker refuses', async () => {
+    it('close-ticket marks the close pending and passes when the tracker refuses', async () => {
+      const pending: number[] = [];
       const { task, run } = await startTask(flow('  - id: shut\n    uses: close-ticket\n'));
-      await engine({ closeTicket: async () => false }).run({ ...task, trackerRef: '7' } as TaskRow, run);
-      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'fail' });
-      expect(escalations).toHaveLength(1);
+      await engine({ closeTicket: async () => false, markTicketClosePending: async (t) => { pending.push(t.id); } }).run({ ...task, trackerRef: '7' } as TaskRow, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      expect(pending).toEqual([task.id]);
+      expect(escalations).toEqual([]);
+    });
+
+    it('close-ticket marks the close pending and passes when the tracker call throws', async () => {
+      const pending: number[] = [];
+      const { task, run } = await startTask(flow('  - id: shut\n    uses: close-ticket\n'));
+      await engine({ closeTicket: async () => { throw new Error('rate limited'); }, markTicketClosePending: async (t) => { pending.push(t.id); } }).run({ ...task, trackerRef: '7' } as TaskRow, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      expect(pending).toEqual([task.id]);
+      expect(escalations).toEqual([]);
+    });
+
+    it('close-ticket without a body passes undefined so the default comment applies', async () => {
+      const bodies: Array<string | undefined> = [];
+      const { task, run } = await startTask(flow('  - id: shut\n    uses: close-ticket\n'));
+      await engine({ closeTicket: async (_t, body) => { bodies.push(body); return true; } }).run({ ...task, trackerRef: '7' } as TaskRow, run);
+      expect(bodies).toEqual([undefined]);
     });
   });
 });

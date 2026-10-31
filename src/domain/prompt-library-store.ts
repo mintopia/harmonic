@@ -59,7 +59,15 @@ function bundledEntries(): PromptEntry[] {
     text: atPath(baseline, PROMPT_TEMPLATES[id].config),
     bundled: true,
   }));
-  return [...fragments, ...templates].filter((entry) => !(ENGINE_APPENDED_FRAGMENTS as readonly string[]).includes(entry.code));
+  const composites: PromptEntry[] = [
+    { code: 'implement-native', description: 'Opening prompt for a native Task, with any feedback from the previous attempt.', text: '${{ prompts.taskPrompt }}{feedback}' },
+    { code: 'implement-ticket', description: 'Opening prompt for a mirrored Ticket, with feedback and the unattended reminder.', text: '${{ prompts.drivePrompt }}{feedback}\n\n${{ prompts.unattendedReminder }}' },
+    { code: 'implement-native-heal', description: 'The native opening prompt followed by the self-heal section.', text: '${{ prompts.implement-native }}\n\n${{ prompts.selfHeal }}' },
+    { code: 'implement-ticket-heal', description: 'The mirrored-Ticket opening prompt followed by the self-heal section.', text: '${{ prompts.implement-ticket }}\n\n${{ prompts.selfHeal }}' },
+    { code: 'criticReview', description: 'Default instruction for the critic review step.', text: 'Review the candidate against the Ticket and judge whether it does what the Ticket asked.' },
+  ].map((entry) => ({ ...entry, bundled: true }));
+  const stock: PromptEntry[] = [...fragments, ...templates].filter((entry) => !(ENGINE_APPENDED_FRAGMENTS as readonly string[]).includes(entry.code));
+  return [...stock, ...composites];
 }
 
 /** The Prompt Library: bundled entries (read-only) plus operator entries kept as one JSON file each under `<dataDir>/prompts`. */
@@ -139,6 +147,13 @@ export class PromptLibrary {
   async list(): Promise<PromptView[]> {
     const all = await this.all();
     return all.map((e) => this.view(e, all));
+  }
+
+  /** Expands a Library code, or the includes in free text, to its final text. */
+  async resolve(textOrCode: string): Promise<string> {
+    const lookup = new Map((await this.all()).map((e) => [e.code, e.text]));
+    const isCode = PROMPT_CODE_PATTERN.test(textOrCode) && lookup.has(textOrCode);
+    return resolvePrompt(isCode ? lookup.get(textOrCode)! : textOrCode, lookup, isCode ? [textOrCode] : []);
   }
 
   async get(code: string): Promise<PromptView> {

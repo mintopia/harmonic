@@ -12,8 +12,8 @@ import { UsageSampler } from './usage-sampler.js';
 import { TranscriptCapture } from './transcript-capture.js';
 import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
+import { driveFields } from './prompt-template.js';
 import { PromptLibrary } from '../domain/prompt-library-store.js';
-import { PROMPT_CODE_PATTERN, resolvePrompt } from '../domain/prompt-library.js';
 import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
@@ -206,6 +206,8 @@ export class Runner {
       stepRuns: new WorkflowStepRunStore(this.asyncDb),
       spawn: this.commandSpawn ?? createChildProcessSpawn(this.spawnProcessGroup),
       commandById: (task, id) => this.verification.preMergeCommandById(task, id),
+      preMergeCommands: (task) => this.verification.preMergeCommands(task),
+      postMergeCommands: (task) => this.verification.postMergeCommands(task),
       secrets: async (task) => {
         if (task.workspaceId == null) return {};
         const workspaceId = task.workspaceId;
@@ -224,10 +226,14 @@ export class Runner {
               branch: run.branch!,
               expectedOid: await Git.revParse(task.workingDir, run.branch!),
               mode: 'merge',
+              noFastForward: true,
               mutexHeld: true,
             }),
           ),
         ),
+      markTicketClosePending: async (task) => {
+        await this.taskService.setTicketClosePending(task.id, true);
+      },
       closeTicket: (task, comment) => this.autoDrive?.closeTicket(task, comment) ?? Promise.resolve(false),
       commentOnTicket: (task, body) => this.autoDrive?.commentOnTicket(task, body) ?? Promise.resolve(false),
       openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
@@ -239,12 +245,8 @@ export class Runner {
         drive: this.criticDrive,
         getConfig: this.getConfig,
         route: (task) => this.taskService.routing.ticketRoute(task),
-        resolvePrompt: async (text) => {
-          const entries = await this.promptLibrary.list();
-          const lookup = new Map(entries.map((entry) => [entry.code, entry.text]));
-          const isCode = PROMPT_CODE_PATTERN.test(text) && lookup.has(text);
-          return resolvePrompt(isCode ? lookup.get(text)! : text, lookup, isCode ? [text] : []);
-        },
+        resolvePrompt: (text) => this.promptLibrary.resolve(text),
+        promptFields: (task) => (this.autoDrive ? this.autoDrive.promptFields(task) : Promise.resolve(driveFields(task, this.urlFor))),
       },
     });
   }
@@ -581,7 +583,7 @@ export class Runner {
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
     if (task.workflowRef !== null && run && this.workflowEngine) {
       const engine = this.workflowEngine;
-      await bestEffort(() => engine.close(task, run), { op: 'runner.workflow.closeCleanup', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
+      await bestEffort(async () => engine.close(task, await this.attempts.get(run.id)), { op: 'runner.workflow.closeCleanup', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
     }
     return this.workspaceProvisioner.cleanupClosed(task, run);
   }
@@ -754,10 +756,11 @@ export class Runner {
   private async beginWorkflowRun(task: TaskRow, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
     const engine = this.workflowEngine;
     if (!engine || !this.workflows) throw new DomainError('invalid_state', `task ${task.id} is pinned to a workflow but no workflow library is configured`);
-    const run = resumedAttempt
+    const started = resumedAttempt
       ? await this.attempts.update(resumedAttempt.id, { state: 'running', startedAt: Date.now(), endedAt: null, reason: null, detail: null })
       : await this.attempts.create(task.id);
-    await this.workspaceProvisioner.prepareWorkspace(task, run);
+    await this.workspaceProvisioner.prepareWorkspace(task, started);
+    const run = await this.attempts.get(started.id);
     this.drives.add((async () => {
       try {
         await engine.run(task, run, resumedAttempt !== undefined, task.continuationChoice !== 'condensed');

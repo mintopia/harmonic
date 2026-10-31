@@ -20,30 +20,67 @@ export interface WorkflowLibraryOptions {
   rename?: (from: string, to: string) => Promise<void>;
 }
 
+const PICK_PROMPT = "${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'implement-ticket-heal' || 'implement-ticket') || (attempt.number > 1 && 'implement-native-heal' || 'implement-native') }}";
+
 const BUNDLED_IMPLEMENT = `name: implement
 description: Build the ticket, verify it, review it and merge it.
+vars:
+  maxAttempts: 2
+  review: false
 steps:
   - id: rebase
     uses: rebase
   - attempts:
-      max: 2
+      max: \${{ vars.maxAttempts }}
       steps:
         - id: build
           uses: agent
+          with:
+            prompt: "${PICK_PROMPT}"
+            continueAttempts: 1
+            continuePrompt: commitNudge
         - id: verify
           uses: verify
         - id: review
-          uses: critic
-          with:
-            harness: claude
-            model: claude-sonnet-5-5
-            prompt: Review the candidate against the Ticket and judge whether it does what the Ticket asked.
+          if: \${{ vars.review }}
+          parallel:
+            - id: critic
+              uses: critic
+              with:
+                harness: claude
+                model: claude-sonnet-5-5
+                prompt: criticReview
   - id: merge
     uses: merge
+  - id: post-merge-check
+    uses: post-merge-check
+  - id: close-ticket
+    uses: close-ticket
+cleanup:
+  - id: cleanup
+    uses: cleanup
+`;
+
+const BUNDLED_RESEARCH = `name: research
+description: Research the ticket and keep the branch as the artifact.
+vars:
+  maxAttempts: 2
+steps:
+  - attempts:
+      max: \${{ vars.maxAttempts }}
+      steps:
+        - id: research
+          uses: agent
+          with:
+            prompt: "${PICK_PROMPT}"
+            continueAttempts: 1
+            continuePrompt: commitNudge
+  - id: artifact
+    uses: artifact
 `;
 
 function bundledEntries(): WorkflowEntry[] {
-  return [BUNDLED_IMPLEMENT].map((text) => ({ name: parseWorkflow(text).name, description: parseWorkflow(text).description, text, bundled: true, version: 1 }));
+  return [BUNDLED_IMPLEMENT, BUNDLED_RESEARCH].map((text) => ({ name: parseWorkflow(text).name, description: parseWorkflow(text).description, text, bundled: true, version: 1 }));
 }
 
 const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
@@ -79,7 +116,7 @@ export class WorkflowLibrary {
       const name = file.slice(0, -'.yaml'.length);
       try {
         const text = await readFile(join(this.dir!, file), 'utf8');
-        const def = parseWorkflow(text);
+        const def = parseWorkflow(text, { lenient: true });
         if (def.name !== name) throw new Error(`file holds workflow ${def.name}`);
         this.operator.set(name, { name, description: def.description, text, bundled: false, version: await this.settledVersion(name, text) });
       } catch (err) {
@@ -143,7 +180,7 @@ export class WorkflowLibrary {
     }
     try {
       const text = await readFile(join(this.versionDir(name), `${version}.yaml`), 'utf8');
-      return { name, description: parseWorkflow(text).description, text, bundled: false, version };
+      return { name, description: parseWorkflow(text, { lenient: true }).description, text, bundled: false, version };
     } catch (err) {
       if (isMissing(err)) throw new DomainError('not_found', `${name} has no version ${version}`);
       throw err;

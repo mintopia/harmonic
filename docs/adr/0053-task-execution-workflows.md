@@ -270,3 +270,26 @@ This amends ADR-0052: a Model Option gains a code, a Ticket override joins the
 global list and Workspace overlay, and a code may repeat across those three
 lists, the inner definition shadowing the outer. Within one list a code is
 unique.
+
+## Amendment (2026-10-31): Bundled `implement` and `research` workflows
+
+Two workflows ship in the package: `implement` and `research`. On an unedited
+install they reproduce today's execution.
+
+- **`research` has no `cleanup:`.** Cleanup deletes the Ticket branch, and that
+  branch holds the research artifact.
+- **`verify`** runs the Task's resolved pre-merge command list.
+- **`post-merge-check`** with no `run:` runs the Task's resolved post-merge
+  command list in the detached base checkout. Empty lists pass.
+- **Prompt Library codes.** The prompt on an `agent` or `critic` step may select
+  a Prompt Library code with an expression. After the Library lookup, `{field}`
+  placeholders are filled once. Field values are never expanded again.
+- **`merge` always produces a merge commit.** `merge` and `artifact` pass for
+  Tasks that work in place. A refused `close-ticket` marks the close pending and
+  passes.
+- **Accepted divergences from today's path:**
+  - A rebase conflict escalates instead of going to the agent.
+  - There are no `finish_task` continue nudges.
+  - There is no peer or code-index prompt text.
+  - The engine's post-merge check runs after the Merge is published.
+  - Critic prompts are not byte-identical to the old critic prompt.

@@ -5,7 +5,7 @@ import { formatWorkspaceTrackerRef, resolveTrackerAdapter, workspaceTrackerSetti
 import type { FeatureIndex } from '../tracker/local-markdown.js';
 import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
 import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
-import { driveFields, splitTitleBody } from './prompt-template.js';
+import { driveFields, splitTitleBody, type DriveFields } from './prompt-template.js';
 import { composeContinuePrompt, composeDriveOpening } from './prompt-assembly.js';
 import { Git } from './git.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
@@ -66,6 +66,10 @@ export class AutoDrive {
     const drive = await this.resolvedDrive(task);
     const epicKind = await this.epicKindFor(task);
     return composeDriveOpening(drive, driveFields({ ...task, epicKind }, this.urlFor), task.feedback);
+  }
+
+  async promptFields(task: TaskRow): Promise<DriveFields> {
+    return driveFields({ ...task, epicKind: await this.epicKindFor(task) }, this.urlFor);
   }
 
   /**
