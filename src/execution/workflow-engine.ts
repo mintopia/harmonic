@@ -5,7 +5,7 @@ import type { AppConfig, VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
-import { agentStepWith, parseWorkflow, type WorkflowStepDefinition } from '../domain/workflow.js';
+import { agentStepWith, criticStepWith, parseWorkflow, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
@@ -14,11 +14,17 @@ import type { CriticHarnessDrive } from '../verification/critic.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
+import { buildWorkflowCriticPrompt } from './prompt-assembly.js';
+import { loadBaselineConfig } from '../config.js';
+import { withEngineFragments } from '../domain/prompt-library-sources.js';
+import { parseCriticOutput } from '../verification/critic-schema.js';
 
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
 export const UNCOMMITTED_AFTER_AGENT = 'uncommitted changes remain after the agent turn';
 export const DEFAULT_CONTINUE_PROMPT = 'You have uncommitted changes in the worktree. Commit your work with a clear message, then stop.';
 const DEFAULT_AGENT_TIMEOUT_MS = 60 * 60 * 1000;
+export const CRITIC_CHANGED_THE_WORK = 'a critic must not change the work it judges';
+const DEFAULT_CRITIC_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_RUN_TIMEOUT_SECONDS = 600;
 const ESCALATION_OUTPUT_CHARS = 4000;
 
@@ -44,6 +50,7 @@ export interface WorkflowEngineDeps {
     route: (task: TaskRow) => Promise<ResolvedRoute>;
     resolvePrompt: (text: string) => Promise<string>;
     timeoutMs?: number;
+    criticTimeoutMs?: number;
   };
   runTimeoutMs?: number;
 }
@@ -56,6 +63,8 @@ interface StepResult {
   output: string;
   outputs?: Partial<WorkflowStepOutputs>;
 }
+
+type FailedStep = StepResult & { stepId: string };
 
 interface AgentRunState {
   route?: Promise<ResolvedRoute>;
@@ -71,6 +80,7 @@ interface RunContext {
   stepsContext: Record<string, Value>;
   context: ExpressionContext;
   agentState: AgentRunState;
+  criticFragments: ReturnType<typeof withEngineFragments>;
 }
 
 interface GitMark {
@@ -108,7 +118,7 @@ export class WorkflowEngine {
       vars: workflow.vars,
       secrets: secretMap,
     };
-    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: {} };
+    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: {}, criticFragments: withEngineFragments(loadBaselineConfig().promptFragments) };
     if (!(await this.runSteps(ctx, workflow.steps, 0, true))) return;
     await this.deps.complete(task, run);
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, false);
@@ -116,38 +126,101 @@ export class WorkflowEngine {
 
   /** Runs `steps`; with `escalateOnFailure` a non-pass outcome escalates the Task and stops, otherwise the failure is recorded and the remaining steps still run. Returns whether the Task may continue. */
   private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, escalateOnFailure: boolean): Promise<boolean> {
-    const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
-    const mask = (text: string): string => maskSecrets(text, secrets);
+    const { task, run } = ctx;
     for (const [index, step] of steps.entries()) {
-      const prior = latest.get(step.id)?.outcome;
-      if (prior === 'pass' || prior === 'skipped') continue;
-      const action = step.run !== undefined ? 'run' : step.uses!;
-      const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position: firstPosition + index, action });
-      this.deps.onStepChanged?.(task.id);
-      let result: StepResult;
-      try {
-        if (step.if !== undefined && !evaluateCondition(step.if, context)) {
-          result = { outcome: 'skipped', summary: `if: ${step.if.trim()} was false`, stdout: '', exitCode: null, output: '' };
-        } else {
-          const [resolved, env] = resolveStep(step, context);
-          result = resolved.uses === 'agent' ? await this.executeAgent(task, resolved, row.id, secrets, ctx.agentState) : await this.execute(task, run, resolved, env, secrets);
-        }
-      } catch (error) {
-        result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
-      }
-      const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
-      await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
-      stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
-      this.deps.onStepChanged?.(task.id);
-      if (result.outcome !== 'pass' && result.outcome !== 'skipped') {
-        if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
-        if (!escalateOnFailure) continue;
-        const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
-        await this.deps.escalate(task, run, `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`);
-        return false;
-      }
+      const failed = step.parallel ? await this.runGroup(ctx, step, firstPosition + index) : await this.runStep(ctx, step, firstPosition + index);
+      if (failed === null) continue;
+      if (failed.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
+      if (!escalateOnFailure) continue;
+      const tail = failed.output.length > ESCALATION_OUTPUT_CHARS ? failed.output.slice(-ESCALATION_OUTPUT_CHARS) : failed.output;
+      await this.deps.escalate(task, run, `workflow step ${failed.stepId} ${failed.outcome}: ${failed.summary}${tail ? `\n${tail}` : ''}`);
+      return false;
     }
     return true;
+  }
+
+  private async runStep(ctx: RunContext, step: WorkflowStepDefinition, position: number, groupCondition?: string): Promise<FailedStep | null> {
+    const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
+    const mask = (text: string): string => maskSecrets(text, secrets);
+    const prior = latest.get(step.id)?.outcome;
+    if (prior === 'pass' || prior === 'skipped') return null;
+    const action = step.run !== undefined ? 'run' : step.uses!;
+    const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action });
+    this.deps.onStepChanged?.(task.id);
+    let result: StepResult;
+    try {
+      const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
+      if (falsy !== undefined) {
+        result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
+      } else {
+        const [resolved, env] = resolveStep(step, context);
+        result =
+          resolved.uses === 'agent'
+            ? await this.executeAgent(task, resolved, row.id, secrets, ctx.agentState)
+            : resolved.uses === 'critic'
+              ? await this.executeCritic(task, resolved, row.id, secrets, ctx.criticFragments)
+              : await this.execute(task, run, resolved, env, secrets);
+      }
+    } catch (error) {
+      result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
+    }
+    const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
+    await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
+    stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
+    this.deps.onStepChanged?.(task.id);
+    return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
+  }
+
+  private async runGroup(ctx: RunContext, group: WorkflowStepDefinition, position: number): Promise<FailedStep | null> {
+    const failures = (await Promise.all((group.parallel ?? []).map((step) => this.runStep(ctx, step, position, group.if)))).filter((failure): failure is FailedStep => failure !== null);
+    if (failures.length === 0) return null;
+    const rank: WorkflowStepOutcome[] = ['conflict', 'fail', 'inconclusive'];
+    const outcome = rank.find((candidate) => failures.some((f) => f.outcome === candidate))!;
+    return {
+      stepId: group.id,
+      outcome,
+      summary: failures.map((f) => `${f.stepId} ${f.outcome}: ${f.summary}`).join('; '),
+      stdout: '',
+      exitCode: null,
+      output: failures.map((f) => f.output).filter((text) => text !== '').join('\n'),
+    };
+  }
+
+  private async executeCritic(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], fragments: RunContext['criticFragments']): Promise<StepResult> {
+    const mask = (text: string): string => maskSecrets(text, secrets);
+    const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
+    try {
+      const options = criticStepWith(step.with);
+      if (!options) return inconclusive('invalid critic step options: a critic needs its own prompt, harness and model');
+      const { agent } = this.deps;
+      const route = resolveRoute(agent.getConfig(), options.harness, options.model, null);
+      if (!route.ok) return inconclusive(route.reason);
+      const prompt = buildWorkflowCriticPrompt(await agent.resolvePrompt(options.prompt), fragments);
+      await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
+      this.deps.onStepChanged?.(task.id);
+      const cwd = this.deps.cwdFor(task);
+      const before = await markGit(cwd);
+      const dirtyBefore = await Git.isDirty(cwd);
+      const result = await agent.drive.run({
+        harness: route.config,
+        harnessId: route.harness,
+        model: route.model,
+        cwd,
+        prompt,
+        timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
+        readOnly: true,
+      });
+      const output = mask(result.output);
+      const after = await markGit(cwd);
+      const changed = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits || (!dirtyBefore && (await Git.isDirty(cwd)));
+      if (changed) return { outcome: 'fail', summary: CRITIC_CHANGED_THE_WORK, stdout: output, exitCode: null, output, outputs: { verdict: 'fail', reason: CRITIC_CHANGED_THE_WORK } };
+      const parsed = parseCriticOutput(result.output);
+      if (!parsed.ok) return { outcome: 'inconclusive', summary: mask(parsed.reason), stdout: output, exitCode: null, output, outputs: { verdict: 'inconclusive', reason: mask(parsed.reason) } };
+      const { verdict, summary, findings } = parsed.value;
+      return { outcome: verdict, summary: mask(summary), stdout: output, exitCode: null, output, outputs: { verdict, reason: mask(summary), findings: (findings ?? []).map(mask) } };
+    } catch (error) {
+      return inconclusive(errorMessage(error));
+    }
   }
 
   private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {

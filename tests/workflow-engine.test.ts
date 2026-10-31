@@ -10,7 +10,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
 import { mergeIntoBase } from '../src/execution/branch-merge.js';
-import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, UNCOMMITTED_AFTER_AGENT, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
+import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, CRITIC_CHANGED_THE_WORK, UNCOMMITTED_AFTER_AGENT, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
 import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { resolveRoute } from '../src/domain/route.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
@@ -190,9 +190,9 @@ describe('WorkflowEngine', () => {
   });
 
   it('records an action it cannot run yet as inconclusive and escalates', async () => {
-    const { task, run } = await startTask(flow('  - id: check\n    uses: critic\n'));
+    const { task, run } = await startTask(flow('  - id: check\n    uses: verify\n'));
     await engine().run(task, run);
-    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'critic', outcome: 'inconclusive', summary: 'action not yet supported' });
+    expect((await stepRows(task.id))[0]).toMatchObject({ action: 'verify', outcome: 'inconclusive', summary: 'action not yet supported' });
     expect(escalations).toHaveLength(1);
   });
 
@@ -421,6 +421,81 @@ describe('WorkflowEngine', () => {
       expect(driven).toHaveLength(2);
       expect(driven[1]!.continueSessionId).toBeDefined();
       expect(git(repo, 'status', '--porcelain')).toBe('');
+    });
+
+    describe('critic steps', () => {
+      const reply = (text: string, extra: object = {}): string => scenario({}, { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }], ...extra });
+      const verdictReply = (verdict: string, extra: object = {}): string => reply(JSON.stringify({ verdict, summary: `${verdict} summary`, findings: ['one'] }), extra);
+      const critic = (id: string, prompt: string, harness = 'claude'): string => `  - id: ${id}\n    uses: critic\n    with:\n      harness: ${harness}\n      model: stub-model\n      prompt: ${prompt}\n`;
+      const group = (id: string, ...children: string[]): string => `  - id: ${id}\n    parallel:\n${children.map((c) => c.replace(/^(?=.)/gm, '    ')).join('')}`;
+
+      it('maps a real Harness verdict to the step outcome and outputs, with the contract appended', async () => {
+        const { task, run } = await startTask(flow(critic('review', verdictReply('fail'))));
+        await agentEngine().run(task, run);
+        const [row] = await stepRows(task.id);
+        expect(row).toMatchObject({ stepId: 'review', action: 'critic', outcome: 'fail', summary: 'fail summary' });
+        expect(JSON.parse(row!.outputs!)).toMatchObject({ verdict: 'fail', reason: 'fail summary', findings: ['one'] });
+        expect(row!.resolvedPrompt).toContain('READ-ONLY');
+        expect(row!.resolvedPrompt).toContain('"verdict"');
+        expect(routeCalls).toBe(0);
+        expect(escalations[0]).toContain('workflow step review fail: fail summary');
+      });
+
+      it('runs two critics in a parallel group and the group follows both verdicts', async () => {
+        const passing = await startTask(flow(group('panel', critic('a', verdictReply('pass')), critic('b', verdictReply('pass')))));
+        await agentEngine().run(passing.task, passing.run);
+        expect((await stepRows(passing.task.id)).map((r) => [r.stepId, r.outcome])).toEqual(expect.arrayContaining([['a', 'pass'], ['b', 'pass']]));
+        expect(completions).toBe(1);
+
+        const mixed = await startTask(flow(group('panel', critic('a', verdictReply('pass')), critic('b', verdictReply('fail')))));
+        await agentEngine().run(mixed.task, mixed.run);
+        expect(completions).toBe(1);
+        expect(escalations[0]).toContain('workflow step panel fail: b fail: fail summary');
+        expect((await stepRows(mixed.task.id)).map((r) => r.outcome).sort()).toEqual(['fail', 'pass']);
+      });
+
+      it('maps a malformed verdict to inconclusive', async () => {
+        const { task, run } = await startTask(flow(critic('review', reply('I think it looks fine'))));
+        await agentEngine().run(task, run);
+        expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'inconclusive' });
+      });
+
+      it('denies a critic write permission request and leaves git status clean', async () => {
+        const prompt = verdictReply('pass', { requestPermission: { kind: 'edit', title: 'Write x.txt' }, writeIfPermitted: { 'x.txt': 'sneaky' } });
+        const { task, run } = await startTask(flow(critic('review', prompt)));
+        await agentEngine().run(task, run);
+        expect(JSON.parse((await stepRows(task.id))[0]!.outputs!).stdout).toContain('"optionId":"reject"');
+        expect(git(repo, 'status', '--porcelain')).toBe('');
+      });
+
+      it('fails a critic whose shell command left the worktree dirty or moved HEAD', async () => {
+        for (const commit of [false, true]) {
+          const head = git(repo, 'rev-parse', 'HEAD');
+          const prompt = verdictReply('pass', { writeFiles: { [`sneaky-${commit}.txt`]: 'x' }, commit });
+          const { task, run } = await startTask(flow(critic('review', prompt)));
+          await agentEngine().run(task, run);
+          const row = (await stepRows(task.id))[0]!;
+          expect(row).toMatchObject({ outcome: 'fail', summary: CRITIC_CHANGED_THE_WORK });
+          expect(escalations.at(-1)).toContain(CRITIC_CHANGED_THE_WORK);
+          if (commit) expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(head);
+          git(repo, 'reset', '--hard', head);
+          git(repo, 'clean', '-fdq');
+        }
+      });
+
+      it('still grants an agent step the same permission request', async () => {
+        const prompt = scenario({}, { requestPermission: { kind: 'edit' }, writeIfPermitted: { 'x.txt': 'fine' }, commit: false });
+        const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      prompt: ${prompt}\n`));
+        await agentEngine().run(task, run);
+        expect(readFileSync(join(repo, 'x.txt'), 'utf8')).toBe('fine');
+      });
+
+      it('is inconclusive when its Harness is not configured', async () => {
+        const { task, run } = await startTask(flow(critic('review', verdictReply('pass'), 'codex')));
+        await agentEngine().run(task, run);
+        expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'inconclusive', summary: "Harness 'codex' is not configured." });
+        expect(driven).toEqual([]);
+      });
     });
   });
 

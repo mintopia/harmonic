@@ -21,6 +21,12 @@ function grantOptionId(request: PermissionRequest): string | null {
   return pick?.optionId ?? null;
 }
 
+const READ_ONLY_PERMITTED_KINDS = new Set(['read', 'search', 'fetch', 'think', 'execute']);
+
+function rejectOptionId(request: PermissionRequest): string | null {
+  return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
+}
+
 /** What a drive of one critic turn produced. */
 export interface CriticDriveResult {
   /** Every `agent_message_chunk` text piece, concatenated in arrival order. */
@@ -48,6 +54,8 @@ export interface CriticDriveRequest {
   onSessionCreated?: (sessionId: string, initialize: AcpInitializeResult) => Promise<void> | void;
   /** Reload this prior ACP session instead of starting a fresh one. */
   continueSessionId?: string;
+  /** Deny every permission request that could write, and never switch the harness into its unattended permission mode. */
+  readOnly?: boolean;
   /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
   onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
@@ -132,6 +140,10 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
               return { outcome: 'cancelled' };
             }
             permissionRequests.push(request);
+            if (req.readOnly && !READ_ONLY_PERMITTED_KINDS.has(request.toolCall.kind ?? '')) {
+              const denied = rejectOptionId(request);
+              return denied ? { outcome: 'selected', optionId: denied } : { outcome: 'cancelled' };
+            }
             const optionId = grantOptionId(request);
             return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
           }
@@ -164,7 +176,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
         }
         if (initialize && sessionId !== req.continueSessionId) await req.onSessionCreated?.(sessionId, initialize);
 
-        const mode = adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
+        const mode = req.readOnly ? null : adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }
