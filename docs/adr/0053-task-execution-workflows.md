@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-30
 
+Amended by ADR-0057 (2026-10-31): Epics run on this engine through the bundled `epic` workflow; the Epic deferral below no longer applies.
+
 A **Task Execution Workflow** is an operator-editable definition of everything
 that happens to a Ticket while it is *working*: its steps and their order, how
 each outcome branches, the bounded Attempt loop, where an Escalation action
