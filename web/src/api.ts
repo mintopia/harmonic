@@ -316,6 +316,10 @@ export const api = {
     request<unknown>('PUT', `/api/execution-targets/${encodeURIComponent(name)}/kubeconfig`, { kubeconfig }),
   clearExecutionTargetKubeconfig: (name: string) =>
     request<unknown>('DELETE', `/api/execution-targets/${encodeURIComponent(name)}/kubeconfig`),
+  setExecutionTargetCredential: (name: string, harness: string, value: string) =>
+    request<unknown>('PUT', `/api/execution-targets/${encodeURIComponent(name)}/credentials/${encodeURIComponent(harness)}`, { value }),
+  clearExecutionTargetCredential: (name: string, harness: string) =>
+    request<unknown>('DELETE', `/api/execution-targets/${encodeURIComponent(name)}/credentials/${encodeURIComponent(harness)}`),
   rotateExecutionTargetProxyKey: (name: string) =>
     request<ProxyKeyRotation>('POST', `/api/execution-targets/${encodeURIComponent(name)}/rotate-proxy-key`),
   checkExecutionTargetProxyKey: (name: string) =>

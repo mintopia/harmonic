@@ -5,6 +5,7 @@ import { isUniqueViolation } from '../db/errors.js';
 import { EXECUTION_TARGET_AUTH_METHODS, executionTargets, type ExecutionTargetRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import type { WorkspaceService } from '../domain/workspaces.js';
+import { HARNESS_IDS, type HarnessId } from '../config.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { RepositoryPassService, signingKeySecretName, type ProxyKeyCheck } from '../repository-proxy/pass-service.js';
 import type { GlobalSecretService } from '../secrets/global-secret-service.js';
@@ -68,6 +69,34 @@ export interface KubeconfigStatus {
   updatedAt: number | null;
 }
 
+export type CredentialKind = 'oauth-token' | 'api-key';
+
+export interface HarnessCredentialStatus {
+  harness: HarnessId;
+  kind: CredentialKind;
+  harnessConfigured: boolean;
+  set: boolean;
+  secretName: string;
+  updatedAt: string | null;
+}
+
+export interface PodCredential {
+  envName: string;
+  value: string;
+}
+
+export const HARNESS_CREDENTIALS: Record<HarnessId, { kind: CredentialKind; envName: string }> = {
+  claude: { kind: 'oauth-token', envName: 'CLAUDE_CODE_OAUTH_TOKEN' },
+  codex: { kind: 'api-key', envName: 'OPENAI_API_KEY' },
+  copilot: { kind: 'api-key', envName: 'COPILOT_GITHUB_TOKEN' },
+  opencode: { kind: 'api-key', envName: 'OPENCODE_API_KEY' },
+};
+
+export const credentialSecretName = (target: string, harness: HarnessId): string =>
+  harness === 'claude' ? `${target}-claude-token` : `${target}-${harness}-key`;
+
+export const credentialValueSchema = z.string().min(1).max(8192);
+
 export interface ProxyKeyStatus {
   set: boolean;
   secretName: string;
@@ -93,6 +122,7 @@ export interface ExecutionTargetView {
   repositoryProxyUrl: string | null;
   kubeconfig: KubeconfigStatus | null;
   proxyKey: ProxyKeyStatus | null;
+  credentials: HarnessCredentialStatus[];
   running: number;
   createdAt: number | null;
   updatedAt: number | null;
@@ -133,6 +163,7 @@ export const LOCAL_TARGET_VIEW: ExecutionTargetView = {
   repositoryProxyUrl: null,
   kubeconfig: null,
   proxyKey: null,
+  credentials: [],
   running: 0,
   createdAt: null,
   updatedAt: null,
@@ -144,6 +175,7 @@ export interface ExecutionTargetServiceDeps {
   db: AsyncDbHandle;
   secrets: GlobalSecretService;
   workspaces: Pick<WorkspaceService, 'list' | 'update'>;
+  harnessConfigured?: (harness: HarnessId) => boolean;
   clientFactory?: KubernetesClientFactory;
   testTimeoutMs?: number;
 }
@@ -155,6 +187,7 @@ export class ExecutionTargetService {
   private readonly clientFactory: KubernetesClientFactory;
   private readonly testTimeoutMs: number;
   private readonly passes: RepositoryPassService;
+  private readonly harnessConfigured: (harness: HarnessId) => boolean;
 
   constructor(deps: ExecutionTargetServiceDeps) {
     this.db = deps.db;
@@ -162,6 +195,7 @@ export class ExecutionTargetService {
     this.workspaces = deps.workspaces;
     this.clientFactory = deps.clientFactory ?? defaultKubernetesClientFactory;
     this.testTimeoutMs = deps.testTimeoutMs ?? CONNECTION_TEST_TIMEOUT_MS;
+    this.harnessConfigured = deps.harnessConfigured ?? (() => false);
     this.passes = new RepositoryPassService(deps.secrets);
   }
 
@@ -169,6 +203,20 @@ export class ExecutionTargetService {
     const status = row.kubeconfigSecret ? await this.secrets.status(row.kubeconfigSecret) : null;
     const keyName = signingKeySecretName(row.name);
     const key = await this.secrets.status(keyName);
+    const credentials = await Promise.all(
+      HARNESS_IDS.map(async (harness): Promise<HarnessCredentialStatus> => {
+        const secretName = credentialSecretName(row.name, harness);
+        const credential = await this.secrets.status(secretName);
+        return {
+          harness,
+          kind: HARNESS_CREDENTIALS[harness].kind,
+          harnessConfigured: this.harnessConfigured(harness),
+          set: credential !== null,
+          secretName,
+          updatedAt: credential ? new Date(credential.updatedAt).toISOString() : null,
+        };
+      }),
+    );
     return {
       name: row.name,
       builtIn: false,
@@ -182,6 +230,7 @@ export class ExecutionTargetService {
       repositoryProxyUrl: row.repositoryProxyUrl,
       kubeconfig: { set: status !== null, secretName: row.kubeconfigSecret, updatedAt: status?.updatedAt ?? null },
       proxyKey: { set: key !== null, secretName: keyName, rotatedAt: key?.updatedAt ?? null },
+      credentials,
       running: await this.runningCount(row.name),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -199,6 +248,17 @@ export class ExecutionTargetService {
     const kubeconfig = row.authMethod === 'kubeconfig' && row.kubeconfigSecret ? await this.secrets.reveal(row.kubeconfigSecret) : null;
     const { namespace, cpu, memory, repositoryProxyUrl, defaultImage } = row;
     return { target: { name: row.name, namespace, cpu, memory, repositoryProxyUrl, defaultImage }, access: { authMethod: row.authMethod, kubeconfig } };
+  }
+
+  async credentialFor(target: string, harness: HarnessId): Promise<PodCredential | null> {
+    const value = await this.secrets.reveal(credentialSecretName(target, harness));
+    return value === null ? null : { envName: HARNESS_CREDENTIALS[harness].envName, value };
+  }
+
+  /** Every set credential whose Harness is configured in Harmonic. */
+  async podCredentials(target: string): Promise<PodCredential[]> {
+    const found = await Promise.all(HARNESS_IDS.filter((harness) => this.harnessConfigured(harness)).map((harness) => this.credentialFor(target, harness)));
+    return found.filter((credential): credential is PodCredential => credential !== null);
   }
 
   private async row(name: string): Promise<ExecutionTargetRow> {
@@ -265,6 +325,13 @@ export class ExecutionTargetService {
         await this.secrets.set(signingKeySecretName(newName), proxyKey);
         await this.secrets.clear(oldKey);
       }
+      for (const harness of HARNESS_IDS) {
+        const oldCredential = credentialSecretName(current.name, harness);
+        const value = await this.secrets.reveal(oldCredential);
+        if (value === null) continue;
+        await this.secrets.set(credentialSecretName(newName, harness), value);
+        await this.secrets.clear(oldCredential);
+      }
     }
 
     const { name: _name, ...fields } = patch;
@@ -301,6 +368,31 @@ export class ExecutionTargetService {
     return { set: false, secretName: null, updatedAt: null };
   }
 
+  async setCredential(name: string, harness: HarnessId, value: string): Promise<HarnessCredentialStatus> {
+    const current = await this.row(name);
+    const secretName = credentialSecretName(current.name, harness);
+    const status = await this.secrets.set(secretName, value);
+    return this.credentialStatus(harness, secretName, status.updatedAt);
+  }
+
+  async clearCredential(name: string, harness: HarnessId): Promise<HarnessCredentialStatus> {
+    const current = await this.row(name);
+    const secretName = credentialSecretName(current.name, harness);
+    await this.secrets.clear(secretName);
+    return this.credentialStatus(harness, secretName, null);
+  }
+
+  private credentialStatus(harness: HarnessId, secretName: string, updatedAt: number | null): HarnessCredentialStatus {
+    return {
+      harness,
+      kind: HARNESS_CREDENTIALS[harness].kind,
+      harnessConfigured: this.harnessConfigured(harness),
+      set: updatedAt !== null,
+      secretName,
+      updatedAt: updatedAt === null ? null : new Date(updatedAt).toISOString(),
+    };
+  }
+
   async rotateProxyKey(name: string): Promise<ProxyKeyRotation> {
     const current = await this.row(name);
     const rotated = await this.passes.rotate(current.name);
@@ -324,6 +416,7 @@ export class ExecutionTargetService {
     await this.db.write((db) => db.delete(executionTargets).where(eq(executionTargets.id, current.id)).run());
     if (current.kubeconfigSecret) await this.secrets.clear(current.kubeconfigSecret);
     await this.secrets.clear(signingKeySecretName(name));
+    for (const harness of HARNESS_IDS) await this.secrets.clear(credentialSecretName(name, harness));
     await this.rewriteWorkspaceLists(name, null);
     return impact;
   }

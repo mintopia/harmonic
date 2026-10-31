@@ -90,6 +90,67 @@ describe('Execution Target CRUD', () => {
   });
 });
 
+describe('Harness credential Secrets', () => {
+  const TOKEN = 'sk-ant-oat01-credential-marker';
+
+  it('lists all four Harnesses unset, sets and clears one without ever returning the value', async () => {
+    server = await startServer();
+    const created = await server.api('POST', '/api/execution-targets', body());
+    expect(created.body.credentials.map((c: { harness: string; kind: string; set: boolean; secretName: string }) => [c.harness, c.kind, c.set, c.secretName])).toEqual([
+      ['claude', 'oauth-token', false, 'k8s-prod-claude-token'],
+      ['codex', 'api-key', false, 'k8s-prod-codex-key'],
+      ['copilot', 'api-key', false, 'k8s-prod-copilot-key'],
+      ['opencode', 'api-key', false, 'k8s-prod-opencode-key'],
+    ]);
+    const put = await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/claude', { value: TOKEN });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({ harness: 'claude', kind: 'oauth-token', set: true, secretName: 'k8s-prod-claude-token', updatedAt: expect.any(String) });
+    const get = await server.api('GET', '/api/execution-targets/k8s-prod');
+    expect(get.body.credentials[0]).toMatchObject({ harness: 'claude', set: true });
+    expect(JSON.stringify([put.body, get.body, (await server.api('GET', '/api/execution-targets')).body])).not.toContain(TOKEN);
+    const cleared = await server.api('DELETE', '/api/execution-targets/k8s-prod/credentials/claude');
+    expect(cleared.body).toMatchObject({ set: false, updatedAt: null });
+    expect((await server.api('DELETE', '/api/execution-targets/k8s-prod/credentials/claude')).status).toBe(200);
+  });
+
+  it('rejects an empty value, an unknown Harness and an unknown target', async () => {
+    server = await startServer();
+    await server.api('POST', '/api/execution-targets', body());
+    expect((await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/claude', { value: '' })).status).toBe(400);
+    expect((await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/nope', { value: 'x' })).status).toBe(400);
+    expect((await server.api('PUT', '/api/execution-targets/missing/credentials/claude', { value: 'x' })).status).toBe(404);
+  });
+
+  it('resolves credentialFor with the Harness env name, follows a rename and is removed with the target', async () => {
+    server = await startServer();
+    const targets = server.app.ctx.executionTargets;
+    await server.api('POST', '/api/execution-targets', body());
+    await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/claude', { value: TOKEN });
+    await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/codex', { value: 'sk-codex' });
+    expect(await targets.credentialFor('k8s-prod', 'claude')).toEqual({ envName: 'CLAUDE_CODE_OAUTH_TOKEN', value: TOKEN });
+    expect(await targets.credentialFor('k8s-prod', 'copilot')).toBeNull();
+    await server.api('PATCH', '/api/execution-targets/k8s-prod', { name: 'k8s-main' });
+    expect(await targets.credentialFor('k8s-prod', 'claude')).toBeNull();
+    expect(await targets.credentialFor('k8s-main', 'claude')).toEqual({ envName: 'CLAUDE_CODE_OAUTH_TOKEN', value: TOKEN });
+    expect((await targets.get('k8s-main')).credentials.filter((c) => c.set).map((c) => c.secretName)).toEqual(['k8s-main-claude-token', 'k8s-main-codex-key']);
+    await server.api('DELETE', '/api/execution-targets/k8s-main');
+    const db = createClient({ url: `file:${join(server.dataDir, 'harmonic.db')}` });
+    expect((await db.execute('select name from global_secrets')).rows).toHaveLength(0);
+  });
+
+  it('injects only credentials for Harnesses configured in Harmonic', async () => {
+    server = await startServer();
+    const targets = server.app.ctx.executionTargets;
+    await server.api('POST', '/api/execution-targets', body());
+    await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/claude', { value: TOKEN });
+    await server.api('PUT', '/api/execution-targets/k8s-prod/credentials/codex', { value: 'sk-codex' });
+    const view = await targets.get('k8s-prod');
+    const configured = view.credentials.filter((c) => c.harnessConfigured).map((c) => c.harness);
+    const pods = await targets.podCredentials('k8s-prod');
+    expect(pods.map((c) => c.value).sort()).toEqual(['sk-codex', TOKEN].filter((_, i) => configured.includes(i === 0 ? 'codex' : 'claude')).sort());
+  });
+});
+
 describe('kubeconfig Secret', () => {
   it('is write-only: set, replaced and cleared through its own endpoint and never returned', async () => {
     server = await startServer();

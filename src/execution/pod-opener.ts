@@ -22,7 +22,7 @@ export interface PodOpener<S> {
 }
 
 export interface PodOpenerDeps<S extends PodOpenerSubject> {
-  targets: Pick<ExecutionTargetService, 'podAccess'>;
+  targets: Pick<ExecutionTargetService, 'podAccess'> & Partial<Pick<ExecutionTargetService, 'podCredentials'>>;
   passes: Pick<RepositoryPassService, 'issue'>;
   apiFactory: PodApiFactory;
   baseBranchFor: (task: S) => Promise<string>;
@@ -47,10 +47,11 @@ export function createPodOpener<S extends PodOpenerSubject>(deps: PodOpenerDeps<
       if (task.id === undefined) throw new DomainError('invalid_state', 'only a Task runs in a pod');
       const taskId = task.id;
       const { target, access } = await deps.targets.podAccess(request.runsOn);
+      const credentials = (await deps.targets.podCredentials?.(target.name)) ?? [];
       const origin = await Git.originUrl(task.workingDir);
       if (origin === null) throw new DomainError('invalid_state', `Execution Target '${target.name}' needs a Code Repository, and ${task.workingDir} has no origin remote`);
       const session = new PodSession(
-        { taskId, target, image: request.image ?? target.defaultImage, source: request.source, codeRepository: withoutCredentials(origin), baseBranch: await deps.baseBranchFor(task), branch: `harmonic/task-${taskId}` },
+        { taskId, target, image: request.image ?? target.defaultImage, source: request.source, codeRepository: withoutCredentials(origin), baseBranch: await deps.baseBranchFor(task), branch: `harmonic/task-${taskId}`, credentials },
         { api: deps.apiFactory(access), passes: deps.passes, onExecution: (execution) => deps.setExecution(task, execution), ...(deps.workdir === undefined ? {} : { workdir: deps.workdir }) },
       );
       await session.start();

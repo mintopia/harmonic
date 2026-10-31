@@ -19,6 +19,7 @@ export interface PodSpecInput {
   cpu: string;
   memory: string;
   taskId: number;
+  credentialKeys?: string[];
 }
 
 export interface PodExecOptions {
@@ -63,6 +64,7 @@ export function buildPodManifest(spec: PodSpecInput): V1Pod {
           workingDir: POD_WORKSPACE,
           env: [
             { name: POD_PASS_ENV, valueFrom: { secretKeyRef: { name: spec.secretName, key: POD_PASS_KEY } } },
+            ...(spec.credentialKeys ?? []).map((key) => ({ name: key, valueFrom: { secretKeyRef: { name: spec.secretName, key } } })),
             { name: 'GIT_TERMINAL_PROMPT', value: '0' },
             { name: 'GIT_AUTHOR_NAME', value: 'Harmonic' },
             { name: 'GIT_AUTHOR_EMAIL', value: 'harmonic@localhost' },

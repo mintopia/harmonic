@@ -10622,6 +10622,63 @@
         ],
         "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
       },
+      "ExecutionTargetCredentialInput": {
+        "type": "object",
+        "properties": {
+          "harness": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "copilot",
+              "opencode"
+            ],
+            "example": "claude"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "oauth-token",
+              "api-key"
+            ],
+            "example": "oauth-token",
+            "description": "Claude takes a `claude setup-token` value; the other Harnesses take an API key."
+          },
+          "harnessConfigured": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the Harness is configured in Harmonic; only configured Harnesses get their credential injected."
+          },
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-claude-token"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-10-31T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "harness",
+          "kind",
+          "harnessConfigured",
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "description": "Whether a Harness credential Secret is set on the target. The value is write-only and never returned."
+      },
       "ExecutionTargetProxyKeyInput": {
         "type": "object",
         "properties": {
@@ -10794,6 +10851,13 @@
               }
             ]
           },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetCredentialInput"
+            },
+            "description": "One entry per Harness; empty for `local`."
+          },
           "running": {
             "type": "number",
             "example": 0,
@@ -10835,6 +10899,7 @@
           "repositoryProxyUrl",
           "kubeconfig",
           "proxyKey",
+          "credentials",
           "running",
           "createdAt",
           "updatedAt"
@@ -22126,6 +22191,64 @@
         "additionalProperties": false,
         "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
       },
+      "ExecutionTargetCredential": {
+        "type": "object",
+        "properties": {
+          "harness": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "copilot",
+              "opencode"
+            ],
+            "example": "claude"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "oauth-token",
+              "api-key"
+            ],
+            "example": "oauth-token",
+            "description": "Claude takes a `claude setup-token` value; the other Harnesses take an API key."
+          },
+          "harnessConfigured": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the Harness is configured in Harmonic; only configured Harnesses get their credential injected."
+          },
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-claude-token"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-10-31T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "harness",
+          "kind",
+          "harnessConfigured",
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Whether a Harness credential Secret is set on the target. The value is write-only and never returned."
+      },
       "ExecutionTargetProxyKey": {
         "type": "object",
         "properties": {
@@ -22300,6 +22423,13 @@
               }
             ]
           },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetCredential"
+            },
+            "description": "One entry per Harness; empty for `local`."
+          },
           "running": {
             "type": "number",
             "example": 0,
@@ -22341,6 +22471,7 @@
           "repositoryProxyUrl",
           "kubeconfig",
           "proxyKey",
+          "credentials",
           "running",
           "createdAt",
           "updatedAt"
@@ -43391,6 +43522,167 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExecutionTargetKubeconfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/credentials/{harness}": {
+      "put": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Set or replace a Harness credential on the target, stored as an encrypted Secret. Write-only: it is never returned. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "example": "sk-ant-oat01-..."
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "codex",
+                "copilot",
+                "opencode"
+              ],
+              "example": "claude"
+            },
+            "in": "path",
+            "name": "harness",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The credential Secret is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The value is empty or too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Clear a Harness credential Secret; clearing one that is not set succeeds. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "codex",
+                "copilot",
+                "opencode"
+              ],
+              "example": "claude"
+            },
+            "in": "path",
+            "name": "harness",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The credential Secret is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetCredential"
                 }
               }
             }

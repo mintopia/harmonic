@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { errorMessage } from '../error-handling.js';
 import type { RepositoryPassService } from '../repository-proxy/pass-service.js';
 import { repositoryPath } from '../repository-proxy/server.js';
+import type { PodCredential } from './execution-targets.js';
 import { POD_PASS_KEY, POD_WORKSPACE, podLabels, type PodApi, type PodExecResult } from './kubernetes-pods.js';
 
 const START_TIMEOUT_MS = 180_000;
@@ -26,6 +27,7 @@ export interface PodSessionSpec {
   codeRepository: string;
   baseBranch: string;
   branch: string;
+  credentials?: PodCredential[];
 }
 
 export interface PodSessionDeps {
@@ -102,9 +104,11 @@ export class PodSession {
     try {
       const pass = await this.deps.passes.issue(target.name, { codeRepository, baseBranch, ticketBranch: branch });
       this.pass = pass;
-      await this.api.createSecret(target.namespace, this.secretName, { [POD_PASS_KEY]: pass }, podLabels(taskId));
+      const credentials = this.spec.credentials ?? [];
+      const data = { ...Object.fromEntries(credentials.map((c) => [c.envName, c.value])), [POD_PASS_KEY]: pass };
+      await this.api.createSecret(target.namespace, this.secretName, data, podLabels(taskId));
       this.secretCreated = true;
-      await this.api.createPod({ name: this.name, namespace: target.namespace, secretName: this.secretName, image, cpu: target.cpu, memory: target.memory, taskId });
+      await this.api.createPod({ name: this.name, namespace: target.namespace, secretName: this.secretName, credentialKeys: credentials.map((c) => c.envName), image, cpu: target.cpu, memory: target.memory, taskId });
       this.created = true;
       await this.record({ podName: this.name, podState: 'pending' });
       await this.api.waitForRunning(target.namespace, this.name, this.deps.startTimeoutMs ?? START_TIMEOUT_MS);
@@ -137,7 +141,8 @@ echo "\${tip%%[[:space:]]*}"`,
   private pass: string | null = null;
 
   private scrub(text: string): string {
-    return this.pass === null ? text : text.split(this.pass).join('***');
+    const secrets = [this.pass, ...(this.spec.credentials ?? []).map((c) => c.value)];
+    return secrets.reduce<string>((out, secret) => (secret === null || secret === '' ? out : out.split(secret).join('***')), text);
   }
 
   private failureText(result: PodExecResult): string {

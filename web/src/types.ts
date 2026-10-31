@@ -1365,6 +1365,18 @@ export interface ConfigLayers {
   harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
 }
 
+export type CredentialHarness = 'claude' | 'codex' | 'copilot' | 'opencode';
+export type CredentialKind = 'oauth-token' | 'api-key';
+
+export interface TargetCredential {
+  harness: CredentialHarness;
+  kind: CredentialKind;
+  harnessConfigured: boolean;
+  set: boolean;
+  secretName: string;
+  updatedAt: string | null;
+}
+
 export interface ExecutionTarget {
   name: string;
   builtIn: boolean;
@@ -1378,6 +1390,7 @@ export interface ExecutionTarget {
   repositoryProxyUrl: string | null;
   kubeconfig: { set: boolean; secretName: string | null; updatedAt: number | null } | null;
   proxyKey: { set: boolean; secretName: string; rotatedAt: number | null } | null;
+  credentials: TargetCredential[];
   running: number;
   createdAt: number | null;
   updatedAt: number | null;
