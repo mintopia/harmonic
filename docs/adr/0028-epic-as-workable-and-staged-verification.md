@@ -12,6 +12,8 @@ builds on the verify-in-place change
 of 2026-09-08 (ADR-0003 amendment). Reworks the Verification surface of the
 epic ADRs (0016/0018) without changing epic containment or first-class storage.
 
+Amended by ADR-0057 (2026-10-31): Epic Pre-Merge Verification, the resolve loop and `verify.epic.*` are replaced by the bundled `epic` Task Execution Workflow; the inverted loop is kept as a resolve step skipped on pass 1.
+
 ## Verification is a pipeline of stages, not one gate
 
 Verification is no longer a single per-Attempt gate. It runs at **three

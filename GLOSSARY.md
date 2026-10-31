@@ -515,18 +515,21 @@ is complete, before the Epic merges to the default branch — the same command +
 Critic primitives as a Task stage, run **in place** in the Epic's worktree —
 catching breakage in the union of Members that each passed alone. A non-pass no
 longer just fail-safes: it drives a bounded **resolve loop** (see Epic Attempt),
-escalating the Epic only when the Attempt limit is spent (ADR-0028).
+escalating the Epic only when the Attempt limit is spent (ADR-0028). Expressed
+as steps of the Epic's Task Execution Workflow (ADR-0057).
 _Avoid_: whole-epic verification (renamed), final check
 
 **Epic Attempt**:
 An Attempt attached to an **Epic**, not a Task — the execution noun for the Epic
 Pre-Merge Verification and its resolve loop. Its loop is **inverted** from a
 Task's: it **verifies first** and spawns an agent **only on failure** (a clean
-first pass runs no agent). The resolve agent works in the Epic's worktree on
-`epic/<ref>`, driven by the editable **Epic resolve prompt**
-(`verify.epic.resolvePrompt`) plus injected failing-verifier feedback, bounded
-by normal `maxAttempts`; exhaustion Escalates the Epic through the same surface
-as a Task (ADR-0028).
+first pass runs no agent). It runs the Epic's Task Execution Workflow (the
+bundled `epic` one by default): one Epic Attempt per run, each verify pass a
+step-run attempt, as for a Ticket. The resolve agent works in the Epic's
+worktree on `epic/<ref>` with injected failing-step feedback, bounded by the
+workflow's `attempts.max`; exhaustion Escalates the Epic through the same
+surface as a Task (ADR-0028, ADR-0057). Rows from before ADR-0057, one per
+verify pass, remain as history.
 _Avoid_: integration task, epic run
 
 **Whole-Epic integrate**:

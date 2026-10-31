@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-30
 
+Amended by ADR-0057 (2026-10-31): Epic verification settings now migrate into "Migrated Epic (…)" workflows under their own marker.
+
 On the first boot of the release that introduces Task Execution Workflows
 (ADR-0053), Harmonic converts today's execution settings into workflows: a
 "Migrated (global)" workflow set as the global default, and one
