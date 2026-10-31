@@ -42,7 +42,7 @@ describe('Model Options API', () => {
     expect(res.status).toBe(400);
   });
 
-  it('applies the same checks to Workspace options and ids already used globally', async () => {
+  it('applies the same checks to Workspace options and lets a Workspace shadow a global id', async () => {
     await server.api('PATCH', '/api/config', { modelOptions: [option('global-one')] });
     const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
     const bad = await server.api('PATCH', `/api/workspaces/${wsId}`, { modelOptions: [option('w', { model: 'nope' })] });
