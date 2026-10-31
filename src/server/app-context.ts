@@ -29,6 +29,9 @@ import { ChannelService } from '../notifications/channels.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
 import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { SecretService } from '../secrets/secret-service.js';
+import type { ExecutionTargetService } from '../execution/execution-targets.js';
+import type { KubernetesClientFactory } from '../execution/kubernetes-client.js';
+import type { PodApiFactory } from '../execution/kubernetes-pods.js';
 import { NotificationStore } from '../notifications/notification-store.js';
 import { Notifier } from '../notifications/notifier.js';
 import type { TaskArchive } from '../archive/task-archive.js';
@@ -55,6 +58,9 @@ export interface AppOptions {
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
   /** Event-loop stall monitor overrides; `enabled: false` turns the probe off. */
   reliabilityTuning?: { eventLoop?: { enabled?: boolean; probeMs?: number; stallMs?: number } } | undefined;
+  /** Test-only; absent uses the real client. */
+  kubernetesClientFactory?: KubernetesClientFactory | undefined;
+  podApiFactory?: PodApiFactory | undefined;
   /** Test-only critic drive override; absent uses the real ACP critic drive. */
   criticDrive?: CriticHarnessDrive | undefined;
   /** Test-only Scheduled Job registrations. */
@@ -112,6 +118,7 @@ export interface AppContext {
   auth: AuthService;
   channels: ChannelService;
   secrets: SecretService;
+  executionTargets: ExecutionTargetService;
   workflows: WorkflowLibrary;
   promptLibrary: PromptLibrary;
   notifier: Notifier;
@@ -143,6 +150,7 @@ export type PersistenceContext = Pick<
   | 'auth'
   | 'channels'
   | 'secrets'
+  | 'executionTargets'
   | 'notifications'
 >;
 
@@ -179,8 +187,8 @@ export interface AppContexts {
 }
 
 export function createPersistenceContext(ctx: AppContext): PersistenceContext {
-  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, notifications } = ctx;
-  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, notifications };
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, executionTargets, notifications } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, executionTargets, notifications };
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {

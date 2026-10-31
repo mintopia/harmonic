@@ -87,6 +87,8 @@ export const workspaceOverridesSchema = z.object({
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
+  /** `local` is always available; null inherits every enabled target. */
+  executionTargets: z.array(z.string().min(1).max(64)).max(100).nullable().optional().meta({ example: ['k8s-prod'] }),
   workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
   epicWorkflow: z.string().min(1).nullable().optional().meta({ example: 'epic' }),
   workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
@@ -186,6 +188,7 @@ export const OVERRIDE_KEYS = [
   'workflowLabels',
   'workflowVars',
   'modelOptions',
+  'executionTargets',
   'workflowClassifierEnabled',
   'classifierEnabled',
   'classifierBackend',
@@ -290,6 +293,7 @@ export class WorkspaceService {
       workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
       workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
       modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
+      executionTargets: o.executionTargets,
       workflowClassifierEnabled: o.workflowClassifierEnabled,
       classifierEnabled: o.classifierEnabled,
       classifierBackend: o.classifierBackend,

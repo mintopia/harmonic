@@ -46,6 +46,7 @@ jobs:
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
     steps:
       - id: rp
         uses: googleapis/release-please-action@v5
@@ -99,6 +100,16 @@ jobs:
           if [[ "$VERSION" == *-* ]]; then TAG=next; else TAG=latest; fi
           echo "Publishing $VERSION to dist-tag '$TAG'"
           npm publish --tag "$TAG"
+
+  publish-image:
+    needs: [release-please, test]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/harness-image.yml
+    with:
+      version: ${{ needs.release-please.outputs.version }}
 
   develop-test:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop' }}

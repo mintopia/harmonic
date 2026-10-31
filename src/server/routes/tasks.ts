@@ -1,4 +1,6 @@
 import { createReadStream } from 'node:fs';
+import { resolveWorkspace } from '../../domain/workspaces.js';
+import { kubernetesWorkflowRefusal, mixedWorkflowRefusal } from '../../execution/workspace-execution-targets.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -16,6 +18,7 @@ import {
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
+  TASK_EXECUTION_POD_STATES,
   WORKFLOW_CHOSEN,
   isEpicAttempt,
   isTaskAttempt,
@@ -35,7 +38,7 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
 import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
-import { resolveTaskWorkflow } from '../../domain/workflow-assignment.js';
+import { resolveTaskWorkflow, resolveWorkflow } from '../../domain/workflow-assignment.js';
 import { resolveVarSources, validateVarOverrides, varOverridesSchema, varValueSchema, workspaceVarsFor } from '../../domain/workflow-vars.js';
 import { parseWorkflowRef } from '../../execution/workflow-engine.js';
 import { pinnedWorkflow, workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
@@ -194,6 +197,18 @@ const taskWithDepsSchema = z
     workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `classifier`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
     workflowLabel: z.string().nullable().describe('The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.').meta({ example: null }),
     workflowReason: z.string().nullable().describe('The workflow classifier\'s one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.').meta({ example: null }),
+    execution: z
+      .object({
+        target: z.string().meta({ example: 'k8s-prod' }),
+        podName: z.string().nullable().meta({ example: 'harmonic-task-42-a1b2' }),
+        podState: z.enum(TASK_EXECUTION_POD_STATES).meta({ example: 'running' }),
+        namespace: z.string().meta({ example: 'harmonic-agents' }),
+        image: z.string().meta({ example: 'ghcr.io/mintopia/harmonic-harnesses:2.19.0' }),
+        source: z.enum(['workflow', 'step']).meta({ example: 'workflow' }),
+      })
+      .nullable()
+      .describe('The Kubernetes pod the Ticket\'s workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.')
+      .meta({ example: null }),
     workflowVarOverrides: z.record(z.string(), varValueSchema).nullable().describe('The Ticket\'s own overrides of the workflow `vars:`; null when none.').meta({ example: null }),
     workflowVars: z.record(z.string(), varValueSchema).nullable().describe('The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.').meta({ example: null }),
     workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),
@@ -276,6 +291,16 @@ const taskSchema = taskWithDepsSchema
     contextWindow: z.number().nullable().meta({ example: 200000 }),
     /** Why the scheduler is skipping this Task (blocker, capacity, disabled Workspace, missing integration branch); null when not waiting. */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
+    /** The Kubernetes Execution Target this Ticket waits for, with its load and the Ticket's place in line; null when not waiting on one. */
+    targetWait: z
+      .object({
+        target: z.string().meta({ example: 'k8s-prod' }),
+        disabled: z.boolean().meta({ example: false }),
+        running: z.number().meta({ example: 1 }),
+        limit: z.number().nullable().meta({ example: 1 }),
+        position: z.number().meta({ example: 2 }),
+      })
+      .nullable(),
     /** The latest attempt's verified head ref; null when no attempt has produced a verified head yet. */
     verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     /** Whether the branch holds commits ahead of base an Accept could merge. */
@@ -467,6 +492,14 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow && w.subject === 'ticket')) {
         throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
       }
+      const workspace = resolveWorkspace(await ctx.workspaces.list(), req.body.workspaceId);
+      const config = ctx.settingsStore.getGlobal();
+      const isolationMode = req.body.isolationMode ?? (workspace.isolationMode as 'direct' | 'worktree' | null) ?? config.defaults.isolationMode;
+      const workflow = req.body.workflow ?? resolveWorkflow({ requested: null, trackerLabels: null, workspace, config }).name;
+      const refusal = kubernetesWorkflowRefusal(ctx.workflows, workflow, isolationMode);
+      if (refusal) throw new DomainError('validation', refusal);
+      const mixedRefusal = await mixedWorkflowRefusal(ctx.workflows, workflow, workspace);
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
@@ -639,7 +672,16 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.update(req.params.id, req.body)),
+    async (req) => {
+      if (req.body.isolationMode != null) {
+        const task = await ctx.tasks.get(req.params.id);
+        const workspace = resolveWorkspace(await ctx.workspaces.list(), task.workspaceId ?? undefined);
+        const workflow = task.workflowRequested ?? resolveWorkflow({ requested: null, trackerLabels: null, workspace, config: ctx.settingsStore.getGlobal() }).name;
+        const refusal = kubernetesWorkflowRefusal(ctx.workflows, workflow, req.body.isolationMode);
+        if (refusal) throw new DomainError('validation', refusal);
+      }
+      return await withDeps(await ctx.tasks.update(req.params.id, req.body));
+    },
   );
 
   app.post(

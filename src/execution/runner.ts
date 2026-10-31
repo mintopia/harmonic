@@ -28,6 +28,8 @@ import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
 import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
 import { DomainError, GitError } from '../domain/errors.js';
+import { kubernetesTargetOf, kubernetesWorkflowRefusal, mixedWorkflowRefusal } from './workspace-execution-targets.js';
+import { mergeRemoteTicketBranch } from './remote-merge.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
@@ -55,10 +57,12 @@ import { resolveBeforeClassifier, resolveTaskWorkflow, workflowInputOf } from '.
 import { resolveVars, workspaceVarsFor, type VarRecord } from '../domain/workflow-vars.js';
 import { parseWorkflow } from '../domain/workflow.js';
 import type { WorkflowChosen } from '../db/schema.js';
-import { WorkflowEngine, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
+import { WorkflowEngine, parseWorkflowRef, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
 import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { createPodOpener } from './pod-opener.js';
+import { PodTranscripts } from './pod-transcript.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
@@ -222,6 +226,12 @@ export class Runner {
       baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
       mergeBranch: async (task, run) => {
         await this.attempts.update(run.id, await this.diffSnapshotFor(task, run.id));
+        if (await this.runsOnKubernetes(task)) {
+          const outcome = await mergeRemoteTicketBranch({ repoDir: task.workingDir, remote: 'origin', baseBranch: run.baseBranch!, taskBranch: run.branch! });
+          return outcome.kind === 'merged'
+            ? { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch: run.baseBranch!, branch: run.branch! }
+            : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'stale-base', detail: outcome.message };
+        }
         return withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () =>
             mergeIntoBase({
@@ -242,12 +252,33 @@ export class Runner {
       closeTicket: (task, comment) => this.autoDrive?.closeTicket(task, comment) ?? Promise.resolve(false),
       commentOnTicket: (task, body) => this.autoDrive?.commentOnTicket(task, body) ?? Promise.resolve(false),
       openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
+      ...(workflows?.pods
+        ? {
+            pods: createPodOpener<TaskRow>({
+              ...workflows.pods,
+              baseBranchFor: (task) => this.mergeCoordinator.resolveBaseBranch(task),
+              setExecution: async (task, execution) => {
+                await this.taskService.setExecution(task.id, execution);
+              },
+            }),
+          }
+        : {}),
+      ...(workflows?.podTranscriptDir
+        ? {
+            podTranscripts: new PodTranscripts<TaskRow>({
+              dir: workflows.podTranscriptDir,
+              sessions: this.sessionStore,
+              attempts: this.attempts,
+              archive: (task, run, kind, stepId) => (kind === 'agent' ? this.archive?.implementationStep(task, run.number) : this.archive?.criticStep(task, run.number, 'pre-merge', stepId)),
+            }),
+          }
+        : {}),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),
       boundary: async (task) => (await this.runControl.checkRunBoundary(task.id)).stop,
       agent: {
-        drive: { run: (req) => (req.task ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
+        drive: { run: (req) => (req.task && !req.pod ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
         getConfig: this.getConfig,
         prompts: () => this.promptLibrary.enginePrompts(),
         route: (task) => this.taskService.routing.ticketRoute(task),
@@ -497,6 +528,21 @@ export class Runner {
     await this.settleEscalated(task, run, reason, {});
   }
 
+  async escalateForTarget(taskId: number, reason: string): Promise<void> {
+    const task = await this.taskService.get(taskId);
+    if (task.state === 'ready') return this.escalateUnspawned(taskId, reason);
+    await this.settleTaskRun(taskId, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: `escalated to human: ${reason}` });
+  }
+
+  /** The Kubernetes Execution Target a Ticket runs on: its pinned workflow, else the one it would be assigned without the classifier. */
+  async kubernetesTargetOfTask(task: TaskRow): Promise<string | undefined> {
+    if (task.workflowRef !== null) return kubernetesTargetOf(this.workflowLibrary, task.workflowRef.split('@')[0] ?? '');
+    const names = new Set(this.workflowLibrary.list().filter((entry) => entry.subject === 'ticket').map((entry) => entry.name));
+    const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
+    const assignment = resolveTaskWorkflow(task, workspace, this.getConfig(), (name) => names.has(name));
+    return kubernetesTargetOf(this.workflowLibrary, assignment.name);
+  }
+
   /** @see {@link WorkspaceProvisioner.cleanupClosed} */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
     if (task.workflowRef !== null && run) {
@@ -549,6 +595,13 @@ export class Runner {
     }
   }
 
+  private async runsOnKubernetes(task: TaskRow): Promise<boolean> {
+    if (task.workflowRef === null) return false;
+    const { name, version } = parseWorkflowRef(task.workflowRef);
+    const { text } = await this.workflowLibrary.getVersion(name, version);
+    return kubernetesTargetOf({ list: () => [{ name, text }] }, name) !== undefined;
+  }
+
   /** The latest Attempt when a restart interrupted it: its workflow resumes rather than starting over. */
   private async interruptedAttempt(task: TaskRow): Promise<AttemptRow | undefined> {
     const latest = (await this.attempts.listForTask(task.id)).at(-1);
@@ -577,6 +630,12 @@ export class Runner {
     }
     classifier = this.withEarlierSpend(task, classifier);
     const assignment = resolveTaskWorkflow(task, workspace, config, exists, classified);
+    const refusal = kubernetesWorkflowRefusal(library, assignment.name, task.isolationMode as 'direct' | 'worktree');
+    if (refusal) throw new DomainError('validation', refusal);
+    if (workspace) {
+      const mixedRefusal = await mixedWorkflowRefusal(library, assignment.name, { name: workspace.name ?? `#${task.workspaceId}`, workingDir: workspace.workingDir ?? task.workingDir, codeRepository: workspace.codeRepository ?? null });
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
+    }
     const version = library.get(assignment.name).version;
     const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
     const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);

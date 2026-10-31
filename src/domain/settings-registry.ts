@@ -156,6 +156,13 @@ export const settingsRegistry = {
     label: 'Routing Labels',
     help: 'Ordered ticket label to Harness and Model routes; reorder or disable global routes and add Workspace-only ones. Inherits the global list when unset.',
   },
+  executionTargets: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Execution Targets',
+    help: 'Which Kubernetes Execution Targets this Workspace may use; local is always available. Every Kubernetes target needs a Code Repository and the worktree Isolation Mode. Inherits every enabled target when unset.',
+  },
   modelOptions: {
     scope: 'overridable',
     control: 'json',

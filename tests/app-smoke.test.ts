@@ -92,6 +92,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     workflow: null,
     workflowLabels: null,
     modelOptions: null,
+    executionTargets: null,
     classifierEnabled: null,
     classifierBackend: null,
     classifierTimeoutSeconds: null,

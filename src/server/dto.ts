@@ -463,6 +463,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' 
   contextWindow: number | null;
   /** Why the scheduler is skipping this Task (dependency, capacity, disabled Workspace, missing integration branch); null when not waiting. */
   skipReason: string | null;
+  /** The Kubernetes Execution Target this Ticket waits for, with its load and the Ticket's place in line; null when not waiting on one. */
+  targetWait: { target: string; disabled: boolean; running: number; limit: number | null; position: number } | null;
   /** The latest attempt's verified-head ref; null when no attempt has produced one. */
   verifiedRef: string | null;
   /** Whether the branch holds commits ahead of base an Accept could merge. */
@@ -520,6 +522,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     workflowRef: null,
     workflowChosen: null,
     workflowLabel: null,
+    execution: null,
     workflowReason: null,
     workflowRouting: null,
     workflowVarOverrides: null,
@@ -554,6 +557,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     contextTokens: null,
     contextWindow: null,
     skipReason: null,
+    targetWait: null,
     verifiedRef: null,
     hasCandidate: false,
     wallClockDeadline: null,
@@ -604,6 +608,7 @@ export function taskToApiDto(
     mapTitle: string | null;
     trackerLabel: string | null;
     skipReason: string | null;
+    targetWait: ApiTask['targetWait'];
     contextWindow: number | null;
   },
 ): ApiTask {
@@ -641,6 +646,7 @@ export function taskToApiDto(
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: resolved.contextWindow,
     skipReason: resolved.skipReason,
+    targetWait: resolved.targetWait,
     verifiedRef: latestVerifiedRef(runs.at(-1)),
     hasCandidate: resolved.hasCandidate,
     wallClockDeadline: task.state === 'working' ? wallClockDeadlineOf(running) : null,

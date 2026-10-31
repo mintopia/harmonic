@@ -77,6 +77,23 @@ export interface TaskWorkflowVars {
   snapshot: Record<string, string | number | boolean> | null;
 }
 
+export interface StepCheckpoint {
+  branch: string;
+  sha: string | null;
+  forced: boolean;
+  unchanged?: boolean;
+  files?: number;
+}
+
+export interface TaskExecution {
+  target: string;
+  podName: string | null;
+  podState: 'pending' | 'running' | 'deleted' | 'lost';
+  namespace: string;
+  image: string;
+  source: 'workflow' | 'step';
+}
+
 export interface WorkflowStepRun {
   stepId: string;
   action: string;
@@ -87,7 +104,7 @@ export interface WorkflowStepRun {
   outcome: WorkflowStepOutcome | null;
   summary: string | null;
   resolvedPrompt: string | null;
-  outputs: { stdout: string; exitCode: number | null };
+  outputs: { stdout: string; exitCode: number | null; checkpoint?: StepCheckpoint };
   startedAt: number | null;
   endedAt: number | null;
 }
@@ -516,6 +533,8 @@ export interface Workspace {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
+  /** `local` is always available; null inherits every enabled target. */
+  executionTargets: string[] | null;
   workflow: string | null;
   epicWorkflow?: string | null;
   workflowLabels: WorkflowLabelOverlayEntry[] | null;
@@ -655,6 +674,8 @@ export interface EpicBlocker {
 
 export interface Task {
   id: number;
+  /** Where the Ticket runs when it is not local; null for a local Ticket. */
+  execution?: TaskExecution | null;
   /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
    * the WS `task_changed` broadcast, never on a lean list row
    * — hence optional. List surfaces render {@link Task.summary} instead. */
@@ -773,6 +794,8 @@ export interface Task {
    * Context is already occupied (e.g. "Work Context held by task
    * 12 (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
+  /** The Kubernetes Execution Target this Ticket waits for; null when it waits on none. */
+  targetWait: { target: string; disabled: boolean; running: number; limit: number | null; position: number } | null;
   /** Epoch ms; null unless working with a budgeted running Attempt. */
   wallClockDeadline: number | null;
 }
@@ -1342,6 +1365,101 @@ export interface ConfigLayers {
   baseline: AppConfig;
   global: AppConfig;
   harnessPermissionModes: Record<string, { modes: Record<string, string>; defaultMode: string }>;
+}
+
+export type CredentialHarness = 'claude' | 'codex' | 'copilot' | 'opencode';
+export type CredentialKind = 'oauth-token' | 'api-key';
+
+export interface TargetCredential {
+  harness: CredentialHarness;
+  kind: CredentialKind;
+  harnessConfigured: boolean;
+  set: boolean;
+  secretName: string;
+  updatedAt: string | null;
+}
+
+export interface ExecutionTarget {
+  name: string;
+  builtIn: boolean;
+  enabled: boolean;
+  authMethod: 'kubeconfig' | 'in-cluster' | null;
+  namespace: string | null;
+  defaultImage: string | null;
+  cpu: string | null;
+  memory: string | null;
+  concurrencyLimit: number | null;
+  repositoryProxyUrl: string | null;
+  kubeconfig: { set: boolean; secretName: string | null; updatedAt: number | null } | null;
+  proxyKey: { set: boolean; secretName: string; rotatedAt: number | null } | null;
+  credentials: TargetCredential[];
+  running: number;
+  waiting: number;
+  createdAt: number | null;
+  updatedAt: number | null;
+}
+
+export type ExecutionTargetFields = Pick<ExecutionTarget, 'enabled' | 'authMethod' | 'namespace' | 'defaultImage' | 'cpu' | 'memory' | 'concurrencyLimit' | 'repositoryProxyUrl'>;
+
+export interface ExecutionTargetBody {
+  name: string;
+  enabled: boolean;
+  authMethod: 'kubeconfig' | 'in-cluster';
+  namespace: string;
+  defaultImage: string;
+  cpu: string;
+  memory: string;
+  concurrencyLimit: number;
+  repositoryProxyUrl: string;
+}
+
+export interface ProxyKeyRotation {
+  key: string;
+  rotatedAt: number;
+  revokedRunning: number;
+}
+
+export type ProxyKeyCheck = 'agrees' | 'rejected' | 'unreachable';
+
+export interface DeletionImpact {
+  running: number;
+  waiting: number;
+  total: number;
+}
+
+export type ConnectionOutcome = 'connected' | 'unauthorized' | 'namespace-not-found' | 'unreachable' | 'invalid-kubeconfig';
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  outcome: ConnectionOutcome;
+  message: string;
+  podCount?: number;
+  namespace: string;
+  secretName: string | null;
+}
+
+export interface ConnectionTestRequest {
+  name?: string;
+  authMethod: 'kubeconfig' | 'in-cluster';
+  namespace: string;
+  kubeconfig?: string;
+}
+
+export interface WorkspaceTargetItem {
+  name: string;
+  builtIn: boolean;
+  globallyEnabled: boolean;
+  allowed: boolean;
+  effective: boolean;
+  ineffectiveReason: string | null;
+  refusal: string | null;
+}
+
+export interface WorkspaceTargets {
+  restricted: boolean;
+  codeRepository: string | null;
+  isolationMode: 'direct' | 'worktree';
+  targets: WorkspaceTargetItem[];
 }
 
 export interface Prompt {

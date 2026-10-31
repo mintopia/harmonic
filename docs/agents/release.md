@@ -23,6 +23,14 @@ accrues on `develop`. To ship what's on `develop`:
    Only touch it if the PR is left open (a conflict, or auto-merge is off) —
    then merge it yourself.
 
+## Harness image
+
+Each release also pushes `ghcr.io/mintopia/harmonic-harnesses:<version>`
+(`publish-image` job, `.github/workflows/harness-image.yml`, ADR-0056). Harness
+versions are pinned as `ARG`s in `docker/harnesses/Dockerfile`; bump them there
+deliberately. CI verifies each Harness's version command and credential-scans
+the image; the image must never contain credentials.
+
 ## Publishing a develop build
 
 To publish the current `develop` as a prerelease: `gh workflow run release.yml --ref develop`.

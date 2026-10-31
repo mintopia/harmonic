@@ -45,6 +45,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   workflow: null,
   workflowLabels: null,
   modelOptions: null,
+  executionTargets: null,
   classifierEnabled: null,
   classifierBackend: null,
   classifierTimeoutSeconds: null,

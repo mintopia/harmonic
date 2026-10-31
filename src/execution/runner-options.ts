@@ -9,6 +9,7 @@ import type { AutoDrive } from './auto-drive.js';
 import type { TailerCadence } from './live-usage-tailer.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { PostMergeHook } from './branch-merge.js';
+import type { PodOpenerDeps } from './pod-opener.js';
 import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
@@ -55,7 +56,7 @@ export interface RunnerOptions {
   agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
   /** Where Tickets find their Task Execution Workflow; absent → only the bundled workflows, with no secrets. */
-  workflows?: { library: WorkflowLibrary; secrets?: SecretService; workspaceName?: (workspaceId: number) => Promise<string> };
+  workflows?: { library: WorkflowLibrary; secrets?: SecretService; workspaceName?: (workspaceId: number) => Promise<string>; pods?: Pick<PodOpenerDeps<TaskRow>, 'targets' | 'passes' | 'apiFactory'>; podTranscriptDir?: string };
   /** Source of the Epic fix prompt text; absent → bundled prompts only. */
   promptLibrary?: PromptLibrary;
   isGloballyPaused?: () => boolean;
@@ -100,7 +101,7 @@ export interface RunnerOptions {
         | 'mergeEpicRefreshPrompt'
         | 'verifyEpicResolveSuffix'
       > &
-        Partial<Pick<WorkspaceRow, 'workingDir' | 'workflow' | 'workflowLabels' | 'workflowVars' | 'modelOptions'>>)
+        Partial<Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository' | 'workflow' | 'workflowLabels' | 'workflowVars' | 'modelOptions'>>)
     | undefined
   >;
   /** The agent-critic drive; the real one spawns the builder's configured harness as a contained read-only reviewer. */

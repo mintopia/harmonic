@@ -3,7 +3,9 @@ import type { Prompt, TrackerRef } from '../types.js';
 import * as f from './fixtures';
 
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
-export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security' };
+const podParam = new URLSearchParams(window.location.search).get('pod');
+export const storyExecution: Task['execution'] = podParam === null ? null : { target: 'k8s-prod', podName: 'harmonic-task-482-7f9c', podState: podParam as 'pending' | 'running' | 'deleted' | 'lost', namespace: 'harmonic-agents', image: 'harmonic-harnesses:2.19.0', source: 'workflow' };
+export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security', execution: storyExecution };
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
 import type { api as RealApi, ResolvedPromptOwner, ClassifierTestSettings } from '../api';
@@ -24,6 +26,7 @@ import type {
   Workspace,
   TrackerKindInfo,
 } from '../types.js';
+import type { ConnectionOutcome, ExecutionTarget } from '../types.js';
 import type { EpicIntegrateOutcome } from '../epic-model.js';
 import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
@@ -270,6 +273,36 @@ const storyResolvedPrompts = [
   'Whole-Epic verification failed: `npm test` regressed in tests/guardrails.test.ts. Fix the failure on `epic/166` and commit.',
 ];
 
+const stubTarget = (name: string, enabled: boolean, running: number, limit: number, namespace: string): ExecutionTarget => ({
+  name,
+  builtIn: false,
+  enabled,
+  authMethod: 'kubeconfig',
+  namespace,
+  defaultImage: 'ghcr.io/mintopia/harmonic-harnesses:2.19.0',
+  cpu: '2',
+  memory: '4Gi',
+  concurrencyLimit: limit,
+  repositoryProxyUrl: 'https://repo-proxy.harmonic-agents.svc.cluster.local',
+  kubeconfig: { set: true, secretName: `${name}-kubeconfig`, updatedAt: Date.UTC(2026, 9, 12) },
+  proxyKey: { set: true, secretName: `${name}-proxy-key`, rotatedAt: Date.UTC(2026, 9, 3, 14, 20) },
+  credentials: [
+    { harness: 'claude', kind: 'oauth-token', harnessConfigured: true, set: true, secretName: `${name}-claude-token`, updatedAt: '2026-10-12T09:00:00Z' },
+    { harness: 'codex', kind: 'api-key', harnessConfigured: true, set: false, secretName: `${name}-codex-key`, updatedAt: null },
+    { harness: 'copilot', kind: 'api-key', harnessConfigured: true, set: true, secretName: `${name}-copilot-key`, updatedAt: '2026-09-29T09:00:00Z' },
+    { harness: 'opencode', kind: 'api-key', harnessConfigured: false, set: false, secretName: `${name}-opencode-key`, updatedAt: null },
+  ],
+  running,
+  waiting: enabled ? 2 : 1,
+  createdAt: 1,
+  updatedAt: 1,
+});
+const executionTargetFixtures: ExecutionTarget[] = [
+  { name: 'local', builtIn: true, enabled: true, authMethod: null, namespace: null, defaultImage: null, cpu: null, memory: null, concurrencyLimit: null, repositoryProxyUrl: null, kubeconfig: null, proxyKey: null, credentials: [], running: 1, waiting: 0, createdAt: null, updatedAt: null },
+  stubTarget('k8s-prod', true, 2, 4, 'harmonic-agents'),
+  stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
+];
+
 const step = (workflow: string, stepId: string, workflowBundled = false) => ({ workflow, workflowBundled, stepId });
 const stepsOf = (n: number) => Array.from({ length: n }, (_, i) => step('implement', `step-${i + 1}`, true));
 const promptFixtures: Prompt[] = [
@@ -286,6 +319,40 @@ const promptFixtures: Prompt[] = [
 ];
 
 export const api: typeof RealApi = {
+  executionTargets: () => ok({ targets: executionTargetFixtures, total: executionTargetFixtures.length }),
+  createExecutionTarget: (body) => ok({ ...stubTarget(body.name, body.enabled, 0, body.concurrencyLimit, body.namespace) }),
+  updateExecutionTarget: (name) => ok(executionTargetFixtures.find((t) => t.name === name) ?? stubTarget(name, true, 0, 1, 'default')),
+  executionTargetDeletionImpact: () => ok({ running: 2, waiting: 1, total: 3 }),
+  deleteExecutionTarget: () => ok({ ok: true as const, escalated: 3 }),
+  checkExecutionTargetProxyKey: () => ok({ outcome: 'rejected' as const }),
+  rotateExecutionTargetProxyKey: () => ok({ key: 'hrk_7f3a9c2e51b84d06a1e9c0b3', rotatedAt: Date.now(), revokedRunning: 2 }),
+  setExecutionTargetKubeconfig: () => ok(null),
+  clearExecutionTargetKubeconfig: () => ok(null),
+  setExecutionTargetCredential: () => ok(null),
+  clearExecutionTargetCredential: () => ok(null),
+  testExecutionTargetConnection: (body) => {
+    const outcome = (new URLSearchParams(window.location.search).get('outcome') ?? 'connected') as ConnectionOutcome;
+    const secretName = body.name ? `${body.name}-kubeconfig` : null;
+    const messages: Record<ConnectionOutcome, string> = {
+      connected: 'connected',
+      unauthorized: 'unauthorized',
+      'namespace-not-found': 'namespace not found',
+      unreachable: 'timed out after 10 s',
+      'invalid-kubeconfig': 'invalid kubeconfig: no current-context set',
+    };
+    return ok({ ok: outcome === 'connected', outcome, message: messages[outcome], ...(outcome === 'connected' ? { podCount: 6 } : {}), namespace: body.namespace, secretName });
+  },
+  workspaceExecutionTargets: () =>
+    ok({
+      restricted: false,
+      codeRepository: 'mintopia/harmonic',
+      isolationMode: 'worktree' as const,
+      targets: [
+        { name: 'local', builtIn: true, globallyEnabled: true, allowed: true, effective: true, ineffectiveReason: null, refusal: null },
+        { name: 'k8s-prod', builtIn: false, globallyEnabled: true, allowed: true, effective: true, ineffectiveReason: null, refusal: null },
+        { name: 'k8s-staging', builtIn: false, globallyEnabled: false, allowed: false, effective: false, ineffectiveReason: null, refusal: null },
+      ],
+    }),
   prompts: () => ok({ prompts: promptFixtures, total: promptFixtures.length }),
   createPrompt: (body) => ok({ ...body, bundled: false, resolved: body.text, usedBy: [], usedBySteps: [], updatedAt: new Date().toISOString() }),
   updatePrompt: (code, body) => {
@@ -380,7 +447,11 @@ export const api: typeof RealApi = {
   setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),
   epicWorkflowSteps: (_workspaceId: number, _epicRef: string) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   workflowSteps: (_id: number) => ok(workflowStory
-    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, steps: [{ stepId: 'implement', action: 'agent', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null }, startedAt: 1, endedAt: 2 }] }
+    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, stepInfo: { rebase: { uses: 'rebase', detail: null, condition: null }, install: { uses: 'run', detail: 'npm ci', condition: null }, implement: { uses: 'agent', detail: 'Claude', condition: null } }, steps: [
+      { stepId: 'rebase', action: 'rebase', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: 'a41c9e2b07', forced: true, unchanged: false } }, startedAt: 1, endedAt: 2 },
+      { stepId: 'install', action: 'run', position: 1, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'harmonic/task-482', sha: null, forced: false, unchanged: true } }, startedAt: 2, endedAt: 3 },
+      { stepId: 'implement', action: 'agent', position: 2, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: '7be03d1aa0', forced: false, unchanged: false, files: 6 } }, startedAt: 3, endedAt: 4 },
+    ] }
     : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),

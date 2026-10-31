@@ -236,14 +236,10 @@ function ClassifierNote({ task, classifier, attempts }: { task: Task; classifier
   );
 }
 
-export function Properties({ task, allTasks, workspaceName, latestVersion, attempts = [] }: { task: Task; allTasks: Task[]; workspaceName: string | null; latestVersion?: number | null; attempts?: Attempt[] }) {
-  const createdAt = new Date(task.createdAt);
-  const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+export function AgentFact({ task, attempts = [] }: { task: Task; attempts?: Attempt[] }) {
   const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
-      <Fact label="Priority">{task.priority}</Fact>
-      <Fact label="Agent" className={task.routing || task.classifier ? 'col-span-2' : ''}>
+    <Fact label="Agent" className={task.routing || task.classifier ? 'col-span-2' : ''}>
         {notStarted ? (
           <span className="text-muted">Not started</span>
         ) : (
@@ -254,6 +250,17 @@ export function Properties({ task, allTasks, workspaceName, latestVersion, attem
         {task.routing && <RoutedByNote routing={task.routing} />}
         {task.classifier && <ClassifierNote task={task} classifier={task.classifier} attempts={attempts} />}
       </Fact>
+  );
+}
+
+export function Properties({ task, allTasks, workspaceName, latestVersion, attempts = [] }: { task: Task; allTasks: Task[]; workspaceName: string | null; latestVersion?: number | null; attempts?: Attempt[] }) {
+  const createdAt = new Date(task.createdAt);
+  const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  return (
+    <>
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
+      <Fact label="Priority">{task.priority}</Fact>
+      {!task.execution && <AgentFact task={task} attempts={attempts} />}
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">
         <DependsOn task={task} allTasks={allTasks} />
@@ -281,5 +288,6 @@ export function Properties({ task, allTasks, workspaceName, latestVersion, attem
         </Fact>
       )}
     </dl>
+    </>
   );
 }

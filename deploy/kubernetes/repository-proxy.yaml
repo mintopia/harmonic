@@ -1,0 +1,52 @@
+# Repository Proxy (ADR-0056). Apply once per cluster, then set the Kubernetes
+# Execution Target's proxy URL to http://repository-proxy.<namespace>.svc:8080.
+# HARMONIC_PROXY_KEY must equal the signing key configured in Harmonic;
+# UPSTREAM_TOKEN is the real Code Repository credential, held only here.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repository-proxy
+type: Opaque
+stringData:
+  HARMONIC_PROXY_KEY: change-me
+  UPSTREAM_TOKEN: change-me
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: repository-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: repository-proxy
+  template:
+    metadata:
+      labels:
+        app: repository-proxy
+    spec:
+      containers:
+        - name: repository-proxy
+          image: ghcr.io/mintopia/harmonic-repository-proxy:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: repository-proxy
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: repository-proxy
+spec:
+  selector:
+    app: repository-proxy
+  ports:
+    - port: 8080
+      targetPort: 8080

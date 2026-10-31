@@ -453,6 +453,8 @@ export async function startServer(
     installMode?: Parameters<typeof buildApp>[0]['installMode'];
     guardMissing?: boolean | undefined;
     corsOrigins?: CorsPolicy | undefined;
+    kubernetesClientFactory?: Parameters<typeof buildApp>[0]['kubernetesClientFactory'];
+    podApiFactory?: Parameters<typeof buildApp>[0]['podApiFactory'];
   } = {},
 ): Promise<TestServer> {
   const { config: configOverrides, legacy: legacyGlobal } = splitLegacyConfig(legacyConfigOverrides);
@@ -484,6 +486,8 @@ export async function startServer(
     installMode: opts.installMode,
     guardMissing: opts.guardMissing,
     corsOrigins: opts.corsOrigins,
+    kubernetesClientFactory: opts.kubernetesClientFactory,
+    podApiFactory: opts.podApiFactory,
     // Heavy synchronous test setup can trip the event-loop stall monitor.
     reliabilityTuning: { eventLoop: { enabled: false } },
   });

@@ -155,6 +155,31 @@ CREATE TABLE `epics` (
 	FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE `execution_targets` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`name` text NOT NULL,
+	`enabled` integer DEFAULT true NOT NULL,
+	`auth_method` text NOT NULL,
+	`namespace` text NOT NULL,
+	`default_image` text NOT NULL,
+	`cpu` text NOT NULL,
+	`memory` text NOT NULL,
+	`concurrency_limit` integer NOT NULL,
+	`repository_proxy_url` text NOT NULL,
+	`kubeconfig_secret` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `execution_targets_name_idx` ON `execution_targets` (`name`);--> statement-breakpoint
+CREATE TABLE `global_secrets` (
+	`name` text PRIMARY KEY NOT NULL,
+	`ciphertext` text NOT NULL,
+	`nonce` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `secrets` (
 	`workspace_id` integer NOT NULL,
 	`name` text NOT NULL,
@@ -326,6 +351,7 @@ CREATE TABLE `tasks` (
 	`workflow_requested` text,
 	`workflow_chosen` text,
 	`workflow_label` text,
+	`execution` text,
 	`workflow_reason` text,
 	`workflow_routing_usage` text,
 	`workflow_routing_cost` text,

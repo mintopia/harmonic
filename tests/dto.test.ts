@@ -89,7 +89,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,
-  mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
+  mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, execution: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
   mapRef: null,
   baseBranch: null,
   trackerState: null,
@@ -386,6 +386,7 @@ describe('taskToApiDto', () => {
     mapTitle: 'Some Map',
     trackerLabel: 'GitHub',
     skipReason: 'capacity',
+    targetWait: null,
     contextWindow: 200_000,
   };
 

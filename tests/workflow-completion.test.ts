@@ -15,10 +15,10 @@ describe('completeWorkflow', () => {
   });
 
   it('offers step keys inside a step, top-level keys at the root', () => {
-    expect(labels('steps:\n  - id: a\n    ')).toEqual(['id', 'uses', 'with', 'if', 'run', 'parallel']);
+    expect(labels('steps:\n  - id: a\n    ')).toEqual(['id', 'uses', 'with', 'if', 'run', 'runs_on', 'image', 'parallel']);
     expect(labels('steps:\n  - id: a\n    u')).toEqual(['uses']);
     expect(labels('na')).toEqual(['name']);
-    expect(labels('name: x\n')).toEqual(['name', 'description', 'vars', 'steps', 'cleanup']);
+    expect(labels('name: x\n')).toEqual(['name', 'description', 'runs_on', 'image', 'vars', 'steps', 'cleanup']);
     expect(labels('steps:\n  - attempts:\n      ')).toEqual(['max', 'steps']);
   });
 

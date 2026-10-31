@@ -13,6 +13,7 @@ import type { VerificationAttemptInput } from '../domain/verification-attempts.j
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
+import type { PodSession } from '../execution/pod-session.js';
 
 function rejectOptionId(request: PermissionRequest): string | null {
   return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
@@ -58,6 +59,7 @@ export interface CriticDriveRequest {
   continueSessionId?: string;
   /** Deny every permission request that could write, and never switch the harness into its unattended permission mode. */
   readOnly?: boolean;
+  pod?: PodSession;
   /** Elapsed ACP prompt time; the real drive reports zero if startup fails before a prompt. */
   onAgentDurationMs?: (durationMs: number) => Promise<void>;
 }
@@ -112,16 +114,25 @@ function criticSpawnEnv(
   return env;
 }
 
+function podSpawnEnv(req: CriticDriveRequest): Record<string, string> {
+  const adapterEnv = adapterFor(req.harnessId).spawnEnv({ model: req.model, cwd: req.cwd, sessionLogDir: req.harness.sessionLogDir });
+  const defined = Object.entries(adapterEnv).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  return { HARMONIC_MODEL: req.model, ...Object.fromEntries(defined) };
+}
+
 /** The real critic drive: one ACP review turn with no MCP servers and the builder's unattended session mode; any permission request is granted. */
 export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): CriticHarnessDrive {
   return {
     async run(req: CriticDriveRequest): Promise<CriticDriveResult> {
-      const env = criticSpawnEnv(req.harness, req.harnessId, req.model, req.cwd);
-      const child = spawnProcessGroup(req.harness.command, req.harness.args, {
-        cwd: req.cwd,
-        env: env as NodeJS.ProcessEnv,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }, `critic harness ${req.harnessId}`);
+      const child = req.pod
+        ? await req.pod.spawnHarness(req.harness.command, req.harness.args, podSpawnEnv(req))
+        : spawnProcessGroup(req.harness.command, req.harness.args, {
+            cwd: req.cwd,
+            env: criticSpawnEnv(req.harness, req.harnessId, req.model, req.cwd) as NodeJS.ProcessEnv,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }, `critic harness ${req.harnessId}`);
+      const podSecrets = req.pod?.credentialValues ?? [];
+      const maskPod = (text: string): string => podSecrets.reduce((out, secret) => out.split(secret).join('***'), text);
 
       let output = '';
       const permissionRequests: PermissionRequest[] = [];
@@ -132,7 +143,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
           if (u.sessionUpdate === 'agent_message_chunk' && u.content?.type === 'text' && typeof u.content.text === 'string') {
             output += u.content.text;
           }
-          req.onUpdate?.(update);
+          req.onUpdate?.(podSecrets.length === 0 ? update : (JSON.parse(maskPod(JSON.stringify(update))) as typeof update));
         },
         onRequest: async (method, params) => {
           if (method === 'session/request_permission') {
@@ -195,7 +206,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
           agentTimingRecorded = true;
           await recordDurationBestEffort(req.onAgentDurationMs, Math.round(performance.now() - promptStarted));
         }
-        return { output, permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
+        return { output: maskPod(output), permissionRequests, sessionId: sessionId ?? null, ...(promptResult.usage ? { usage: promptResult.usage } : {}) };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();

@@ -2149,6 +2149,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -2441,6 +2504,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -2693,6 +2757,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -3270,6 +3397,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -3321,6 +3494,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -3355,6 +3529,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -3590,6 +3765,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -4167,6 +4405,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -4217,6 +4501,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -4251,6 +4536,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -4471,6 +4757,69 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -5048,6 +5397,52 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -5100,6 +5495,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -5134,6 +5530,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline",
@@ -7750,6 +8147,20 @@
             ],
             "example": null
           },
+          "executionTargets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "workflow": {
             "anyOf": [
               {
@@ -8549,6 +8960,7 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "executionTargets",
           "workflow",
           "epicWorkflow",
           "workflowLabels",
@@ -10314,6 +10726,534 @@
           "set"
         ]
       },
+      "ExecutionTargetKubeconfigInput": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "k8s-prod-kubeconfig"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
+      },
+      "ExecutionTargetCredentialInput": {
+        "type": "object",
+        "properties": {
+          "harness": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "copilot",
+              "opencode"
+            ],
+            "example": "claude"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "oauth-token",
+              "api-key"
+            ],
+            "example": "oauth-token",
+            "description": "Claude takes a `claude setup-token` value; the other Harnesses take an API key."
+          },
+          "harnessConfigured": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the Harness is configured in Harmonic; only configured Harnesses get their credential injected."
+          },
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-claude-token"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-10-31T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "harness",
+          "kind",
+          "harnessConfigured",
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "description": "Whether a Harness credential Secret is set on the target. The value is write-only and never returned."
+      },
+      "ExecutionTargetProxyKeyInput": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-proxy-key"
+          },
+          "rotatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000,
+            "description": "When the signing key was last created or rotated."
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "rotatedAt"
+        ],
+        "description": "Whether the Repository Proxy signing key Secret is set. The key is never returned except once by rotation."
+      },
+      "ExecutionTargetProxyKeyRotationInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "Zm9v...",
+            "description": "The new signing key. Shown only in this response; copy it to the Repository Proxy."
+          },
+          "rotatedAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "revokedRunning": {
+            "type": "number",
+            "example": 2,
+            "description": "Tickets running on the target whose pass is now revoked."
+          }
+        },
+        "required": [
+          "key",
+          "rotatedAt",
+          "revokedRunning"
+        ]
+      },
+      "ExecutionTargetInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "k8s-prod"
+          },
+          "builtIn": {
+            "type": "boolean",
+            "example": false,
+            "description": "True only for `local`, which is not editable."
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "authMethod": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "kubeconfig",
+                  "in-cluster"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "kubeconfig"
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "harmonic-agents"
+          },
+          "defaultImage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+          },
+          "cpu": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "4Gi"
+          },
+          "concurrencyLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 4
+          },
+          "repositoryProxyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://repo-proxy.harmonic-agents.svc.cluster.local"
+          },
+          "kubeconfig": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetKubeconfigInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxyKey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetProxyKeyInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetCredentialInput"
+            },
+            "description": "One entry per Harness; empty for `local`."
+          },
+          "running": {
+            "type": "number",
+            "example": 0,
+            "description": "Tickets currently running on this target."
+          },
+          "waiting": {
+            "type": "number",
+            "example": 0,
+            "description": "Ready Tickets waiting for this target, because it is full or disabled."
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          }
+        },
+        "required": [
+          "name",
+          "builtIn",
+          "enabled",
+          "authMethod",
+          "namespace",
+          "defaultImage",
+          "cpu",
+          "memory",
+          "concurrencyLimit",
+          "repositoryProxyUrl",
+          "kubeconfig",
+          "proxyKey",
+          "credentials",
+          "running",
+          "waiting",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "An Execution Target. `local` (the Harmonic host) is always listed first with `builtIn: true` and null Kubernetes fields."
+      },
+      "ExecutionTargetDeletionImpactInput": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "number",
+            "example": 2
+          },
+          "waiting": {
+            "type": "number",
+            "example": 1
+          },
+          "total": {
+            "type": "number",
+            "example": 3
+          }
+        },
+        "required": [
+          "running",
+          "waiting",
+          "total"
+        ],
+        "description": "Tickets that escalate when the target is deleted: running on it plus waiting for it."
+      },
+      "ExecutionTargetConnectionResultInput": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "unauthorized",
+              "namespace-not-found",
+              "unreachable",
+              "invalid-kubeconfig"
+            ],
+            "example": "connected"
+          },
+          "message": {
+            "type": "string",
+            "example": "Connected: listed namespace harmonic-agents (6 pods)"
+          },
+          "podCount": {
+            "example": 6,
+            "type": "number"
+          },
+          "namespace": {
+            "type": "string",
+            "example": "harmonic-agents"
+          },
+          "secretName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "k8s-prod-kubeconfig"
+          }
+        },
+        "required": [
+          "ok",
+          "outcome",
+          "message",
+          "namespace",
+          "secretName"
+        ],
+        "description": "The connection test outcome; a failure is still a 200 with `ok: false`."
+      },
+      "ExecutionTargetDraftConnectionTestInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "example": "k8s-prod",
+            "description": "Existing target whose stored kubeconfig Secret is used when `kubeconfig` is omitted.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "authMethod": {
+            "type": "string",
+            "enum": [
+              "kubeconfig",
+              "in-cluster"
+            ],
+            "example": "kubeconfig"
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "example": "harmonic-agents"
+          },
+          "kubeconfig": {
+            "description": "Unsaved kubeconfig to test; never stored by this call.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 262144
+          }
+        },
+        "required": [
+          "authMethod",
+          "namespace"
+        ]
+      },
+      "WorkspaceExecutionTargetsInput": {
+        "type": "object",
+        "properties": {
+          "restricted": {
+            "type": "boolean",
+            "example": true,
+            "description": "False when the Workspace inherits every enabled target."
+          },
+          "codeRepository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "github"
+          },
+          "isolationMode": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "worktree"
+            ],
+            "example": "worktree"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "example": "k8s-prod"
+                },
+                "builtIn": {
+                  "type": "boolean"
+                },
+                "globallyEnabled": {
+                  "type": "boolean"
+                },
+                "allowed": {
+                  "type": "boolean",
+                  "description": "In the Workspace allow-list, or inherited."
+                },
+                "effective": {
+                  "type": "boolean",
+                  "description": "Allowed, enabled globally and usable by this Workspace."
+                },
+                "ineffectiveReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "refusal": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Why enabling this target for the Workspace would be refused; null when it would be accepted."
+                }
+              },
+              "required": [
+                "name",
+                "builtIn",
+                "globallyEnabled",
+                "allowed",
+                "effective",
+                "ineffectiveReason",
+                "refusal"
+              ]
+            }
+          }
+        },
+        "required": [
+          "restricted",
+          "codeRepository",
+          "isolationMode",
+          "targets"
+        ]
+      },
       "FsEntryInput": {
         "type": "object",
         "properties": {
@@ -10571,6 +11511,23 @@
           "version",
           "inUse",
           "assignedAs"
+        ]
+      },
+      "ExecutionTargetProxyKeyCheckInput": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agrees",
+              "rejected",
+              "unreachable"
+            ],
+            "example": "agrees"
+          }
+        },
+        "required": [
+          "outcome"
         ]
       },
       "ErrorResponse": {
@@ -12737,6 +13694,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -13031,6 +14052,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -13285,6 +14307,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -13868,6 +14954,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -13919,6 +15052,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -13953,6 +15087,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -14190,6 +15325,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -14773,6 +15972,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -14823,6 +16069,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -14857,6 +16104,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline"
@@ -15079,6 +16327,70 @@
             "description": "The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted.",
             "example": null
           },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "podName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": "harmonic-task-42-a1b2"
+                  },
+                  "podState": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "deleted",
+                      "lost"
+                    ],
+                    "example": "running"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "example": "harmonic-agents"
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "workflow",
+                      "step"
+                    ],
+                    "example": "workflow"
+                  }
+                },
+                "required": [
+                  "target",
+                  "podName",
+                  "podState",
+                  "namespace",
+                  "image",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Kubernetes pod the Ticket's workflow ran or runs in; kept after the pod is deleted. Null when the Ticket ran on `local`.",
+            "example": null
+          },
           "workflowVarOverrides": {
             "anyOf": [
               {
@@ -15662,6 +16974,53 @@
             ],
             "example": "blocked-by #12"
           },
+          "targetWait": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "example": "k8s-prod"
+                  },
+                  "disabled": {
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "running": {
+                    "type": "number",
+                    "example": 1
+                  },
+                  "limit": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "example": 1
+                  },
+                  "position": {
+                    "type": "number",
+                    "example": 2
+                  }
+                },
+                "required": [
+                  "target",
+                  "disabled",
+                  "running",
+                  "limit",
+                  "position"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifiedRef": {
             "anyOf": [
               {
@@ -15714,6 +17073,7 @@
           "workflowChosen",
           "workflowLabel",
           "workflowReason",
+          "execution",
           "workflowVarOverrides",
           "workflowVars",
           "workflowRef",
@@ -15748,6 +17108,7 @@
           "contextTokens",
           "contextWindow",
           "skipReason",
+          "targetWait",
           "verifiedRef",
           "hasCandidate",
           "wallClockDeadline",
@@ -18436,6 +19797,20 @@
             ],
             "example": null
           },
+          "executionTargets": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "workflow": {
             "anyOf": [
               {
@@ -19249,6 +20624,7 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "executionTargets",
           "workflow",
           "epicWorkflow",
           "workflowLabels",
@@ -21068,6 +22444,544 @@
         ],
         "additionalProperties": false
       },
+      "ExecutionTargetKubeconfig": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "k8s-prod-kubeconfig"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Whether the kubeconfig Secret is set. The kubeconfig itself is write-only and never returned."
+      },
+      "ExecutionTargetCredential": {
+        "type": "object",
+        "properties": {
+          "harness": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "copilot",
+              "opencode"
+            ],
+            "example": "claude"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "oauth-token",
+              "api-key"
+            ],
+            "example": "oauth-token",
+            "description": "Claude takes a `claude setup-token` value; the other Harnesses take an API key."
+          },
+          "harnessConfigured": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the Harness is configured in Harmonic; only configured Harnesses get their credential injected."
+          },
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-claude-token"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2026-10-31T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "harness",
+          "kind",
+          "harnessConfigured",
+          "set",
+          "secretName",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Whether a Harness credential Secret is set on the target. The value is write-only and never returned."
+      },
+      "ExecutionTargetProxyKey": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "boolean",
+            "example": true
+          },
+          "secretName": {
+            "type": "string",
+            "example": "k8s-prod-proxy-key"
+          },
+          "rotatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000,
+            "description": "When the signing key was last created or rotated."
+          }
+        },
+        "required": [
+          "set",
+          "secretName",
+          "rotatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "Whether the Repository Proxy signing key Secret is set. The key is never returned except once by rotation."
+      },
+      "ExecutionTargetProxyKeyRotation": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "Zm9v...",
+            "description": "The new signing key. Shown only in this response; copy it to the Repository Proxy."
+          },
+          "rotatedAt": {
+            "type": "number",
+            "example": 1784030400000
+          },
+          "revokedRunning": {
+            "type": "number",
+            "example": 2,
+            "description": "Tickets running on the target whose pass is now revoked."
+          }
+        },
+        "required": [
+          "key",
+          "rotatedAt",
+          "revokedRunning"
+        ],
+        "additionalProperties": false
+      },
+      "ExecutionTarget": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "k8s-prod"
+          },
+          "builtIn": {
+            "type": "boolean",
+            "example": false,
+            "description": "True only for `local`, which is not editable."
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "authMethod": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "kubeconfig",
+                  "in-cluster"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "kubeconfig"
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "harmonic-agents"
+          },
+          "defaultImage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+          },
+          "cpu": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "2"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "4Gi"
+          },
+          "concurrencyLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 4
+          },
+          "repositoryProxyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "https://repo-proxy.harmonic-agents.svc.cluster.local"
+          },
+          "kubeconfig": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetKubeconfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxyKey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetProxyKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTargetCredential"
+            },
+            "description": "One entry per Harness; empty for `local`."
+          },
+          "running": {
+            "type": "number",
+            "example": 0,
+            "description": "Tickets currently running on this target."
+          },
+          "waiting": {
+            "type": "number",
+            "example": 0,
+            "description": "Ready Tickets waiting for this target, because it is full or disabled."
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784030400000
+          }
+        },
+        "required": [
+          "name",
+          "builtIn",
+          "enabled",
+          "authMethod",
+          "namespace",
+          "defaultImage",
+          "cpu",
+          "memory",
+          "concurrencyLimit",
+          "repositoryProxyUrl",
+          "kubeconfig",
+          "proxyKey",
+          "credentials",
+          "running",
+          "waiting",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "An Execution Target. `local` (the Harmonic host) is always listed first with `builtIn: true` and null Kubernetes fields."
+      },
+      "ExecutionTargetDeletionImpact": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "number",
+            "example": 2
+          },
+          "waiting": {
+            "type": "number",
+            "example": 1
+          },
+          "total": {
+            "type": "number",
+            "example": 3
+          }
+        },
+        "required": [
+          "running",
+          "waiting",
+          "total"
+        ],
+        "additionalProperties": false,
+        "description": "Tickets that escalate when the target is deleted: running on it plus waiting for it."
+      },
+      "ExecutionTargetConnectionResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "unauthorized",
+              "namespace-not-found",
+              "unreachable",
+              "invalid-kubeconfig"
+            ],
+            "example": "connected"
+          },
+          "message": {
+            "type": "string",
+            "example": "Connected: listed namespace harmonic-agents (6 pods)"
+          },
+          "podCount": {
+            "example": 6,
+            "type": "number"
+          },
+          "namespace": {
+            "type": "string",
+            "example": "harmonic-agents"
+          },
+          "secretName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "k8s-prod-kubeconfig"
+          }
+        },
+        "required": [
+          "ok",
+          "outcome",
+          "message",
+          "namespace",
+          "secretName"
+        ],
+        "additionalProperties": false,
+        "description": "The connection test outcome; a failure is still a 200 with `ok: false`."
+      },
+      "ExecutionTargetDraftConnectionTest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "example": "k8s-prod",
+            "description": "Existing target whose stored kubeconfig Secret is used when `kubeconfig` is omitted.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "authMethod": {
+            "type": "string",
+            "enum": [
+              "kubeconfig",
+              "in-cluster"
+            ],
+            "example": "kubeconfig"
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "example": "harmonic-agents"
+          },
+          "kubeconfig": {
+            "description": "Unsaved kubeconfig to test; never stored by this call.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 262144
+          }
+        },
+        "required": [
+          "authMethod",
+          "namespace"
+        ],
+        "additionalProperties": false
+      },
+      "WorkspaceExecutionTargets": {
+        "type": "object",
+        "properties": {
+          "restricted": {
+            "type": "boolean",
+            "example": true,
+            "description": "False when the Workspace inherits every enabled target."
+          },
+          "codeRepository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "github"
+          },
+          "isolationMode": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "worktree"
+            ],
+            "example": "worktree"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "example": "k8s-prod"
+                },
+                "builtIn": {
+                  "type": "boolean"
+                },
+                "globallyEnabled": {
+                  "type": "boolean"
+                },
+                "allowed": {
+                  "type": "boolean",
+                  "description": "In the Workspace allow-list, or inherited."
+                },
+                "effective": {
+                  "type": "boolean",
+                  "description": "Allowed, enabled globally and usable by this Workspace."
+                },
+                "ineffectiveReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "refusal": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Why enabling this target for the Workspace would be refused; null when it would be accepted."
+                }
+              },
+              "required": [
+                "name",
+                "builtIn",
+                "globallyEnabled",
+                "allowed",
+                "effective",
+                "ineffectiveReason",
+                "refusal"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "restricted",
+          "codeRepository",
+          "isolationMode",
+          "targets"
+        ],
+        "additionalProperties": false
+      },
       "FsEntry": {
         "type": "object",
         "properties": {
@@ -21332,6 +23246,24 @@
           "version",
           "inUse",
           "assignedAs"
+        ],
+        "additionalProperties": false
+      },
+      "ExecutionTargetProxyKeyCheck": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "agrees",
+              "rejected",
+              "unreachable"
+            ],
+            "example": "agrees"
+          }
+        },
+        "required": [
+          "outcome"
         ],
         "additionalProperties": false
       }
@@ -22687,6 +24619,56 @@
                                   }
                                 ],
                                 "example": 0
+                              },
+                              "checkpoint": {
+                                "description": "The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.",
+                                "type": "object",
+                                "properties": {
+                                  "branch": {
+                                    "type": "string",
+                                    "example": "harmonic/task-42"
+                                  },
+                                  "sha": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The commit the Ticket branch was pushed at; null when the push failed.",
+                                    "example": "3f2a9c1"
+                                  },
+                                  "forced": {
+                                    "type": "boolean",
+                                    "description": "True when the push rewrote history already on the remote, as after a rebase.",
+                                    "example": false
+                                  },
+                                  "unchanged": {
+                                    "type": "boolean",
+                                    "description": "True when the step left the branch where the previous checkpoint put it.",
+                                    "example": false
+                                  },
+                                  "files": {
+                                    "description": "How many files this step's commits changed against the previous remote tip; absent when unchanged or unknown.",
+                                    "example": 6,
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "error": {
+                                    "description": "Why the push failed.",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "branch",
+                                  "sha",
+                                  "forced",
+                                  "unchanged"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [
@@ -26649,6 +28631,25 @@
                               ]
                             }
                           ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "executionTargets": {
+                    "example": [
+                      "k8s-prod"
+                    ],
+                    "anyOf": [
+                      {
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
                         }
                       },
                       {
@@ -41169,6 +43170,1057 @@
         }
       }
     },
+    "/api/execution-targets": {
+      "get": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "List Execution Targets: the built-in `local` first, then every Kubernetes target. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every Execution Target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ExecutionTarget"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "targets",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every Execution Target."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Add a Kubernetes Execution Target. Set its kubeconfig afterwards with `PUT /execution-targets/:name/kubeconfig`. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "authMethod": {
+                    "type": "string",
+                    "enum": [
+                      "kubeconfig",
+                      "in-cluster"
+                    ],
+                    "example": "kubeconfig"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "example": "harmonic-agents"
+                  },
+                  "defaultImage": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "cpu": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "example": "2"
+                  },
+                  "memory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "example": "4Gi"
+                  },
+                  "concurrencyLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "example": 4
+                  },
+                  "repositoryProxyUrl": {
+                    "type": "string",
+                    "example": "https://repo-proxy.harmonic-agents.svc.cluster.local"
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,48}$",
+                    "example": "k8s-prod"
+                  }
+                },
+                "required": [
+                  "authMethod",
+                  "namespace",
+                  "defaultImage",
+                  "cpu",
+                  "memory",
+                  "concurrencyLimit",
+                  "repositoryProxyUrl",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The created target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTarget"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The payload failed validation, or the name is `local`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A target with that name already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/test-connection": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Test unsaved target settings: list pods in the namespace with a 10 second timeout. Nothing is created or stored. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionTargetDraftConnectionTestInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetConnectionResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The named target does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}": {
+      "get": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Get one Execution Target. The kubeconfig is never returned, only whether it is set. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTarget"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Edit a Kubernetes target, or enable or disable it with `enabled`. Disabling keeps waiting Tickets ready. Renaming also renames its kubeconfig Secret and updates Workspace allow-lists; switching to `in-cluster` removes the stored kubeconfig. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "authMethod": {
+                    "type": "string",
+                    "enum": [
+                      "kubeconfig",
+                      "in-cluster"
+                    ],
+                    "example": "kubeconfig"
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "example": "harmonic-agents"
+                  },
+                  "defaultImage": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "example": "ghcr.io/mintopia/harmonic-harnesses:2.19.0"
+                  },
+                  "cpu": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "example": "2"
+                  },
+                  "memory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "example": "4Gi"
+                  },
+                  "concurrencyLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "example": 4
+                  },
+                  "repositoryProxyUrl": {
+                    "type": "string",
+                    "example": "https://repo-proxy.harmonic-agents.svc.cluster.local"
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,48}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTarget"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The payload failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in, or the new name is taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Delete a Kubernetes target, its stored kubeconfig Secret, and its name in every Workspace allow-list. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted; `escalated` counts the Tickets that escalate because of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "escalated": {
+                      "$ref": "#/components/schemas/ExecutionTargetDeletionImpact"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "escalated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Deleted; `escalated` counts the Tickets that escalate because of it."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in and cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/deletion-impact": {
+      "get": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "How many Tickets would escalate if the target were deleted: running on it plus waiting for it. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Ticket counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetDeletionImpact"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/kubeconfig": {
+      "put": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Set or replace the target kubeconfig, stored as an encrypted Secret. Write-only: it is never returned. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kubeconfig": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 262144,
+                    "example": "apiVersion: v1\nkind: Config\n..."
+                  }
+                },
+                "required": [
+                  "kubeconfig"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The kubeconfig Secret is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetKubeconfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The kubeconfig is empty or too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The target uses the in-cluster service account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Clear the target kubeconfig Secret; clearing one that is not set succeeds. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The kubeconfig Secret is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetKubeconfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/credentials/{harness}": {
+      "put": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Set or replace a Harness credential on the target, stored as an encrypted Secret. Write-only: it is never returned. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "example": "sk-ant-oat01-..."
+                  }
+                },
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "codex",
+                "copilot",
+                "opencode"
+              ],
+              "example": "claude"
+            },
+            "in": "path",
+            "name": "harness",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The credential Secret is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The value is empty or too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Clear a Harness credential Secret; clearing one that is not set succeeds. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "codex",
+                "copilot",
+                "opencode"
+              ],
+              "example": "claude"
+            },
+            "in": "path",
+            "name": "harness",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The credential Secret is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetCredential"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/rotate-proxy-key": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Replace the Repository Proxy signing key, which revokes every outstanding pass. Creates the key when none is set. The new key is returned once; copy it to the Repository Proxy, which rejects every pass until it has the new key. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new key, shown once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetProxyKeyRotation"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/check-proxy-key": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Check that the Repository Proxy accepts passes signed with the current key: Harmonic sends the proxy a probe pass for a repository that does not exist. `rejected` means the proxy is likely still on the old key. 409 when no signing key is set. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proxy verdict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetProxyKeyCheck"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`local` is built in, or no signing key is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/execution-targets/{name}/test-connection": {
+      "post": {
+        "tags": [
+          "Execution Targets"
+        ],
+        "description": "Test the saved target: list pods in its namespace with a 10 second timeout. Nothing is created. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "example": "k8s-prod"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The outcome; a failure says what failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionTargetConnectionResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No target has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{id}/execution-targets": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Which Execution Targets this Workspace may use, which are effective, and why enabling one would be refused (no Code Repository, or `direct` Isolation Mode). Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-target availability for the Workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceExecutionTargets"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tracker-kinds": {
       "get": {
         "tags": [
@@ -44279,6 +47331,56 @@
                                   }
                                 ],
                                 "example": 0
+                              },
+                              "checkpoint": {
+                                "description": "The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.",
+                                "type": "object",
+                                "properties": {
+                                  "branch": {
+                                    "type": "string",
+                                    "example": "harmonic/task-42"
+                                  },
+                                  "sha": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The commit the Ticket branch was pushed at; null when the push failed.",
+                                    "example": "3f2a9c1"
+                                  },
+                                  "forced": {
+                                    "type": "boolean",
+                                    "description": "True when the push rewrote history already on the remote, as after a rebase.",
+                                    "example": false
+                                  },
+                                  "unchanged": {
+                                    "type": "boolean",
+                                    "description": "True when the step left the branch where the previous checkpoint put it.",
+                                    "example": false
+                                  },
+                                  "files": {
+                                    "description": "How many files this step's commits changed against the previous remote tip; absent when unchanged or unknown.",
+                                    "example": 6,
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "error": {
+                                    "description": "Why the push failed.",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "branch",
+                                  "sha",
+                                  "forced",
+                                  "unchanged"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [

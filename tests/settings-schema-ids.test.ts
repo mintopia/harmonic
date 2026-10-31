@@ -72,6 +72,7 @@ function makeWorkspace(): Workspace {
     epicWorkflow: null,
     workflowLabels: null,
     modelOptions: null,
+    executionTargets: null,
     classifierEnabled: null,
     classifierBackend: null,
     classifierTimeoutSeconds: null,

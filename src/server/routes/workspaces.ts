@@ -32,6 +32,7 @@ import { parseClassifierEndpoint, parseModelOptionOverlay } from '../../domain/m
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
+import { assertWorkspaceExecutionTargets, directWorkspaceRefusal, workspaceMixedRefusal } from '../../execution/workspace-execution-targets.js';
 import { maskWorkspaceSecrets } from '../../archive/export-secrets.js';
 
 /** The Resolved Tracker flattened for the API; `null` when tracking is off. `ok` discriminates `label` vs (`code`, `reason`). */
@@ -80,6 +81,8 @@ const workspaceSchema = z
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
+    /** `local` is always available; null inherits every enabled target. */
+    executionTargets: z.array(z.string()).nullable().meta({ example: null }),
     workflow: z.string().nullable().meta({ example: null }),
     epicWorkflow: z.string().nullable().meta({ example: null }),
     workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
@@ -168,7 +171,7 @@ const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, colo
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows' | 'routeClassifier'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows' | 'routeClassifier' | 'executionTargets'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -339,6 +342,34 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
         }
       }
+      await assertWorkspaceExecutionTargets(await ctx.workspaces.get(req.params.id), req.body, {
+        targets: ctx.executionTargets,
+        globalIsolationMode: ctx.settingsStore.getGlobal().defaults.isolationMode,
+      });
+      const current = await ctx.workspaces.get(req.params.id);
+      const directRefusal = directWorkspaceRefusal(
+        ctx.workflows,
+        {
+          name: req.body.name ?? current.name,
+          isolationMode: req.body.isolationMode === undefined ? current.isolationMode : req.body.isolationMode,
+          workflow: req.body.workflow === undefined ? current.workflow : req.body.workflow,
+          workflowLabels: req.body.workflowLabels === undefined ? current.workflowLabels : req.body.workflowLabels === null ? null : JSON.stringify(req.body.workflowLabels),
+        },
+        ctx.settingsStore.getGlobal(),
+      );
+      if (directRefusal) throw new DomainError('validation', directRefusal);
+      const mixedRefusal = await workspaceMixedRefusal(
+        ctx.workflows,
+        {
+          name: req.body.name ?? current.name,
+          workingDir: req.body.workingDir ?? current.workingDir,
+          codeRepository: req.body.codeRepository === undefined ? current.codeRepository : req.body.codeRepository,
+          workflow: req.body.workflow === undefined ? current.workflow : req.body.workflow,
+          workflowLabels: req.body.workflowLabels === undefined ? current.workflowLabels : req.body.workflowLabels === null ? null : JSON.stringify(req.body.workflowLabels),
+        },
+        ctx.settingsStore.getGlobal(),
+      );
+      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
       const workspace = await ctx.workspaces.update(req.params.id, req.body);
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());

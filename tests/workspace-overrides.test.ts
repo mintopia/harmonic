@@ -307,6 +307,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       workflowVars: null,
       workflowClassifierEnabled: null,
       modelOptions: null,
+      executionTargets: null,
       classifierEnabled: null,
       classifierBackend: null,
       classifierTimeoutSeconds: null,

@@ -1,4 +1,6 @@
 import { BackgroundWork } from '../error-handling.js';
+import { LOCAL_TARGET } from '../execution/execution-targets.js';
+import { directWorkspacesUsing, repositoryLessWorkspacesUsing } from '../execution/workspace-execution-targets.js';
 import Fastify from 'fastify';
 import { join, resolve } from 'node:path';
 import { openAsyncDb } from '../db/async.js';
@@ -86,6 +88,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       if (resolveModelOption(code, { config }).kind === 'found') return true;
       return (await stores.workspaces.list()).some((ws) => resolveModelOption(code, { workspace: ws, config }).kind === 'found');
     },
+    targetCheck: (name) => ({
+      known: async (target) => target === LOCAL_TARGET || (await stores.executionTargets.find(target)) !== null,
+      directWorkspaces: async () => directWorkspacesUsing(name, await stores.workspaces.list(), stores.settingsStore.getGlobal()),
+      repositoryLessWorkspaces: async () => repositoryLessWorkspacesUsing(name, await stores.workspaces.list(), stores.settingsStore.getGlobal()),
+    }),
     referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
   });
   await workflowLibrary.load();
@@ -166,6 +173,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     auth: stores.auth,
     channels: stores.channels,
     secrets: stores.secrets,
+    executionTargets: stores.executionTargets,
     workflows: workflowLibrary,
     promptLibrary,
     notifier: stores.notifier,

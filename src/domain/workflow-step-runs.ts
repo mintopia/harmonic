@@ -29,6 +29,7 @@ export interface WorkflowStepOutputs {
   verdict?: 'pass' | 'fail' | 'inconclusive';
   reason?: string;
   findings?: string[];
+  checkpoint?: { branch: string; sha: string | null; forced: boolean; unchanged: boolean; files?: number; error?: string };
 }
 
 export type WorkflowStepRunStart = StepRunOwner & {

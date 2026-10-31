@@ -69,3 +69,13 @@ describe('Epic step list', () => {
     expect(preCutoverAttempts(attempts, [], 'epic@1').map((a) => a.number)).toEqual([1, 2]);
   });
 });
+
+describe('Pod-run step list', () => {
+  it('numbers the steps and hides the Attempt chrome for a single Attempt', async () => {
+    const execution = { target: 'k8s-prod', podName: 'p', podState: 'running', namespace: 'n', image: 'i', source: 'workflow' } as const;
+    const host = await mountComponent(createElement(WorkflowSteps, { data: response([step('a', 1, 'pass'), step('b', 1, 'fail')]), attemptSelector: true, execution }));
+    expect([...host.querySelectorAll('ol > li [role="img"]')].map((m) => m.textContent)).toEqual(['1', '2']);
+    expect(host.querySelector('h3')).toBeNull();
+    expect(host.querySelector('[aria-label="Attempt"]')).toBeNull();
+  });
+});

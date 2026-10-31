@@ -18,8 +18,10 @@ import {
   workflowLabelSchema,
   modelOptionsSchema,
 } from '../../config.js';
+import { directWorkspaceRefusal, workspaceMixedRefusal } from '../../execution/workspace-execution-targets.js';
 import { workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
+import type { WorkspaceService } from '../../domain/workspaces.js';
 import { DomainError } from '../../domain/errors.js';
 import { maskConfigSecrets } from '../../archive/export-secrets.js';
 
@@ -38,6 +40,19 @@ function assertWorkflowRefs(ctx: Pick<ExecutionContext, 'settingsStore'> & { wor
     labels: (labels ?? []).filter((l) => !knownLabels.has(l.workflow)),
   });
   if (problems[0]) throw new DomainError('validation', problems[0]);
+}
+
+/** Refuses a global default Isolation Mode, default workflow or Workflow Label set that leaves a `direct` Workspace running a Kubernetes workflow. */
+async function assertDirectWorkspacesFit(ctx: Pick<ExecutionContext, 'settingsStore'> & { workspaces: Pick<WorkspaceService, 'list'>; workflows: WorkflowLibrary }, next: { isolationMode?: 'direct' | 'worktree' | undefined; workflow?: string | null | undefined; labels?: readonly { label: string; workflow: string }[] | undefined }): Promise<void> {
+  const stored = ctx.settingsStore.getGlobal();
+  const config = {
+    defaults: { ...stored.defaults, ...(next.isolationMode === undefined ? {} : { isolationMode: next.isolationMode }), ...(next.workflow === undefined ? {} : { workflow: next.workflow }) },
+    workflowLabels: next.labels ?? stored.workflowLabels,
+  };
+  for (const ws of await ctx.workspaces.list()) {
+    const refusal = directWorkspaceRefusal(ctx.workflows, ws, config) ?? (await workspaceMixedRefusal(ctx.workflows, ws, config));
+    if (refusal) throw new DomainError('validation', refusal);
+  }
 }
 
 function harnessPermissionModes() {
@@ -159,7 +174,7 @@ const configPatchBodySchema = z
   .partial()
   .meta({ id: 'ConfigPatch' });
 
-export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary; workflows: WorkflowLibrary }): Promise<void> {
+export async function configRoutes(fastify: FastifyInstance, ctx: Pick<ExecutionContext, 'autoRunner' | 'settingsStore'> & { prompts: PromptLibrary; workflows: WorkflowLibrary; workspaces: Pick<WorkspaceService, 'list'> }): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   app.get(
@@ -208,6 +223,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     },
     async (req) => {
       assertWorkflowRefs(ctx, req.body.defaults?.workflow, req.body.defaults?.epicWorkflow, req.body.workflowLabels);
+      await assertDirectWorkspacesFit(ctx, { isolationMode: req.body.defaults?.isolationMode, workflow: req.body.defaults?.workflow, labels: req.body.workflowLabels });
       const updated = await ctx.settingsStore.updateGlobal(req.body as DeepPartial<AppConfig>);
       await syncEditedPrompts(ctx.prompts, updated, namedPromptCodes(req.body));
       ctx.autoRunner.poke();
@@ -234,6 +250,7 @@ export async function configRoutes(fastify: FastifyInstance, ctx: Pick<Execution
     async (req) => {
       const before = withLibraryPrompts(ctx.settingsStore.getGlobal(), ctx.prompts);
       assertWorkflowRefs(ctx, req.body.defaults.workflow, req.body.defaults.epicWorkflow, req.body.workflowLabels);
+      await assertDirectWorkspacesFit(ctx, { isolationMode: req.body.defaults.isolationMode, workflow: req.body.defaults.workflow, labels: req.body.workflowLabels });
       const updated = await ctx.settingsStore.replaceGlobal(req.body as AppConfig);
       await syncEditedPrompts(ctx.prompts, updated, changedPromptCodes(before, updated));
       ctx.autoRunner.poke();

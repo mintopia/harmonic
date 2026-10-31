@@ -83,6 +83,7 @@ const workspace = {
   workflowLabels: null,
   workflowVars: null,
   modelOptions: [{ kind: 'local', enabled: true, modelOption: { id: 'deep-dive', harness: 'claude', model: 'claude-opus-5-5', description: 'Workspace-only deep work' } }],
+  executionTargets: null,
   classifierEnabled: null,
   workflowClassifierEnabled: null,
   classifierBackend: null,
@@ -180,7 +181,7 @@ export const task = {
   verifiedRef: 'e33b4ae',
   hasCandidate: true,
   wallClockDeadline: null,
-  skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+  skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
 } satisfies Task;
 
 export const runs = [
@@ -385,7 +386,7 @@ const boardTask = (id: number, state: Task['state'], extra: Partial<Task> = {}):
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+  skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   ...extra,
 });
 export const boardTasks = [
@@ -542,7 +543,7 @@ export const epicChildren: Task[] = [
     isEpic: false,
     cost: { totalUsd: 12.4, byModel: { 'opus-4.8': 12.4 }, incomplete: false }, origin: 'mirrored', trackerRef: '140', issueWorkflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-501', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'aa11bb2', hasCandidate: true, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   },
   {
     id: 502, summary: 'Wire the Settings form to the resolver', workspaceId: 1, harness: 'claude', model: 'sonnet-4.5',
@@ -557,7 +558,7 @@ export const epicChildren: Task[] = [
     isEpic: false,
     cost: { totalUsd: 4.62, byModel: { 'sonnet-4.5': 4.62 }, incomplete: false }, origin: 'mirrored', trackerRef: '141', issueWorkflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-502', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'bb22cc3', hasCandidate: true, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   },
   {
     id: 503, summary: 'Per-task override UI + inherit toggle', workspaceId: 1, harness: 'codex', model: 'gpt-5.1',
@@ -572,7 +573,7 @@ export const epicChildren: Task[] = [
     isEpic: false,
     cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false }, origin: 'mirrored', trackerRef: '142', issueWorkflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
-    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   },
   {
     id: 504, summary: 'Backfill existing Workspaces onto the new resolver', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
@@ -588,7 +589,7 @@ export const epicChildren: Task[] = [
     isEpic: false,
     cost: { totalUsd: 6.26, byModel: { 'opus-4.8': 6.26 }, incomplete: false }, origin: 'mirrored', trackerRef: 'PROJ-143', issueWorkflow: 'implement',
     wayfinderType: null, mapRef: '166', url: 'https://example.atlassian.net/browse/PROJ-143', mapTitle: null, trackerLabel: 'Jira', branch: 'harmonic/task-504', stat: null, runStartedAt: null, toolCount: null,
-    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', hasCandidate: true, wallClockDeadline: null, skipReason: null, routing: null, classifier: null, modelOptionOverrides: [],
+    attemptId: null, currentStep: null, contextTokens: null, contextWindow: null, verifiedRef: 'cc33dd4', hasCandidate: true, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   },
 ];
 
