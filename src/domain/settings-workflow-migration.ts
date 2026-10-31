@@ -27,7 +27,7 @@ import { resolveVars, workspaceVarsFor } from './workflow-vars.js';
 
 export const SETTINGS_MIGRATION_MARKER = 'migration.settings-to-workflows';
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 600;
-const DEFAULT_CRITIC_TIMEOUT_SECONDS = 300;
+export const DEFAULT_CRITIC_TIMEOUT_SECONDS = 300;
 const IN_FLIGHT_STATES = ['working', 'paused', 'escalated'] as const;
 
 export class UnconvertibleSettingError extends Error {
@@ -102,8 +102,22 @@ const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 const quote = (word: string): string => (SAFE_WORD.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`);
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-function refuseExpressions(text: string, setting: string): void {
+export function refuseExpressions(text: string, setting: string): void {
   if (text.includes('${{')) throw new UnconvertibleSettingError(setting, 'its text contains "${{", which a workflow would evaluate');
+}
+
+export function commandRunLine(command: VerificationCommand, label: string): string {
+  if (command.timeoutSeconds !== DEFAULT_COMMAND_TIMEOUT_SECONDS) {
+    throw new UnconvertibleSettingError(`${label}.timeoutSeconds`, `it is ${command.timeoutSeconds} seconds and a workflow step times out after ${DEFAULT_COMMAND_TIMEOUT_SECONDS}`);
+  }
+  const env = Object.entries(command.env).map(([key, value]) => {
+    if (!ENV_NAME.test(key)) throw new UnconvertibleSettingError(`${label}.env`, `${key} is not a valid environment variable name`);
+    return `${key}=${quote(value)}`;
+  });
+  const argv = [command.command, ...command.args].map(quote).join(' ');
+  refuseExpressions(argv + env.join(' '), label);
+  const body = env.length > 0 ? `env ${env.join(' ')} ${argv}` : argv;
+  return command.cwd ? `cd ${quote(command.cwd)} && ${body}` : body;
 }
 
 class ScopePlanner {
@@ -165,17 +179,7 @@ class ScopePlanner {
   }
 
   private commandLine(command: VerificationCommand, path: string): string {
-    if (command.timeoutSeconds !== DEFAULT_COMMAND_TIMEOUT_SECONDS) {
-      throw new UnconvertibleSettingError(this.name(`${path}.timeoutSeconds`), `it is ${command.timeoutSeconds} seconds and a workflow step times out after ${DEFAULT_COMMAND_TIMEOUT_SECONDS}`);
-    }
-    const env = Object.entries(command.env).map(([key, value]) => {
-      if (!ENV_NAME.test(key)) throw new UnconvertibleSettingError(this.name(`${path}.env`), `${key} is not a valid environment variable name`);
-      return `${key}=${quote(value)}`;
-    });
-    const argv = [command.command, ...command.args].map(quote).join(' ');
-    refuseExpressions(argv + env.join(' '), this.name(path));
-    const body = env.length > 0 ? `env ${env.join(' ')} ${argv}` : argv;
-    return command.cwd ? `cd ${quote(command.cwd)} && ${body}` : body;
+    return commandRunLine(command, this.name(path));
   }
 
   private criticStep(critic: TaskVerificationCritic, index: number, path: string, id: string, codePrefix: string): Record<string, unknown> {
@@ -268,9 +272,9 @@ function refuseDroppedOverrides(workspace: WorkspaceRow, own: ScopeSettings, glo
   }
 }
 
-function workflowNameFor(workspace: WorkspaceRow, taken: Set<string>): string {
+export function workflowNameFor(workspace: WorkspaceRow, taken: Set<string>, prefix = 'migrated'): string {
   const slug = workspace.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50).replace(/-+$/, '');
-  const preferred = `migrated-${slug === '' ? `workspace-${workspace.id}` : slug}`;
+  const preferred = `${prefix}-${slug === '' ? `workspace-${workspace.id}` : slug}`;
   const name = taken.has(preferred) ? `${preferred}-${workspace.id}` : preferred;
   if (!WORKFLOW_NAME_PATTERN.test(name) || taken.has(name)) throw new UnconvertibleSettingError(`Workspace "${workspace.name}"`, `no unique workflow name can be derived from it`);
   taken.add(name);
@@ -307,13 +311,13 @@ export interface SettingsMigrationDeps {
   onWorkspaceDefaultWritten?: (workspaceId: number) => Promise<void>;
 }
 
-async function writePrompt(prompts: PromptLibrary, entry: PlannedPrompt): Promise<void> {
+export async function writePrompt(prompts: PromptLibrary, entry: PlannedPrompt): Promise<void> {
   if (prompts.operatorText(entry.code) === entry.text) return;
   if (prompts.hasOperatorEntry(entry.code)) await prompts.update(entry.code, entry.description, entry.text);
   else await prompts.create(entry.code, entry.description, entry.text);
 }
 
-async function writeWorkflow(library: WorkflowLibrary, workflow: PlannedWorkflow): Promise<void> {
+export async function writeWorkflow(library: WorkflowLibrary, workflow: PlannedWorkflow): Promise<void> {
   const existing = library.list().find((entry) => entry.name === workflow.name && !entry.bundled);
   if (existing?.text !== workflow.text) await library.save(workflow.name, workflow.text);
 }

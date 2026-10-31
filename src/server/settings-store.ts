@@ -412,6 +412,13 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.persist();
   }
 
+  async setDefaultEpicWorkflow(name: string): Promise<void> {
+    this.reloadIfChanged();
+    this.global = mergeConfig(this.global, { defaults: { epicWorkflow: name } });
+    this.globalPatch = deepDiff(baselineConfig(), this.global) ?? {};
+    this.persist();
+  }
+
   async replaceGlobal(config: AppConfig): Promise<AppConfig> {
     this.reloadIfChanged();
     this.global = assertCriticModels(appConfigSchema.parse(restoreConfigSecrets(config, this.global)));
