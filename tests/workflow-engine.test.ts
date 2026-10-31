@@ -37,7 +37,7 @@ describe('WorkflowEngine', () => {
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       commandById: async (_task, id) => (commands[id] ? { id, env: {}, ...commands[id] } : undefined),
-      secretValues: async () => secretValues,
+      secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
       agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text },
@@ -121,6 +121,45 @@ describe('WorkflowEngine', () => {
     expect(JSON.parse(row!.outputs!).stdout).toBe('token=***\n');
     expect(escalations[0]).not.toContain('hunter2-secret');
     expect(escalations[0]).toContain('token=***');
+  });
+
+  it('skips a step whose if: is false and runs one whose if: is true', async () => {
+    const { task, run } = await startTask(flow("  - id: a\n    run: echo first\n  - id: skipped\n    run: echo no\n    if: ${{ steps.a.outcome != 'pass' }}\n  - id: ran\n    run: echo yes\n    if: ${{ steps.a.outcome == 'pass' && steps.skipped.outcome == 'skipped' }}\n"));
+    await engine().run(task, run);
+    expect((await stepRows(task.id)).map((row) => [row.stepId, row.outcome])).toEqual([['a', 'pass'], ['skipped', 'skipped'], ['ran', 'pass']]);
+    expect(completions).toBe(1);
+  });
+
+  it('does not rerun a skipped step on resume', async () => {
+    const { task, run } = await startTask(flow('  - id: s\n    run: echo no\n    if: "false"\n  - id: bad\n    run: exit 1\n'));
+    await engine().run(task, run);
+    await engine().run(task, run);
+    expect((await stepRows(task.id)).filter((row) => row.stepId === 's')).toHaveLength(1);
+  });
+
+  it('reads vars, ticket and attempt context in run: text', async () => {
+    const { task, run } = await startTask('name: flow\ndescription: test\nvars:\n  word: hi\nsteps:\n  - id: ctx\n    run: echo ${{ vars.word }}-${{ attempt.number }}\n');
+    await engine().run(task, run);
+    expect(JSON.parse((await stepRows(task.id))[0]!.outputs!).stdout).toBe(`hi-${run.number}\n`);
+  });
+
+  it('masks a referenced secret echoed by a run step in outputs and the escalation', async () => {
+    secretValues = ['hunter2-secret'];
+    const { task, run } = await startTask(flow('  - id: leak\n    run: echo token=${{ secrets.S0 }}; exit 1\n'));
+    await engine().run(task, run);
+    const [row] = await stepRows(task.id);
+    expect(row!.outputs).not.toContain('hunter2-secret');
+    expect(JSON.parse(row!.outputs!).stdout).toBe('token=***\n');
+    expect(escalations[0]).not.toContain('hunter2-secret');
+  });
+
+  it('does not run shell metacharacters that arrive through an expression value', async () => {
+    const marker = join(dir, 'pwned');
+    const { task, run } = await startTask(flow(`  - id: safe\n    run: echo \${{ ticket.title }}\n`));
+    const hostile = { ...task, trackerTitle: `$(touch ${marker}); \`touch ${marker}\`` } as TaskRow;
+    await engine().run(hostile, run);
+    expect(existsSync(marker)).toBe(false);
+    expect(JSON.parse((await stepRows(task.id))[0]!.outputs!).stdout).toContain('touch');
   });
 
   it('runs a configured verification command by id', async () => {

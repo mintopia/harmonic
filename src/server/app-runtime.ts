@@ -428,7 +428,7 @@ export async function createRuntime(deps: {
     agentMessages: deps.stores.agentMessages,
     archive,
     promptLibrary: deps.promptLibrary,
-    workflows: { library: deps.workflowLibrary, secrets },
+    workflows: { library: deps.workflowLibrary, secrets, workspaceName: async (workspaceId) => (await workspaces.get(workspaceId)).name },
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);

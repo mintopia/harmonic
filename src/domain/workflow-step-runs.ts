@@ -51,10 +51,10 @@ export class WorkflowStepRunStore {
     return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.taskId, taskId)).orderBy(asc(workflowStepRuns.id)).all());
   }
 
-  /** Step ids whose latest run under `workflowRef` finished with `pass`; a run left `running` counts as unexecuted. */
-  async passedStepIds(taskId: number, workflowRef: string): Promise<Set<string>> {
+  /** The latest run of each step under `workflowRef`, by step id; a run left `running` has a null outcome. */
+  async latestByStep(taskId: number, workflowRef: string): Promise<Map<string, WorkflowStepRunRow>> {
     const latest = new Map<string, WorkflowStepRunRow>();
     for (const row of await this.listForTask(taskId)) if (row.workflowRef === workflowRef) latest.set(row.stepId, row);
-    return new Set([...latest.values()].filter((row) => row.outcome === 'pass').map((row) => row.stepId));
+    return latest;
   }
 }

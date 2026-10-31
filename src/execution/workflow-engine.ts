@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AppConfig, VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
+import { evaluateCondition, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
 import { agentStepWith, parseWorkflow, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
@@ -13,7 +14,6 @@ import type { CriticHarnessDrive } from '../verification/critic.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
-import { splitTitleBody } from './prompt-template.js';
 
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
 export const UNCOMMITTED_AFTER_AGENT = 'uncommitted changes remain after the agent turn';
@@ -27,7 +27,8 @@ export interface WorkflowEngineDeps {
   stepRuns: WorkflowStepRunStore;
   spawn: CommandSpawn;
   commandById: (task: TaskRow, id: string) => Promise<VerificationCommand | undefined>;
-  secretValues: (task: TaskRow) => Promise<string[]>;
+  secrets: (task: TaskRow) => Promise<Record<string, string>>;
+  workspaceName?: (task: TaskRow) => Promise<string>;
   cwdFor: (task: TaskRow) => string;
   baseBranchFor: (task: TaskRow) => Promise<string>;
   mergeBranch?: (task: TaskRow, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
@@ -61,18 +62,14 @@ interface AgentRunState {
   session?: { key: string; id: string };
 }
 
-interface StepRecord {
-  outcome: WorkflowStepOutcome;
-  outputs: WorkflowStepOutputs;
-}
-
 interface RunContext {
   task: TaskRow;
   run: AttemptRow;
   ref: string;
   secrets: string[];
-  passed: Set<string>;
-  results: Map<string, StepRecord>;
+  latest: Map<string, { outcome: WorkflowStepOutcome | null }>;
+  stepsContext: Record<string, Value>;
+  context: ExpressionContext;
   agentState: AgentRunState;
 }
 
@@ -96,10 +93,22 @@ export class WorkflowEngine {
     const ref = task.workflowRef!;
     const { name, version } = parseWorkflowRef(ref);
     const workflow = parseWorkflow((await this.deps.library.getVersion(name, version)).text);
-    const passed = await this.deps.stepRuns.passedStepIds(task.id, ref);
-    const secrets = await this.deps.secretValues(task);
-    const results = await this.priorResults(task.id, ref);
-    const ctx: RunContext = { task, run, ref, secrets, passed, results, agentState: {} };
+    const latest = await this.deps.stepRuns.latestByStep(task.id, ref);
+    const secretMap = await this.deps.secrets(task);
+    const stepsContext: Record<string, Value> = {};
+    for (const [stepId, prior] of latest) {
+      if (prior.outcome === null) continue;
+      stepsContext[stepId] = { outcome: prior.outcome, outputs: prior.outputs ? (JSON.parse(prior.outputs) as Value) : {} };
+    }
+    const context: ExpressionContext = {
+      steps: stepsContext,
+      ticket: { title: task.trackerTitle ?? task.prompt, body: task.trackerBody ?? '', labels: task.trackerLabels ?? [], ref: task.trackerRef ?? '' },
+      attempt: { number: run.number, failureReason: run.feedback ?? task.feedback ?? '' },
+      workspace: { id: task.workspaceId ?? null, name: (await this.deps.workspaceName?.(task)) ?? '' },
+      vars: workflow.vars,
+      secrets: secretMap,
+    };
+    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: {} };
     if (!(await this.runSteps(ctx, workflow.steps, 0, true))) return;
     await this.deps.complete(task, run);
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, false);
@@ -107,18 +116,30 @@ export class WorkflowEngine {
 
   /** Runs `steps`; with `escalateOnFailure` a non-pass outcome escalates the Task and stops, otherwise the failure is recorded and the remaining steps still run. Returns whether the Task may continue. */
   private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, escalateOnFailure: boolean): Promise<boolean> {
-    const { task, run, ref, secrets, passed, results } = ctx;
+    const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
+    const mask = (text: string): string => maskSecrets(text, secrets);
     for (const [index, step] of steps.entries()) {
-      if (passed.has(step.id)) continue;
+      const prior = latest.get(step.id)?.outcome;
+      if (prior === 'pass' || prior === 'skipped') continue;
       const action = step.run !== undefined ? 'run' : step.uses!;
       const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position: firstPosition + index, action });
       this.deps.onStepChanged?.(task.id);
-      const result = step.uses === 'agent' ? await this.executeAgent(task, step, row.id, secrets, ctx.agentState) : await this.execute(task, run, step, secrets, results);
+      let result: StepResult;
+      try {
+        if (step.if !== undefined && !evaluateCondition(step.if, context)) {
+          result = { outcome: 'skipped', summary: `if: ${step.if.trim()} was false`, stdout: '', exitCode: null, output: '' };
+        } else {
+          const [resolved, env] = resolveStep(step, context);
+          result = resolved.uses === 'agent' ? await this.executeAgent(task, resolved, row.id, secrets, ctx.agentState) : await this.execute(task, run, resolved, env, secrets);
+        }
+      } catch (error) {
+        result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
+      }
       const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
       await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
-      results.set(step.id, { outcome: result.outcome, outputs });
+      stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
       this.deps.onStepChanged?.(task.id);
-      if (result.outcome !== 'pass') {
+      if (result.outcome !== 'pass' && result.outcome !== 'skipped') {
         if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
         if (!escalateOnFailure) continue;
         const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
@@ -127,14 +148,6 @@ export class WorkflowEngine {
       }
     }
     return true;
-  }
-
-  private async priorResults(taskId: number, ref: string): Promise<Map<string, StepRecord>> {
-    const results = new Map<string, StepRecord>();
-    for (const row of await this.deps.stepRuns.listForTask(taskId)) {
-      if (row.workflowRef === ref && row.outcome !== null && row.outputs !== null) results.set(row.stepId, { outcome: row.outcome, outputs: JSON.parse(row.outputs) as WorkflowStepOutputs });
-    }
-    return results;
   }
 
   private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
@@ -222,7 +235,7 @@ export class WorkflowEngine {
     }
   }
 
-  private async postMergeCheck(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, secrets: string[], results: Map<string, StepRecord>): Promise<StepResult> {
+  private async postMergeCheck(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const script = step.with?.run;
     if (typeof script !== 'string' || script === '') return { outcome: 'inconclusive', summary: 'post-merge-check needs with.run', stdout: '', exitCode: null, output: '' };
@@ -231,7 +244,7 @@ export class WorkflowEngine {
     const checkout = join(scratch, 'base');
     try {
       await Git.addDetachedWorktree(task.workingDir, checkout, base);
-      const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', interpolate(script, task, results)], env: {}, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
+      const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', script], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
       const result = await this.deps.spawn.run({ command, cwd: checkout, timeoutMs: this.deps.runTimeoutMs ?? command.timeoutSeconds * 1000, outputCap: OUTPUT_CHAR_CAP });
       const verdict = exitCodeToVerdict(result);
       return { outcome: verdict.verdict, summary: mask(verdict.summary), stdout: mask(result.stdout), exitCode: result.code, output: mask(result.output) };
@@ -249,9 +262,9 @@ export class WorkflowEngine {
     return done('pass', removed ? `retired ${worktree}${run.branch ? ` and branch ${run.branch}` : ''}` : 'nothing to retire');
   }
 
-  private async trackerAction(task: TaskRow, step: WorkflowStepDefinition, results: Map<string, StepRecord>): Promise<StepResult> {
+  private async trackerAction(task: TaskRow, step: WorkflowStepDefinition): Promise<StepResult> {
     const done = (outcome: WorkflowStepOutcome, summary: string): StepResult => ({ outcome, summary, stdout: '', exitCode: null, output: '' });
-    const text = typeof step.with?.body === 'string' ? interpolate(step.with.body, task, results) : '';
+    const text = typeof step.with?.body === 'string' ? step.with.body : '';
     if (step.uses === 'comment') {
       if (text === '') return done('inconclusive', 'comment needs with.body');
       if (!this.deps.commentOnTicket) return done('inconclusive', 'comment is not available');
@@ -262,13 +275,13 @@ export class WorkflowEngine {
     return (await this.deps.closeTicket(task, text)) ? done('pass', 'closed the ticket') : done('fail', 'the tracker refused to close the ticket');
   }
 
-  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, secrets: string[], results: Map<string, StepRecord>): Promise<StepResult> {
+  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await this.rebase(task, mask);
-      if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, secrets, results);
+      if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, env, secrets);
       if (step.uses === 'cleanup') return await this.cleanup(task, run);
-      if (step.uses === 'comment' || step.uses === 'close-ticket') return await this.trackerAction(task, step, results);
+      if (step.uses === 'comment' || step.uses === 'close-ticket') return await this.trackerAction(task, step);
       if (step.uses === 'merge' || step.uses === 'open-pr' || step.uses === 'artifact') return await this.executeBranchAction(task, run, step.uses);
       if (step.run === undefined && step.uses !== 'command') {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
@@ -276,7 +289,7 @@ export class WorkflowEngine {
       const cwd = this.deps.cwdFor(task);
       let command: VerificationCommand;
       if (step.run !== undefined) {
-        command = { id: step.id, command: 'sh', args: ['-c', step.run], env: {}, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
+        command = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
       } else {
         const id = step.with?.id;
         const found = typeof id === 'string' ? await this.deps.commandById(task, id) : undefined;
@@ -306,6 +319,24 @@ export class WorkflowEngine {
   }
 }
 
+/** Expression values reach a `run:` script as env vars, never as shell text, so ticket or step output cannot inject commands. */
+function resolveStep(step: WorkflowStepDefinition, context: ExpressionContext): [WorkflowStepDefinition, Record<string, string>] {
+  const env: Record<string, string> = {};
+  const toEnv = (text: string): string =>
+    interpolate(text, context, (value) => {
+      const name = `HARMONIC_EXPR_${Object.keys(env).length}`;
+      env[name] = value;
+      return `"\${${name}}"`;
+    });
+  const withValues =
+    step.with &&
+    Object.fromEntries(
+      Object.entries(step.with).map(([key, value]) => [key, typeof value !== 'string' ? value : step.uses === 'post-merge-check' && key === 'run' ? toEnv(value) : interpolate(value, context)]),
+    );
+  const run = step.run === undefined ? undefined : toEnv(step.run);
+  return [{ ...step, run, with: withValues }, env];
+}
+
 async function markGit(cwd: string): Promise<GitMark> {
   const branch = await Git.currentBranch(cwd);
   return {
@@ -319,25 +350,4 @@ async function markGit(cwd: string): Promise<GitMark> {
 function pullRequestNumber(url: string): number | null {
   const match = /\/(\d+)\/?$/.exec(new URL(url).pathname);
   return match ? Number(match[1]) : null;
-}
-
-/** Fills `${{ ticket.<field> }}` and `${{ steps.<id>.outcome | steps.<id>.outputs.<key> }}`; anything unknown becomes empty. */
-function interpolate(template: string, task: TaskRow, results: Map<string, StepRecord>): string {
-  return template.replace(/\$\{\{\s*([\w.-]+)\s*\}\}/g, (_match, path: string) => {
-    const [root, ...rest] = path.split('.');
-    if (root === 'ticket') {
-      const field = rest[0];
-      if (field === 'ref') return task.trackerRef == null ? '' : String(task.trackerRef);
-      if (field === 'title') return splitTitleBody(task.prompt).title;
-      return '';
-    }
-    if (root === 'steps' && rest.length >= 2) {
-      const record = results.get(rest[0]!);
-      if (!record) return '';
-      if (rest[1] === 'outcome') return record.outcome;
-      const value = rest[1] === 'outputs' ? (record.outputs as unknown as Record<string, unknown>)[rest[2] ?? ''] : undefined;
-      return value == null ? '' : String(value);
-    }
-    return '';
-  });
 }
