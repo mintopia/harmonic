@@ -1,25 +1,9 @@
 import { findInterpolations, interpolate, type ExpressionContext } from '../domain/workflow-expression.js';
 import type { PromptFragments } from '../domain/prompt-fragments.js';
 import type { ClassifierInput } from '../domain/route-classifier.js';
-import { appendFeedback, codeIndexRepoGuidance, expandFragments, fillTemplate, renderFragment, type DriveFields } from './prompt-template.js';
+import { codeIndexRepoGuidance, expandFragments, fillTemplate, renderFragment, type DriveFields } from './prompt-template.js';
 
 const harnessLabel = (harness: string): string => harness.charAt(0).toUpperCase() + harness.slice(1);
-
-const replaceTaskId = (text: string, taskId: number | string): string => text.replace(/\{taskId\}/g, String(taskId));
-
-export function composeDriveOpening(
-  drive: { prompt: string; unattendedReminder: string },
-  fields: DriveFields,
-  feedback?: string | null,
-): string {
-  return `${appendFeedback(fillTemplate(drive.prompt, fields), feedback)}\n\n${replaceTaskId(drive.unattendedReminder, fields.taskId)}`;
-}
-
-export function composeContinuePrompt(drive: { continuePrompt: string; unattendedReminder: string }, taskId: number | string): string {
-  return `${replaceTaskId(drive.continuePrompt, taskId)}\n\n${replaceTaskId(drive.unattendedReminder, taskId)}`;
-}
-
-export const composeCommitNudge = (template: string, fragments: PromptFragments): string => expandFragments(template, fragments);
 
 export const composePauseMessage = (template: string, fragments: PromptFragments): string => expandFragments(template, fragments);
 
@@ -49,7 +33,6 @@ export function composePeerContext(held: readonly PeerEntry[], fragments: Prompt
 }
 
 export interface AttemptPromptInput {
-  /** `promptForTask(...)` or `composeDriveOpening(...)`. */
   opening: string;
   seed: string | undefined;
   /** `replace-all`: a steer into an already-open Attempt sends only the operator message. `append`: it follows the opening. */
@@ -61,35 +44,6 @@ export interface AttemptPromptInput {
   peerText: string;
   rebaseConflict: boolean;
   codeIndexRepoId: string | null;
-}
-
-export interface AttemptContextFacts {
-  seeded: boolean;
-  healing: boolean;
-  /** The Attempt already has an open Session that this turn continues. */
-  continuesOpenAttempt: boolean;
-  /** No Session is open yet, so a seeded turn starts a fresh one. */
-  freshSession: boolean;
-  /** The Task chose to continue from a condensed prior Session. */
-  condensedContinuation: boolean;
-}
-
-export type PriorContextSlot = 'freshSessionContext' | 'condensed';
-
-/** Decides the seed mode and which {@link AttemptPromptInput} field the prior-session context fills, if any. */
-export function planAttemptContext(facts: AttemptContextFacts): { seedMode: AttemptPromptInput['seedMode']; priorSlot: PriorContextSlot | null } {
-  const seedMode = facts.continuesOpenAttempt ? 'replace-all' : 'append';
-  if (facts.seeded && !facts.healing) return { seedMode, priorSlot: facts.freshSession ? 'freshSessionContext' : null };
-  if (facts.healing || facts.condensedContinuation) return { seedMode, priorSlot: 'condensed' };
-  return { seedMode, priorSlot: null };
-}
-
-export function placePriorContext(
-  slot: PriorContextSlot | null,
-  prior: string | null,
-): Pick<AttemptPromptInput, 'freshSessionContext' | 'condensed'> {
-  const text = prior || null;
-  return { freshSessionContext: slot === 'freshSessionContext' ? text : null, condensed: slot === 'condensed' ? text : null };
 }
 
 export function composeAttemptPrompt(input: AttemptPromptInput, fragments: PromptFragments): string {

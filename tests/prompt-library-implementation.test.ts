@@ -5,19 +5,13 @@ import { join } from 'node:path';
 import { loadBaselineConfig, type AppConfig } from '../src/config.js';
 import { changedPromptCodes, convertEditedPrompts, namedPromptCodes, syncEditedPrompts, withLibraryPrompts } from '../src/domain/prompt-library-sources.js';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
-import { resolveCommitNudge, resolveDrive, resolvePauseMessage, resolveTaskPrompt } from '../src/domain/setting-override.js';
+import { resolvePauseMessage } from '../src/domain/setting-override.js';
 import { PROMPT_ANATOMIES, type AnatomyNode } from '../src/domain/prompt-anatomy.js';
-import { composeContinuePrompt, composeDriveOpening } from '../src/execution/prompt-assembly.js';
-
-const fields = { taskId: '7', skill: 'review', ref: '#12', url: 'https://example.test/12', title: 'Fix it', description: 'Body' };
 
 function renderAll(config: AppConfig) {
-  const drive = resolveDrive(null, config);
   return {
-    opening: composeDriveOpening(drive, fields as never, 'last attempt failed'),
-    continue: composeContinuePrompt(drive, 7),
-    task: resolveTaskPrompt(null, config),
-    commit: resolveCommitNudge(null, config),
+    drive: config.drive,
+    task: config.taskPrompt,
     pause: resolvePauseMessage(null, config),
     fragments: config.promptFragments,
   };
@@ -59,7 +53,7 @@ describe('implementation and nudge prompts from the Prompt Library (#904)', () =
     expect(await convertEditedPrompts(second, edited())).toEqual([]);
     const served = renderAll(withLibraryPrompts(loadBaselineConfig(), second));
     expect(served).toEqual(renderAll(edited()));
-    expect(served.continue).toContain('EDITED CONTINUE 7');
+    expect(served.drive.continuePrompt).toBe('EDITED CONTINUE {taskId}');
   });
 
   it('serves a Library edit made after conversion, ahead of the Settings text', async () => {

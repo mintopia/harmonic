@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { baselineConfig, verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
-import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
+import { resolveVerifiers } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
 
@@ -285,22 +285,10 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(cleared.driveContinueAttempts).toBe(3);
   });
 
-  it('keeps a driveContinueAttempts 0 override distinct from inherit, and resolveDrive reads it (#339)', async () => {
+  it('keeps a driveContinueAttempts 0 override distinct from inherit (#339)', async () => {
     const ws = (await workspaces.list())[0]!;
     const zero = await workspaces.update(ws.id, { driveContinueAttempts: 0 });
     expect(zero.driveContinueAttempts).toBe(0);
-    const resolved = resolveDrive(zero, {
-      drive: {
-        prompt: 'g',
-        unattendedReminder: 'g',
-        continuePrompt: 'g',
-        mergeFate: 'auto-merge',
-        continueAttempts: 1,
-      },
-      promptFragments: baselineConfig().promptFragments,
-    } as any);
-    expect(resolved.continueAttempts).toBe(0);
-    expect(resolved.mergeFate).toBe('auto-merge');
   });
 
   it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {

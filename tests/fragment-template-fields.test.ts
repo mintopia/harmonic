@@ -3,16 +3,13 @@ import { appConfigSchema, baselineConfig, type AppConfig } from '../src/config.j
 import { FRAGMENT_TEMPLATE_FIELDS, promptFragmentOverrideKey, type FragmentTemplateField } from '../src/domain/prompt-fragments.js';
 import { updateWorkspaceInputSchema, workspaceOverridesSchema } from '../src/domain/workspaces.js';
 import {
-  resolveCommitNudge,
-  resolveDrive,
   resolveMergePrompts,
   resolvePauseMessage,
   resolvePromptFragments,
-  resolveTaskPrompt,
   resolveVerifiers,
 } from '../src/domain/setting-override.js';
-import { buildCriticPrompt, composeContinuePrompt, composeDriveOpening, renderConflictPrompt } from '../src/execution/prompt-assembly.js';
-import { driveFields, promptForTask } from '../src/execution/prompt-template.js';
+import { buildCriticPrompt, renderConflictPrompt } from '../src/execution/prompt-assembly.js';
+import { expandFragments, promptForTask } from '../src/execution/prompt-template.js';
 import type { TaskRow } from '../src/db/schema.js';
 
 const FRAGMENT = 'conflictResolution';
@@ -113,7 +110,11 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
   const ws = wsOverrides as never;
 
   const task = { id: 7, prompt: 'Title\n\nBody', workingDir: '/w', harness: 'claude', model: 'm', workspaceId: 1, origin: 'mirrored', trackerRef: '5', mapRef: null, feedback: null, wayfinderType: null } as unknown as TaskRow;
-  const drive = (scope: 'G' | 'W') => resolveDrive(scope === 'W' ? (ws as never) : undefined, globalConfig);
+  const expanded = (scope: 'G' | 'W', wsKey: string, global: string): string => {
+    const scoped = scope === 'W' ? (ws as never) : undefined;
+    const template = (scoped as Record<string, string> | undefined)?.[wsKey] ?? global;
+    return expandFragments(template, resolvePromptFragments(scoped, globalConfig));
+  };
   const critic = (scope: 'G' | 'W', pick: (c: ReturnType<typeof resolveVerifiers>['task']['preMerge']['critics'][number]) => string, stage: 'task.preMerge' | 'task.postMerge' = 'task.preMerge') => {
     const resolved = resolveVerifiers(scope === 'W' ? (ws as never) : { taskPreMergeCritics: null, taskPostMergeCritics: null, epicPreMergeCritics: null, taskPreMergeCommands: null, taskPostMergeCommands: null, epicPreMergeCommands: null }, globalConfig);
     const critics = stage === 'task.preMerge' ? resolved.task.preMerge.critics : resolved.task.postMerge.critics;
@@ -126,11 +127,11 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
   };
 
   const runtime: Record<string, (scope: 'G' | 'W') => Promise<string> | string> = {
-    taskPrompt: (s) => promptForTask(task as never, resolveTaskPrompt(s === 'W' ? (ws as never) : undefined, globalConfig)),
-    'drive.prompt': (s) => composeDriveOpening(drive(s), driveFields(task, () => null), task.feedback),
-    'drive.unattendedReminder': (s) => composeDriveOpening(drive(s), driveFields(task, () => null), task.feedback),
-    'drive.continuePrompt': (s) => composeContinuePrompt(drive(s), task.id),
-    'drive.commitNudge': (s) => resolveCommitNudge(s === 'W' ? (ws as never) : undefined, globalConfig),
+    taskPrompt: (s) => promptForTask(task as never, expanded(s, 'taskPrompt', globalConfig.taskPrompt)),
+    'drive.prompt': (s) => expanded(s, 'drivePrompt', globalConfig.drive.prompt),
+    'drive.unattendedReminder': (s) => expanded(s, 'driveUnattendedReminder', globalConfig.drive.unattendedReminder),
+    'drive.continuePrompt': (s) => expanded(s, 'driveContinuePrompt', globalConfig.drive.continuePrompt),
+    'drive.commitNudge': (s) => expanded(s, 'driveCommitNudge', globalConfig.drive.commitNudge),
     pauseMessage: (s) => resolvePauseMessage(s === 'W' ? (ws as never) : undefined, globalConfig),
     'merge.conflictPrompt': (s) => {
       const merge = resolveMergePrompts(s === 'W' ? (ws as never) : undefined, globalConfig);
@@ -171,14 +172,5 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
       expect(scoped).toContain(`W:${name}<WS-FRAG>`);
       expect(scoped).not.toContain('{fragment.');
     }
-  });
-
-  it('expands the unattended reminder in the drive prompt and the continue prompt', async () => {
-    expect(await runtime['drive.prompt']!('W')).toContain('W:drive.unattendedReminder<WS-FRAG>');
-    expect(await runtime['drive.continuePrompt']!('W')).toContain('W:drive.unattendedReminder<WS-FRAG>');
-  });
-
-  it('resolves the drive templates directly, fragment-expanded', () => {
-    expect(resolveDrive(ws, globalConfig).prompt).toBe('W:drive.prompt<WS-FRAG>');
   });
 });
