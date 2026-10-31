@@ -1,6 +1,9 @@
 /* eslint-disable */
 import type { TrackerRef } from '../types.js';
 import * as f from './fixtures';
+
+export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
+export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security' };
 import { agentMessageThreads } from './agent-message-fixtures';
 import { conversationDetail, conversationEventsFixture, conversationList, permissionRulesFixture } from './conversation-fixtures';
 import type { api as RealApi, ResolvedPromptOwner } from '../api';
@@ -302,7 +305,7 @@ export const api: typeof RealApi = {
   revertConfig: () => ok(f.config),
   tasks: (opts?: { workspaceId?: number; state?: 'open'; parent?: TrackerRef; limit?: number; offset?: number }) =>
     opts?.parent !== undefined ? ok({ tasks: f.epicChildren, total: f.epicChildren.length }) : ok({ tasks: [f.task], total: 1 }),
-  task: (_id: number) => ok(f.task),
+  task: (_id: number) => ok(workflowStory ? { ...f.task, ...workflowTaskFields } : f.task),
   notifications: (_opts?: { workspaceId?: number; limit?: number; before?: number }) => ok({ items: [], unreadCount: 0 }),
   markNotificationRead: (id: number) =>
     ok({ notification: { id, severity: 'failure' as const, title: '', detail: null, workspaceId: null, taskId: null, createdAt: 0, readAt: 0, read: true } }),
@@ -316,8 +319,19 @@ export const api: typeof RealApi = {
   timeline: (_workspaceId: number | undefined, from: number, to: number) =>
     ok({ attempts: timelineSpans().filter((s) => s.startedAt <= to && (s.endedAt ?? Date.now()) >= from), from, to }),
   epicStats: (_epicRef: TrackerRef, _workspaceId: number) => ok(f.epicStats),
-  workflows: () => ok({ workflows: [], total: 0 }),
-  workflowSteps: (_id: number) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] }),
+  workflows: () =>
+    ok({
+      workflows: [
+        { name: 'Migrated (global)', description: '', bundled: false, version: 2 },
+        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1 },
+        { name: 'Security review on label', description: '', bundled: false, version: 4 },
+        { name: 'Docs only', description: '', bundled: false, version: 2 },
+      ],
+      total: 4,
+    }),
+  workflowSteps: (_id: number) => ok(workflowStory
+    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, steps: [{ stepId: 'implement', action: 'agent', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null }, startedAt: 1, endedAt: 2 }] }
+    : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),
   workspaceFiles: (_workspaceId: number, path = '', offset = 0) => {

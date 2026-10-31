@@ -1991,6 +1991,18 @@
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -2225,6 +2237,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -2448,6 +2461,18 @@
               }
             ],
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
           "workflowRef": {
@@ -2888,6 +2913,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3127,6 +3153,18 @@
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -3564,6 +3602,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3786,6 +3825,18 @@
               }
             ],
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
           "workflowRef": {
@@ -4227,6 +4278,7 @@
           "origin",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -7126,6 +7178,89 @@
             ],
             "example": null
           },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "workflowLabels": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "workflowLabel": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "bug"
+                            },
+                            "workflow": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "implement"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "workflow"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "workflowLabel"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7865,6 +8000,8 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "workflow",
+          "workflowLabels",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -8394,6 +8531,18 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 2
+              },
+              "workflow": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "implement"
               }
             }
           },
@@ -8433,6 +8582,34 @@
                 "label": "reasoning",
                 "harness": "claude",
                 "model": "claude-opus-5-5"
+              }
+            ]
+          },
+          "workflowLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "bug"
+                },
+                "workflow": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "implement"
+                }
+              },
+              "required": [
+                "label",
+                "workflow"
+              ]
+            },
+            "example": [
+              {
+                "label": "bug",
+                "workflow": "implement"
               }
             ]
           },
@@ -12065,6 +12242,18 @@
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -12301,6 +12490,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -12526,6 +12716,18 @@
               }
             ],
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
           "workflowRef": {
@@ -12969,6 +13171,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -13210,6 +13413,18 @@
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -13650,6 +13865,7 @@
           "trackerRef",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -13874,6 +14090,18 @@
               }
             ],
             "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
+          "workflowLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
           "workflowRef": {
@@ -14318,6 +14546,7 @@
           "origin",
           "issueWorkflow",
           "workflowChosen",
+          "workflowLabel",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -17313,6 +17542,92 @@
             ],
             "example": null
           },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "workflowLabels": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "global"
+                        },
+                        "ref": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "workflowLabel": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "bug"
+                            },
+                            "workflow": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "implement"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "workflow"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enabled",
+                        "workflowLabel"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -18059,6 +18374,8 @@
           "epicPreMergeCommands",
           "epicPreMergeCritics",
           "routingLabels",
+          "workflow",
+          "workflowLabels",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -18598,6 +18915,18 @@
                 "minimum": 0,
                 "maximum": 9007199254740991,
                 "example": 2
+              },
+              "workflow": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": "implement"
               }
             },
             "additionalProperties": false
@@ -18639,6 +18968,35 @@
                 "label": "reasoning",
                 "harness": "claude",
                 "model": "claude-opus-5-5"
+              }
+            ]
+          },
+          "workflowLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "bug"
+                },
+                "workflow": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "implement"
+                }
+              },
+              "required": [
+                "label",
+                "workflow"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "label": "bug",
+                "workflow": "implement"
               }
             ]
           },
@@ -20985,6 +21343,20 @@
                       "description": "How many steps the workflow's `cleanup:` list runs on done and on Close.",
                       "example": 1
                     },
+                    "latestVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The current Library version of the pinned workflow, which applies from the next Retry; null without a pin or once the workflow left the Library.",
+                      "example": 5
+                    },
                     "steps": {
                       "type": "array",
                       "items": {
@@ -21124,6 +21496,7 @@
                     "workflowChosen",
                     "outline",
                     "cleanupCount",
+                    "latestVersion",
                     "steps"
                   ],
                   "additionalProperties": false,
@@ -25480,6 +25853,93 @@
                       }
                     ]
                   },
+                  "workflow": {
+                    "example": "implement",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflowLabels": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "global"
+                                  ]
+                                },
+                                "ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "ref",
+                                "enabled"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "local"
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "workflowLabel": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "bug"
+                                    },
+                                    "workflow": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "example": "implement"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "workflow"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enabled",
+                                "workflowLabel"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "guardrailBudget": {
                     "anyOf": [
                       {
@@ -28645,13 +29105,26 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 2
+                        },
+                        "workflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
                         "harness",
                         "isolationMode",
                         "priority",
-                        "conflictResolveTurns"
+                        "conflictResolveTurns",
+                        "workflow"
                       ],
                       "additionalProperties": false
                     },
@@ -28692,6 +29165,35 @@
                           "label": "reasoning",
                           "harness": "claude",
                           "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
+                    "workflowLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "bug"
+                          },
+                          "workflow": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "implement"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "workflow"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "bug",
+                          "workflow": "implement"
                         }
                       ]
                     },
@@ -29748,6 +30250,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "workflowLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -30001,13 +30504,26 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 2
+                        },
+                        "workflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
                         "harness",
                         "isolationMode",
                         "priority",
-                        "conflictResolveTurns"
+                        "conflictResolveTurns",
+                        "workflow"
                       ],
                       "additionalProperties": false
                     },
@@ -30048,6 +30564,35 @@
                           "label": "reasoning",
                           "harness": "claude",
                           "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
+                    "workflowLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "bug"
+                          },
+                          "workflow": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "implement"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "workflow"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "bug",
+                          "workflow": "implement"
                         }
                       ]
                     },
@@ -31104,6 +31649,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "workflowLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -31335,13 +31881,26 @@
                         "minimum": 0,
                         "maximum": 9007199254740991,
                         "example": 2
+                      },
+                      "workflow": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
                       }
                     },
                     "required": [
                       "harness",
                       "isolationMode",
                       "priority",
-                      "conflictResolveTurns"
+                      "conflictResolveTurns",
+                      "workflow"
                     ]
                   },
                   "routingLabels": {
@@ -31380,6 +31939,34 @@
                         "label": "reasoning",
                         "harness": "claude",
                         "model": "claude-opus-5-5"
+                      }
+                    ]
+                  },
+                  "workflowLabels": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "bug"
+                        },
+                        "workflow": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "implement"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "workflow"
+                      ]
+                    },
+                    "example": [
+                      {
+                        "label": "bug",
+                        "workflow": "implement"
                       }
                     ]
                   },
@@ -32382,6 +32969,7 @@
                   "harnesses",
                   "defaults",
                   "routingLabels",
+                  "workflowLabels",
                   "chat",
                   "autoRunner",
                   "agentMessages",
@@ -32616,13 +33204,26 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 2
+                        },
+                        "workflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
                         "harness",
                         "isolationMode",
                         "priority",
-                        "conflictResolveTurns"
+                        "conflictResolveTurns",
+                        "workflow"
                       ],
                       "additionalProperties": false
                     },
@@ -32663,6 +33264,35 @@
                           "label": "reasoning",
                           "harness": "claude",
                           "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
+                    "workflowLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "bug"
+                          },
+                          "workflow": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "implement"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "workflow"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "bug",
+                          "workflow": "implement"
                         }
                       ]
                     },
@@ -33719,6 +34349,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "workflowLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -33967,13 +34598,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "example": 2
+                            },
+                            "workflow": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
                             }
                           },
                           "required": [
                             "harness",
                             "isolationMode",
                             "priority",
-                            "conflictResolveTurns"
+                            "conflictResolveTurns",
+                            "workflow"
                           ],
                           "additionalProperties": false
                         },
@@ -34014,6 +34658,35 @@
                               "label": "reasoning",
                               "harness": "claude",
                               "model": "claude-opus-5-5"
+                            }
+                          ]
+                        },
+                        "workflowLabels": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "bug"
+                              },
+                              "workflow": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "implement"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "workflow"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "label": "bug",
+                              "workflow": "implement"
                             }
                           ]
                         },
@@ -35070,6 +35743,7 @@
                         "harnesses",
                         "defaults",
                         "routingLabels",
+                        "workflowLabels",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -35289,13 +35963,26 @@
                               "minimum": 0,
                               "maximum": 9007199254740991,
                               "example": 2
+                            },
+                            "workflow": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
                             }
                           },
                           "required": [
                             "harness",
                             "isolationMode",
                             "priority",
-                            "conflictResolveTurns"
+                            "conflictResolveTurns",
+                            "workflow"
                           ],
                           "additionalProperties": false
                         },
@@ -35336,6 +36023,35 @@
                               "label": "reasoning",
                               "harness": "claude",
                               "model": "claude-opus-5-5"
+                            }
+                          ]
+                        },
+                        "workflowLabels": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "bug"
+                              },
+                              "workflow": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "implement"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "workflow"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "label": "bug",
+                              "workflow": "implement"
                             }
                           ]
                         },
@@ -36392,6 +37108,7 @@
                         "harnesses",
                         "defaults",
                         "routingLabels",
+                        "workflowLabels",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -36673,13 +37390,26 @@
                           "minimum": 0,
                           "maximum": 9007199254740991,
                           "example": 2
+                        },
+                        "workflow": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
                         }
                       },
                       "required": [
                         "harness",
                         "isolationMode",
                         "priority",
-                        "conflictResolveTurns"
+                        "conflictResolveTurns",
+                        "workflow"
                       ],
                       "additionalProperties": false
                     },
@@ -36720,6 +37450,35 @@
                           "label": "reasoning",
                           "harness": "claude",
                           "model": "claude-opus-5-5"
+                        }
+                      ]
+                    },
+                    "workflowLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "bug"
+                          },
+                          "workflow": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "implement"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "workflow"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "label": "bug",
+                          "workflow": "implement"
                         }
                       ]
                     },
@@ -37776,6 +38535,7 @@
                     "harnesses",
                     "defaults",
                     "routingLabels",
+                    "workflowLabels",
                     "chat",
                     "autoRunner",
                     "agentMessages",

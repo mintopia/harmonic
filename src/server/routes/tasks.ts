@@ -47,6 +47,7 @@ const workflowStepsResponseSchema = z.object({
     .array(z.object({ id: z.string().meta({ example: 'verify' }), children: z.array(z.string()).meta({ description: 'Ids of a `parallel:` group\'s steps; empty for a plain step.' }) }))
     .meta({ description: 'Every step of the pinned workflow in execution order; empty for a Ticket without a workflow.' }),
   cleanupCount: z.number().int().meta({ description: 'How many steps the workflow\'s `cleanup:` list runs on done and on Close.', example: 1 }),
+  latestVersion: z.number().int().nullable().meta({ description: 'The current Library version of the pinned workflow, which applies from the next Retry; null without a pin or once the workflow left the Library.', example: 5 }),
   steps: z.array(
     z.object({
       stepId: z.string().meta({ example: 'lint' }),
@@ -207,6 +208,7 @@ const taskWithDepsSchema = z
     /** 'wayfinder' | 'implement'; null on native Tasks. */
     issueWorkflow: z.enum(ISSUE_WORKFLOWS).nullable().meta({ example: null }),
     workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().describe('How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.').meta({ example: null }),
+    workflowLabel: z.string().nullable().describe('The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.').meta({ example: null }),
     workflowRef: z.string().nullable().describe('The Workflow Library version the Ticket is pinned to, as `<name>@<version>`; null until it starts on one.').meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
@@ -553,6 +555,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         workflowChosen: task.workflowChosen,
         outline: (definition?.steps ?? []).map((step) => ({ id: step.id, children: (step.parallel ?? []).map((child) => child.id) })),
         cleanupCount: definition?.cleanup?.length ?? 0,
+        latestVersion: ctx.workflows.list().find((entry) => entry.name === task.workflowRef?.split('@')[0])?.version ?? null,
         steps: rows
           .filter((row) => row.workflowRef === task.workflowRef)
           .map((row) => ({

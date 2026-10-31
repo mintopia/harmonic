@@ -9,6 +9,7 @@ import { Fact } from '../Fact';
 import { formatModelLabel } from '../TaskIdentity';
 import { harnessLabel, pullRequestLink } from '../../task-detail-model';
 import { wallClockRemaining } from '../../wall-clock-model';
+import { parseWorkflowRef, snapshotNote } from '../../workflow-ref-model';
 
 export function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -119,27 +120,40 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
-const CHOSEN_BY: Record<WorkflowChosen, string> = {
-  explicit: 'chosen by operator',
-  label: 'chosen by tracker label',
+const CHOSEN_BY: Record<Exclude<WorkflowChosen, 'label'>, string> = {
+  explicit: 'operator choice on this Ticket',
   workspace: 'Workspace default',
   global: 'global default',
 };
 
-function WorkflowRefLabel({ workflowRef, chosen }: { workflowRef: string; chosen: WorkflowChosen | null }) {
-  const at = workflowRef.lastIndexOf('@');
-  const name = at < 0 ? workflowRef : workflowRef.slice(0, at);
-  const version = at < 0 ? null : workflowRef.slice(at + 1);
+function WorkflowRefLabel({ task, latestVersion }: { task: Task & { workflowRef: string }; latestVersion: number | null | undefined }) {
+  const { name, version } = parseWorkflowRef(task.workflowRef);
+  const chosen = task.workflowChosen;
+  const note = snapshotNote(task.workflowRef, latestVersion);
   return (
     <>
-      {name}
-      {version && <span className="font-data text-muted"> v{version}</span>}
-      {chosen && <span className="text-muted"> · {CHOSEN_BY[chosen]}</span>}
+      <span className="font-semibold">{name}</span>
+      {version !== null && <span className="font-data text-muted"> v{version}</span>}
+      {chosen === 'label' ? (
+        <span className="text-muted">
+          {' '}
+          — chosen by Workflow Label
+          {task.workflowLabel ? (
+            <>
+              {' '}
+              <code className={`${codeChip} bg-accent-tint text-accent`}>{task.workflowLabel}</code>
+            </>
+          ) : null}
+        </span>
+      ) : (
+        chosen && <span className="text-muted"> — {CHOSEN_BY[chosen]}</span>
+      )}
+      {note && <div className="mt-0.5 text-small text-muted">{note}</div>}
     </>
   );
 }
 
-export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
+export function Properties({ task, allTasks, workspaceName, latestVersion }: { task: Task; allTasks: Task[]; workspaceName: string | null; latestVersion?: number | null }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
   const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
@@ -162,8 +176,8 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
       </Fact>
       <Fact label="Created">{created}</Fact>
       {task.workflowRef && (
-        <Fact label="Task Execution Workflow">
-          <WorkflowRefLabel workflowRef={task.workflowRef} chosen={task.workflowChosen} />
+        <Fact label="Workflow" className="col-span-2">
+          <WorkflowRefLabel task={{ ...task, workflowRef: task.workflowRef }} latestVersion={latestVersion} />
         </Fact>
       )}
       {task.issueWorkflow && <Fact label="Issue Workflow">{task.issueWorkflow}</Fact>}

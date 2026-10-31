@@ -498,6 +498,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     issueWorkflow: null,
     workflowRef: null,
     workflowChosen: null,
+    workflowLabel: null,
     wayfinderType: null,
     mapRef: null,
     createdAt: created,

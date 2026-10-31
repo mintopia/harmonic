@@ -12,6 +12,7 @@ import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
+  workflowLabelOverrideSchema,
   taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
@@ -25,6 +26,7 @@ import { requestIsOperator } from '../auth.js';
 import type { AppContext } from '../app.js';
 import { resolveScoped, routingLabelIssueMessage, routingLabelOverlayIssues } from '../../domain/setting-override.js';
 import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
+import { parseWorkflowLabelOverlay, workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -84,6 +86,8 @@ const workspaceSchema = z
     epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
+    workflow: z.string().nullable().meta({ example: null }),
+    workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -134,7 +138,7 @@ const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, colo
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
-export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive'>): Promise<void> {
+export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
@@ -154,6 +158,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
     epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
+    workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -262,6 +267,11 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
             throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
           }
         });
+      }
+      if (req.body.workflowLabels || req.body.workflow) {
+        const global = ctx.settingsStore.getGlobal();
+        const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
+        if (first) throw new DomainError('validation', first);
       }
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {

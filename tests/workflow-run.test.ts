@@ -70,6 +70,62 @@ describe('a Ticket with a chosen workflow', () => {
   it('leaves a Ticket without a workflow unpinned with no steps', async () => {
     const created = await create();
     expect(created.body).toMatchObject({ workflowRef: null, workflowChosen: null });
-    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, steps: [] });
+    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] });
+  });
+  it('keeps an in-flight Ticket on its pinned version after an edit and re-pins only on Retry', async () => {
+    await server.api('PUT', '/api/workflows/evolving', { text: flow('evolving', '  - id: nope\n    run: echo v1; exit 1\n') });
+    const id = (await create('evolving')).body.id as number;
+    await server.api('POST', `/api/tasks/${id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'escalated');
+    expect((await server.api('GET', `/api/tasks/${id}`)).body.workflowRef).toBe('evolving@1');
+
+    await server.api('PUT', '/api/workflows/evolving', { text: flow('evolving', '  - id: ok\n    run: echo v2\n') });
+    const stale = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body;
+    expect(stale).toMatchObject({ workflowRef: 'evolving@1', latestVersion: 2 });
+    expect(stale.steps).toEqual([expect.objectContaining({ stepId: 'nope', outcome: 'fail' })]);
+
+    expect((await server.api('POST', `/api/tasks/${id}/retry`, { guidance: 'again', startNow: true })).status).toBeLessThan(300);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'done');
+    const task = (await server.api('GET', `/api/tasks/${id}`)).body;
+    expect(task).toMatchObject({ workflowRef: 'evolving@2', workflowChosen: 'explicit' });
+    expect((await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body.steps).toEqual([expect.objectContaining({ stepId: 'ok', outcome: 'pass' })]);
+  });
+
+  it('assigns the global default workflow to a Ticket with no explicit choice', async () => {
+    expect((await server.api('PATCH', '/api/config', { defaults: { workflow: 'nonexistent' } })).status).toBe(400);
+    expect((await server.api('PATCH', '/api/config', { defaults: { workflow: 'greet' } })).status).toBe(200);
+    try {
+      const id = (await create()).body.id as number;
+      await server.api('POST', `/api/tasks/${id}/run`);
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'done');
+      expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: 'greet@1', workflowChosen: 'global' });
+    } finally {
+      await server.api('PATCH', '/api/config', { defaults: { workflow: null } });
+    }
+  });
+  it('unpins a Ticket on Retry when nothing resolves a workflow any more', async () => {
+    await server.api('PATCH', '/api/config', { defaults: { workflow: 'failing' } });
+    const id = (await create()).body.id as number;
+    await server.api('POST', `/api/tasks/${id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'escalated');
+    expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: 'failing@1', workflowChosen: 'global' });
+    await server.api('PATCH', '/api/config', { defaults: { workflow: null } });
+    expect((await server.api('POST', `/api/tasks/${id}/retry`, { guidance: 'again', startNow: false })).status).toBeLessThan(300);
+    expect((await server.api('GET', `/api/tasks/${id}`)).body).toMatchObject({ workflowRef: null, workflowChosen: null, workflowLabel: null });
+  });
+  it('validates Workflow Labels and Workspace workflow overrides against the library', async () => {
+    const bad = (body: object) => server.api('PATCH', '/api/config', body);
+    expect((await bad({ workflowLabels: [{ label: 'bug', workflow: 'nonexistent' }] })).status).toBe(400);
+    expect((await bad({ workflowLabels: [{ label: 'bug', workflow: 'greet' }, { label: 'BUG', workflow: 'greet' }] })).status).toBe(400);
+    expect((await bad({ workflowLabels: [{ label: 'bug', workflow: 'greet' }] })).body.workflowLabels).toEqual([{ label: 'bug', workflow: 'greet' }]);
+    const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id as number;
+    const patch = (body: object) => server.api('PATCH', `/api/workspaces/${wsId}`, body);
+    expect((await patch({ workflow: 'nonexistent' })).status).toBe(400);
+    expect((await patch({ workflowLabels: [{ kind: 'local', enabled: true, workflowLabel: { label: 'Bug', workflow: 'greet' } }] })).status).toBe(400);
+    const ok = await patch({ workflow: 'greet', workflowLabels: [{ kind: 'global', ref: 'bug', enabled: false }, { kind: 'local', enabled: true, workflowLabel: { label: 'docs', workflow: 'failing' } }] });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ workflow: 'greet', workflowLabels: [{ kind: 'global', ref: 'bug', enabled: false }, expect.objectContaining({ kind: 'local' })] });
+    await patch({ workflow: null, workflowLabels: null });
+    await bad({ workflowLabels: [] });
   });
 });

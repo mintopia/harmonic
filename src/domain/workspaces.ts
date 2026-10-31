@@ -25,6 +25,7 @@ import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } fr
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
+  workflowLabelOverrideSchema,
   taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
@@ -91,6 +92,8 @@ export const workspaceOverridesSchema = z.object({
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
+  workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
+  workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -173,6 +176,8 @@ export const OVERRIDE_KEYS = [
   'epicPreMergeCommands',
   'epicPreMergeCritics',
   'routingLabels',
+  'workflow',
+  'workflowLabels',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -273,6 +278,8 @@ export class WorkspaceService {
       epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
+      workflow: o.workflow,
+      workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

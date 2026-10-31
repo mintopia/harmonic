@@ -83,6 +83,8 @@ const workspace = {
   epicPreMergeCommands: null,
   epicPreMergeCritics: null,
   routingLabels: null,
+  workflow: null,
+  workflowLabels: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,

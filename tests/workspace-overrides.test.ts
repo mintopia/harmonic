@@ -336,6 +336,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       epicPreMergeCommands: null,
       epicPreMergeCritics: null,
       routingLabels: null,
+      workflow: null,
+      workflowLabels: null,
       guardrailBudget: null,
       guardrailProgress: null,
       toolTimeoutMinutes: null,

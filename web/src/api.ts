@@ -38,6 +38,7 @@ import type {
   TaskCriticOverlayEntry,
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
+  WorkflowLabelOverlayEntry,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -288,6 +289,8 @@ export const api = {
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
+      workflow?: string | null;
+      workflowLabels?: WorkflowLabelOverlayEntry[] | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

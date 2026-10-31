@@ -59,6 +59,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
+  workflow: string | null; workflowLabels: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -122,6 +123,7 @@ export const tasks = sqliteTable('tasks', {
   workflowRequested: text('workflow_requested'),
   /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
   workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
+  workflowLabel: text('workflow_label'),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */

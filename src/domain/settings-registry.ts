@@ -4,7 +4,7 @@ import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, typ
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as. */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
 export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security' | 'archive';
@@ -72,6 +72,20 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Priority',
     help: 'Default scheduling priority for new Tasks.',
+  },
+  workflow: {
+    scope: 'overridable',
+    control: 'select',
+    tab: 'execution',
+    label: 'Default workflow',
+    help: 'Workflow a Ticket runs when no operator choice or Workflow Label applies; inherits the global default when unset.',
+  },
+  workflowLabels: {
+    scope: 'overridable',
+    control: 'workflow-labels',
+    tab: 'execution',
+    label: 'Workflow Labels',
+    help: 'Ordered ticket label to workflow assignments; reorder or disable global ones and add Workspace-only ones. Inherits the global list when unset.',
   },
   maxConcurrentAttempts: {
     scope: 'overridable',

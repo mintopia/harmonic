@@ -28,12 +28,14 @@ import type { MergeStepEvent } from '../merge-progress-model';
 import { HintBanner } from '../components/HintBanner';
 import { SettingsPage } from '../components/SettingsPage';
 import { ExportPanel } from '../components/ticket/ExportPanel';
-import type { RoutingLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
+import type { AppConfig, RoutingLabelOverlayEntry, WorkflowLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
+import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { PromptsTab } from '../components/prompts/PromptsTab';
+import { workflowStory, workflowTaskFields } from './api-stub';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -464,7 +466,8 @@ function EpicStory() {
 
 function TicketStory() {
   const routed = params.get('routing');
-  const routedTask = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
+  const baseTask = workflowStory ? { ...task, ...workflowTaskFields } : task;
+  const routedTask = routed ? { ...baseTask, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : baseTask;
   const shown = params.get('state') === 'escalated'
     ? { ...routedTask, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
     : routedTask;
@@ -536,6 +539,36 @@ function RoutingOverlayStory() {
   );
 }
 
+function WorkflowLabelsStory() {
+  const [config, setConfig] = useState<AppConfig>({
+    ...storyConfig,
+    workflowLabels: [
+      { label: 'security', workflow: 'Security review on label' },
+      { label: 'docs', workflow: 'Docs only' },
+    ],
+    defaults: { ...storyConfig.defaults, workflow: 'Migrated (global)' },
+  });
+  const [overlay, setOverlay] = useState<WorkflowLabelOverlayEntry[] | null>([
+    { kind: 'local', enabled: true, workflowLabel: { label: 'ci-only', workflow: 'Docs only' } },
+    { kind: 'global', ref: 'security', enabled: true },
+    { kind: 'global', ref: 'docs', enabled: false },
+    { kind: 'local', enabled: true, workflowLabel: { label: 'Security', workflow: 'Migrated (harmonic)' } },
+  ]);
+  const [workflow, setWorkflow] = useState<string | null>('Migrated (harmonic)');
+  return (
+    <StoryFrame style={{ padding: 24 }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: 24 }}>
+        <SettingsSection title="Workflow Labels" description="Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.">
+          <WorkflowLabelsEditor config={config} onChange={setConfig} />
+        </SettingsSection>
+        <SettingsSection title="Workflow Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
+          <WorkflowLabelOverlayEditor overlay={overlay} workflow={workflow} config={config} onChange={setOverlay} onWorkflow={setWorkflow} />
+        </SettingsSection>
+      </div>
+    </StoryFrame>
+  );
+}
+
 function RetryStory() {
   const choices = {
     defaultHarness: 'claude',
@@ -589,6 +622,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   tracker: TrackerStory,
   secrets: SecretsStory,
   'routing-overlay': RoutingOverlayStory,
+  'workflow-labels': WorkflowLabelsStory,
   retry: RetryStory,
 };
 

@@ -6,6 +6,7 @@ import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { Modal } from './Modal';
 import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-model';
 import { firstRoutingOverlayError } from './routing-label-overlay-model';
+import { firstWorkflowOverlayError } from './workflow-label-model';
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
@@ -49,7 +50,8 @@ export function WorkspaceSettingsPage({
   }, [workspace]);
 
   const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
-  const routingError = firstRoutingOverlayError(local.routingLabels, config.routingLabels);
+  const routingError =
+    firstRoutingOverlayError(local.routingLabels, config.routingLabels) ?? firstWorkflowOverlayError(local.workflowLabels, config.workflowLabels);
 
   const discard = () => {
     setLocal(pristine);

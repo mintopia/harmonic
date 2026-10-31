@@ -1,6 +1,6 @@
 import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -16,6 +16,7 @@ import {
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
+  type WorkflowChosen,
   type TaskState,
   type MergeStatus,
   type WorkspaceRow,
@@ -818,14 +819,30 @@ export class TaskService {
     });
   }
 
-  /** Pins the workflow version a Ticket runs on; `replace` overwrites an existing pin. */
-  async pinWorkflow(id: number, ref: string, replace = false): Promise<TaskRow> {
+  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, isNull(tasks.workflowRef));
+  }
+
+  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label);
+  }
+
+  async unpinWorkflow(id: number): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      await this.db.write((db) => db.update(tasks).set({ workflowRef: null, workflowChosen: null, workflowLabel: null, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
+      const task = await this.get(id);
+      this.onChanged(task);
+      return task;
+    });
+  }
+
+  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, unpinned?: SQL): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ workflowRef: ref, workflowChosen: 'explicit', updatedAt: Date.now() })
-          .where(replace ? eq(tasks.id, id) : and(eq(tasks.id, id), isNull(tasks.workflowRef)))
+          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, updatedAt: Date.now() })
+          .where(unpinned ? and(eq(tasks.id, id), unpinned) : eq(tasks.id, id))
           .returning()
           .get(),
       );

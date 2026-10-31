@@ -67,6 +67,7 @@ export interface WorkflowStepsResponse {
   workflowChosen: WorkflowChosen | null;
   outline: { id: string; children: string[] }[];
   cleanupCount: number;
+  latestVersion: number | null;
   steps: WorkflowStepRun[];
 }
 
@@ -463,6 +464,8 @@ export interface Workspace extends PromptFragmentOverrides {
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
+  workflow: string | null;
+  workflowLabels: WorkflowLabelOverlayEntry[] | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -579,6 +582,10 @@ export type RoutingLabelOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; routingLabel: { label: string; harness: string; model: string } };
 
+export type WorkflowLabelOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; workflowLabel: { label: string; workflow: string } };
+
 /** The budget Guardrail: a mandatory wall-clock bound per afk Attempt
  * plus optional token and cost caps (`null` = that cap is off). */
 export interface BudgetGuardrail {
@@ -677,6 +684,7 @@ export interface Task {
   /** `name@version` of the workflow pinned when the Ticket started; null on Tickets on today's path. */
   workflowRef: string | null;
   workflowChosen: WorkflowChosen | null;
+  workflowLabel?: string | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
@@ -1208,6 +1216,7 @@ export interface AppConfig {
     priority: 'high' | 'normal' | 'low';
     /** Conflict-resolve bound. */
     conflictResolveTurns: number;
+    workflow: string | null;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,
    * separate from the Task defaults. Global-default with a per-Workspace
@@ -1217,6 +1226,7 @@ export interface AppConfig {
     model: string;
   };
   routingLabels: { label: string; harness: string; model: string }[];
+  workflowLabels: { label: string; workflow: string }[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
