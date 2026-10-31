@@ -106,7 +106,6 @@ function workflowFor(name: string, label: string, description: string, scopeKey:
   return text;
 }
 
-/** Converts the Epic settings in memory only; any unconvertible setting throws before the caller has written anything. */
 export async function planEpicSettingsMigration(input: EpicPlanInput): Promise<EpicMigrationPlan> {
   const entries = new Map<string, PlannedPrompt>();
   const workflows: PlannedWorkflow[] = [];
@@ -132,7 +131,6 @@ export interface EpicSettingsMigrationDeps {
   workspaces: { list(): Promise<WorkspaceRow[]> };
 }
 
-// The done-marker is written last so a crash at any point converges on re-run.
 export async function migrateEpicSettingsToWorkflows(deps: EpicSettingsMigrationDeps): Promise<void> {
   const done = await deps.db.read((d) => d.select({ value: settings.value }).from(settings).where(eq(settings.key, EPIC_SETTINGS_MIGRATION_MARKER)).get());
   if (done) return;

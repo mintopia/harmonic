@@ -106,7 +106,6 @@ export function refuseExpressions(text: string, setting: string): void {
   if (text.includes('${{')) throw new UnconvertibleSettingError(setting, 'its text contains "${{", which a workflow would evaluate');
 }
 
-/** A verification command as one shell line; a setting a workflow step cannot express stops the boot. */
 export function commandRunLine(command: VerificationCommand, label: string): string {
   if (command.timeoutSeconds !== DEFAULT_COMMAND_TIMEOUT_SECONDS) {
     throw new UnconvertibleSettingError(`${label}.timeoutSeconds`, `it is ${command.timeoutSeconds} seconds and a workflow step times out after ${DEFAULT_COMMAND_TIMEOUT_SECONDS}`);
