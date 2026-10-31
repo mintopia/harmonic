@@ -306,10 +306,6 @@ export class RouteClassifier {
     }, options);
   }
 
-  isWorkflowClassifierEnabled(workspace: WorkspaceRow): boolean {
-    return workspace.workflowClassifierEnabled ?? false;
-  }
-
   /** Picks a workflow by name from `workflows` using the Workspace's Route Classifier backend; abstains on any failure. */
   async classifyWorkflow(request: ClassifyWorkflowRequest): Promise<WorkflowClassifierOutcome> {
     if (request.workflows.length === 0) return { kind: 'abstained', reason: 'no workflows are in the library', routing: null };

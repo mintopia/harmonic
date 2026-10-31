@@ -26,7 +26,7 @@ import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
 import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
-import type { WorkflowClassifierRecord } from '../domain/tasks.js';
+import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
 import { DomainError, GitError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
@@ -40,7 +40,7 @@ import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput, type MergeCoordinatorDeps } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { pricesForHarness } from '../domain/pricing.js';
+import { parseCost, pricesForHarness, sumCosts } from '../domain/pricing.js';
 import { isForeignKeyViolation } from '../db/errors.js';
 import { logger } from '../logger.js';
 import type { MergePolicyOutcome } from './merge-policy.js';
@@ -67,8 +67,6 @@ export type { RunnerEvents, RunnerOptions, Workspace } from './runner-options.js
 import type { RunnerEvents, RunnerOptions } from './runner-options.js';
 
 const LIFECYCLE_SETTLE_GRACE_MS = 15_000;
-
-const NO_CLASSIFIER_RECORD: WorkflowClassifierRecord = { reason: null, routingUsage: null, routingCost: null };
 
 export class Runner {
   private readonly activeRuns = new ActiveRuns();
@@ -567,7 +565,7 @@ export class Runner {
     const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
     const config = this.getConfig();
     const exists = (name: string) => names.has(name);
-    let classifier = NO_CLASSIFIER_RECORD;
+    let classifier = NO_CLASSIFIER;
     let classified: { name: string; reason: string } | null = null;
     if (resolveBeforeClassifier(workflowInputOf(task, workspace, config, exists)) === null) {
       const outcome = await this.classifyWorkflow(task, entries);
@@ -580,11 +578,19 @@ export class Runner {
         if (outcome.kind === 'chosen') classified = { name: outcome.name, reason: outcome.reason };
       }
     }
+    classifier = this.withEarlierSpend(task, classifier);
     const assignment = resolveTaskWorkflow(task, workspace, config, exists, classified);
     const version = library.get(assignment.name).version;
     const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
     const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);
     return { ref: `${assignment.name}@${version}`, chosen: assignment.chosen, label: assignment.label ?? null, vars, classifier };
+  }
+
+  /** A Retry's classifier call adds to the routing spend already on the Ticket instead of replacing it. */
+  private withEarlierSpend(task: TaskRow, now: WorkflowClassifierRecord): WorkflowClassifierRecord {
+    if (task.workflowRoutingUsage === null) return now;
+    const total = sumCosts([parseCost(task.workflowRoutingCost), parseCost(now.routingCost)]);
+    return { reason: now.reason, routingUsage: now.routingUsage ?? task.workflowRoutingUsage, routingCost: total ? JSON.stringify(total) : null };
   }
 
   /** Runs the workflow classifier when it is on for this Ticket's Workspace; never throws, since it is advisory. */
@@ -623,7 +629,7 @@ export class Runner {
   private async repinWorkflow(task: TaskRow): Promise<void> {
     if (task.workflowRef === null) return;
     const assigned = await this.assignWorkflow(task);
-    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel || assigned.classifier.reason !== task.workflowReason || JSON.stringify(assigned.vars) !== JSON.stringify(task.workflowVars)) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars, assigned.classifier);
+    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel || assigned.classifier.reason !== task.workflowReason || assigned.classifier.routingCost !== task.workflowRoutingCost || JSON.stringify(assigned.vars) !== JSON.stringify(task.workflowVars)) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars, assigned.classifier);
   }
 
   private async beginWorkflowRun(requested: TaskRow, parent: SpanContext | undefined, resumedAttempt: AttemptRow | undefined): Promise<AttemptRow> {

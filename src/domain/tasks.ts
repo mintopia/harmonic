@@ -272,7 +272,7 @@ export interface WorkflowClassifierRecord {
   routingUsage: string | null;
   routingCost: string | null;
 }
-const NO_CLASSIFIER: WorkflowClassifierRecord = { reason: null, routingUsage: null, routingCost: null };
+export const NO_CLASSIFIER: WorkflowClassifierRecord = { reason: null, routingUsage: null, routingCost: null };
 
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;

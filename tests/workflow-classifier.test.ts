@@ -99,6 +99,14 @@ describe('workflow classifier on a Ticket', () => {
     expect(JSON.parse(pinned.workflowRoutingCost!)).toMatchObject({ totalUsd: 0.002 });
   });
 
+  it('adds a Retry call to the routing spend instead of replacing it', async () => {
+    const usage = { models: { m: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 } }, totals: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }, toolCalls: {}, source: 'acp' };
+    backend.classify.mockResolvedValue({ ...answer('research'), costUsd: 0.002, model: 'm', usage });
+    const pinned = await assign(await ready());
+    await retry(pinned);
+    expect(JSON.parse((await tasks.get(pinned.id)).workflowRoutingCost!)).toMatchObject({ totalUsd: 0.004 });
+  });
+
   it('does not run for an operator choice', async () => {
     const pinned = await assign(await ready({ workflow: 'implement' }));
     expect(backend.classify).not.toHaveBeenCalled();
