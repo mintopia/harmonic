@@ -9,6 +9,8 @@ import { EpicCoordinator, integrationBranchName } from '../../src/execution/epic
 import { VerificationCoordinator, type VerificationCoordinatorDeps } from '../../src/execution/verification-coordinator.js';
 import { trackerRef } from '../../src/tracker/adapter.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../../src/verification/critic.js';
+import { convertEditedEpicFixPrompts } from '../../src/domain/epic-fix-prompt.js';
+import { PromptLibrary } from '../../src/domain/prompt-library-store.js';
 import { SettingsStore } from '../../src/server/settings-store.js';
 
 export const FIXTURE_EPIC = {
@@ -49,6 +51,11 @@ export async function runFixtureEpic(resolvePrompt?: string): Promise<FixtureEpi
     git(worktreePath, ...gitEnv, 'commit', '-qm', 'merge members #43 and #44');
 
     const config = (await SettingsStore.create(root)).getGlobal();
+    const promptLibrary = new PromptLibrary(root);
+    await promptLibrary.load();
+    if (resolvePrompt) {
+      await convertEditedEpicFixPrompts(promptLibrary, { ...config, verify: { ...config.verify, epic: { ...config.verify.epic, resolvePrompt } } });
+    }
     const prompts: string[] = [];
     const drive: CriticHarnessDrive = {
       run: async (request: CriticDriveRequest) => {
@@ -85,6 +92,7 @@ export async function runFixtureEpic(resolvePrompt?: string): Promise<FixtureEpi
       getConfig: () => config,
       getWorkspace: undefined,
       criticDrive: drive,
+      promptLibrary,
     } as unknown as VerificationCoordinatorDeps);
 
     let clock = 0;
@@ -108,7 +116,6 @@ export async function runFixtureEpic(resolvePrompt?: string): Promise<FixtureEpi
           attempt,
           verifiedHeadOid,
           verificationReason: verification.reason,
-          resolvePrompt: resolvePrompt ?? config.verify.epic.resolvePrompt,
         });
       },
       integrate: async () => ({ kind: 'merged', mergeOid: 'merged-oid' }),
