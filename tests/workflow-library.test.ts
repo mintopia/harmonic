@@ -88,6 +88,25 @@ describe('WorkflowLibrary on a real filesystem', () => {
     expect((await reloaded.save('orphaned', flow('orphaned', '  - id: kept\n    run: echo\n'))).version).toBe(2);
   });
 
+  it('keeps a Ticket-pinned version on boot even when the current file was hand-edited', async () => {
+    const dir = join(root, 'handedit');
+    const lib = new WorkflowLibrary(dir, { referencedVersions: async () => new Set(['edited@1']) });
+    await lib.save('edited', flow('edited'));
+    await lib.save('edited', flow('edited', '  - id: two\n    run: echo\n'));
+    writeFileSync(join(dir, 'workflows', 'edited.yaml'), flow('edited', '  - id: hand\n    run: echo\n'));
+
+    const reloaded = new WorkflowLibrary(dir, { referencedVersions: async () => new Set(['edited@2']) });
+    await reloaded.load();
+    expect(await reloaded.listVersions('edited')).toEqual([1, 2]);
+  });
+
+  it('serialises concurrent saves so every version is kept in order', async () => {
+    const lib = new WorkflowLibrary(join(root, 'concurrent'), { referencedVersions: async () => new Set(['race@1', 'race@2', 'race@3']) });
+    const saved = await Promise.all([1, 2, 3].map((n) => lib.save('race', flow('race', `  - id: s${n}\n    run: echo\n`))));
+    expect(saved.map((e) => e.version)).toEqual([1, 2, 3]);
+    expect(await lib.listVersions('race')).toEqual([1, 2, 3]);
+  });
+
   it('keeps a Ticket-referenced version readable after two edits and prunes unreferenced ones', async () => {
     const dir = join(root, 'versions');
     const lib = new WorkflowLibrary(dir, { referencedVersions: async () => new Set(['pinned@1']) });

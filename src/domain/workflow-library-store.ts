@@ -45,6 +45,7 @@ const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code
 export class WorkflowLibrary {
   private readonly dir: string | null;
   private readonly bundled = bundledEntries();
+  private queue: Promise<void> = Promise.resolve();
   private operator = new Map<string, WorkflowEntry>();
   private readonly referenced: () => Promise<ReadonlySet<string>>;
   private readonly rename: (from: string, to: string) => Promise<void>;
@@ -93,14 +94,18 @@ export class WorkflowLibrary {
     }
   }
 
-  /** The current version, discarding a newest version file whose text never reached the current file (a save that died before its rename). */
+  /** The newest version whose text is the current file; newer versions that no Ticket pins are leftovers of a save that died before its rename and are discarded. A current file matching no version (hand-edited) keeps every version. */
   private async settledVersion(name: string, currentText: string): Promise<number> {
-    const latest = await this.latestVersion(name);
-    if (latest === 0) return 0;
-    const file = join(this.versionDir(name), `${latest}.yaml`);
-    if ((await readFile(file, 'utf8')) === currentText) return latest;
-    await rm(file, { force: true });
-    return this.settledVersion(name, currentText);
+    const versions = (await this.versionNumbers(name)).sort((a, b) => b - a);
+    for (const [i, v] of versions.entries()) {
+      if ((await readFile(join(this.versionDir(name), `${v}.yaml`), 'utf8')) !== currentText) continue;
+      const pinned = await this.referenced();
+      for (const newer of versions.slice(0, i)) {
+        if (!pinned.has(`${name}@${newer}`)) await rm(join(this.versionDir(name), `${newer}.yaml`), { force: true });
+      }
+      return v;
+    }
+    return versions[0] ?? 0;
   }
 
   private async latestVersion(name: string): Promise<number> {
@@ -145,7 +150,14 @@ export class WorkflowLibrary {
   }
 
   /** Validates and stores `text` as workflow `name` (creating it or adding a version); a refused save writes nothing. */
-  async save(name: string, text: string): Promise<WorkflowEntry> {
+  /** Saves run one at a time so a prune never races another save's rename. */
+  save(name: string, text: string): Promise<WorkflowEntry> {
+    const run = this.queue.then(() => this.saveNow(name, text));
+    this.queue = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async saveNow(name: string, text: string): Promise<WorkflowEntry> {
     if (this.dir === null) throw new DomainError('forbidden', 'This workflow library has no storage');
     if (this.bundled.some((b) => b.name === name)) throw new DomainError('forbidden', `${name} is a bundled workflow and is read-only; duplicate it to edit`);
     const def = parseWorkflow(text);
