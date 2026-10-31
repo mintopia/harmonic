@@ -14,6 +14,7 @@ import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
 import { resolveModelOption } from '../domain/model-options.js';
 import { migrateSettingsToWorkflows } from '../domain/settings-workflow-migration.js';
+import { migrateEpicSettingsToWorkflows } from '../domain/epic-settings-workflow-migration.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
 import { convertRetiredEditedPrompts } from '../domain/retired-settings.js';
 import { isNotNull } from 'drizzle-orm';
@@ -90,6 +91,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await workflowLibrary.load();
   promptLibrary.attachWorkflows(workflowLibrary);
   await migrateSettingsToWorkflows({ db: asyncDb, settings: stores.settingsStore, prompts: promptLibrary, workflows: workflowLibrary, workspaces: stores.workspaces, tasks: stores.tasks });
+  await migrateEpicSettingsToWorkflows({ db: asyncDb, settings: stores.settingsStore, prompts: promptLibrary, workflows: workflowLibrary, workspaces: stores.workspaces });
   const runtime = await createRuntime({
     opts,
     promptLibrary,
