@@ -21,6 +21,8 @@ const leafStepSchema = z
     uses: z.enum(WORKFLOW_ACTIONS).optional(),
     with: z.record(z.string(), z.unknown()).optional(),
     if: z.string().min(1).optional(),
+    runs_on: z.string().min(1).optional(),
+    image: z.string().min(1).optional(),
   })
   .strict();
 
@@ -31,6 +33,8 @@ const workflowSchema = z
     name: z.string().regex(WORKFLOW_NAME_PATTERN, 'a name starts with a lowercase letter and holds lowercase letters, digits, - or _ (max 64)'),
     description: z.string(),
     subject: z.enum(WORKFLOW_SUBJECTS).optional(),
+    runs_on: z.string().min(1).optional(),
+    image: z.string().min(1).optional(),
     vars: z.record(z.string().regex(VAR_NAME_PATTERN, 'a var name starts with a lowercase letter and holds letters, digits, - or _'), z.union([z.string(), z.number(), z.boolean()])).optional(),
     steps: z.array(z.unknown()).min(1, 'a workflow needs at least one step'),
     cleanup: z.array(stepSchema).optional(),
@@ -65,8 +69,8 @@ const withHint = (message: string, input: string, candidates: readonly string[])
   return hint === undefined ? message : `${message} (did you mean ${hint}?)`;
 };
 
-const STEP_KEYS = ['id', 'run', 'uses', 'with', 'if', 'parallel'] as const;
-const TOP_KEYS = ['name', 'description', 'subject', 'vars', 'steps', 'cleanup'] as const;
+const STEP_KEYS = ['id', 'run', 'uses', 'with', 'if', 'runs_on', 'image', 'parallel'] as const;
+const TOP_KEYS = ['name', 'description', 'subject', 'runs_on', 'image', 'vars', 'steps', 'cleanup'] as const;
 
 const unknownKey = (key: string, candidates: readonly string[]): string => withHint(`unknown key: ${key}`, key, candidates);
 
@@ -87,6 +91,8 @@ export interface WorkflowStepDefinition {
   uses?: (typeof WORKFLOW_ACTIONS)[number] | undefined;
   with?: Record<string, unknown> | undefined;
   if?: string | undefined;
+  runs_on?: string | undefined;
+  image?: string | undefined;
   parallel?: readonly WorkflowStepDefinition[] | undefined;
 }
 
@@ -168,6 +174,60 @@ export async function optionCodeProblems(text: string, isUsable: (code: string) 
     issues.push({ message: `model option '${code}' is not defined, or is disabled, in the global list and every Workspace`, line: pos.line, column: pos.col });
   }
   if (issues.length > 0) throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
+}
+
+/** Every `runs_on:` in the workflow text with its path, in document order. */
+function runsOnRefs(root: unknown): { path: PropertyKey[]; target: string }[] {
+  const found: { path: PropertyKey[]; target: string }[] = [];
+  const visit = (node: unknown, path: PropertyKey[]): void => {
+    if (!isRecord(node)) return;
+    if (typeof node.runs_on === 'string') found.push({ path: [...path, 'runs_on'], target: node.runs_on });
+    if (Array.isArray(node.parallel)) node.parallel.forEach((child, i) => visit(child, [...path, 'parallel', i]));
+  };
+  if (!isRecord(root)) return found;
+  visit(root, []);
+  for (const key of ['steps', 'cleanup'] as const) {
+    const list = root[key];
+    if (!Array.isArray(list)) continue;
+    list.forEach((step, i) => {
+      if (isRecord(step) && isRecord(step.attempts) && Array.isArray(step.attempts.steps)) step.attempts.steps.forEach((inner, j) => visit(inner, [key, i, 'attempts', 'steps', j]));
+      else visit(step, [key, i]);
+    });
+  }
+  return found;
+}
+
+export interface TargetCheck {
+  /** True when `name` is `local` or a defined Execution Target. */
+  known: (name: string) => boolean | Promise<boolean>;
+  /** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
+  directWorkspaces: () => string[] | Promise<string[]>;
+}
+
+/** Refuses an unknown `runs_on:` target, and a Kubernetes target when a `direct`-mode Workspace would use the workflow. */
+export async function targetProblems(text: string, check: TargetCheck): Promise<void> {
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(text, { lineCounter, prettyErrors: false });
+  const issues: ErrorIssue[] = [];
+  let direct: string[] | undefined;
+  for (const { path, target } of runsOnRefs(doc.toJS())) {
+    let message: string | undefined;
+    if (!(await check.known(target))) message = `runs_on: unknown Execution Target '${target}'`;
+    else if (target !== 'local') {
+      direct ??= await check.directWorkspaces();
+      if (direct.length > 0) message = `runs_on: Kubernetes Execution Target '${target}' is not available to Workspace ${direct.map((n) => `'${n}'`).join(', ')} in direct mode, which would use this workflow as its default or through a Workflow Label. Switch the Workspace to worktree Isolation Mode first.`;
+    }
+    if (message === undefined) continue;
+    const node = doc.getIn(path, true) as { range?: [number, number, number] | null } | undefined;
+    const pos = lineCounter.linePos(node?.range?.[0] ?? 0);
+    issues.push({ message, line: pos.line, column: pos.col });
+  }
+  if (issues.length > 0) throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
+}
+
+/** The distinct targets the workflow-level and step-level `runs_on:` name. */
+export function workflowRunsOn(text: string): string[] {
+  return [...new Set(runsOnRefs(parseDocument(text).toJS()).map((r) => r.target))];
 }
 
 interface Located {

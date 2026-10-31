@@ -44,12 +44,16 @@ const STEP_KEYS: WorkflowCompletionOption[] = [
   { label: 'with', detail: 'inputs for the action' },
   { label: 'if', detail: 'run only when the condition holds' },
   { label: 'run', detail: 'shell command to run' },
+  { label: 'runs_on', detail: 'Execution Target for this step' },
+  { label: 'image', detail: 'container image for this step' },
   { label: 'parallel', detail: 'steps that run side by side' },
 ];
 
 const TOP_KEYS: WorkflowCompletionOption[] = [
   { label: 'name', detail: 'workflow name' },
   { label: 'description', detail: 'what the workflow is for' },
+  { label: 'runs_on', detail: 'default Execution Target for the steps' },
+  { label: 'image', detail: 'default container image for the steps' },
   { label: 'vars', detail: 'values steps read as vars.NAME' },
   { label: 'steps', detail: 'the steps, in order' },
   { label: 'cleanup', detail: 'steps that always run last' },

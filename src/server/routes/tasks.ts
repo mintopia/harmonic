@@ -1,4 +1,6 @@
 import { createReadStream } from 'node:fs';
+import { resolveWorkspace } from '../../domain/workspaces.js';
+import { kubernetesWorkflowRefusal } from '../../execution/workspace-execution-targets.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -35,7 +37,7 @@ import { listResponse, paginate, paginationQuerySchema } from '../pagination.js'
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
 import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
-import { resolveTaskWorkflow } from '../../domain/workflow-assignment.js';
+import { resolveTaskWorkflow, resolveWorkflow } from '../../domain/workflow-assignment.js';
 import { resolveVarSources, validateVarOverrides, varOverridesSchema, varValueSchema, workspaceVarsFor } from '../../domain/workflow-vars.js';
 import { parseWorkflowRef } from '../../execution/workflow-engine.js';
 import { pinnedWorkflow, workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
@@ -467,6 +469,12 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (req.body.workflow !== undefined && !ctx.workflows.list().some((w) => w.name === req.body.workflow && w.subject === 'ticket')) {
         throw new DomainError('validation', `No workflow is named ${req.body.workflow}`);
       }
+      const workspace = resolveWorkspace(await ctx.workspaces.list(), req.body.workspaceId);
+      const config = ctx.settingsStore.getGlobal();
+      const isolationMode = req.body.isolationMode ?? (workspace.isolationMode as 'direct' | 'worktree' | null) ?? config.defaults.isolationMode;
+      const workflow = req.body.workflow ?? resolveWorkflow({ requested: null, trackerLabels: null, workspace, config }).name;
+      const refusal = kubernetesWorkflowRefusal(ctx.workflows, workflow, isolationMode);
+      if (refusal) throw new DomainError('validation', refusal);
       const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
@@ -639,7 +647,16 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.update(req.params.id, req.body)),
+    async (req) => {
+      if (req.body.isolationMode != null) {
+        const task = await ctx.tasks.get(req.params.id);
+        const workspace = resolveWorkspace(await ctx.workspaces.list(), task.workspaceId ?? undefined);
+        const workflow = task.workflowRequested ?? resolveWorkflow({ requested: null, trackerLabels: null, workspace, config: ctx.settingsStore.getGlobal() }).name;
+        const refusal = kubernetesWorkflowRefusal(ctx.workflows, workflow, req.body.isolationMode);
+        if (refusal) throw new DomainError('validation', refusal);
+      }
+      return await withDeps(await ctx.tasks.update(req.params.id, req.body));
+    },
   );
 
   app.post(
