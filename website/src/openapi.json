@@ -1973,6 +1973,24 @@
             ],
             "example": null
           },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -2206,6 +2224,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -2411,6 +2430,24 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowRef": {
@@ -2850,6 +2887,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3071,6 +3109,24 @@
             ],
             "example": null
           },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -3507,6 +3563,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3711,6 +3768,24 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowRef": {
@@ -4151,6 +4226,7 @@
           "continuationChoice",
           "origin",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -11971,6 +12047,24 @@
             ],
             "example": null
           },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -12206,6 +12300,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -12413,6 +12508,24 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowRef": {
@@ -12855,6 +12968,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -13078,6 +13192,24 @@
             ],
             "example": null
           },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -13517,6 +13649,7 @@
           "origin",
           "trackerRef",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -13723,6 +13856,24 @@
                 "type": "null"
               }
             ],
+            "example": null
+          },
+          "workflowChosen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "label",
+                  "workspace",
+                  "global"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the pinned workflow was chosen: `explicit` (the operator picked it on the Ticket), `label`, `workspace` or `global`; null until the Ticket starts on a workflow.",
             "example": null
           },
           "workflowRef": {
@@ -14166,6 +14317,7 @@
           "continuationChoice",
           "origin",
           "issueWorkflow",
+          "workflowChosen",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -20274,6 +20426,11 @@
                     "example": "integration/epic-42",
                     "type": "string",
                     "minLength": 1
+                  },
+                  "workflow": {
+                    "example": "implement",
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -20730,6 +20887,191 @@
           },
           "409": {
             "description": "The task is running and cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/workflow-steps": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "The pinned workflow of a Ticket and every step the engine has executed on it, in execution order. Key scopes: full, attempt, read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workflow pin and its executed steps; `steps` is empty for a Ticket without a workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflowRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": "implement@1"
+                    },
+                    "workflowChosen": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "explicit",
+                            "label",
+                            "workspace",
+                            "global"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": "explicit"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stepId": {
+                            "type": "string",
+                            "example": "lint"
+                          },
+                          "action": {
+                            "type": "string",
+                            "example": "run"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "example": 0
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "inconclusive",
+                                  "conflict"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Null while the step is running.",
+                            "example": "pass"
+                          },
+                          "summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "command exited 0"
+                          },
+                          "outputs": {
+                            "type": "object",
+                            "properties": {
+                              "stdout": {
+                                "type": "string",
+                                "example": "ok\n"
+                              },
+                              "exitCode": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "example": 0
+                              }
+                            },
+                            "required": [
+                              "stdout",
+                              "exitCode"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Secret values are masked."
+                          },
+                          "startedAt": {
+                            "type": "number",
+                            "example": 1784030400000
+                          },
+                          "endedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 1784030401000
+                          }
+                        },
+                        "required": [
+                          "stepId",
+                          "action",
+                          "position",
+                          "outcome",
+                          "summary",
+                          "outputs",
+                          "startedAt",
+                          "endedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "workflowRef",
+                    "workflowChosen",
+                    "steps"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The workflow pin and its executed steps; `steps` is empty for a Ticket without a workflow."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
             "content": {
               "application/json": {
                 "schema": {

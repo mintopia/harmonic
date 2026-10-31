@@ -4,7 +4,7 @@ import { DomainError, type ErrorIssue } from './errors.js';
 
 export const WORKFLOW_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 
-export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'critic', 'merge', 'post-merge-check', 'close', 'tracker-comment', 'cleanup'] as const;
+export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'post-merge-check', 'close', 'tracker-comment', 'cleanup'] as const;
 
 const stepSchema = z
   .object({

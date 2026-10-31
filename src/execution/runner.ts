@@ -46,6 +46,9 @@ import { startOperation } from '../telemetry/operations.js';
 import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
 import { killProcessGroup } from './process-groups.js';
+import { WorkflowEngine } from './workflow-engine.js';
+import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
 export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
@@ -93,6 +96,8 @@ export class Runner {
   private readonly spendGraceMs: number;
   private readonly verification: VerificationCoordinator;
   private readonly turnDriver: TurnDriver;
+  private readonly workflowEngine: WorkflowEngine | undefined;
+  private readonly workflows: RunnerOptions['workflows'];
   private readonly epicRefreshResolver: EpicRefreshResolver;
   private readonly workspaceProvisioner: WorkspaceProvisioner;
   readonly runControl: RunControl;
@@ -179,8 +184,29 @@ export class Runner {
     this.workspaceProvisioner = new WorkspaceProvisioner(this.workspaceProvisionerDeps());
     this.verification = new VerificationCoordinator(this.verificationCoordinatorDeps());
     this.turnDriver = new TurnDriver(this.turnDriverDeps());
+    this.workflows = options.workflows;
+    this.workflowEngine = options.workflows ? this.createWorkflowEngine(options.workflows) : undefined;
     this.runControl = new RunControl(this.runControlDeps());
     this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
+  }
+
+  private createWorkflowEngine({ library, secrets }: NonNullable<RunnerOptions['workflows']>): WorkflowEngine {
+    return new WorkflowEngine({
+      library,
+      stepRuns: new WorkflowStepRunStore(this.asyncDb),
+      spawn: this.commandSpawn ?? createChildProcessSpawn(this.spawnProcessGroup),
+      commandById: (task, id) => this.verification.preMergeCommandById(task, id),
+      secretValues: async (task) => {
+        if (task.workspaceId == null) return [];
+        const workspaceId = task.workspaceId;
+        const values = await Promise.all((await secrets.list(workspaceId)).map((secret) => secrets.reveal(workspaceId, secret.name)));
+        return values.filter((value): value is string => value !== null);
+      },
+      cwdFor: (task) => this.workspaceProvisioner.dispatchCwd(task),
+      escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
+      complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
+      onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),
+    });
   }
 
   private mergeCoordinatorDeps(): MergeCoordinatorDeps {
@@ -546,6 +572,7 @@ export class Runner {
         default:
           baseGate satisfies never;
       }
+      if (task.workflowRequested !== null) return await this.beginWorkflowRun(task, resumedAttempt);
       const config = this.getConfig();
       const route = await this.taskService.routing.ticketRoute(task);
       if (!route.ok) {
@@ -630,6 +657,32 @@ export class Runner {
       }
       throw err;
     }
+  }
+
+  private async beginWorkflowRun(requested: TaskRow, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
+    const engine = this.workflowEngine;
+    if (!engine || !this.workflows) throw new DomainError('invalid_state', `task ${requested.id} chose a workflow but no workflow library is configured`);
+    const name = requested.workflowRequested!;
+    const task = requested.workflowRef === null ? await this.taskService.pinWorkflow(requested.id, `${name}@${this.workflows.library.get(name).version}`) : requested;
+    const run = resumedAttempt
+      ? await this.attempts.update(resumedAttempt.id, { state: 'running', startedAt: Date.now(), endedAt: null, reason: null, detail: null })
+      : await this.attempts.create(task.id);
+    await this.workspaceProvisioner.prepareWorkspace(task, run);
+    this.drives.add((async () => {
+      try {
+        await engine.run(task, run);
+      } catch (error) {
+        logger.error(`task ${task.id} attempt ${run.id}: workflow engine crashed: ${errorMessage(error)}`);
+        await bestEffort(async () => {
+          const current = await this.attempts.get(run.id);
+          if (current.state !== 'running') return;
+          await this.settleEscalated(task, current, `workflow engine crashed: ${errorMessage(error)}`, {});
+        }, { op: 'runner.workflow.settleCrashed', level: 'warn', context: { taskId: task.id, attemptId: run.id } });
+      } finally {
+        this.activeRuns.clearDriving(task.id);
+      }
+    })(), 'runner.drive');
+    return run;
   }
 
   private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {

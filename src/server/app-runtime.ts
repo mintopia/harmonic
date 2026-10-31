@@ -47,6 +47,7 @@ import { createTrackerResolver } from '../tracker/adapter.js';
 import { createRepositoryResolver } from '../repository/resolve.js';
 import { withLibraryPrompts } from '../domain/prompt-library-sources.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 
 function createLifecycleTracking(
   bus: EventBus,
@@ -212,6 +213,7 @@ export interface Runtime {
 export async function createRuntime(deps: {
   opts: AppOptions;
   promptLibrary: PromptLibrary;
+  workflowLibrary: WorkflowLibrary;
   stores: Stores;
   worktrees: WorktreeServices;
   bus: EventBus;
@@ -426,6 +428,7 @@ export async function createRuntime(deps: {
     agentMessages: deps.stores.agentMessages,
     archive,
     promptLibrary: deps.promptLibrary,
+    workflows: { library: deps.workflowLibrary, secrets },
   });
   runnerRef = runner;
   const globalPause = new GlobalPause(tasks, runner, asyncDb);

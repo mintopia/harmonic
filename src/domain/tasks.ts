@@ -63,11 +63,13 @@ export const createTaskInputSchema = z.object({
    * Omitted ⇒ resolves at spawn to the working dir's current branch. Not an
    * inheritable default: it never resolves against a Workspace/global value. */
   baseBranch: z.string().min(1).optional().meta({ example: 'integration/epic-42' }),
+  /** A Workflow Library name; the Ticket runs it, pinned to the current version when it starts working. */
+  workflow: z.string().min(1).optional().meta({ example: 'implement' }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 export const updateTaskInputSchema = createTaskInputSchema
-  .omit({ state: true, dependsOn: true, workspaceId: true })
+  .omit({ state: true, dependsOn: true, workspaceId: true, workflow: true })
   .partial()
   .extend({
     harness: createTaskInputSchema.shape.harness.nullable(),
@@ -486,6 +488,7 @@ export class TaskService {
           priority: input.priority ?? null,
           conflictResolveTurns: input.conflictResolveTurns ?? null,
           baseBranch: input.baseBranch ?? null,
+          workflowRequested: input.workflow ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
           state,
           archiveId: randomUUID(),
@@ -811,6 +814,23 @@ export class TaskService {
       const task = await this.resolve(row ?? claimed);
       this.onChanged(task);
       this.onNotify('run.started', task);
+      return task;
+    });
+  }
+
+  /** Snapshots the workflow version a Ticket starts on; a Ticket already pinned keeps its version. */
+  async pinWorkflow(id: number, ref: string): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      const row = await this.db.write((db) =>
+        db
+          .update(tasks)
+          .set({ workflowRef: ref, workflowChosen: 'explicit', updatedAt: Date.now() })
+          .where(and(eq(tasks.id, id), isNull(tasks.workflowRef)))
+          .returning()
+          .get(),
+      );
+      const task = await this.get(id);
+      if (row) this.onChanged(task);
       return task;
     });
   }

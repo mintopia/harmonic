@@ -82,6 +82,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runtime = await createRuntime({
     opts,
     promptLibrary,
+    workflowLibrary,
     stores,
     worktrees,
     bus,
@@ -151,6 +152,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     auth: stores.auth,
     channels: stores.channels,
     secrets: stores.secrets,
+    workflows: workflowLibrary,
     notifier: stores.notifier,
     notifications: stores.notifications,
     bus,
@@ -204,6 +206,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     upgrade: runtime.upgrade,
     worktreesDir,
   });
-  await registerRoutes(app, ctx, contexts, promptLibrary, workflowLibrary);
+  await registerRoutes(app, ctx, contexts, promptLibrary);
   return app;
 }

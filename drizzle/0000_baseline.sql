@@ -315,6 +315,8 @@ CREATE TABLE `tasks` (
 	`tracker_ref` text,
 	`issue_workflow` text,
 	`workflow_ref` text,
+	`workflow_requested` text,
+	`workflow_chosen` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,
@@ -382,6 +384,22 @@ CREATE TABLE `verification_attempts` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `verification_attempts_attempt_seq_unique` ON `verification_attempts` (`attempt_id`,`seq`);--> statement-breakpoint
+CREATE TABLE `workflow_step_runs` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`task_id` integer NOT NULL,
+	`workflow_ref` text NOT NULL,
+	`step_id` text NOT NULL,
+	`position` integer NOT NULL,
+	`action` text NOT NULL,
+	`outcome` text,
+	`outputs` text,
+	`summary` text,
+	`started_at` integer NOT NULL,
+	`ended_at` integer,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE INDEX `workflow_step_runs_task_idx` ON `workflow_step_runs` (`task_id`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`name` text NOT NULL,

@@ -118,6 +118,10 @@ export const tasks = sqliteTable('tasks', {
   issueWorkflow: text('issue_workflow').$type<IssueWorkflow>(),
   /** The Workflow Library version this Ticket is pinned to, as `<name>@<version>`; null until it starts on one. */
   workflowRef: text('workflow_ref'),
+  /** The Workflow Library name the operator chose at creation; becomes `workflowRef` when the Ticket starts working. */
+  workflowRequested: text('workflow_requested'),
+  /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
+  workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */
@@ -287,6 +291,28 @@ export const steps = sqliteTable('steps', {
   endedAt: integer('ended_at'),
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
+
+export const WORKFLOW_CHOSEN = ['explicit', 'label', 'workspace', 'global'] as const;
+export type WorkflowChosen = (typeof WORKFLOW_CHOSEN)[number];
+export const WORKFLOW_STEP_OUTCOMES = ['pass', 'fail', 'inconclusive', 'conflict'] as const;
+export type WorkflowStepOutcome = (typeof WORKFLOW_STEP_OUTCOMES)[number];
+
+/** One execution of a Task Execution Workflow step; `outcome` is null while the step runs. */
+export const workflowStepRuns = sqliteTable('workflow_step_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id),
+  workflowRef: text('workflow_ref').notNull(),
+  stepId: text('step_id').notNull(),
+  position: integer('position').notNull(),
+  action: text('action').notNull(),
+  outcome: text('outcome').$type<WorkflowStepOutcome>(),
+  /** JSON `{stdout, exitCode}`, secrets already masked. */
+  outputs: text('outputs'),
+  summary: text('summary'),
+  startedAt: integer('started_at').notNull(),
+  endedAt: integer('ended_at'),
+}, (t) => [index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId)]);
+export type WorkflowStepRunRow = typeof workflowStepRuns.$inferSelect;
 
 /** Per-Attempt tool-call counts; Task and Epic totals are derived on read. */
 export const attemptToolCalls = sqliteTable(

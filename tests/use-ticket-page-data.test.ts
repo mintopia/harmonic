@@ -14,6 +14,7 @@ function fakeDeps(overrides: Partial<TicketPageDataDeps> = {}): TicketPageDataDe
     loadConfig: async () => makeConfig(),
     loadWorkspaces: async () => ({ workspaces: [] }),
     loadGuardrailEvents: async () => ({ guardrailEvents: [] }),
+    loadWorkflowSteps: async () => ({ workflowRef: null, workflowChosen: null, steps: [] }),
     ...overrides,
   };
 }

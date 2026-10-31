@@ -1,6 +1,8 @@
 import type { TrackerRef } from './types.js';
 import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
+  WorkflowLibraryEntry,
+  WorkflowStepsResponse,
   Attempt,
   ActivityProcess,
   AgentMessageThread,
@@ -211,7 +213,9 @@ export const api = {
   },
   epicStats: (epicRef: TrackerRef, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
-  createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
+  workflows: () => request<{ workflows: WorkflowLibraryEntry[]; total: number }>('GET', '/api/workflows'),
+  workflowSteps: (id: number) => request<WorkflowStepsResponse>('GET', `/api/tasks/${id}/workflow-steps`),
+  createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) =>
     request<Task>('POST', '/api/tasks', input),
   // Lazy directory picker: one level deep per call; an omitted
   // path starts at the server user's home. Operator-only (full-scope session).

@@ -403,7 +403,7 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | TrackerFactColumns> & {
   workspaceId: number;
   /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
   isolationMode: IsolationMode;
@@ -497,6 +497,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     trackerRef: ticket.ref,
     issueWorkflow: null,
     workflowRef: null,
+    workflowChosen: null,
     wayfinderType: null,
     mapRef: null,
     createdAt: created,
@@ -531,9 +532,10 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
   };
 }
 
-function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId'> {
+function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId' | 'workflowRequested'> {
   const {
     archiveId,
+    workflowRequested,
     trackerState, trackerParent, trackerBlockedBy, trackerLabels,
     trackerTitle, trackerBody, trackerUrl, trackerCreatedAt,
     ...rest

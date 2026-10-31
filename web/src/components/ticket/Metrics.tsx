@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { formatCost } from '../../cost';
-import type { AttemptSummary, AttemptUsageEvent, Task } from '../../types';
+import type { AttemptSummary, AttemptUsageEvent, Task, WorkflowChosen } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
 import { codeChip } from '../../ui';
@@ -119,6 +119,26 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
+const CHOSEN_BY: Record<WorkflowChosen, string> = {
+  explicit: 'chosen by operator',
+  label: 'chosen by tracker label',
+  workspace: 'Workspace default',
+  global: 'global default',
+};
+
+function WorkflowRefLabel({ workflowRef, chosen }: { workflowRef: string; chosen: WorkflowChosen | null }) {
+  const at = workflowRef.lastIndexOf('@');
+  const name = at < 0 ? workflowRef : workflowRef.slice(0, at);
+  const version = at < 0 ? null : workflowRef.slice(at + 1);
+  return (
+    <>
+      {name}
+      {version && <span className="font-data text-muted"> v{version}</span>}
+      {chosen && <span className="text-muted"> · {CHOSEN_BY[chosen]}</span>}
+    </>
+  );
+}
+
 export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
@@ -141,6 +161,11 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
         <DependsOn task={task} allTasks={allTasks} />
       </Fact>
       <Fact label="Created">{created}</Fact>
+      {task.workflowRef && (
+        <Fact label="Task Execution Workflow">
+          <WorkflowRefLabel workflowRef={task.workflowRef} chosen={task.workflowChosen} />
+        </Fact>
+      )}
       {task.issueWorkflow && <Fact label="Issue Workflow">{task.issueWorkflow}</Fact>}
       {task.origin === 'mirrored' && task.trackerLabel && (
         <Fact label="Tracker">

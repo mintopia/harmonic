@@ -3,7 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { toastError } from '../toast';
-import type { AppConfig, GuardrailEvent, Task, TicketTimelineEvent, Workspace } from '../types';
+import type { AppConfig, GuardrailEvent, Task, TicketTimelineEvent, Workspace, WorkflowStepsResponse } from '../types';
 
 /** The api calls this hook depends on, injectable so tests can supply fakes
  * directly instead of stubbing global `fetch`. Defaults to the real `api`. */
@@ -14,6 +14,7 @@ export type TicketPageDataDeps = {
   loadConfig: () => Promise<AppConfig>;
   loadWorkspaces: () => Promise<{ workspaces: Workspace[] }>;
   loadGuardrailEvents: (attemptId: number) => Promise<{ guardrailEvents: GuardrailEvent[] }>;
+  loadWorkflowSteps: (id: number) => Promise<WorkflowStepsResponse>;
 };
 
 const defaultDeps: TicketPageDataDeps = {
@@ -23,6 +24,7 @@ const defaultDeps: TicketPageDataDeps = {
   loadConfig: api.config,
   loadWorkspaces: api.workspaces,
   loadGuardrailEvents: api.attemptGuardrailEvents,
+  loadWorkflowSteps: api.workflowSteps,
 };
 
 export type TicketPageData = {
@@ -35,6 +37,8 @@ export type TicketPageData = {
   workspaceName: string | null;
   commandConfigured: boolean;
   guardrailEvents: GuardrailEvent[];
+  /** The executed workflow steps; null until loaded or when the Ticket has no workflow. */
+  workflowSteps: WorkflowStepsResponse | null;
 };
 
 /**
@@ -52,6 +56,7 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [commandConfigured, setCommandConfigured] = useState(true);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepsResponse | null>(null);
 
   // Read through a ref, same as useAsyncResource's loadRef: a caller-supplied
   // `deps` object has no referential-stability guarantee, so it can't sit in
@@ -118,5 +123,24 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
     };
   }, [selectedAttemptId]);
 
-  return { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents };
+  const hasWorkflow = (detail?.workflowRef ?? task.workflowRef) !== null;
+  useLiveEffect((live) => {
+    if (!hasWorkflow) {
+      setWorkflowSteps(null);
+      return;
+    }
+    const load = () =>
+      depsRef.current.loadWorkflowSteps(task.id).then((next) => {
+        if (live()) setWorkflowSteps(next);
+      }, toastError);
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'task_changed' && msg.task.id === task.id)) load();
+    }, load);
+    return () => {
+      unsubscribe();
+    };
+  }, [task.id, hasWorkflow]);
+
+  return { allTasks, detail, timelineEvents, maxAttempts, workspaceName, commandConfigured, guardrailEvents, workflowSteps };
 }

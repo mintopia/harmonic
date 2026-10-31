@@ -1,0 +1,75 @@
+// @vitest-environment jsdom
+import { createElement } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
+import { Properties } from '../web/src/components/ticket/Metrics.js';
+import type { WorkflowStepRun, WorkflowStepsResponse } from '../web/src/types.js';
+import { cleanup, makeTask, mountComponent } from './component-smoke-harness.js';
+
+afterEach(cleanup);
+
+function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
+  return {
+    stepId: 's1',
+    action: 'run',
+    position: 0,
+    outcome: 'pass',
+    summary: null,
+    outputs: { stdout: '', exitCode: 0 },
+    startedAt: 1,
+    endedAt: 2,
+    ...overrides,
+  };
+}
+
+const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', steps });
+
+describe('WorkflowSteps', () => {
+  it('renders nothing without a workflowRef', async () => {
+    const host = await mountComponent(createElement(WorkflowSteps, { data: { workflowRef: null, workflowChosen: null, steps: [] } }));
+    expect(host.innerHTML).toBe('');
+    const empty = await mountComponent(createElement(WorkflowSteps, { data: null }));
+    expect(empty.innerHTML).toBe('');
+  });
+
+  it('lists pass, fail and running steps with id, action, outcome and outputs', async () => {
+    const host = await mountComponent(
+      createElement(WorkflowSteps, {
+        data: response([
+          step({ stepId: 'build', action: 'run', outputs: { stdout: 'compiling\nok\n', exitCode: 0 } }),
+          step({ stepId: 'check', action: 'command', position: 1, outcome: 'fail', summary: 'exit 1', outputs: { stdout: 'boom', exitCode: 1 } }),
+          step({ stepId: 'later', action: 'run', position: 2, outcome: null, endedAt: null, outputs: { stdout: '', exitCode: null } }),
+        ]),
+      }),
+    );
+    const rows = [...host.querySelectorAll('li')];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain('build');
+    expect(rows[0]!.textContent).toContain('run');
+    expect(rows[0]!.textContent).toContain('passed');
+    expect(rows[0]!.textContent).toContain('exit 0 · 2 lines · last: ok');
+    expect(rows[1]!.textContent).toContain('command');
+    expect(rows[1]!.textContent).toContain('failed');
+    expect(rows[1]!.textContent).toContain('exit 1 · 1 line · last: boom');
+    expect(rows[2]!.textContent).toContain('running');
+    expect(rows[2]!.textContent).not.toContain('exit');
+    expect(host.textContent).toContain('implement@2');
+  });
+});
+
+describe('Properties workflow row', () => {
+  it('shows name, version and how it was chosen', async () => {
+    const host = await mountComponent(
+      createElement(Properties, { task: makeTask({ workflowRef: 'implement@2', workflowChosen: 'explicit' }), allTasks: [], workspaceName: 'ws' }),
+    );
+    expect(host.textContent).toContain('Task Execution Workflow');
+    expect(host.textContent).toContain('implement');
+    expect(host.textContent).toContain('v2');
+    expect(host.textContent).toContain('chosen by operator');
+  });
+
+  it('omits the row when no workflow is pinned', async () => {
+    const host = await mountComponent(createElement(Properties, { task: makeTask(), allTasks: [], workspaceName: 'ws' }));
+    expect(host.textContent).not.toContain('Task Execution Workflow');
+  });
+});
