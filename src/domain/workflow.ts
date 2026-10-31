@@ -95,6 +95,30 @@ export function parseWorkflow(text: string): WorkflowDefinition {
   return { name: definition.name, description: definition.description, cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
 }
 
+/** Checks every `option:` code against `isUsable`; used on library save and import only, never at load or run. */
+export async function optionCodeProblems(text: string, isUsable: (code: string) => boolean | Promise<boolean>): Promise<void> {
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(text, { lineCounter, prettyErrors: false });
+  const found: { path: PropertyKey[]; code: string }[] = [];
+  const walk = (node: unknown, path: PropertyKey[]): void => {
+    if (Array.isArray(node)) node.forEach((child, i) => walk(child, [...path, i]));
+    else if (isRecord(node)) {
+      const withBlock = node.with;
+      if ((node.uses === 'agent' || node.uses === 'critic') && isRecord(withBlock) && typeof withBlock.option === 'string') found.push({ path: [...path, 'with', 'option'], code: withBlock.option });
+      for (const [key, child] of Object.entries(node)) walk(child, [...path, key]);
+    }
+  };
+  walk(doc.toJS(), []);
+  const issues: ErrorIssue[] = [];
+  for (const { path, code } of found) {
+    if (await isUsable(code)) continue;
+    const node = doc.getIn(path, true) as { range?: [number, number, number] | null } | undefined;
+    const pos = lineCounter.linePos(node?.range?.[0] ?? 0);
+    issues.push({ message: `model option '${code}' is not defined, or is disabled, in the global list and every Workspace`, line: pos.line, column: pos.col });
+  }
+  if (issues.length > 0) throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
+}
+
 interface Located {
   step: WorkflowStepDefinition;
   path: PropertyKey[];
@@ -174,6 +198,7 @@ function stepProblems(issues: z.core.$ZodIssue[], path: PropertyKey[]): Problem[
 const agentWithSchema = z
   .object({
     prompt: z.string().min(1).optional(),
+    option: z.string().min(1).optional(),
     harness: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
     continueAttempts: z.number().int().min(0).optional(),
@@ -191,10 +216,16 @@ export function agentStepWith(input: unknown): AgentStepWith | null {
 const criticWithSchema = z
   .object({
     prompt: z.string('a critic needs its own prompt').min(1),
-    harness: z.string('a critic needs its own harness').min(1),
-    model: z.string('a critic needs its own model').min(1),
+    option: z.string().min(1).optional(),
+    harness: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.option !== undefined) return;
+    if (value.harness === undefined) ctx.addIssue({ code: 'custom', path: ['harness'], message: 'a critic needs its own harness (or an option)' });
+    if (value.model === undefined) ctx.addIssue({ code: 'custom', path: ['model'], message: 'a critic needs its own model (or an option)' });
+  });
 
 export type CriticStepWith = z.infer<typeof criticWithSchema>;
 
@@ -231,6 +262,9 @@ function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>):
     if (step.uses === 'agent') problems.push(...withProblems(path, agentWithSchema, step.with));
     if (group !== undefined && step.uses !== undefined && !PARALLEL_ACTIONS.has(step.uses)) problems.push({ path: [...path, 'uses'], message: `${step.uses} cannot run inside parallel group ${group}: only critic and command steps run together` });
     if (step.uses === 'critic') problems.push(...withProblems(path, criticWithSchema, step.with));
+    if ((step.uses === 'agent' || step.uses === 'critic') && step.with?.option !== undefined) {
+      for (const key of ['harness', 'model']) if (step.with[key] !== undefined) problems.push({ path: [...path, 'with', key], message: `with.option cannot be combined with with.${key}: an option names its own harness and model`, key: true });
+    }
   };
   for (const { step, path } of allLocated(located, wf)) {
     check(step, path);

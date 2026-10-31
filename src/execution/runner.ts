@@ -24,6 +24,7 @@ import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
+import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome } from '../domain/route-classifier.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
@@ -239,6 +240,7 @@ export class Runner {
         drive: this.criticDrive,
         getConfig: this.getConfig,
         route: (task) => this.taskService.routing.ticketRoute(task),
+        resolveOption: async (task, code) => resolveModelOption(code, { ticketOverrides: task.modelOptionOverrides, workspace: { modelOptions: (await this.getWorkspace?.(task.workspaceId))?.modelOptions ?? null }, config: this.getConfig() }),
         resolvePrompt: async (text) => {
           const entries = await this.promptLibrary.list();
           const lookup = new Map(entries.map((entry) => [entry.code, entry.text]));

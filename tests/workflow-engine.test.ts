@@ -14,6 +14,8 @@ import { mergeIntoBase } from '../src/execution/branch-merge.js';
 import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, CRITIC_CHANGED_THE_WORK, UNCOMMITTED_AFTER_AGENT, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
 import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { resolveRoute } from '../src/domain/route.js';
+import { resolveModelOption } from '../src/domain/model-options.js';
+import type { ModelOption } from '../src/config.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, inBlock, makeSettingsStore, seedWorkspace, STUB_HARNESS, testSpawnProcessGroup } from './helpers.js';
 
@@ -41,7 +43,7 @@ describe('WorkflowEngine', () => {
       secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
-      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolvePrompt: async (text) => text },
+      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolveOption: async () => { throw new Error('no option'); }, resolvePrompt: async (text) => text },
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -345,13 +347,54 @@ describe('WorkflowEngine', () => {
           drive: recordingDrive(),
           getConfig: stubConfig,
           route: async () => { routeCalls += 1; return resolveRoute(stubConfig(), 'claude', 'stub-model', null); },
+          resolveOption: async (_task, code) => resolveModelOption(code, { config: { modelOptions: optionList } }),
           resolvePrompt: async (text) => text,
           ...over,
         },
       });
     const scenario = (files: Record<string, string>, extra: object = {}): string => `'${JSON.stringify({ writeFiles: files, ...extra })}'`;
 
-    beforeEach(() => { driven = []; routeCalls = 0; });
+    let optionList: ModelOption[];
+    const opt = (id: string, extra: Partial<ModelOption> = {}): ModelOption => ({ id, harness: 'claude', model: 'stub-model', description: 'd', ...extra });
+    beforeEach(() => { driven = []; routeCalls = 0; optionList = []; });
+
+    it('runs an option step on the option Harness and Model without consulting the route', async () => {
+      optionList = [opt('cheap')];
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      option: cheap\n      prompt: ${scenario({ 'o.txt': '1' })}\n`));
+      await agentEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ outcome: 'pass' });
+      expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
+      expect(routeCalls).toBe(0);
+    });
+
+    it('runs the Ticket override Harness and Model for the code', async () => {
+      optionList = [opt('cheap', { model: 'listed' })];
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      option: cheap\n      prompt: ${scenario({ 'o.txt': '1' })}\n`));
+      await agentEngine({ resolveOption: async (_t, code) => resolveModelOption(code, { config: { modelOptions: optionList }, ticketOverrides: [{ id: 'cheap', harness: 'claude', model: 'stub-model' }] }) }).run(task, run);
+      expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
+    });
+
+    it('runs a critic step from an option', async () => {
+      optionList = [opt('cheap')];
+      const verdict = scenario({}, { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify({ verdict: 'pass', summary: 'fine', findings: [] }) } }] });
+      const { task, run } = await startTask(flow(`  - id: review\n    uses: critic\n    with:\n      option: cheap\n      prompt: ${verdict}\n`));
+      await agentEngine().run(task, run);
+      expect((await stepRows(task.id))[0]).toMatchObject({ action: 'critic', outcome: 'pass' });
+      expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
+      expect(routeCalls).toBe(0);
+    });
+
+    it.each([['missing', []], ['disabled', [opt('gone', { disabled: true })]]] as const)('escalates at once with no substitution when the code is %s, inside an attempts block', async (_name, list) => {
+      optionList = [...list];
+      const { task, run } = await startTask(flow(`  - id: build\n    uses: agent\n    with:\n      option: gone\n`, 3));
+      await agentEngine().run(task, run);
+      expect(escalations).toHaveLength(1);
+      expect(escalations[0]).toMatch(/step build.*'gone'.*(missing|disabled)/);
+      expect(escalations[0]).not.toMatch(/exhausted/);
+      expect(await stepRows(task.id)).toHaveLength(1);
+      expect(driven).toHaveLength(0);
+      expect(routeCalls).toBe(0);
+    });
 
     it('drives a real ACP Harness whose commit lands on the branch, and stores the Resolved Prompt', async () => {
       const prompt = scenario({ 'a.txt': 'hello' });

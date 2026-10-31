@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { logger } from '../logger.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { DomainError } from './errors.js';
-import { parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
+import { optionCodeProblems, parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
 
 export interface WorkflowEntry {
   readonly name: string;
@@ -16,6 +16,8 @@ export interface WorkflowEntry {
 export interface WorkflowLibraryOptions {
   /** `<name>@<version>` refs that Tickets currently pin; those versions are never pruned. */
   referencedVersions?: () => Promise<ReadonlySet<string>>;
+  /** True when a Model Option code is enabled in the global list or some Workspace; checked on save and import only. */
+  optionCodeUsable?: (code: string) => boolean | Promise<boolean>;
   /** Fault-injection seam; production always uses the filesystem rename. */
   rename?: (from: string, to: string) => Promise<void>;
 }
@@ -55,6 +57,7 @@ export class WorkflowLibrary {
   private queue: Promise<void> = Promise.resolve();
   private operator = new Map<string, WorkflowEntry>();
   private readonly referenced: () => Promise<ReadonlySet<string>>;
+  private readonly optionCodeUsable: ((code: string) => boolean | Promise<boolean>) | undefined;
   private readonly rename: (from: string, to: string) => Promise<void>;
 
   /** A `null` data directory gives a library of bundled workflows only. */
@@ -62,6 +65,7 @@ export class WorkflowLibrary {
     this.dir = dataDir === null ? null : join(dataDir, 'workflows');
     this.referenced = options.referencedVersions ?? (async () => new Set());
     this.rename = options.rename ?? rename;
+    this.optionCodeUsable = options.optionCodeUsable;
   }
 
   /** Scans the directory at boot, yielding the event loop between files. */
@@ -168,6 +172,7 @@ export class WorkflowLibrary {
     if (this.dir === null) throw new DomainError('forbidden', 'This workflow library has no storage');
     if (this.bundled.some((b) => b.name === name)) throw new DomainError('forbidden', `${name} is a bundled workflow and is read-only; duplicate it to edit`);
     const def = parseWorkflow(text);
+    if (this.optionCodeUsable) await optionCodeProblems(text, this.optionCodeUsable);
     if (def.name !== name) throw new DomainError('validation', `the workflow's name (${def.name}) must match ${name}`, [{ message: `name must be ${name}`, line: 1, column: 1 }]);
     const version = (await this.latestVersion(name)) + 1;
     await mkdir(this.versionDir(name), { recursive: true });

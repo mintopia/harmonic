@@ -12,6 +12,7 @@ import { readPackageManifest } from './routes/openapi.js';
 import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
 import { createRuntime } from './app-runtime.js';
+import { parseModelOptions } from '../domain/model-options.js';
 import { convertEditedPrompts } from '../domain/prompt-library-sources.js';
 import { isNotNull } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
@@ -76,6 +77,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await promptLibrary.load();
   await convertEditedPrompts(promptLibrary, stores.settingsStore.getGlobal());
   const workflowLibrary = new WorkflowLibrary(opts.dataDir, {
+    optionCodeUsable: async (code) => {
+      const enabled = (list: readonly { id: string; disabled?: boolean | undefined }[] | null): boolean => (list ?? []).some((o) => o.id === code && !o.disabled);
+      if (enabled(stores.settingsStore.getGlobal().modelOptions)) return true;
+      return (await stores.workspaces.list()).some((ws) => enabled(parseModelOptions(ws.modelOptions)));
+    },
     referencedVersions: async () => new Set((await asyncDb.read((db) => db.selectDistinct({ ref: tasks.workflowRef }).from(tasks).where(isNotNull(tasks.workflowRef)).all())).map((r) => r.ref!)),
   });
   await workflowLibrary.load();

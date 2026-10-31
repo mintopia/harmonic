@@ -38,6 +38,49 @@ describe('/api/workflows', () => {
     expect(res.body.error.issues[0].line).toBeGreaterThan(0);
   });
 
+  describe('model option codes', () => {
+    const optionFlow = (name: string, withLines: string, uses = 'agent') => `name: ${name}\ndescription: x\nsteps:\n${inBlock(`  - id: build\n    uses: ${uses}\n    with:\n${withLines}`)}`;
+    const optionBase = async () => {
+      const harnesses = (await server.api('GET', '/api/config')).body.harnesses as Record<string, { defaultModel: string }>;
+      return { harness: 'claude', model: harnesses.claude!.defaultModel, description: 'd' };
+    };
+    const refused = async (name: string, text: string, line: number, column: number) => {
+      const res = await server.api('PUT', `/api/workflows/${name}`, { text });
+      expect(res.status).toBe(400);
+      expect(res.body.error.issues).toEqual([expect.objectContaining({ line, column })]);
+      expect(existsSync(join(dataDir, 'workflows', `${name}.yaml`))).toBe(false);
+    };
+
+    it('refuses a code that no list defines, pointing at the value, on save and import', async () => {
+      const text = optionFlow('opt-unknown', '      option: nowhere\n');
+      await refused('opt-unknown', text, 10, 21);
+      const imported = await server.api('POST', '/api/workflows/import', { text });
+      expect(imported.status).toBe(400);
+      expect(imported.body.error.issues).toEqual([expect.objectContaining({ line: 10, column: 21 })]);
+    });
+
+    it('refuses a code disabled everywhere and accepts one enabled in a single scope', async () => {
+      const ws = await server.api('POST', '/api/workspaces', { name: 'opt-ws', workingDir: root });
+      expect(ws.status).toBe(201);
+      const base = await optionBase();
+      const patched = await server.api('PATCH', '/api/config', { modelOptions: [{ id: 'off-all', ...base, disabled: true }, { id: 'off-global', ...base, disabled: true }] });
+      expect(patched.body).toMatchObject({ modelOptions: expect.any(Array) });
+      await server.api('PATCH', `/api/workspaces/${ws.body.id}`, { modelOptions: [{ id: 'off-global', ...base }] });
+      await refused('opt-off', optionFlow('opt-off', '      option: off-all\n'), 10, 21);
+      expect((await server.api('PUT', '/api/workflows/opt-one-scope', { text: optionFlow('opt-one-scope', '      option: off-global\n') })).status).toBe(200);
+    });
+
+    it('refuses option beside harness or model at the offending key, for agents and critics', async () => {
+      const base = await optionBase();
+      await server.api('PATCH', '/api/config', { modelOptions: [{ id: 'live', ...base }] });
+      await refused('opt-h', optionFlow('opt-h', '      option: live\n      harness: claude\n'), 11, 13);
+      await refused('opt-m', optionFlow('opt-m', '      option: live\n      model: stub-model\n'), 11, 13);
+      await refused('opt-c', optionFlow('opt-c', '      option: live\n      prompt: p\n      model: stub-model\n', 'critic'), 12, 13);
+      expect((await server.api('PUT', '/api/workflows/opt-critic', { text: optionFlow('opt-critic', '      option: live\n      prompt: p\n', 'critic') })).status).toBe(200);
+      expect((await server.api('PUT', '/api/workflows/opt-nocritic', { text: optionFlow('opt-nocritic', '      prompt: p\n', 'critic') })).status).toBe(400);
+    });
+  });
+
   it('imports a file and exports the identical bytes', async () => {
     const text = `# my comment\n${flow('imported')}`;
     const imported = await server.api('POST', '/api/workflows/import', { text });
