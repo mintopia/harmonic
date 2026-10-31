@@ -422,7 +422,7 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | 'classifierEnabled' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | 'classifierEnabled' | 'workflowRoutingUsage' | 'workflowRoutingCost' | TrackerFactColumns> & {
   workspaceId: number;
   /** Ticket-scoped Model Option overrides; empty when none. */
   modelOptionOverrides: Array<{ id: string; harness: string; model: string }>;
@@ -434,6 +434,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' 
     isolationMode: IsolationMode | null;
     priority: Priority | null;
   };
+  /** Cost of the workflow classifier call that chose or declined this Ticket's workflow; null when it was not consulted. */
+  workflowRouting: { cost: Cost | null } | null;
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
   routing: TaskRouting | null;
   /** What the Route Classifier did for this Ticket; null when it did not decide (a Routing Label won, the classifier is off, or no Attempt consulted it). */
@@ -522,6 +524,8 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     workflowRef: null,
     workflowChosen: null,
     workflowLabel: null,
+    workflowReason: null,
+    workflowRouting: null,
     workflowVarOverrides: null,
     workflowVars: null,
     wayfinderType: null,
@@ -560,10 +564,12 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
   };
 }
 
-function stripTrackerFactCols(task: Omit<TaskWithDeps, 'classifierEnabled'>): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId' | 'workflowRequested' | 'classifierEnabled'> {
+function stripTrackerFactCols(task: Omit<TaskWithDeps, 'classifierEnabled'>): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId' | 'workflowRequested' | 'classifierEnabled' | 'workflowRoutingUsage' | 'workflowRoutingCost'> {
   const {
     archiveId,
     workflowRequested,
+    workflowRoutingUsage,
+    workflowRoutingCost,
     trackerState, trackerParent, trackerBlockedBy, trackerLabels,
     trackerTitle, trackerBody, trackerUrl, trackerCreatedAt,
     ...rest
@@ -609,6 +615,7 @@ export function taskToApiDto(
   const { classifierEnabled, ...rest } = task;
   return {
     ...stripTrackerFactCols(rest),
+    workflowRouting: task.workflowRoutingUsage ? { cost: parseCost(task.workflowRoutingCost) } : null,
     classifier: classifierRouteOf({
       enabled: classifierEnabled,
       labelMatched: task.routing !== null,

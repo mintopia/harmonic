@@ -60,7 +60,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
-  workflow: string | null; workflowLabels: string | null; workflowVars: string | null;
+  workflow: string | null; workflowLabels: string | null; workflowVars: string | null; workflowClassifierEnabled: boolean | null;
   modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;
   classifierEndpoint: string | null;
@@ -128,6 +128,11 @@ export const tasks = sqliteTable('tasks', {
   /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
   workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
   workflowLabel: text('workflow_label'),
+  /** The workflow classifier's one-line reason when `workflowChosen` is `classifier`, or why it abstained; null when it was not consulted. */
+  workflowReason: text('workflow_reason'),
+  /** JSON: Usage and Cost of the workflow classifier call, a routing line separate from any Attempt's Cost. */
+  workflowRoutingUsage: text('workflow_routing_usage'),
+  workflowRoutingCost: text('workflow_routing_cost'),
   workflowVarOverrides: text('workflow_var_overrides', { mode: 'json' }).$type<VarRecord>(),
   workflowVars: text('workflow_vars', { mode: 'json' }).$type<VarRecord>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
@@ -314,7 +319,7 @@ export const steps = sqliteTable('steps', {
 }, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
 export type StepRow = typeof steps.$inferSelect;
 
-export const WORKFLOW_CHOSEN = ['explicit', 'label', 'workspace', 'global'] as const;
+export const WORKFLOW_CHOSEN = ['explicit', 'label', 'classifier', 'workspace', 'global'] as const;
 export type WorkflowChosen = (typeof WORKFLOW_CHOSEN)[number];
 export const WORKFLOW_STEP_OUTCOMES = ['pass', 'fail', 'inconclusive', 'conflict', 'skipped'] as const;
 export type WorkflowStepOutcome = (typeof WORKFLOW_STEP_OUTCOMES)[number];

@@ -244,6 +244,10 @@ function lifecycleRow(payload: Record<string, unknown> | null): RowCore {
       const containedIn = text(payload?.containedIn);
       return { label: `Deleted branch ${branch ?? ''}${containedIn ? ` (already merged into ${containedIn})` : ''}`, detail: null, tone: 'neutral', tag: 'GIT' };
     }
+    case 'workflow-classified':
+      return { label: `Workflow classifier chose ${text(payload?.workflow) ?? 'a workflow'}`, detail: text(payload?.reason), tone: 'neutral', tag: null };
+    case 'workflow-classifier-abstained':
+      return { label: 'Workflow classifier abstained; the default workflow applies', detail: text(payload?.reason), tone: 'neutral', tag: null };
     case 'branch-delete-failed':
       return { label: `Branch ${text(payload?.branch) ?? ''} could not be deleted`, detail: text(payload?.error), tone: 'failed', tag: 'GIT' };
     default:

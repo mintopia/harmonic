@@ -120,7 +120,7 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
-const CHOSEN_BY: Record<Exclude<WorkflowChosen, 'label'>, string> = {
+const CHOSEN_BY: Record<Exclude<WorkflowChosen, 'label' | 'classifier'>, string> = {
   explicit: 'operator choice on this Ticket',
   workspace: 'Workspace default',
   global: 'global default',
@@ -144,6 +144,12 @@ function WorkflowRefLabel({ task, latestVersion }: { task: Task & { workflowRef:
               <code className={`${codeChip} bg-accent-tint text-accent`}>{task.workflowLabel}</code>
             </>
           ) : null}
+        </span>
+      ) : chosen === 'classifier' ? (
+        <span className="text-muted">
+          {' '}
+          — chosen by classifier
+          {task.workflowReason ? <span className="text-small text-muted">: {task.workflowReason}</span> : null}
         </span>
       ) : (
         chosen && <span className="text-muted"> — {CHOSEN_BY[chosen]}</span>

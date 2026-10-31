@@ -96,6 +96,7 @@ const workspaceSchema = z
     /** Model Option overlay; null inherits every global Model Option in order, enabled. */
     modelOptions: modelOptionOverrideSchema.nullable().meta({ example: null }),
     classifierEnabled: z.boolean().nullable().meta({ example: null }),
+    workflowClassifierEnabled: z.boolean().nullable().meta({ example: null }),
     classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
     classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
     classifierTypesafeModel: z.string().nullable().meta({ example: null }),

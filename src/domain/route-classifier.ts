@@ -250,6 +250,28 @@ export interface ClassifyRequest {
   modelOptionOverrides?: readonly ModelOptionOverride[] | null | undefined;
 }
 
+export type WorkflowClassifierOutcome =
+  | { kind: 'chosen'; name: string; reason: string; routing: RoutingUsage | null; prompt: string }
+  | { kind: 'abstained'; reason: string; routing: RoutingUsage | null; prompt?: string };
+
+export interface ClassifyWorkflowRequest {
+  workspace: WorkspaceRow;
+  title: string;
+  description: string;
+  labels: readonly string[];
+  workflows: ReadonlyArray<{ name: string; description: string }>;
+}
+
+function buildWorkflowClassifierPrompt(input: ClassifierInput): string {
+  const { options, ...ticket } = input;
+  return [
+    'Choose the workflow that should run this Ticket. Pick exactly one workflow from the list, by its name.',
+    'Reply with only a JSON object: {"optionId": "<workflow name>", "reason": "<one line why it fits>"}.',
+    `Workflows:\n${options.map((o) => `- ${o.id}: ${o.description}`).join('\n')}`,
+    `Ticket:\n${JSON.stringify(ticket, null, 2)}`,
+  ].join('\n\n');
+}
+
 export class RouteClassifier {
   constructor(
     private readonly getConfig: () => AppConfig,
@@ -282,5 +304,35 @@ export class RouteClassifier {
       config,
       prompt: buildClassifierPrompt(input, resolvePromptFragments(request.workspace, config)),
     }, options);
+  }
+
+  isWorkflowClassifierEnabled(workspace: WorkspaceRow): boolean {
+    return workspace.workflowClassifierEnabled ?? false;
+  }
+
+  /** Picks a workflow by name from `workflows` using the Workspace's Route Classifier backend; abstains on any failure. */
+  async classifyWorkflow(request: ClassifyWorkflowRequest): Promise<WorkflowClassifierOutcome> {
+    if (request.workflows.length === 0) return { kind: 'abstained', reason: 'no workflows are in the library', routing: null };
+    const config = this.getConfig();
+    const settings = resolveClassifierSettings(request.workspace);
+    const backend = this.backends[settings.backend];
+    if (!backend) return { kind: 'abstained', reason: `the ${settings.backend} backend is not available`, routing: null };
+    const options: ModelOption[] = request.workflows.map((w) => ({ id: w.name, description: w.description, harness: 'workflow', model: 'workflow' }));
+    const input = classifierInputSchema.parse({
+      title: request.title,
+      description: request.description,
+      labels: [...request.labels],
+      attemptNumber: 1,
+      options,
+    });
+    const outcome = await runClassifier(backend, input, {
+      timeoutMs: settings.timeoutSeconds * 1000,
+      workspace: request.workspace,
+      config,
+      prompt: buildWorkflowClassifierPrompt(input),
+    }, options);
+    return outcome.kind === 'chosen'
+      ? { kind: 'chosen', name: outcome.option.id, reason: outcome.reason, routing: outcome.routing, prompt: outcome.prompt ?? '' }
+      : outcome;
   }
 }

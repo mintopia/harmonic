@@ -266,6 +266,14 @@ function trackerFactColumns(facts: TrackerFacts) {
 
 type TriageLabelsByWorkspace = ReadonlyMap<number, TriageLabels>;
 
+/** What the workflow classifier left on a Ticket: its reason (or abstention cause) and the JSON of its routing Usage and Cost. */
+export interface WorkflowClassifierRecord {
+  reason: string | null;
+  routingUsage: string | null;
+  routingCost: string | null;
+}
+const NO_CLASSIFIER: WorkflowClassifierRecord = { reason: null, routingUsage: null, routingCost: null };
+
 export class TaskService {
   private readonly blockerGraph: TaskBlockerGraph;
   private readonly mirror: TaskMirror;
@@ -843,12 +851,12 @@ export class TaskService {
     });
   }
 
-  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null): Promise<TaskRow> {
-    return this.writeWorkflowPin(id, ref, chosen, label, vars, isNull(tasks.workflowRef));
+  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null, classifier: WorkflowClassifierRecord = NO_CLASSIFIER): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars, classifier, isNull(tasks.workflowRef));
   }
 
-  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null): Promise<TaskRow> {
-    return this.writeWorkflowPin(id, ref, chosen, label, vars);
+  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null, classifier: WorkflowClassifierRecord = NO_CLASSIFIER): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars, classifier);
   }
 
   async setWorkflowVarOverrides(id: number, overrides: VarRecord | null): Promise<TaskRow> {
@@ -861,12 +869,12 @@ export class TaskService {
     });
   }
 
-  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, vars: VarRecord | null, unpinned?: SQL): Promise<TaskRow> {
+  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, vars: VarRecord | null, classifier: WorkflowClassifierRecord, unpinned?: SQL): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, workflowVars: vars, updatedAt: Date.now() })
+          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, workflowVars: vars, workflowReason: classifier.reason, workflowRoutingUsage: classifier.routingUsage, workflowRoutingCost: classifier.routingCost, updatedAt: Date.now() })
           .where(unpinned ? and(eq(tasks.id, id), unpinned) : eq(tasks.id, id))
           .returning()
           .get(),

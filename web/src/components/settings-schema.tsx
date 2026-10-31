@@ -987,6 +987,23 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    surfaces: ['workspace'],
+    title: 'Workflow classifier',
+    wide: true,
+    description:
+      "Picks a Ticket's workflow from the library by name and description when no operator choice or Workflow Label applies. Advisory: on error, timeout or invalid output the Workspace default workflow applies. Uses the Route Classifier's backend settings.",
+    action: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <Switch
+          checked={ctx.workspace.workflowClassifierEnabled ?? false}
+          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })}
+          label="Workflow classifier"
+        />
+      ) : null,
+    body: () => null,
+  },
+  {
+    tab: 'execution',
     surfaces: BOTH,
     title: 'Auto-runner',
     description: {

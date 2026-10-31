@@ -37,7 +37,7 @@ export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'canc
 export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
 export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
 
-export type WorkflowChosen = 'explicit' | 'label' | 'workspace' | 'global';
+export type WorkflowChosen = 'explicit' | 'label' | 'classifier' | 'workspace' | 'global';
 export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict' | 'skipped';
 
 export interface WorkflowIssue {
@@ -515,6 +515,7 @@ export interface Workspace extends PromptFragmentOverrides {
   /** Model Option overlay; `null` inherits every global Model Option in order, enabled. */
   modelOptions: ModelOptionOverlayEntry[] | null;
   classifierEnabled: boolean | null;
+  workflowClassifierEnabled?: boolean | null;
   classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null;
   classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null;
@@ -752,6 +753,8 @@ export interface Task {
   workflowRef: string | null;
   workflowChosen: WorkflowChosen | null;
   workflowLabel?: string | null;
+  /** The Workflow classifier's one-line reason when workflowChosen is 'classifier'; otherwise null. */
+  workflowReason?: string | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */
