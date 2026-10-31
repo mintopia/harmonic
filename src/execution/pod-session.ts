@@ -98,6 +98,11 @@ export class PodSession {
     return this.api.execStream(this.spec.target.namespace, this.name, [command, ...args], { env, cwd: this.workdir });
   }
 
+  streamFile(file: string, follow: boolean): Promise<ChildProcess> {
+    const argv = follow ? ['tail', '-F', '-c', '+1', file] : ['cat', file];
+    return this.api.execStream(this.spec.target.namespace, this.name, argv, { cwd: this.workdir });
+  }
+
   private get env(): Record<string, string> {
     const { target, codeRepository, baseBranch, branch } = this.spec;
     return {

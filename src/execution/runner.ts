@@ -62,6 +62,7 @@ import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { createPodOpener } from './pod-opener.js';
+import { PodTranscripts } from './pod-transcript.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
@@ -259,6 +260,16 @@ export class Runner {
               setExecution: async (task, execution) => {
                 await this.taskService.setExecution(task.id, execution);
               },
+            }),
+          }
+        : {}),
+      ...(workflows?.podTranscriptDir
+        ? {
+            podTranscripts: new PodTranscripts<TaskRow>({
+              dir: workflows.podTranscriptDir,
+              sessions: this.sessionStore,
+              attempts: this.attempts,
+              archive: (task, run, kind, stepId) => (kind === 'agent' ? this.archive?.implementationStep(task, run.number) : this.archive?.criticStep(task, run.number, 'pre-merge', stepId)),
             }),
           }
         : {}),

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ const IMAGE = process.env.HARMONIC_KIND_AGENT_IMAGE ?? 'node:22-bookworm';
 const TOKEN = 'kind-fake-oauth-token';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim();
-const agentSource = readFileSync(resolve(import.meta.dirname, '../fixtures/pod-acp-agent.mjs'), 'utf8');
+const agentSource = readFileSync(resolve(import.meta.dirname, '../fixtures/pod-acp-agent.mjs'), 'utf8').replace('process.env.POD_AGENT_SESSION', "'1'").replace('process.env.POD_AGENT_HOLD_MS ?? 0', "'8000'");
 
 describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-kind-agent-'));
@@ -25,9 +25,14 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
 
   const flow = (name: string, harness: string): string =>
     `name: ${name}\ndescription: kind\nruns_on: kind\nimage: ${IMAGE}\nsteps:\n${inBlock(`  - id: build\n    uses: agent\n    with:\n      harness: ${harness}\n      model: stub-model\n      prompt: do the work\n`)}`;
-  const runToDone = async (workflow: string): Promise<number> => {
+  const mirrorFile = (): string => join(root, 'data', 'pod-transcripts', 'claude', 'pod-session', 'pod-session.jsonl');
+  const start = async (workflow: string): Promise<number> => {
     const id = (await server.api('POST', '/api/tasks', { prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'worktree', workflow })).body.id as number;
     await server.api('POST', `/api/tasks/${id}/run`);
+    return id;
+  };
+  const runToDone = async (workflow: string, started?: number): Promise<number> => {
+    const id = started ?? (await start(workflow));
     await waitFor(async () => ['done', 'escalated'].includes((await server.api('GET', `/api/tasks/${id}`)).body.state), { timeoutMs: 300_000, intervalMs: 1000 });
     return id;
   };
@@ -77,6 +82,34 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
     expect(git(upstream, 'rev-parse', `refs/heads/harmonic/task-${id}`)).toBe(step!.outputs.checkpoint.sha);
     expect(git(upstream, 'log', '--format=%s', `refs/heads/harmonic/task-${id}`)).toBe('agent agent-1.txt\nbase');
     expect(JSON.stringify(step)).not.toContain(TOKEN);
+  }, 360_000);
+
+  it('mirrors the in-pod session file so the transcript, Archive and Usage match a local run', async () => {
+    const started = await start('agent-claude');
+    await waitFor(async () => readFileSync(mirrorFile(), 'utf8').includes('h\u00e9llo'), { timeoutMs: 120_000, intervalMs: 250 }).catch(() => undefined);
+    const liveText = (() => {
+      try {
+        return readFileSync(mirrorFile(), 'utf8');
+      } catch {
+        return '';
+      }
+    })();
+    const stateWhileLive = (await server.api('GET', `/api/tasks/${started}`)).body.state;
+    expect(liveText).toContain('h\u00e9llo \u2713');
+    expect(liveText).not.toContain('"type":"assistant"');
+    expect(stateWhileLive).not.toBe('done');
+    const id = await runToDone('agent-claude', started);
+    expect((await server.api('GET', `/api/tasks/${id}`)).body.state).toBe('done');
+    const inPod = Buffer.from(
+      `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'h\u00e9llo \u2713 \u65e5\u672c\u8a9e' } })}\n${JSON.stringify({ type: 'assistant', message: { id: 'msg-1', model: 'claude-sonnet-5', content: [{ type: 'text', text: 'done \u2713 \u65e5\u672c\u8a9e' }], usage: { input_tokens: 11, output_tokens: 7, cache_read_input_tokens: 5, cache_creation_input_tokens: 3 } } })}\n`,
+    );
+    const mirror = readFileSync(mirrorFile());
+    expect(mirror.equals(inPod)).toBe(true);
+    const archived = readdirSync(join(root, 'data', 'archive'), { recursive: true, encoding: 'utf8' }).filter((entry) => entry.includes(`${id}-`) && entry.endsWith(join('native', 'pod-session.jsonl')));
+    expect(archived).toHaveLength(1);
+    expect(readFileSync(join(root, 'data', 'archive', archived[0]!)).equals(inPod)).toBe(true);
+    const usage = (await server.api('GET', `/api/tasks/${id}/usage`)).body as { models: Record<string, unknown> };
+    expect(usage.models['claude-sonnet-5']).toEqual({ inputTokens: 11, outputTokens: 7, cacheReadTokens: 5, cacheWriteTokens: 3 });
   }, 360_000);
 
   it('escalates a Harness with no credential on the target and never runs it locally', async () => {
