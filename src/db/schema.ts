@@ -249,6 +249,9 @@ export const attempts = sqliteTable('attempts', {
   routeOption: text('route_option'),
   /** The classifier's one-line reason, or the abstention cause. */
   routeReason: text('route_reason'),
+  /** The chosen option's 1-based place in the Model Option list the classifier saw, and that list's length; null unless `routeKind` is `classifier`. */
+  routeOptionPosition: integer('route_option_position'),
+  routeOptionCount: integer('route_option_count'),
   /** JSON: latest live-usage snapshot, overwritten on a coarse cadence and on finish. */
   liveUsage: text('live_usage'),
   /** JSON: `ResolvedGuardrails` snapshotted at Attempt start; a later config change never alters it. */

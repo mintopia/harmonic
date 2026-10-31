@@ -205,7 +205,7 @@ export function TicketPage({
               </div>
               <div className="min-w-0">
                 <Metrics task={task} runs={runs} live={liveUsage} now={now} />
-                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} />
+                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} attempts={attempts} />
               </div>
             </div>
 

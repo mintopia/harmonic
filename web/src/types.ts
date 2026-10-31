@@ -81,6 +81,8 @@ export interface Attempt {
   model: string | null;
   /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
   classifier: AttemptClassifier | null;
+  /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+  routing: { cost: Cost | null; models: string[] } | null;
   steps: Step[];
 }
 

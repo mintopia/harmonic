@@ -1,11 +1,10 @@
 import type { Attempt } from '../../types';
-import type { ContentSelection } from '../../task-detail-model';
+import { harnessLabel, type ContentSelection } from '../../task-detail-model';
 import { attemptTone } from '../../attempt-timeline-model';
-import { railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle } from '../../ui';
+import { railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, codeChip } from '../../ui';
+import { formatCost } from '../../cost';
 import { Icon } from '../Icon';
 import { formatModelLabel } from '../TaskIdentity';
-import { harnessLabel } from '../../task-detail-model';
-import { codeChip } from '../../ui';
 import { NAV_DOT, NAV_WORD } from './shared';
 
 export function AttemptsNav({
@@ -68,6 +67,7 @@ function AttemptRoute({ attempt, harnessChanged }: { attempt: Attempt; harnessCh
       )}
       {harnessChanged && <div className="text-accent">Harness changed: cold Session</div>}
       {classifier?.kind === 'routed' && classifier.reason && <div>Classifier: {classifier.reason}</div>}
+      {attempt.routing && <div className="font-data">Routing {formatCost(attempt.routing.cost) ?? 'cost unavailable'}</div>}
       {classifier?.kind === 'abstained' && <div>Classifier abstained{classifier.reason ? `: ${classifier.reason}` : ''}</div>}
     </div>
   );

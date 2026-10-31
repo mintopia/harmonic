@@ -95,6 +95,8 @@ export interface ApiAttempt {
   model: string | null;
   /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
   classifier: AttemptClassifier | null;
+  /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+  routing: { cost: Cost | null; models: string[] } | null;
   verifierStatuses: VerifierStatus[];
   steps: ApiStep[];
 }
@@ -162,8 +164,15 @@ export function attemptToTimelineApi(
     harness: attempt.harness,
     model: attempt.model,
     classifier: attempt.routeKind
-      ? { kind: attempt.routeKind === 'classifier' ? 'routed' : 'abstained', optionId: attempt.routeOption, reason: attempt.routeReason }
+      ? {
+          kind: attempt.routeKind === 'classifier' ? 'routed' : 'abstained',
+          optionId: attempt.routeOption,
+          reason: attempt.routeReason,
+          position: attempt.routeOptionPosition,
+          optionCount: attempt.routeOptionCount,
+        }
       : null,
+    routing: attempt.routingUsage ? { cost: parseCost(attempt.routingCost), models: Object.keys(parseUsage(attempt.routingUsage)?.models ?? {}) } : null,
     verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),
   };

@@ -667,6 +667,8 @@ export class Runner {
         routeKind: outcome.kind === 'chosen' ? 'classifier' : 'abstained',
         routeOption: outcome.kind === 'chosen' ? outcome.option.id : null,
         routeReason: outcome.reason,
+        routeOptionPosition: outcome.kind === 'chosen' ? outcome.position : null,
+        routeOptionCount: outcome.kind === 'chosen' ? outcome.optionCount : null,
         ...(outcome.routing
           ? {
               routingUsage: JSON.stringify(outcome.routing.usage),

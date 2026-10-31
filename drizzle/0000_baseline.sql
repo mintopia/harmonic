@@ -88,6 +88,8 @@ CREATE TABLE `attempts` (
 	`route_kind` text,
 	`route_option` text,
 	`route_reason` text,
+	`route_option_position` integer,
+	`route_option_count` integer,
 	`live_usage` text,
 	`guardrail_config` text,
 	`price_table` text,

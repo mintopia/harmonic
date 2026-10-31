@@ -55,6 +55,8 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   routeKind: null,
   routeOption: null,
   routeReason: null,
+  routeOptionPosition: null,
+  routeOptionCount: null,
   liveUsage: null,
   guardrailConfig: null,
   priceTable: null,

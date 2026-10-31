@@ -167,7 +167,7 @@ const syntheticAttempt = (s: ReturnType<typeof timelineSpans>[number]): Attempt 
     verifiedSha: null,
     workingDir: null,
     escalationReason: s.state === 'escalated' ? 'escalated to human' : null,
-    harness: null, model: null, classifier: null, verifierStatuses: [],
+    harness: null, model: null, classifier: null, routing: null, verifierStatuses: [],
     continuation: null,
     steps: [
       { id: s.attemptId * 10 + 1, attemptId: s.attemptId, type: 'rebase', position: 1, state: 'passed', command: null, verdict: 'clean', logLocator: null, startedAt: at(0), endedAt: at(0.08) },

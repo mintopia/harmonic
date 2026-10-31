@@ -236,6 +236,50 @@
           "reason"
         ]
       },
+      "CostInput": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ]
+      },
       "AttemptInput": {
         "type": "object",
         "properties": {
@@ -443,12 +487,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ]
               },
               {
@@ -460,6 +530,38 @@
               "optionId": "opus-deep",
               "reason": "Cross-cutting refactor; needs deep reasoning."
             }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "verifierStatuses": {
             "type": "array",
@@ -489,6 +591,7 @@
           "harness",
           "model",
           "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ]
@@ -713,50 +816,6 @@
           "totals",
           "toolCalls",
           "source"
-        ]
-      },
-      "CostInput": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ]
       },
       "TimelineAttemptInput": {
@@ -2718,12 +2777,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ]
               },
               {
@@ -3414,12 +3499,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ]
               },
               {
@@ -4094,12 +4205,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ]
               },
               {
@@ -10474,6 +10611,51 @@
         ],
         "additionalProperties": false
       },
+      "Cost": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ],
+        "additionalProperties": false
+      },
       "Attempt": {
         "type": "object",
         "properties": {
@@ -10682,12 +10864,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ],
                 "additionalProperties": false
               },
@@ -10700,6 +10908,39 @@
               "optionId": "opus-deep",
               "reason": "Cross-cutting refactor; needs deep reasoning."
             }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "verifierStatuses": {
             "type": "array",
@@ -10729,6 +10970,7 @@
           "harness",
           "model",
           "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ],
@@ -10959,51 +11201,6 @@
           "totals",
           "toolCalls",
           "source"
-        ],
-        "additionalProperties": false
-      },
-      "Cost": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ],
         "additionalProperties": false
       },
@@ -12991,12 +13188,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ],
                 "additionalProperties": false
               },
@@ -13693,12 +13916,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ],
                 "additionalProperties": false
               },
@@ -14379,12 +14628,38 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "kind",
                   "optionId",
-                  "reason"
+                  "reason",
+                  "position",
+                  "optionCount"
                 ],
                 "additionalProperties": false
               },

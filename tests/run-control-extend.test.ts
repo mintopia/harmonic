@@ -40,6 +40,8 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     routeKind: null,
     routeOption: null,
     routeReason: null,
+    routeOptionPosition: null,
+    routeOptionCount: null,
     liveUsage: null,
     guardrailConfig: guardrailConfig(60),
     priceTable: null,

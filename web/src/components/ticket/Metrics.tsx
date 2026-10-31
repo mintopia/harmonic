@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { formatCost } from '../../cost';
-import type { AttemptSummary, AttemptUsageEvent, Task } from '../../types';
+import type { Attempt, AttemptSummary, AttemptUsageEvent, Task } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
 import { sumCosts } from '../../activity-model';
 import { codeChip } from '../../ui';
@@ -108,7 +108,7 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   return routing.applied ? (
     <span className="text-small text-muted">
       {' '}
-      — routed by <code className={`${codeChip} bg-tool-tint text-tool`}>{routing.label}</code>
+      — routed by <code className={`${codeChip} bg-tool-tint text-tool`}>{routing.label}</code>; the classifier was not consulted
     </span>
   ) : (
     <span className="text-small text-muted">
@@ -119,8 +119,17 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
-function ClassifierNote({ task, classifier }: { task: Task; classifier: NonNullable<Task['classifier']> }) {
+function priorVerdict(previous: Attempt | undefined): string {
+  if (!previous) return 'first Attempt, no prior verdict';
+  const why = previous.feedback ?? previous.escalationReason;
+  return `Attempt ${previous.number} ${previous.state}${why ? `: ${why}` : ''}`;
+}
+
+function ClassifierNote({ task, classifier, attempts }: { task: Task; classifier: NonNullable<Task['classifier']>; attempts: Attempt[] }) {
   const [open, setOpen] = useState(false);
+  const latestIndex = attempts.findLastIndex((a) => a.classifier !== null);
+  const latest = latestIndex >= 0 ? attempts[latestIndex] : undefined;
+  const previous = latestIndex > 0 ? attempts[latestIndex - 1] : undefined;
   if (classifier.kind === 'overridden') {
     return (
       <span className="text-small text-muted">
@@ -160,8 +169,24 @@ function ClassifierNote({ task, classifier }: { task: Task; classifier: NonNulla
             <div>
               <div className="text-label font-bold uppercase tracking-[0.03em] text-muted">Chosen</div>
               <p className="text-small text-ink">
-                <code className={`${codeChip} bg-tool-tint text-tool`}>{classifier.optionId}</code> · {harnessLabel(task.harness)}{' '}
-                <span className="text-muted">{formatModelLabel(task.model)}</span>
+                <code className={`${codeChip} bg-tool-tint text-tool`}>{classifier.optionId}</code>
+                {classifier.position !== null && classifier.optionCount !== null && ` · option ${classifier.position} of ${classifier.optionCount}`} ·{' '}
+                {harnessLabel(task.harness)} <span className="text-muted">{formatModelLabel(task.model)}</span>
+              </p>
+            </div>
+          )}
+          {latest && (
+            <div>
+              <div className="text-label font-bold uppercase tracking-[0.03em] text-muted">Attempt</div>
+              <p className="text-small text-ink">{latest.number} · {priorVerdict(previous)}</p>
+            </div>
+          )}
+          {latest?.routing && (
+            <div>
+              <div className="text-label font-bold uppercase tracking-[0.03em] text-muted">Routing</div>
+              <p className="text-small text-muted">
+                Routing {formatCost(latest.routing.cost) ?? 'cost unavailable'}
+                {latest.routing.models.length > 0 && ` · ${latest.routing.models.map(formatModelLabel).join(', ')}`}
               </p>
             </div>
           )}
@@ -171,7 +196,7 @@ function ClassifierNote({ task, classifier }: { task: Task; classifier: NonNulla
   );
 }
 
-export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
+export function Properties({ task, allTasks, workspaceName, attempts = [] }: { task: Task; allTasks: Task[]; workspaceName: string | null; attempts?: Attempt[] }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
   const notStarted = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured';
@@ -187,7 +212,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
           </>
         )}
         {task.routing && <RoutedByNote routing={task.routing} />}
-        {task.classifier && <ClassifierNote task={task} classifier={task.classifier} />}
+        {task.classifier && <ClassifierNote task={task} classifier={task.classifier} attempts={attempts} />}
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">

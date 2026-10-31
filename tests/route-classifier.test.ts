@@ -268,7 +268,7 @@ describe('Route Classifier', () => {
       await setClassifier();
       backend.classify.mockResolvedValue(answer('cheap-fix', 'small fix'));
       const bound = await beginRun(await claimMirrored());
-      expect(await attempts.get(bound.id)).toMatchObject({ routeKind: 'classifier', routeOption: 'cheap-fix', routeReason: 'small fix' });
+      expect(await attempts.get(bound.id)).toMatchObject({ routeKind: 'classifier', routeOption: 'cheap-fix', routeReason: 'small fix', routeOptionPosition: expect.any(Number), routeOptionCount: expect.any(Number) });
     });
   });
 });
