@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Workflows - mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Paper tokens copied from web/src/index.css (light = :root, dark = [data-theme=dark]) */
+:root{
+  color-scheme:light;
+  --canvas:#edeeeb;--shell:#fff;--surface:#fff;--sunken:#f5f5f3;--field:#fff;--raised:#ededea;
+  --hairline:#e0e0db;--edge:#d0d0ca;--edge-strong:#c3c3bc;--switch-off:#858983;
+  --ink:#1b1e24;--muted:#656b73;--faint:#61676f;
+  --accent:#077067;--accent-hot:#0a6f66;--accent-tint:#b6ece4;--on-accent:#fff;
+  --running:#a74d08;--running-tint:#fdeacc;--ready:#1160ae;--ready-tint:#cee3fa;
+  --await:#4740c6;--await-tint:#d6d2fc;--on-await:#fff;
+  --merged:#0d7734;--merged-tint:#c2f2cd;--fail:#b3253f;--fail-tint:#ffccd6;
+  --tool:#077067;--tool-tint:#b6ece4;--paused:#205f99;--paused-tint:#cde4fb;
+  --shadow-card:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);
+  --shadow-float:0 8px 20px rgb(23 26 34/.12),0 24px 60px rgb(23 26 34/.16);
+  --shadow-bar:0 16px 44px rgb(27 30 36/.16),0 0 0 1px var(--hairline);
+  --shadow-btn:0 1px 2px rgb(13 114 113/.32);
+  --font-data:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#141416;--shell:#191a1c;--surface:#1e1f22;--sunken:#141416;--field:#191a1c;--raised:#292a2e;
+  --hairline:#2f3035;--edge:#414248;--edge-strong:#4e4f55;--switch-off:#696c73;
+  --ink:#e9e9ec;--muted:#a5a6ab;--faint:#949599;
+  --accent:#2ed3c4;--accent-hot:#5fe6da;--accent-tint:#0f3e38;--on-accent:#04120f;
+  --running:#ffb524;--running-tint:#51360a;--ready:#4ca8f5;--ready-tint:#0b2740;
+  --await:#bd9dff;--await-tint:#372f97;--on-await:#0b0b18;
+  --merged:#2bf58e;--merged-tint:#0d5531;--fail:#ff5570;--fail-tint:#4d121f;
+  --tool:#2ed3c4;--tool-tint:#0f3e38;--paused:#57b0ff;--paused-tint:#10395c;
+  --shadow-card:0 0 0 1px var(--hairline),0 2px 10px rgb(0 0 0/.4);
+  --shadow-float:0 8px 24px rgb(0 0 0/.5),0 0 0 1px var(--edge);
+  --shadow-bar:0 16px 44px rgb(0 0 0/.55),0 0 0 1px var(--edge);
+  --shadow-btn:0 1px 2px rgb(0 0 0/.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:400 14px/1.5 var(--font);font-variant-numeric:tabular-nums}
+code,.data{font-family:var(--font-data);font-size:13px}
+::selection{background:var(--accent-tint);color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1180px;margin:0 auto;padding:24px 24px 80px}
+.topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+.topbar button{font:inherit;font-size:12px;color:var(--muted);background:none;border:1px solid var(--edge);border-radius:3px;padding:4px 10px;cursor:pointer}
+h2.sec{font-size:23px;line-height:1.2;letter-spacing:-.025em;font-weight:700;margin:48px 0 2px}
+h2.sec .tk{font-family:var(--font-data);font-size:12px;font-weight:600;letter-spacing:0;background:var(--tool-tint);color:var(--tool);border-radius:3px;padding:2px 6px;margin-left:8px;vertical-align:middle}
+p.sub{margin:0 0 16px;color:var(--muted);max-width:78ch}
+.label{font-size:10px;line-height:1.2;letter-spacing:.09em;font-weight:600;text-transform:uppercase;color:var(--muted)}
+.small{font-size:12px;line-height:1.45}
+.card{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+.section{padding:20px;margin-bottom:12px}
+.section h3{font-size:15px;line-height:1.4;font-weight:600;margin:0}
+.section .desc{margin:2px 0 16px;color:var(--muted)}
+.vlabel{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:20px 0 8px}
+.vlabel:first-child{margin-top:0}
+.note{font-size:12px;color:var(--faint);margin-top:8px}
+.dim{color:var(--muted)}
+.hr{border:0;border-top:1px solid var(--hairline);margin:20px 0}
+.grid2c{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+@media (max-width:900px){.grid2c,.grid3c{grid-template-columns:1fr!important}}
+.scope{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.scope .crumb{font-size:12px;color:var(--muted)}
+.scopechip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;background:var(--raised);color:var(--muted)}
+.scopechip.ws{background:var(--accent-tint);color:var(--accent)}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--hairline);margin-bottom:16px;overflow-x:auto}
+.tab{min-height:44px;display:inline-flex;align-items:center;padding:0 4px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{border-color:var(--accent);color:var(--ink)}
+
+/* buttons / fields */
+.btnghost,.btnprimary,.btnquiet,.btndanger{display:inline-flex;min-height:36px;align-items:center;gap:6px;border-radius:3px;padding:4px 12px;font:500 13px var(--font);white-space:nowrap}
+.btnghost{border:1px solid var(--edge);background:var(--surface);color:var(--ink)}
+.btnprimary{background:var(--accent);color:var(--on-accent);font-weight:600;box-shadow:var(--shadow-btn);background-image:linear-gradient(180deg,rgb(255 255 255/.15),rgb(255 255 255/0) 52%,rgb(0 0 0/.09))}
+.btnquiet{color:var(--muted);padding:4px 6px}
+.btndanger{border:1px solid var(--fail);color:var(--fail);background:var(--surface)}
+.btndanger.solid{background:var(--fail);color:var(--surface);font-weight:600}
+.dis{opacity:1;background:var(--raised)!important;background-image:none!important;color:var(--faint)!important;box-shadow:none!important;border:1px solid var(--hairline)!important;cursor:not-allowed}
+.btnghost.lg,.btnprimary.lg{min-height:44px;padding:8px 14px;font-size:14px}
+.btngo{display:inline-flex;min-height:36px;align-items:center;border-radius:3px;background:var(--await);color:var(--on-await);padding:4px 12px;font:600 13px var(--font)}
+.fl{display:block;margin-bottom:6px}
+.field,.select{width:100%;min-height:36px;border:1px solid var(--edge);background:var(--field);color:var(--ink);border-radius:3px;padding:4px 10px;font:inherit;display:flex;align-items:center}
+.select{justify-content:space-between}
+.select:after{content:"";width:12px;height:12px;background:no-repeat center/12px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238A8F98' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");flex:none}
+.field.focus{border-color:var(--accent)}
+.field.err{border-color:var(--fail)}
+.field.ro{background:var(--sunken);color:var(--muted)}
+.errmsg{margin:4px 0 0;font-size:11px;color:var(--fail);line-height:1.35}
+.switch{position:relative;display:inline-block;height:18px;width:32px;border-radius:999px;background:var(--switch-off);flex:none}
+.switch:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--surface);box-shadow:0 1px 1px rgb(0 0 0/.2)}
+.switch.on{background:var(--accent)}
+.switch.on:after{transform:translateX(14px)}
+
+/* pills & chips */
+.pill{display:inline-flex;align-items:center;border-radius:3px;padding:3px 9px;font-size:11px;font-weight:600}
+.pill.working{background:var(--running-tint);color:var(--running)}
+.pill.escalated{background:var(--await-tint);color:var(--await)}
+.pill.ready{background:var(--ready-tint);color:var(--ready)}
+.pill.paused{background:var(--raised);color:var(--muted)}
+.pill.saved{background:var(--merged-tint);color:var(--merged)}
+.pill.dirty{background:var(--raised);color:var(--muted)}
+.pill.bad{background:var(--fail-tint);color:var(--fail)}
+.pill.bundled{background:var(--raised);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:10px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:600;white-space:nowrap}
+.chip.def{background:var(--accent-tint);color:var(--accent)}
+.chip.ws{background:var(--ready-tint);color:var(--ready)}
+.chip.neu{background:var(--raised);color:var(--muted)}
+.chip.tk{background:var(--accent-tint);color:var(--accent)}
+.oc{display:inline-flex;align-items:center;border-radius:3px;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.oc.pass{background:var(--merged-tint);color:var(--merged)}
+.oc.fail{background:var(--fail-tint);color:var(--fail)}
+.oc.inconclusive{background:var(--raised);color:var(--muted);box-shadow:inset 0 0 0 1px var(--edge-strong)}
+.oc.conflict{background:var(--fail-tint);color:var(--fail);box-shadow:inset 0 0 0 1px var(--fail)}
+.oc.running{background:var(--running-tint);color:var(--running)}
+.oc.pending{background:var(--raised);color:var(--faint)}
+.oc.skipped{background:var(--raised);color:var(--faint);text-decoration:line-through}
+code.i{font-size:12px;background:var(--raised);padding:0 5px;border-radius:3px;color:var(--ink)}
+
+/* library table */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;padding:8px 12px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:600;color:var(--muted);border-bottom:1px solid var(--hairline)}
+.tbl td{padding:12px;border-bottom:1px solid var(--hairline);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .wn{font-weight:600}
+.tbl .acts{display:flex;gap:2px;flex-wrap:wrap;justify-content:flex-end}
+.tbl .why{font-size:11px;color:var(--faint);text-align:right;margin-top:2px;max-width:200px;margin-left:auto}
+.lnk{font:600 12px var(--font);color:var(--accent);padding:4px 6px}
+.lnk.off{color:var(--faint);font-weight:500;text-decoration:line-through}
+.lnk.bad{color:var(--fail)}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.toolbar .sp{flex:1}
+.toast{display:flex;gap:10px;align-items:flex-start;background:var(--fail-tint);color:var(--ink);border-radius:4px;padding:10px 14px;box-shadow:var(--shadow-float);max-width:520px}
+.toast b{color:var(--fail)}
+.toast .x{margin-left:auto;color:var(--muted);font-size:12px}
+.confirm{padding:16px;max-width:520px}
+.confirm h4{margin:0 0 4px;font-size:15px}
+.confirm .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
+
+/* editor */
+.edwrap{display:flex;flex-direction:column}
+.edhead{display:flex;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap}
+.edhead h3{font-size:15px;font-weight:700;margin:0}
+.edhead .sp{flex:1}
+.edhead .ver{font-family:var(--font-data);font-size:12px;color:var(--muted)}
+.banner{border-radius:3px;background:var(--await-tint);padding:8px 12px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner.info{background:var(--raised)}
+.banner.warn{background:var(--raised)}
+.banner .hd{font-weight:600;color:var(--await)}
+.banner.info .hd{color:var(--ink)}
+.banner.warn .hd{color:var(--ink)}
+.banner .sp{flex:1}
+.ed{position:relative;font-family:var(--font-data);font-size:12px;line-height:20px;background:var(--field);border:1px solid var(--edge);border-radius:4px;overflow:visible}
+.ed.ro{background:var(--sunken)}
+.ln{display:grid;grid-template-columns:44px 1fr;position:relative}
+.ln .n{text-align:right;padding-right:10px;color:var(--faint);background:var(--sunken);user-select:none;border-right:1px solid var(--hairline)}
+.ln .c{white-space:pre;padding-bottom:2px;padding-left:12px;min-width:0;overflow:hidden}
+.ln.err .n{color:var(--fail);font-weight:700;background:var(--fail-tint)}
+.ln.err .c{background:var(--fail-tint)}
+.ln.hl .c{background:var(--accent-tint)}
+.ln.cur .c{background:var(--raised)}
+.sq{text-decoration:underline wavy var(--fail);text-underline-offset:3px;text-decoration-thickness:1.5px}
+.emsg{display:grid;grid-template-columns:44px 1fr;font-family:var(--font);font-size:12px;line-height:1.4}
+.emsg .n{background:var(--sunken);border-right:1px solid var(--hairline)}
+.emsg .c{background:var(--fail-tint);color:var(--fail);padding:3px 12px 4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.emsg .c b{font-weight:600}
+.emsg .src{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.k{color:var(--accent)}.s{color:var(--ink)}.nm{color:var(--muted)}.cm{color:var(--faint);font-style:italic}.ex{color:var(--merged)}.ac{color:var(--await);font-weight:600}.pu{color:var(--faint)}
+.caret{display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:-1px}
+.pop{position:absolute;z-index:6;top:20px;min-width:300px;background:var(--surface);border-radius:4px;box-shadow:var(--shadow-bar);font-family:var(--font);font-size:13px;padding:4px 0;white-space:normal}
+.pop .it{display:flex;align-items:baseline;gap:10px;padding:5px 10px}
+.pop .it code{font-size:12px;color:var(--ink)}
+.pop .it code b{color:var(--accent)}
+.pop .it .d{color:var(--muted);font-size:11px;margin-left:auto;text-align:right}
+.pop .it.hl{background:var(--raised)}
+.pop .ft{border-top:1px solid var(--hairline);margin-top:4px;padding:4px 10px 2px;font-size:10px;color:var(--faint)}
+.edfoot{display:flex;gap:10px;align-items:center;padding:8px 14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.edfoot .sp{flex:1}
+.errlist{margin:0;padding:0;list-style:none;font-size:12px}
+.errlist li{display:flex;gap:8px;padding:2px 0;color:var(--fail)}
+.errlist li span{color:var(--muted);font-family:var(--font-data);font-size:11px;min-width:76px}
+.stripe{display:grid;grid-template-columns:1fr;gap:8px}
+
+/* diagram */
+.diawrap{position:relative;padding:12px}
+.diawrap.stale svg{opacity:.5}
+.diahead{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.diahead .sp{flex:1}
+.dia text{font-family:var(--font);font-size:12px;fill:var(--ink)}
+.dia .t2{font-family:var(--font-data);font-size:11px;fill:var(--muted)}
+.dia .t3{font-family:var(--font-data);font-size:11px;fill:var(--muted)}
+.dia .lab{font-size:11px;fill:var(--muted)}
+.dia .grp{font-size:11px;font-weight:600;fill:var(--accent);letter-spacing:.04em}
+.dia .nd{fill:var(--surface);stroke:var(--edge-strong);stroke-width:1}
+.dia .nd.ag{stroke:var(--accent)}
+.dia .nd.cr{stroke:var(--ready)}
+.dia .nd.es{fill:var(--await-tint);stroke:var(--await)}
+.dia .nd.mg{fill:var(--merged-tint);stroke:var(--merged)}
+.dia .box{fill:none;stroke:var(--accent);stroke-width:1.2;stroke-dasharray:5 4}
+.dia .box.par{stroke:var(--edge-strong);stroke-dasharray:2 3}
+.dia .box.cl{stroke:var(--faint);stroke-dasharray:2 3;fill:var(--sunken)}
+.dia .eg{fill:none;stroke:var(--faint);stroke-width:1.2}
+.dia .eg.back{stroke:var(--fail);stroke-dasharray:4 3}
+.dia .eg.esc{stroke:var(--await)}
+.dia .eg.dot{stroke-dasharray:2 3}
+.dia .ar{fill:var(--faint)}
+.dia .ar.run{fill:var(--fail)}
+.dia .ar.esc{fill:var(--await)}
+.dia .o-pass{fill:var(--merged);font-weight:700}
+.dia .o-fail{fill:var(--fail);font-weight:700}
+.dia .o-esc{fill:var(--await);font-weight:700}
+.dia .ifd{fill:var(--raised);stroke:var(--muted);stroke-width:1}
+.dia .dtxt{font-size:11px;font-weight:700;fill:var(--muted)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:18px;height:0;border-top:1.5px solid var(--faint);vertical-align:middle;margin-right:5px}
+.legend i.b{border-top:1.5px dashed var(--fail)}
+.legend i.e{border-top-color:var(--await)}
+.legend i.l{border-top:1.5px dashed var(--accent)}
+
+/* builder */
+.bld{display:flex;flex-direction:column;gap:12px}
+.pal{padding:12px}
+.pal{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.pal>.label{width:100%;margin:6px 0 0}.pal>.label:first-child{margin-top:0}.pal .it{width:auto;margin:0;display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--hairline);border-radius:3px;background:var(--surface);margin-bottom:5px;cursor:grab}
+.pal .it code{font-size:12px}
+.pal .it .d{font-size:10px;color:var(--faint);margin-left:auto}
+.pal .grp{margin:10px 0 6px}
+.grip{color:var(--faint);display:inline-flex;align-items:center;justify-content:center;width:14px;flex:none;cursor:grab}
+.canvas{background:var(--sunken);border:1px solid var(--hairline);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.blk{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card);padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.blk .badge{font-family:var(--font-data);font-size:11px;font-weight:600;background:var(--accent-tint);color:var(--accent);border-radius:3px;padding:1px 6px}
+.blk .badge.cr{background:var(--ready-tint);color:var(--ready)}
+.blk .badge.m{background:var(--merged-tint);color:var(--merged)}
+.blk .sum{color:var(--muted);font-size:12px;min-width:0}
+.blk .ctl{margin-left:auto;display:flex;gap:6px;color:var(--faint);font-size:12px}
+.blk.sel{box-shadow:var(--shadow-card),0 0 0 2px var(--accent)}
+.blk.bad{box-shadow:var(--shadow-card),0 0 0 2px var(--fail)}
+.blk .form{flex-basis:100%;display:grid;grid-template-columns:1fr;gap:8px;margin-top:6px;padding-top:10px;border-top:1px solid var(--hairline)}
+.blk .form .full{grid-column:1/-1}
+.blk .errmsg{flex-basis:100%;margin:2px 0 0}
+.cont{border:1.5px dashed var(--accent);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px;background:var(--canvas)}
+.cont.par{border-color:var(--edge-strong);border-style:dotted}
+.cont.bad{border-color:var(--fail)}
+.conth{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conth b{font-size:12px;color:var(--accent);letter-spacing:.04em}
+.cont.par .conth b{color:var(--muted)}
+.cont.bad .conth b{color:var(--fail)}
+.conth .mx{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--muted)}
+.conth .mx .field{width:200px;white-space:nowrap;min-height:28px;font-family:var(--font-data);font-size:12px}
+.dropline{height:3px;border-radius:2px;background:var(--accent);position:relative;margin:-1px 0}
+.dropline:before{content:"";position:absolute;left:-3px;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.ghost{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-float),0 0 0 1px var(--accent);padding:6px 10px;display:inline-flex;align-items:center;gap:8px;align-self:flex-start;margin-left:40px;margin-top:-4px;margin-bottom:-6px;position:relative;z-index:3}
+.ghost code{font-size:12px}
+.sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.sync .dotp{width:8px;height:8px;border-radius:50%;background:var(--merged)}
+.sync .dotp.b{background:var(--fail)}
+.ann{font-size:11px;color:var(--accent);font-weight:600;margin:4px 0 0}
+
+/* vars */
+.vtbl{width:100%;border-collapse:collapse}
+.vtbl th{text-align:left;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--hairline)}
+.vtbl td{padding:10px 8px;border-bottom:1px solid var(--hairline);vertical-align:top}
+.vtbl tr:last-child td{border-bottom:0}
+.vtbl .vn{font-family:var(--font-data);font-size:13px;font-weight:600}
+.vtbl .ty{font-size:11px;color:var(--faint)}
+.vtbl .field{min-width:96px;min-height:32px;font-family:var(--font-data);font-size:12px}
+.rst{white-space:nowrap;font:600 11px var(--font);color:var(--accent)}
+.rst.off{color:var(--faint);font-weight:500}
+.prec{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:var(--sunken);border:1px solid var(--hairline);border-radius:3px;padding:8px 12px;margin-bottom:14px}
+.prec b{font-weight:600;color:var(--ink)}
+.prec .arrow{color:var(--faint)}
+.prec .lead{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+.prec .hl{color:var(--accent)}
+
+/* label lists */
+.elhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.addlink{font-size:12px;font-weight:600;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;font-family:inherit}
+.tray{display:flex;flex-direction:column;gap:6px;border:1px solid var(--hairline);background:var(--sunken);border-radius:4px;padding:6px}
+.row{background:var(--surface);border-radius:4px;box-shadow:var(--shadow-card)}
+.row.locked{opacity:.9}
+.rowh{display:grid;grid-template-columns:16px 20px minmax(110px,1fr) 20px minmax(180px,1.4fr) auto;align-items:center;gap:10px;padding:8px 12px}
+.pri{font-size:10px;font-weight:700;color:var(--faint);text-align:center}
+.arr{color:var(--faint);text-align:center}
+.rowc{display:flex;align-items:center;gap:8px;justify-content:flex-end;font-size:12px;color:var(--faint)}
+.rm{font-size:12px;color:var(--faint);background:none;border:0;cursor:pointer;font-family:inherit;padding:0}
+.gchip{border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;text-transform:uppercase;background:var(--raised);color:var(--muted)}
+.lbl{font-family:var(--font-data);font-size:13px}
+.off .lbl,.off .static{opacity:.55;text-decoration:line-through}
+.rowerr{padding:0 12px 10px 58px}
+.static{display:inline-flex;align-items:center;gap:7px}
+.pickrow{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:760px}
+.xref{display:flex;align-items:center;gap:10px;background:var(--sunken);border:1px dashed var(--edge);border-radius:4px;padding:10px 12px;font-size:12px;color:var(--muted);margin-top:14px}
+
+/* ticket */
+.tickethead{padding:20px 24px}
+.tickethead h1{margin:0;font-size:24px;font-weight:800;line-height:1.15;letter-spacing:-.03em;max-width:680px}
+.thr{display:flex;gap:16px;align-items:flex-start}
+dl.props{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin:16px 0 0}
+dl.props dt{margin:0 0 2px}
+dl.props dd{margin:0}
+dl.props .wide{grid-column:1/-1}
+.wf strong{font-weight:600}
+.wf .how{color:var(--muted)}
+.wf code{font-size:12px;color:var(--tool);background:var(--tool-tint);padding:0 5px;border-radius:3px}
+.wf .snap{display:block;font-size:12px;color:var(--faint);margin-top:2px}
+.steps{display:flex;flex-direction:column;gap:0;font-size:13px}
+.st{display:grid;grid-template-columns:78px minmax(110px,1fr) minmax(130px,1.2fr) auto;gap:10px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--hairline)}
+.st:last-child{border-bottom:0}
+.st .id{font-family:var(--font-data);font-size:12.5px;font-weight:600}
+.st .uses{font-family:var(--font-data);font-size:12px;color:var(--muted)}
+.st .ex2{font-size:11px;color:var(--faint);text-align:right}
+.st.in{margin-left:18px}
+.st.skip .id{text-decoration:line-through;color:var(--faint)}
+.sgh{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--sunken);border-bottom:1px solid var(--hairline);font-size:12px;font-weight:600}
+.sgh .sp{flex:1}
+.sgh .c{font-weight:400;color:var(--muted)}
+.rn{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:0 7px;font:600 10px var(--font-data);background:var(--tool-tint);color:var(--tool)}
+.pargroup{margin:0 0 0 18px;border-left:1px solid var(--edge);}
+.pargroup .st{border-bottom:1px solid var(--hairline)}
+
+/* escalation */
+.esc{padding:20px 24px}
+.escbanner{border-radius:3px;background:var(--await-tint);padding:10px 14px;font-size:13px;margin:14px 0}
+.escbanner .hd{font-weight:600;color:var(--await);display:flex;gap:6px;align-items:center}
+.escbanner code{font-size:12px;background:var(--surface);padding:0 5px;border-radius:3px}
+.acts3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.act{border:1px solid var(--hairline);border-radius:4px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.act h4{margin:0;font-size:14px;font-weight:700}
+.act p{margin:0;font-size:12.5px;color:var(--muted)}
+.act p b{color:var(--ink);font-weight:600}
+.act .why{font-size:11px;color:var(--faint)}
+.act .foot{margin-top:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.act.primary{border-color:var(--accent)}
+.retryform{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.retryform .full{grid-column:1/-1}
+.textarea{min-height:56px;align-items:flex-start;padding-top:6px;color:var(--faint);font-size:12px}
+.gate{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hairline);background:var(--surface);padding:12px 14px;box-shadow:var(--shadow-float);margin-top:16px;border-radius:0 0 4px 4px;flex-wrap:wrap}
+.gate .sp{flex:1}
+.hint-inline{font-size:12px;color:var(--muted)}
+.pausebox{display:flex;gap:12px;align-items:center;padding:10px 14px;background:var(--sunken);border:1px solid var(--hairline);border-radius:4px;font-size:12.5px;flex-wrap:wrap}
+.pausebox .sp{flex:1;min-width:200px}
+.reasons{width:100%;border-collapse:collapse;font-size:12.5px}
+.reasons td,.reasons th{padding:6px 10px;border-bottom:1px solid var(--hairline);text-align:left;vertical-align:top}
+.reasons th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.reasons tr:last-child td{border-bottom:0}
+
+/* options */
+.options{display:flex;flex-direction:column;gap:16px}
+.option{display:flex;gap:14px;align-items:flex-start;border:2px solid var(--edge);border-radius:6px;padding:16px;background:var(--canvas);cursor:pointer;transition:border-color .15s}
+.option:hover{border-color:var(--accent)}
+.option.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent-tint) 35%,var(--canvas))}
+.option .letter{flex:none;width:28px;height:28px;border-radius:50%;background:var(--raised);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700}
+.option.selected .letter{background:var(--accent);color:var(--on-accent)}
+.option .content{flex:1;min-width:0}
+.option .content h3{font-size:15px;margin:0 0 2px;font-weight:700}
+.option .content p.d{margin:0 0 12px;color:var(--muted);font-size:13px}
+@media (max-width:900px){.bld,.acts3{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.sic{flex:none}.sic.pass{color:var(--merged)}.sic.fail{color:var(--fail)}.sic.running{color:var(--running)}.sic.pending{color:var(--faint)}.sic.skipped{color:var(--faint)}
+@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin 1.1s linear infinite}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.steps2{padding:0;overflow:hidden;margin-bottom:12px}
+.stephead{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:12px 14px;border-bottom:1px solid var(--hairline)}
+.atabs{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--hairline);background:var(--sunken);flex-wrap:wrap}
+.atabs .sp{flex:1}
+.atab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--edge);border-radius:3px;background:var(--surface);padding:3px 10px;font-size:12px;font-weight:500;color:var(--muted)}
+.atab.on{border-color:var(--accent);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--accent)}
+.stp{border-bottom:1px solid var(--hairline)}
+.stp summary,.stp .sm{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;list-style:none;font-size:13px}
+.stp summary::-webkit-details-marker{display:none}
+.stp summary:hover{background:var(--sunken)}
+.stp .chev{width:10px;height:10px;flex:none;background:no-repeat center/10px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M3 1.5 6.5 5 3 8.5' fill='none' stroke='%238A8F98' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.stp[open]>summary .chev{transform:rotate(90deg)}
+.stp .chev.off{opacity:0}
+.stp .sm{cursor:default}
+.stp .sn{font-weight:600}
+.stp .kb code{font-size:11.5px}
+.stp .kb{font-size:11.5px;color:var(--muted);background:var(--raised);border-radius:3px;padding:1px 7px}
+.stp .dur{margin-left:auto;font-size:12px;color:var(--muted)}
+.stp.skip .sn{color:var(--faint)}
+.stp.in summary,.stp.in .sm{padding-left:32px}
+.pgrp{border-bottom:1px solid var(--hairline)}
+.pgrp .stp:last-child{border-bottom:0}
+.pgl{padding:6px 14px 0 38px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:600;color:var(--faint)}
+.logpane{background:var(--sunken);border-top:1px solid var(--hairline);padding:8px 0;font-family:var(--font-data);font-size:12px;line-height:19px;overflow-x:auto}
+.lg{display:grid;grid-template-columns:52px 1fr}
+.lg .n{text-align:right;padding-right:12px;color:var(--faint);user-select:none}
+.lg .c{white-space:pre;color:var(--ink)}
+.lg.bad{background:var(--fail-tint)}.lg.bad .c,.lg.bad .n{color:var(--fail)}
+.retryopts{display:flex;flex-direction:column;gap:12px;margin:0 0 14px;max-width:560px}
+.retryopts .field,.retryopts .select{width:100%}
+.gate{align-items:flex-start;justify-content:space-between;gap:16px}
+.gcopy{flex:1;min-width:260px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.gcopy b{color:var(--ink);font-weight:600}
+.gcopy .why2{color:var(--fail)}
+.gbtns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+.frow{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--hairline)}
+.frow:last-child{border-bottom:0}
+dl.props{display:flex;flex-wrap:wrap;gap:0;border-top:1px solid var(--hairline);margin-top:16px}
+dl.props>div{padding:10px 24px 10px 0;margin-right:24px;border-right:1px solid var(--hairline)}
+dl.props>div:last-child{border-right:0}
+dl.props .wide{flex:1 1 100%;border-right:0;border-top:1px solid var(--hairline);margin-right:0}
+
+.edia{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,700px);gap:16px;align-items:stretch;margin-bottom:12px;width:min(100vw - 48px,1600px);position:relative;left:50%;transform:translateX(-50%)}
+.diacol{position:relative;min-height:420px}
+.diacol>.diawrap{position:absolute;inset:0;display:flex;flex-direction:column;margin:0}
+.diascroll{flex:1;min-height:0;overflow:auto}
+.diascroll svg{display:block;flex:none}.dia .shp *{vector-effect:non-scaling-stroke}
+@media (max-width:1000px){.edia{grid-template-columns:1fr;width:auto;left:0;transform:none}.diacol{min-height:0}.diacol>.diawrap{position:static}}
+
+</style></head><body><div class="page">
+<div class="topbar"><button type="button" onclick="var r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'">Toggle light / dark</button></div>
+
+<h2 class="sec">1. #908 Workflows page with YAML editing<span class="tk">#908</span></h2>
+<p class="sub">Library of Task Execution Workflows on the Workflows page, and the editor each row opens. One global library; each workflow is its own YAML file in Harmonic's data directory, never read from the repository. The bundled Default is read-only; a migrated instance (ADR-0055) runs its own editable workflows instead.</p>
+<section class="card section">
+  <div class="toolbar"><h3 style="font-size:18px;font-weight:700;margin:0">Workflows</h3><span class="sp"></span><div class="field" style="width:240px;min-height:36px;color:var(--faint)">Search workflows</div><span class="btnghost">Import YAML&hellip;</span><span class="btnprimary">New workflow</span></div>
+  <table class="tbl"><thead><tr><th>Name</th><th>Version</th><th>In use</th><th>Assigned as</th><th style="text-align:right">Actions</th></tr></thead><tbody><tr><td><span class="wn">Default</span> <span class="pill bundled">Bundled</span></td><td class="data">v5</td><td>in use by 0 Tickets / 0 Workspaces</td><td><span class="chip neu">the process Harmonic runs today</span></td><td><div class="acts"><span class="lnk">Duplicate</span><span class="lnk">Export</span><span class="lnk off">Delete</span></div><div class="why">Bundled workflows are read-only.</div></td></tr><tr><td><span class="wn">Migrated (global)</span> </td><td class="data">v2</td><td>in use by 41 Tickets / 5 Workspaces</td><td><span class="chip def">Global default</span></td><td><div class="acts"><span class="lnk">Duplicate</span><span class="lnk">Export</span><span class="lnk off">Delete</span></div><div class="why">In use by 41 Tickets and 5 Workspaces.</div></td></tr><tr><td><span class="wn">Migrated (harmonic)</span> </td><td class="data">v1</td><td>in use by 3 Tickets / 1 Workspace</td><td><span class="chip ws">Workspace default &middot; harmonic</span></td><td><div class="acts"><span class="lnk">Duplicate</span><span class="lnk">Export</span><span class="lnk off">Delete</span></div><div class="why">In use by 3 Tickets and 1 Workspace.</div></td></tr><tr><td><span class="wn">Security review on label</span> </td><td class="data">v4</td><td>in use by 2 Tickets / 0 Workspaces</td><td><span class="chip tk">Workflow Label &middot; security</span></td><td><div class="acts"><span class="lnk">Duplicate</span><span class="lnk">Export</span><span class="lnk off">Delete</span></div><div class="why">In use by 2 Tickets and 1 Workflow Label.</div></td></tr><tr><td><span class="wn">Docs only</span> </td><td class="data">v2</td><td>in use by 0 Tickets / 0 Workspaces</td><td><span class="chip tk">Workflow Label &middot; docs</span></td><td><div class="acts"><span class="lnk">Duplicate</span><span class="lnk">Export</span><span class="lnk bad">Delete</span></div></td></tr></tbody></table>
+  <p class="note">Each workflow is a YAML file in the data directory. Export downloads the saved YAML; Import creates a new workflow and refuses invalid YAML.</p>
+</section>
+<div class="grid2c">
+ <div><div class="vlabel">Import error toast</div>
+  <div class="toast"><span style="color:var(--fail)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></svg></span><div><b>Import refused: docs-only.yaml</b><div class="small">Line 9, col 5: unknown key <code class="i">retries</code> (did you mean <code class="i">attempts</code>?). Nothing was added to the library.</div></div><span class="x">Dismiss</span></div>
+  <div class="vlabel">Empty search</div>
+  <div class="card empty"><b>No workflow matches &ldquo;lint&rdquo;</b>Search looks at names. <span class="lnk">Clear search</span></div>
+ </div>
+ <div><div class="vlabel">Delete confirmation (unused workflow)</div>
+  <div class="card confirm"><h4>Delete &ldquo;Docs only&rdquo;?</h4><p class="small dim" style="margin:0">0 Tickets and 0 Workspaces use it, but Workflow Label <code class="i">docs</code> points at it. Delete is available once the label is changed or removed. Deleting removes its YAML file from the data directory and cannot be undone.</p><div class="btns"><span class="btnghost">Cancel</span><span class="btndanger solid dis">Delete workflow</span></div></div>
+ </div>
+</div>
+<div class="vlabel">Editor header states</div>
+<div class="stripe">
+ <div class="card"><div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill saved">Saved</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary dis">Save</span></div></div>
+ <div class="card"><div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill dirty">Edited</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary">Save as v5</span></div></div>
+ <div class="card"><div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill dirty">Saving&hellip;</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary dis">Saving&hellip;</span></div></div>
+ <div class="card"><div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill bad">3 errors</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary dis">Save &middot; 3 errors</span></div></div>
+</div>
+<div class="vlabel">Bundled workflow: read-only</div>
+<div class="card edwrap" style="padding-bottom:12px">
+  <div class="edhead"><h3>Default</h3><span class="ver">v5</span><span class="pill bundled">Bundled</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnprimary">Duplicate</span><span class="btnghost dis">Delete</span><span class="btnprimary dis">Save</span></div>
+  <div style="padding:0 14px 8px"><div class="banner info"><span class="hd">Read-only.</span><span>Bundled workflows ship with Harmonic and are upgraded with it. Duplicate this one to edit a copy.</span><span class="sp"></span></div></div>
+  <div style="padding:0 14px"><div class="ed ro" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">name</span>: Default</span></div><div class="ln"><span class="n">2</span><span class="c"><span class="k">runs_on</span>: local</span></div><div class="ln"><span class="n">3</span><span class="c"><span class="k">vars</span>:</span></div><div class="ln"><span class="n">4</span><span class="c">  <span class="k">maxAttempts</span>: <span class="nm">3</span></span></div><div class="ln"><span class="n">5</span><span class="c">  <span class="k">continueAttempts</span>: true</span></div><div class="ln"><span class="n">6</span><span class="c">  <span class="k">testCommand</span>: npm test</span></div><div class="ln"><span class="n">7</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">8</span><span class="c">  - <span class="k">id</span>: rebase</span></div><div class="ln"><span class="n">9</span><span class="c">    <span class="k">uses</span>: <span class="ac">rebase</span></span></div><div class="ln"><span class="n">10</span><span class="c">  - <span class="k">attempts</span>:</span></div><div class="ln"><span class="n">11</span><span class="c">      <span class="k">max</span>: <span class="ex">${{ vars.maxAttempts }}</span></span></div><div class="ln"><span class="n">12</span><span class="c">      <span class="k">steps</span>:</span></div><div class="ln"><span class="n">13</span><span class="c">        - <span class="k">id</span>: implement</span></div><div class="ln"><span class="n">14</span><span class="c">          <span class="k">uses</span>: <span class="ac">agent</span></span></div><div class="ln"><span class="n">15</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">prompt</span>: implement <span class="pu">}</span>   <span class="cm"># Prompt Library code</span></span></div><div class="ln"><span class="n">16</span><span class="c">        - <span class="k">id</span>: verify</span></div><div class="emsg"><span class="n"></span><span class="c" style="background:var(--sunken);color:var(--faint)">&hellip; 28 more lines</span></div></div></div>
+  <div class="edfoot"><span>Edits apply from the Ticket's next Retry; in-flight Tickets finish on the version they snapshotted.</span></div>
+</div>
+
+<h2 class="sec">2. #920 Editor completes, validates, and draws a live diagram<span class="tk">#920</span></h2>
+<p class="sub">Schema-driven completion, line and column errors, and a read-only diagram beside it. Save stays disabled while any error remains; server refusals appear in the same place as client ones.</p>
+<div class="grid2c">
+ <div><div class="vlabel">Completion: Workflow Action after <code>uses:</code></div><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">2</span><span class="c">  - <span class="k">id</span>: verify</span></div><div class="ln cur"><span class="n">3</span><span class="c">    <span class="k">uses</span>: <span class="ac">c</span><span class="caret"></span></span><div class="pop" style="left:142px"><div class="it hl"><code><b>c</b>ommand</code><span class="d">shell verify command</span></div><div class="it"><code><b>c</b>ritic</code><span class="d">Harness, Model, prompt</span></div><div class="it"><code><b>c</b>omment</code><span class="d">post to the tracker</span></div><div class="it"><code><b>c</b>leanup</code><span class="d">remove worktree and branch</span></div><div class="it"><code><b>c</b>lose-ticket</code><span class="d">close the tracker issue</span></div><div class="ft">Closed set of Workflow Actions &middot; Tab to accept</div></div></div></div><div style="height:210px"></div></div>
+ <div><div class="vlabel">Completion: step keys</div><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">2</span><span class="c">  - <span class="k">id</span>: verify</span></div><div class="ln"><span class="n">3</span><span class="c">    <span class="k">uses</span>: <span class="ac">command</span></span></div><div class="ln cur"><span class="n">4</span><span class="c">    i<span class="caret"></span></span><div class="pop" style="left:92px"><div class="it hl"><code><b>i</b>d</code><span class="d">step name, used by <code>steps.&lt;id&gt;</code></span></div><div class="it"><code><b>i</b>f</code><span class="d">run only when true</span></div><div class="it"><code><b>i</b>mage</code><span class="d">container image on a target</span></div><div class="ft">Step keys: id, uses, with, if, parallel, runs_on, image</div></div></div></div><div style="height:150px"></div></div>
+</div>
+<div class="vlabel">Valid and saved: editor and live diagram</div>
+<div class="edia">
+ <div class="card edwrap" style="padding-bottom:12px">
+  <div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill saved">Saved</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary dis">Save</span></div>
+  <div style="padding:0 14px"><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">name</span>: Security review on label</span></div><div class="ln"><span class="n">2</span><span class="c"><span class="k">runs_on</span>: local</span></div><div class="ln"><span class="n">3</span><span class="c"><span class="k">vars</span>:</span></div><div class="ln"><span class="n">4</span><span class="c">  <span class="k">maxAttempts</span>: <span class="nm">3</span></span></div><div class="ln"><span class="n">5</span><span class="c">  <span class="k">continueAttempts</span>: true</span></div><div class="ln"><span class="n">6</span><span class="c">  <span class="k">testCommand</span>: npm test</span></div><div class="ln"><span class="n">7</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">8</span><span class="c">  - <span class="k">id</span>: rebase</span></div><div class="ln"><span class="n">9</span><span class="c">    <span class="k">uses</span>: <span class="ac">rebase</span></span></div><div class="ln"><span class="n">10</span><span class="c">  - <span class="k">attempts</span>:</span></div><div class="ln"><span class="n">11</span><span class="c">      <span class="k">max</span>: <span class="ex">${{ vars.maxAttempts }}</span></span></div><div class="ln"><span class="n">12</span><span class="c">      <span class="k">steps</span>:</span></div><div class="ln"><span class="n">13</span><span class="c">        - <span class="k">id</span>: implement</span></div><div class="ln"><span class="n">14</span><span class="c">          <span class="k">uses</span>: <span class="ac">agent</span></span></div><div class="ln"><span class="n">15</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">prompt</span>: implement <span class="pu">}</span>   <span class="cm"># Prompt Library code</span></span></div><div class="ln"><span class="n">16</span><span class="c">        - <span class="k">id</span>: verify</span></div><div class="ln"><span class="n">17</span><span class="c">          <span class="k">uses</span>: <span class="ac">command</span></span></div><div class="ln"><span class="n">18</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">command</span>: <span class="ex">${{ vars.testCommand }}</span> <span class="pu">}</span></span></div><div class="ln"><span class="n">19</span><span class="c">        - <span class="k">parallel</span>:</span></div><div class="ln"><span class="n">20</span><span class="c">            - <span class="k">id</span>: correctness</span></div><div class="ln"><span class="n">21</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div><div class="ln"><span class="n">22</span><span class="c">              <span class="k">with</span>:</span></div><div class="ln"><span class="n">23</span><span class="c">                <span class="k">harness</span>: claude</span></div><div class="ln"><span class="n">24</span><span class="c">                <span class="k">model</span>: opus-5-5</span></div><div class="ln"><span class="n">25</span><span class="c">                <span class="k">prompt</span>: critic-correctness</span></div><div class="ln"><span class="n">26</span><span class="c">            - <span class="k">id</span>: security</span></div><div class="ln"><span class="n">27</span><span class="c">              <span class="k">if</span>: <span class="ex">${{ contains(ticket.labels, 'security') }}</span></span></div><div class="ln"><span class="n">28</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div><div class="ln"><span class="n">29</span><span class="c">              <span class="k">with</span>:</span></div><div class="ln"><span class="n">30</span><span class="c">                <span class="k">harness</span>: codex</span></div><div class="ln"><span class="n">31</span><span class="c">                <span class="k">model</span>: gpt-5-codex</span></div><div class="ln"><span class="n">32</span><span class="c">                <span class="k">prompt</span>: critic-security</span></div><div class="ln"><span class="n">33</span><span class="c">  - <span class="k">id</span>: merge</span></div><div class="ln"><span class="n">34</span><span class="c">    <span class="k">uses</span>: <span class="ac">merge</span></span></div><div class="ln"><span class="n">35</span><span class="c">  - <span class="k">id</span>: post-merge</span></div><div class="ln"><span class="n">36</span><span class="c">    <span class="k">uses</span>: <span class="ac">post-merge-check</span></span></div><div class="ln"><span class="n">37</span><span class="c">  - <span class="k">id</span>: close</span></div><div class="ln"><span class="n">38</span><span class="c">    <span class="k">uses</span>: <span class="ac">close-ticket</span></span></div><div class="ln"><span class="n">39</span><span class="c"><span class="k">cleanup</span>:</span></div><div class="ln"><span class="n">40</span><span class="c">  - <span class="k">uses</span>: <span class="ac">cleanup</span></span></div></div></div>
+  <div class="edfoot"><span>Edits apply from the Ticket's next Retry; in-flight Tickets finish on the version they snapshotted.</span></div>
+ </div>
+ <div class="diacol"><div class="card diawrap"><div class="diahead"><b>Live diagram</b><span class="chip def">Matches the editor</span><span class="sp"></span><span class="small dim">read-only</span></div><div class="diascroll"><svg viewBox="0 0 643 690" width="643" height="690" role="img" aria-label="Workflow step diagram" class="dia">
+<g transform="scale(1.18 1)" class="shp"><defs><marker id="M1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar" d="M0 0 8 4 0 8z"/></marker>
+<marker id="MR1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar run" d="M0 0 8 4 0 8z"/></marker>
+<marker id="ME1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar esc" d="M0 0 8 4 0 8z"/></marker></defs>
+<rect class="nd" x="110" y="8" width="160" height="38" rx="4"/>
+<path class="eg" d="M190 46V70" marker-end="url(#M1)"/>
+<rect class="box" x="10" y="70" width="400" height="300" rx="6"/>
+<rect class="nd ag" x="110" y="104" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 144V176" marker-end="url(#M1)"/>
+<rect class="nd" x="110" y="176" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 216V246" marker-end="url(#M1)"/>
+<rect class="box par" x="20" y="246" width="360" height="106" rx="5"/>
+<rect class="nd cr" x="30" y="272" width="165" height="70" rx="4"/>
+<rect class="nd cr" x="205" y="272" width="165" height="70" rx="4"/>
+<path class="ifd" d="M221 322l6-7 6 7-6 7z"/>
+<path class="eg back" d="M380 299H392V124H274" marker-end="url(#MR1)"/>
+<path class="eg back" d="M270 196H392"/>
+<path class="eg" d="M190 352V400" marker-end="url(#M1)"/>
+<rect class="nd mg" x="110" y="400" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 440V470" marker-end="url(#M1)"/>
+<rect class="nd" x="110" y="470" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 510V540" marker-end="url(#M1)"/>
+<rect class="nd" x="110" y="540" width="160" height="40" rx="4"/>
+<path class="eg dot" d="M190 580V618" marker-end="url(#M1)"/>
+<rect class="box cl" x="90" y="618" width="200" height="56" rx="5"/>
+<rect class="nd es" x="424" y="400" width="118" height="40" rx="4"/>
+<path class="eg esc" d="M410 250H482V400" marker-end="url(#ME1)"/>
+<path class="eg esc" d="M270 420H428" marker-end="url(#ME1)"/>
+<path class="eg esc" d="M270 490H482V440" marker-end="url(#ME1)"/></g>
+<text x="224" y="24" text-anchor="middle" font-weight="600">rebase</text>
+<text class="t2" x="224" y="37" text-anchor="middle">rebase</text>
+<text class="grp" x="26" y="88">ATTEMPTS &#183; max: ${{ vars.maxAttempts }}</text>
+<text x="224" y="121" text-anchor="middle" font-weight="600">implement</text>
+<text class="t2" x="224" y="134" text-anchor="middle">agent &#183; prompt implement</text>
+<text x="224" y="193" text-anchor="middle" font-weight="600">verify</text>
+<text class="t2" x="224" y="206" text-anchor="middle">command &#183; npm test</text>
+<text class="o-pass" x="234" y="236" font-size="11">pass</text>
+<text class="grp" x="35" y="262" style="fill:var(--muted)">PARALLEL</text>
+<text x="47" y="289" font-weight="600">correctness</text>
+<text class="t2" x="47" y="303">critic &#183; claude opus-5-5</text>
+<text class="t2" x="47" y="316">prompt critic-correctness</text>
+<text x="254" y="289" font-weight="600">security</text>
+<text class="t2" x="254" y="303">critic &#183; codex gpt-5-codex</text>
+<text class="dtxt" x="277" y="326" style="font-size:11px">if: security label</text>
+<text class="o-fail" x="455" y="170" text-anchor="end" font-size="11">fail &#183; inconclusive</text>
+<text class="lab" x="455" y="182" text-anchor="end">next Attempt</text>
+<text class="o-pass" x="234" y="388" font-size="11">pass</text>
+<text x="224" y="417" text-anchor="middle" font-weight="600">merge</text>
+<text class="t2" x="224" y="430" text-anchor="middle">merge-commit policy</text>
+<text class="o-pass" x="234" y="460" font-size="11">pass</text>
+<text x="224" y="487" text-anchor="middle" font-weight="600">post-merge</text>
+<text class="t2" x="224" y="500" text-anchor="middle">post-merge-check</text>
+<text class="o-pass" x="234" y="530" font-size="11">pass</text>
+<text x="224" y="557" text-anchor="middle" font-weight="600">close</text>
+<text class="t2" x="224" y="570" text-anchor="middle">close-ticket</text>
+<text class="lab" x="234" y="604">done</text>
+<text class="grp" x="120" y="635" style="fill:var(--muted)">CLEANUP</text>
+<text class="t2" x="120" y="650">uses: cleanup</text>
+<text class="lab" x="120" y="664">runs on done and on Close</text>
+<text x="570" y="417" text-anchor="middle" font-weight="600" style="fill:var(--await)">Escalation</text>
+<text class="lab" x="570" y="430" text-anchor="middle" style="fill:var(--await);font-size:11px">Retry &#183; Accept &#183; Close</text>
+<text class="o-esc" x="493" y="244" font-size="11">max reached</text>
+<text class="o-esc" x="413" y="414" text-anchor="middle" font-size="11">conflict</text>
+<text class="o-esc" x="413" y="484" text-anchor="middle" font-size="11">fail</text>
+</svg><div class="legend"><span><i></i>outcome edge</span><span><i class="b"></i>back edge to next Attempt</span><span><i class="e"></i>to Escalation</span><span><i class="l"></i>bounded attempts: loop</span></div></div></div></div>
+</div>
+<div class="vlabel">Errors: Save refused, diagram keeps the last valid parse</div>
+<div class="edia">
+ <div class="card edwrap" style="padding-bottom:12px">
+  <div class="edhead"><h3>Security review on label</h3><span class="ver">v4</span><span class="pill bad">3 errors</span><span class="sp"></span><span class="btnghost">Export</span><span class="btnghost">Duplicate</span><span class="btnghost dis" title="In use">Delete</span><span class="btnprimary dis">Save &middot; 3 errors</span></div>
+  <div style="padding:0 14px 8px"><ul class="errlist"><li><span>Line 10, col 5</span>unknown key <code class="i">retries</code></li><li><span>Line 27, col 19</span>invalid expression</li><li><span>Line 32, col 25</span>unknown Prompt Library code</li></ul></div>
+  <div style="padding:0 14px"><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">name</span>: Security review on label</span></div><div class="ln"><span class="n">2</span><span class="c"><span class="k">runs_on</span>: local</span></div><div class="ln"><span class="n">3</span><span class="c"><span class="k">vars</span>:</span></div><div class="ln"><span class="n">4</span><span class="c">  <span class="k">maxAttempts</span>: <span class="nm">3</span></span></div><div class="ln"><span class="n">5</span><span class="c">  <span class="k">continueAttempts</span>: true</span></div><div class="ln"><span class="n">6</span><span class="c">  <span class="k">testCommand</span>: npm test</span></div><div class="ln"><span class="n">7</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">8</span><span class="c">  - <span class="k">id</span>: rebase</span></div><div class="ln"><span class="n">9</span><span class="c">    <span class="k">uses</span>: <span class="ac">rebase</span></span></div><div class="ln err"><span class="n">10</span><span class="c">  - <span class="sq">retries</span>:</span></div><div class="emsg"><span class="n"></span><span class="c"><span class="src">schema</span><span><b>Line 10, col 5:</b> unknown key <code class="i">retries</code> (did you mean <code class="i">attempts</code>?)</span></span></div><div class="ln"><span class="n">11</span><span class="c">      <span class="k">max</span>: <span class="ex">${{ vars.maxAttempts }}</span></span></div><div class="ln"><span class="n">12</span><span class="c">      <span class="k">steps</span>:</span></div><div class="ln"><span class="n">13</span><span class="c">        - <span class="k">id</span>: implement</span></div><div class="ln"><span class="n">14</span><span class="c">          <span class="k">uses</span>: <span class="ac">agent</span></span></div><div class="ln"><span class="n">15</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">prompt</span>: implement <span class="pu">}</span>   <span class="cm"># Prompt Library code</span></span></div><div class="ln"><span class="n">16</span><span class="c">        - <span class="k">id</span>: verify</span></div><div class="ln"><span class="n">17</span><span class="c">          <span class="k">uses</span>: <span class="ac">command</span></span></div><div class="ln"><span class="n">18</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">command</span>: <span class="ex">${{ vars.testCommand }}</span> <span class="pu">}</span></span></div><div class="ln"><span class="n">19</span><span class="c">        - <span class="k">parallel</span>:</span></div><div class="ln"><span class="n">20</span><span class="c">            - <span class="k">id</span>: correctness</span></div><div class="ln"><span class="n">21</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div><div class="ln"><span class="n">22</span><span class="c">              <span class="k">with</span>:</span></div><div class="ln"><span class="n">23</span><span class="c">                <span class="k">harness</span>: claude</span></div><div class="ln"><span class="n">24</span><span class="c">                <span class="k">model</span>: opus-5-5</span></div><div class="ln"><span class="n">25</span><span class="c">                <span class="k">prompt</span>: critic-correctness</span></div><div class="ln"><span class="n">26</span><span class="c">            - <span class="k">id</span>: security</span></div><div class="ln err"><span class="n">27</span><span class="c">              <span class="k">if</span>: <span class="sq"><span class="ex">${{ steps.verify.outcome = 'pass' }}</span></span></span></div><div class="emsg"><span class="n"></span><span class="c"><span class="src">schema</span><span><b>Line 27, col 19:</b> invalid expression: <code class="i">=</code> is not an operator, use <code class="i">==</code></span></span></div><div class="ln"><span class="n">28</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div><div class="ln"><span class="n">29</span><span class="c">              <span class="k">with</span>:</span></div><div class="ln"><span class="n">30</span><span class="c">                <span class="k">harness</span>: codex</span></div><div class="ln"><span class="n">31</span><span class="c">                <span class="k">model</span>: gpt-5-codex</span></div><div class="ln err"><span class="n">32</span><span class="c">                <span class="k">prompt</span>: <span class="sq">critic-securty</span></span></div><div class="emsg"><span class="n"></span><span class="c"><span class="src">server</span><span><b>Line 32, col 25:</b> unknown Prompt Library code <code class="i">critic-securty</code> (did you mean <code class="i">critic-security</code>?)</span></span></div><div class="ln"><span class="n">33</span><span class="c">  - <span class="k">id</span>: merge</span></div><div class="ln"><span class="n">34</span><span class="c">    <span class="k">uses</span>: <span class="ac">merge</span></span></div><div class="ln"><span class="n">35</span><span class="c">  - <span class="k">id</span>: post-merge</span></div><div class="ln"><span class="n">36</span><span class="c">    <span class="k">uses</span>: <span class="ac">post-merge-check</span></span></div><div class="ln"><span class="n">37</span><span class="c">  - <span class="k">id</span>: close</span></div><div class="ln"><span class="n">38</span><span class="c">    <span class="k">uses</span>: <span class="ac">close-ticket</span></span></div><div class="ln"><span class="n">39</span><span class="c"><span class="k">cleanup</span>:</span></div><div class="ln"><span class="n">40</span><span class="c">  - <span class="k">uses</span>: <span class="ac">cleanup</span></span></div></div></div>
+  <div class="edfoot"><span>Also refused at save: a <code class="i">run:</code> step that commits (only the agent commits to the Ticket branch), an <code class="i">attempts:</code> block without a bounded <code class="i">max</code>, <code class="i">goto</code> or unbounded loops, and include cycles.</span></div>
+ </div>
+ <div class="diacol"><div class="card diawrap stale"><div class="diahead"><b>Live diagram</b><span class="chip" style="background:var(--raised);color:var(--muted)">Stale</span><span class="sp"></span><span class="small dim">read-only</span></div><div class="banner warn" style="margin-bottom:8px"><span class="hd">Showing last valid parse.</span><span>Fix the 3 errors to refresh the diagram.</span></div><div class="diascroll"><svg viewBox="0 0 643 690" width="643" height="690" role="img" aria-label="Workflow step diagram" class="dia">
+<g transform="scale(1.18 1)" class="shp"><defs><marker id="M2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar" d="M0 0 8 4 0 8z"/></marker>
+<marker id="MR2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar run" d="M0 0 8 4 0 8z"/></marker>
+<marker id="ME2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="ar esc" d="M0 0 8 4 0 8z"/></marker></defs>
+<rect class="nd" x="110" y="8" width="160" height="38" rx="4"/>
+<path class="eg" d="M190 46V70" marker-end="url(#M2)"/>
+<rect class="box" x="10" y="70" width="400" height="300" rx="6"/>
+<rect class="nd ag" x="110" y="104" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 144V176" marker-end="url(#M2)"/>
+<rect class="nd" x="110" y="176" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 216V246" marker-end="url(#M2)"/>
+<rect class="box par" x="20" y="246" width="360" height="106" rx="5"/>
+<rect class="nd cr" x="30" y="272" width="165" height="70" rx="4"/>
+<rect class="nd cr" x="205" y="272" width="165" height="70" rx="4"/>
+<path class="ifd" d="M221 322l6-7 6 7-6 7z"/>
+<path class="eg back" d="M380 299H392V124H274" marker-end="url(#MR2)"/>
+<path class="eg back" d="M270 196H392"/>
+<path class="eg" d="M190 352V400" marker-end="url(#M2)"/>
+<rect class="nd mg" x="110" y="400" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 440V470" marker-end="url(#M2)"/>
+<rect class="nd" x="110" y="470" width="160" height="40" rx="4"/>
+<path class="eg" d="M190 510V540" marker-end="url(#M2)"/>
+<rect class="nd" x="110" y="540" width="160" height="40" rx="4"/>
+<path class="eg dot" d="M190 580V618" marker-end="url(#M2)"/>
+<rect class="box cl" x="90" y="618" width="200" height="56" rx="5"/>
+<rect class="nd es" x="424" y="400" width="118" height="40" rx="4"/>
+<path class="eg esc" d="M410 250H482V400" marker-end="url(#ME2)"/>
+<path class="eg esc" d="M270 420H428" marker-end="url(#ME2)"/>
+<path class="eg esc" d="M270 490H482V440" marker-end="url(#ME2)"/></g>
+<text x="224" y="24" text-anchor="middle" font-weight="600">rebase</text>
+<text class="t2" x="224" y="37" text-anchor="middle">rebase</text>
+<text class="grp" x="26" y="88">ATTEMPTS &#183; max: ${{ vars.maxAttempts }}</text>
+<text x="224" y="121" text-anchor="middle" font-weight="600">implement</text>
+<text class="t2" x="224" y="134" text-anchor="middle">agent &#183; prompt implement</text>
+<text x="224" y="193" text-anchor="middle" font-weight="600">verify</text>
+<text class="t2" x="224" y="206" text-anchor="middle">command &#183; npm test</text>
+<text class="o-pass" x="234" y="236" font-size="11">pass</text>
+<text class="grp" x="35" y="262" style="fill:var(--muted)">PARALLEL</text>
+<text x="47" y="289" font-weight="600">correctness</text>
+<text class="t2" x="47" y="303">critic &#183; claude opus-5-5</text>
+<text class="t2" x="47" y="316">prompt critic-correctness</text>
+<text x="254" y="289" font-weight="600">security</text>
+<text class="t2" x="254" y="303">critic &#183; codex gpt-5-codex</text>
+<text class="dtxt" x="277" y="326" style="font-size:11px">if: security label</text>
+<text class="o-fail" x="455" y="170" text-anchor="end" font-size="11">fail &#183; inconclusive</text>
+<text class="lab" x="455" y="182" text-anchor="end">next Attempt</text>
+<text class="o-pass" x="234" y="388" font-size="11">pass</text>
+<text x="224" y="417" text-anchor="middle" font-weight="600">merge</text>
+<text class="t2" x="224" y="430" text-anchor="middle">merge-commit policy</text>
+<text class="o-pass" x="234" y="460" font-size="11">pass</text>
+<text x="224" y="487" text-anchor="middle" font-weight="600">post-merge</text>
+<text class="t2" x="224" y="500" text-anchor="middle">post-merge-check</text>
+<text class="o-pass" x="234" y="530" font-size="11">pass</text>
+<text x="224" y="557" text-anchor="middle" font-weight="600">close</text>
+<text class="t2" x="224" y="570" text-anchor="middle">close-ticket</text>
+<text class="lab" x="234" y="604">done</text>
+<text class="grp" x="120" y="635" style="fill:var(--muted)">CLEANUP</text>
+<text class="t2" x="120" y="650">uses: cleanup</text>
+<text class="lab" x="120" y="664">runs on done and on Close</text>
+<text x="570" y="417" text-anchor="middle" font-weight="600" style="fill:var(--await)">Escalation</text>
+<text class="lab" x="570" y="430" text-anchor="middle" style="fill:var(--await);font-size:11px">Retry &#183; Accept &#183; Close</text>
+<text class="o-esc" x="493" y="244" font-size="11">max reached</text>
+<text class="o-esc" x="413" y="414" text-anchor="middle" font-size="11">conflict</text>
+<text class="o-esc" x="413" y="484" text-anchor="middle" font-size="11">fail</text>
+</svg><div class="legend"><span><i></i>outcome edge</span><span><i class="b"></i>back edge to next Attempt</span><span><i class="e"></i>to Escalation</span><span><i class="l"></i>bounded attempts: loop</span></div></div></div></div>
+</div>
+
+<h2 class="sec">3. #929 Block builder on the same YAML<span class="tk">#929</span></h2>
+<p class="sub">A later editor over the same file: drag Workflow Actions onto the canvas, group steps in <code>parallel</code>, bound the <code>attempts</code> loop. The YAML is the source of truth; touching a block rewrites only its own lines, so comments and key order elsewhere survive.</p>
+<div class="bld">
+ <div class="card pal"><div class="label">Workflow Actions</div><div style="height:6px"></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>rebase</code><span class="d">git</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>agent</code><span class="d">prompt</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>command</code><span class="d">shell</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>critic</code><span class="d">verdict</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>merge</code><span class="d">Merge</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>open-pr</code><span class="d">PR</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>artifact</code><span class="d">file</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>post-merge-check</code><span class="d">check</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>close-ticket</code><span class="d">tracker</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>comment</code><span class="d">tracker</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>cleanup</code><span class="d">end</span></div><div class="label grp">Containers</div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>parallel</code><span class="d">group</span></div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>attempts</code><span class="d">bounded</span></div><div class="label grp">Other</div><div class="it"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code>run:</code><span class="d">shell</span></div></div>
+ <div><div class="sync"><span class="dotp"></span>In sync with YAML &middot; 1 unsaved change</div><div class="canvas">
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">rebase</span><b class="data" style="font-size:12.5px">rebase</b><span class="sum"></span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+ <div class="cont"><div class="conth"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><b>ATTEMPTS</b><span class="mx">max<span class="field data">${{ vars.maxAttempts }}</span></span></div>
+  <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">agent</span><b class="data" style="font-size:12.5px">implement</b><span class="sum">prompt <code>implement</code></span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+  <div class="dropline"></div><div class="ghost"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><code class="data">command</code><span class="small dim">drop to add after implement</span></div>
+  <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">command</span><b class="data" style="font-size:12.5px">verify</b><span class="sum">npm test</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+  <div class="cont par"><div class="conth"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><b>PARALLEL</b></div>
+   <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge cr">critic</span><b class="data" style="font-size:12.5px">correctness</b><span class="sum">claude &middot; opus-5-5</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+   <div class="blk sel"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge cr">critic</span><b class="data" style="font-size:12.5px">security</b><span class="sum">if: contains(ticket.labels, &#39;security&#39;)</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span><div class="form"><div><span class="label fl">Step id</span><div class="field data">security</div></div><div><span class="label fl">Action</span><div class="select data">critic</div></div><div><span class="label fl">Harness</span><div class="select">Codex</div></div><div><span class="label fl">Model</span><div class="select">gpt-5-codex</div></div><div class="full"><span class="label fl">Prompt (Prompt Library code)</span><div class="select data">critic-security</div></div><div class="full"><span class="label fl">Run only if (<code>if:</code>)</span><div class="field data focus">contains(ticket.labels, 'security')</div></div></div></div>
+  </div>
+ </div>
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge m">merge</span><b class="data" style="font-size:12.5px">merge</b><span class="sum">merge-commit policy</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">post-merge-check</span><b class="data" style="font-size:12.5px">post-merge</b><span class="sum"></span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">close-ticket</span><b class="data" style="font-size:12.5px">close</b><span class="sum"></span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+ <div class="label" style="margin-top:4px">Cleanup</div>
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">cleanup</span><b class="data" style="font-size:12.5px">cleanup</b><span class="sum">runs on done and on Close</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div>
+</div></div>
+ <div><div class="sync"><span class="dotp"></span>YAML (edits here update the blocks)</div><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">1</span><span class="c"><span class="k">steps</span>:</span></div><div class="ln"><span class="n">2</span><span class="c">  - <span class="k">id</span>: rebase</span></div><div class="ln"><span class="n">3</span><span class="c">    <span class="k">uses</span>: <span class="ac">rebase</span></span></div><div class="ln"><span class="n">4</span><span class="c">  - <span class="k">attempts</span>:</span></div><div class="ln"><span class="n">5</span><span class="c">      <span class="k">max</span>: <span class="ex">${{ vars.maxAttempts }}</span></span></div><div class="ln"><span class="n">6</span><span class="c">      <span class="k">steps</span>:</span></div><div class="ln"><span class="n">7</span><span class="c">        - <span class="k">id</span>: implement</span></div><div class="ln"><span class="n">8</span><span class="c">          <span class="k">uses</span>: <span class="ac">agent</span></span></div><div class="ln"><span class="n">9</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">prompt</span>: implement <span class="pu">}</span></span></div><div class="ln hl"><span class="n">10</span><span class="c">        - <span class="k">id</span>: lint</span></div><div class="ln hl"><span class="n">11</span><span class="c">          <span class="k">run</span>: npm run lint</span></div><div class="ln"><span class="n">12</span><span class="c">        <span class="cm"># keep: flaky on CI, see #812</span></span></div><div class="ln"><span class="n">13</span><span class="c">        - <span class="k">id</span>: verify</span></div><div class="ln"><span class="n">14</span><span class="c">          <span class="k">uses</span>: <span class="ac">command</span></span></div><div class="ln"><span class="n">15</span><span class="c">          <span class="k">with</span>: <span class="pu">{</span> <span class="k">command</span>: npm test <span class="pu">}</span></span></div><div class="ln"><span class="n">16</span><span class="c">        - <span class="k">parallel</span>:</span></div><div class="ln"><span class="n">17</span><span class="c">            - <span class="k">id</span>: correctness</span></div><div class="ln"><span class="n">18</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div><div class="ln"><span class="n">19</span><span class="c">            - <span class="k">id</span>: security</span></div><div class="ln"><span class="n">20</span><span class="c">              <span class="k">if</span>: <span class="ex">${{ contains(ticket.labels, 'security') }}</span></span></div><div class="ln"><span class="n">21</span><span class="c">              <span class="k">uses</span>: <span class="ac">critic</span></span></div></div><p class="ann">Highlighted: lines the builder wrote for the new <code class="i">lint</code> step. The comment above <code class="i">verify</code> was left untouched.</p></div>
+</div>
+<div class="vlabel">Invariant-breaking changes: the server error shows on the block and the change is not saved</div>
+<div class="grid2c"><div><div class="canvas"><div class="cont bad"><div class="conth"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><b>ATTEMPTS</b><span class="mx">max<span class="field data err">&nbsp;</span></span></div>
+ <div class="errmsg" role="alert" style="margin:0">Not saved: the <code class="i">attempts:</code> block must have a bounded <code class="i">max</code>. Every attempt loop is bounded so the process ends in done or escalated.</div>
+ <div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">agent</span><b class="data" style="font-size:12.5px">implement</b><span class="sum">prompt <code>implement</code></span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div><div class="blk "><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">command</span><b class="data" style="font-size:12.5px">verify</b><span class="sum">npm test</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span></div></div></div></div><div><div class="canvas"><div class="blk bad"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="badge ">run:</span><b class="data" style="font-size:12.5px">lint</b><span class="sum">npm run lint</span><span class="ctl"><span>&#8593;&#8595;</span><span>Remove</span></span><div class="form"><div class="full"><span class="label fl">Command</span><div class="field data err">git commit -am &quot;wip&quot;</div></div></div><p class="errmsg" role="alert">Not saved: a <code class="i">run:</code> step must not commit. Only the agent commits to the Ticket branch; use an <code class="i">agent</code> step.</p></div></div></div></div>
+
+<h2 class="sec">4. #919 Workflow vars: Workspace and Ticket overrides<span class="tk">#919</span></h2>
+<p class="sub">A workflow declares <code>vars:</code> with defaults; the default's type types the override. Workspace settings override per Workspace; the Ticket page Variables panel is the only place a Ticket's values are set, and only for vars the workflow declares. Values are fixed when the Ticket snapshots the workflow.</p>
+<div class="prec"><span class="lead">Precedence</span><b>Ticket</b><span class="arrow">&rarr;</span><b>Workspace</b><span class="arrow">&rarr;</span><b>Workflow default</b><span class="small dim" style="margin-left:8px">applied at snapshot time</span></div>
+<div class="grid2c">
+ <div><div class="vlabel">Workflow <code>vars:</code> block</div><div class="ed" role="textbox" aria-label="Workflow YAML"><div class="ln"><span class="n">3</span><span class="c"><span class="k">vars</span>:</span></div><div class="ln"><span class="n">4</span><span class="c">  <span class="k">maxAttempts</span>: <span class="nm">3</span></span></div><div class="ln"><span class="n">5</span><span class="c">  <span class="k">continueAttempts</span>: true</span></div><div class="ln"><span class="n">6</span><span class="c">  <span class="k">testCommand</span>: npm test</span></div></div>
+  <div class="vlabel">Workspace settings &middot; Execution &middot; Workflow variables</div>
+  <section class="card section" style="margin:0"><div class="scope" style="margin-bottom:8px"><span class="scopechip ws">Workspace</span><span class="crumb">harmonic &rsaquo; Settings &rsaquo; Execution</span></div><h3>Variables for &ldquo;Migrated (harmonic)&rdquo;</h3><p class="desc">Overrides apply to every Ticket in this Workspace that uses a workflow declaring the variable.</p><table class="vtbl"><thead><tr><th>Variable</th><th>Default</th><th>Value</th><th>Source</th><th></th></tr></thead><tbody><tr><td><span class="vn">maxAttempts</span><div class="ty">number</div></td><td class="data">3</td><td><div class="field">5</div></td><td><span class="chip ws">Workspace</span></td><td><span class="rst">Reset</span></td></tr><tr><td><span class="vn">continueAttempts</span><div class="ty">boolean</div></td><td class="data">true</td><td><div style="display:flex;align-items:center;gap:8px;min-height:32px"><span class="switch on"></span><span class="data small">true</span></div></td><td><span class="chip neu">Default</span></td><td><span class="rst off">Reset</span></td></tr><tr><td><span class="vn">testCommand</span><div class="ty">string</div></td><td class="data">npm test</td><td><div class="field">npm run test:ci</div></td><td><span class="chip ws">Workspace</span></td><td><span class="rst">Reset</span></td></tr></tbody></table></section></div>
+ <div><div class="vlabel">Type mismatch is refused inline</div>
+  <section class="card section" style="margin:0 0 12px"><table class="vtbl"><thead><tr><th>Variable</th><th>Default</th><th>Value</th><th>Source</th><th></th></tr></thead><tbody><tr><td><span class="vn">maxAttempts</span><div class="ty">number</div></td><td class="data">3</td><td><div class="field err">three</div><p class="errmsg" role="alert">maxAttempts must be a number (the workflow default is 3).</p></td><td><span class="chip ws">Workspace</span></td><td><span class="rst">Reset</span></td></tr></tbody></table><div class="edfoot" style="padding:8px 0 0"><span class="sp"></span><span class="btnghost">Cancel</span><span class="btnprimary dis">Save</span></div></section>
+  <div class="vlabel">Ticket page &middot; Variables</div>
+  <section class="card section" style="margin:0"><h3>Variables</h3><p class="desc">Only variables declared by Security review on label v4. Takes effect from the next Retry.</p><table class="vtbl"><thead><tr><th>Variable</th><th>Default</th><th>Value</th><th>Source</th><th></th></tr></thead><tbody><tr><td><span class="vn">maxAttempts</span><div class="ty">number</div></td><td class="data">3 &larr; Workspace 5</td><td><div class="field">2</div></td><td><span class="chip tk">Ticket</span></td><td><span class="rst">Reset</span></td></tr><tr><td><span class="vn">continueAttempts</span><div class="ty">boolean</div></td><td class="data">true</td><td><div style="display:flex;align-items:center;gap:8px;min-height:32px"><span class="switch on"></span><span class="data small">true</span></div></td><td><span class="chip neu">Default</span></td><td><span class="rst off">Reset</span></td></tr><tr><td><span class="vn">testCommand</span><div class="ty">string</div></td><td class="data">npm run test:ci</td><td><div class="field">npm run test:ci</div></td><td><span class="chip ws">Workspace</span></td><td><span class="rst off">Reset</span></td></tr></tbody></table>
+  <div class="banner info" style="margin-top:12px"><span class="hd">Secrets are never variables.</span><span>Reference a Secret as <code class="i">secrets.NAME</code> in a step; its value is masked in logs.</span></div></section></div>
+</div>
+
+<h2 class="sec">5. #918 Workflow Labels and defaults assign workflows<span class="tk">#918</span></h2>
+<p class="sub">Settings &rsaquo; Execution lists and the Ticket page that says which workflow ran and how it was chosen. Resolved once when a Ticket starts working and again on Retry; edits apply from the next Retry.</p>
+<div class="tabs"><span class="tab">General</span><span class="tab on">Execution</span><span class="tab">Verification</span><span class="tab">Prompts</span><span class="tab">Integrations</span><span class="tab">Security</span><span class="tab">Archive</span></div>
+<div class="grid2c">
+<div>
+<div class="scope"><span class="scopechip">Global</span><span class="crumb">Settings &rsaquo; Execution</span></div>
+<section class="card section"><h3>Workflow Labels</h3><p class="desc">Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.</p><div class="prec"><span class="lead">Precedence</span><b>Operator choice on the Ticket</b><span class="arrow">&rarr;</span><b class="hl">Workflow Label</b><span class="arrow">&rarr;</span><b>Workspace default</b><span class="arrow">&rarr;</span><b>Global default</b></div><div class="elhead"><span class="label">Workflow Labels</span><button class="addlink" type="button">+ Add Workflow Label</button></div><div class="tray"><div class="row "><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">1</span><div class="field data" style="min-height:34px">security</div><span class="arr">&rarr;</span><div class="select" style="min-height:34px">Security review on label</div><span class="rowc"><button class="rm" type="button">Remove</button></span></div></div><div class="row "><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">2</span><div class="field data" style="min-height:34px">docs</div><span class="arr">&rarr;</span><div class="select" style="min-height:34px">Docs only</div><span class="rowc"><button class="rm" type="button">Remove</button></span></div></div></div>
+<hr class="hr"><span class="label fl">Global default workflow</span><div class="select" style="max-width:360px">Migrated (global) <span class="dim data">v2</span></div>
+<p class="note">Used when no Workflow Label matches and the Workspace has no default.</p><div class="xref"><b style="color:var(--ink)">Routing Labels</b><span>A separate list further down this page. Routing Labels pick a Harness and Model; Workflow Labels pick a workflow. A Ticket can match one of each.</span><span class="lnk">Go to Routing Labels</span></div></section>
+</div>
+<div>
+<div class="scope"><span class="scopechip ws">Workspace</span><span class="crumb">harmonic &rsaquo; Settings &rsaquo; Execution</span></div>
+<section class="card section"><h3>Workflow Labels</h3><p class="desc">Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.</p><div class="elhead"><span class="label">Workflow Labels</span><button class="addlink" type="button">+ Add Workflow Label</button></div><div class="tray"><div class="row "><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">1</span><div class="field data" style="min-height:34px">ci-only</div><span class="arr">&rarr;</span><div class="select" style="min-height:34px">Docs only</div><span class="rowc"><button class="rm" type="button">Remove</button></span></div></div><div class="row locked"><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">2</span><span class="lbl">security</span><span class="arr">&rarr;</span><span class="static">Security review on label</span><span class="rowc"><span class="gchip">Global</span><span class="switch on"></span></span></div></div><div class="row locked off"><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">3</span><span class="lbl">docs</span><span class="arr">&rarr;</span><span class="static">Docs only</span><span class="rowc"><span class="gchip">Global</span><span class="switch"></span></span></div></div><div class="row "><div class="rowh"><span class="grip"><svg width="10" height="16" viewBox="0 0 10 16"><g fill="currentColor"><circle cx="2.5" cy="3" r="1.3"/><circle cx="7.5" cy="3" r="1.3"/><circle cx="2.5" cy="8" r="1.3"/><circle cx="7.5" cy="8" r="1.3"/><circle cx="2.5" cy="13" r="1.3"/><circle cx="7.5" cy="13" r="1.3"/></g></svg></span><span class="pri">4</span><div class="field data" style="min-height:34px;border-color:var(--fail)">Security</div><span class="arr">&rarr;</span><div class="select" style="min-height:34px">Migrated (harmonic)</div><span class="rowc"><button class="rm" type="button">Remove</button></span></div><div class="rowerr"><p class="errmsg" role="alert">&ldquo;Security&rdquo; duplicates the enabled Global label <code class="i">security</code> (labels match case-insensitively). Rename it, or disable the Global row above.</p></div></div></div>
+<hr class="hr"><span class="label fl">Workspace default workflow</span><div class="select" style="max-width:360px">Migrated (harmonic) <span class="dim data">v1</span></div><div class="listbox" style="position:static;max-width:360px;margin-top:4px;padding:4px 0;background:var(--surface);border-radius:3px;box-shadow:var(--shadow-bar);font-size:13px"><div style="padding:6px 10px;display:flex;justify-content:space-between"><span>Use global default &middot; Migrated (global)</span></div><div style="padding:6px 10px;background:var(--raised);display:flex;justify-content:space-between"><span>Migrated (harmonic)</span><span style="color:var(--accent)">&#10003;</span></div><div style="padding:6px 10px">Docs only</div></div>
+<p class="note">Until the cutover from ADR-0055 a Ticket with no resolved workflow stays on today's path.</p></section>
+</div></div>
+<div class="vlabel">Ticket page: how the workflow was chosen</div>
+<div class="grid2c"><div><div class="card" style="padding:0 16px"><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Security review on label</strong> <span class="dim data">v4</span> <span class="how">&mdash; chosen by Workflow Label <code>security</code></span><span class="snap">Snapshotted v4; v5 exists and applies from the next Retry.</span></div></div><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Docs only</strong> <span class="dim data">v2</span> <span class="how">&mdash; operator choice on this Ticket</span></div></div><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Migrated (harmonic)</strong> <span class="dim data">v1</span> <span class="how">&mdash; Workspace default</span></div></div><div class="frow"><div class="label">Workflow</div><div class="wf"><strong>Migrated (global)</strong> <span class="dim data">v2</span> <span class="how">&mdash; global default</span></div></div></div></div>
+<div><div class="card tickethead"><div class="thr"><h1>Rework retry backoff in the mirror poller</h1><span class="pill working" style="margin-top:8px">working</span></div>
+<dl class="props"><div><dt class="label">Agent</dt><dd>Claude <span class="dim">Opus 5.5</span></dd></div><div><dt class="label">Workspace</dt><dd>harmonic</dd></div>
+<div class="wide"><dt class="label">Workflow</dt><dd><div class="wf"><strong>Security review on label</strong> <span class="dim data">v4</span> <span class="how">&mdash; chosen by Workflow Label <code>security</code></span></div></dd></div></dl></div>
+<p class="note">The Ticket page says how the workflow was chosen: Workflow Label, operator choice on this Ticket, Workspace default, or global default.</p></div></div>
+<div class="vlabel">Ticket page: step list</div>
+<div class="card steps2">
+ <div class="stephead"><b>Steps</b><span class="dim small">Security review on label v4 &middot; snapshotted v4; v5 exists and applies from the next Retry</span></div>
+ <div class="atabs" role="tablist"><span class="label">Attempt</span><span class="atab"><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg>Attempt 1</span><span class="atab on"><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Attempt 2 of 3</span><span class="sp"></span><span class="small dim">Attempt 3 has not started</span></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">rebase</span><span class="kb">rebase</span><span class="dur">4s</span></div></div>
+ <div class="sgh"><span>Attempt 2 of 3</span><span class="sp"></span><span class="c">bounded by max: 3</span></div>
+ <details class="stp " open><summary><span class="chev"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">implement</span><span class="kb">agent &middot; prompt <code>implement</code></span><span class="dur">6m 12s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">Starting Claude session (Opus 5.5), warm Session reused</span></div><div class="lg"><span class="n">2</span><span class="c">Prompt: implement</span></div><div class="lg"><span class="n">3</span><span class="c">Reading src/mirror/poller.ts</span></div><div class="lg"><span class="n">4</span><span class="c">Editing src/mirror/poller.ts</span></div><div class="lg"><span class="n">5</span><span class="c">  + export function backoffMs(attempt: number): number {</span></div><div class="lg"><span class="n">6</span><span class="c">  +   return Math.min(30_000, 500 * 2 ** attempt);</span></div><div class="lg"><span class="n">7</span><span class="c">  + }</span></div><div class="lg"><span class="n">8</span><span class="c">Editing tests/mirror/poller.test.ts</span></div><div class="lg"><span class="n">9</span><span class="c">Committed 4f2a9c1 "Rework retry backoff in the mirror poller"</span></div><div class="lg"><span class="n">10</span><span class="c">Turn finished in 6m 12s</span></div></div></details>
+ <details class="stp "><summary><span class="chev"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">verify</span><span class="kb">command &middot; <code>npm test</code></span><span class="rn">runs_on k8s-prod</span><span class="dur">48s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">$ npm test</span></div><div class="lg"><span class="n">2</span><span class="c">Test Files  42 passed (42)</span></div><div class="lg"><span class="n">3</span><span class="c">Tests       381 passed (381)</span></div><div class="lg"><span class="n">4</span><span class="c">Command exited with code 0</span></div></div></details>
+ <div class="pgrp"><div class="pgl">parallel</div>
+ <details class="stp in "><summary><span class="chev"></span><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span class="sn">correctness</span><span class="kb">critic &middot; claude opus-5-5</span><span class="dur">1m 05s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">Starting Claude session (Opus 5.5)</span></div><div class="lg"><span class="n">2</span><span class="c">Prompt: critic-correctness</span></div><div class="lg"><span class="n">3</span><span class="c">Reviewing diff against develop (3 files)</span></div><div class="lg"><span class="n">4</span><span class="c">Checking backoffMs bounds against the poller call sites...</span></div></div></details>
+ <div class="stp nolog in skip"><div class="sm"><span class="chev off"></span><svg class="sic skipped" width="18" height="18" viewBox="0 0 18 18" aria-label="skipped"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="sn">security</span><span class="kb">critic &middot; codex gpt-5-codex</span><span class="rn">if: false</span><span class="dur">skipped</span></div></div>
+ </div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">merge</span><span class="kb">merge &middot; merge-commit policy</span><span class="dur">&ndash;</span></div></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">post-merge</span><span class="kb">post-merge-check</span><span class="dur">&ndash;</span></div></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">close</span><span class="kb">close-ticket</span><span class="dur">&ndash;</span></div></div>
+ <div class="sgh"><span>Cleanup</span><span class="sp"></span><span class="c">runs on done and on Close &middot; 1 step</span></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pending" width="18" height="18" viewBox="0 0 18 18" aria-label="pending"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="sn">cleanup</span><span class="kb">cleanup</span><span class="dur">&ndash;</span></div></div>
+</div>
+<div class="vlabel">Attempt 1 selected: the failed step expanded</div>
+<div class="card steps2">
+ <div class="atabs" role="tablist"><span class="label">Attempt</span><span class="atab on"><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg>Attempt 1</span><span class="atab"><svg class="sic running spin" width="18" height="18" viewBox="0 0 18 18" aria-label="running"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--running-tint)" stroke-width="2.4"/><path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>Attempt 2 of 3</span><span class="sp"></span><span class="small dim">Attempt 3 has not started</span></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">rebase</span><span class="kb">rebase</span><span class="dur">4s</span></div></div>
+ <div class="sgh"><span>Attempt 1 of 3</span><span class="sp"></span><span class="c">ended on <code class="i">verify</code>: fail, next Attempt started</span></div>
+ <div class="stp nolog "><div class="sm"><span class="chev off"></span><svg class="sic pass" width="18" height="18" viewBox="0 0 18 18" aria-label="pass"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sn">implement</span><span class="kb">agent &middot; prompt <code>implement</code></span><span class="dur">5m 40s</span></div></div>
+ <details class="stp " open><summary><span class="chev"></span><svg class="sic fail" width="18" height="18" viewBox="0 0 18 18" aria-label="fail"><circle cx="9" cy="9" r="8" fill="currentColor"/><path d="M6 6l6 6M12 6l-6 6" stroke="var(--surface)" stroke-width="1.8" stroke-linecap="round"/></svg><span class="sn">verify</span><span class="kb">command &middot; <code>npm test</code></span><span class="oc fail">fail</span><span class="dur">52s</span></summary><div class="logpane"><div class="lg"><span class="n">1</span><span class="c">$ npm test</span></div><div class="lg"><span class="n">2</span><span class="c">&gt; harmonic@2.19.0 test</span></div><div class="lg"><span class="n">3</span><span class="c">&gt; vitest run</span></div><div class="lg"><span class="n">4</span><span class="c"></span></div><div class="lg"><span class="n">5</span><span class="c">RUN  v3.2.4 /workspace/harmonic</span></div><div class="lg bad"><span class="n">6</span><span class="c">FAIL  tests/mirror/poller.test.ts &gt; backoff &gt; caps at 30s</span></div><div class="lg bad"><span class="n">7</span><span class="c">AssertionError: expected 32000 to be less than or equal to 30000</span></div><div class="lg bad"><span class="n">8</span><span class="c">  at tests/mirror/poller.test.ts:48:21</span></div><div class="lg"><span class="n">9</span><span class="c"></span></div><div class="lg"><span class="n">10</span><span class="c">Test Files  1 failed | 41 passed (42)</span></div><div class="lg"><span class="n">11</span><span class="c">Tests       1 failed | 380 passed (381)</span></div><div class="lg bad"><span class="n">12</span><span class="c">Command exited with code 1</span></div></div></details>
+ <div class="stp nolog skip"><div class="sm"><span class="chev off"></span><svg class="sic skipped" width="18" height="18" viewBox="0 0 18 18" aria-label="skipped"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="sn">correctness</span><span class="kb">critic &middot; claude opus-5-5</span><span class="dur">not run</span></div></div>
+</div>
+
+
+<h2 class="sec">6. #917 Escalation resumes workflows generically<span class="tk">#917</span></h2>
+<p class="sub">An escalated Ticket offers exactly Retry, Accept and Close in one decision bar, and each says which step it affects. A running Ticket offers Pause and Resume. A failed step outside <code>attempts:</code> escalates with the same three actions.</p>
+<div class="vlabel">Escalated Ticket with Retry options open</div><div class="card esc"><div class="thr"><h1 style="font-size:22px">Rework retry backoff in the mirror poller</h1><span class="pill escalated" style="margin-top:8px">escalated</span></div><div class="escbanner"><div class="hd"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></svg> Escalated at step <code>security</code></div><div>Attempts exhausted: 3 of 3 used. Step <code>security</code> (critic) returned <code>fail</code> on the last Attempt.</div></div><div class="retryopts"><div class="label">Retry options</div>
+<div class="f"><span class="label fl">Guidance for the agent (optional)</span><div class="field textarea">Keep the backoff cap at 30s; the failing test asserts it.</div></div>
+<div class="f"><span class="label fl">Harness</span><div class="select">Claude</div></div>
+<div class="f"><span class="label fl">Model</span><div class="select">claude-sonnet-5-5</div></div>
+<p class="note" style="margin:0">Retry starts a new pass of the <code class="i">attempts:</code> block with the counter reset and re-resolves the Workflow Label. The warm Session is reused if it is still warm. Retry Now skips the queue.</p></div><div class="gate"><div class="gcopy"><div><b>Accept</b> marks step <code class="i">security</code> (critic) as pass and continues with <code class="i">merge</code>. No re-verify; a candidate commit is required. At the last step, Accept continues to Merge.</div><div><b>Retry</b> starts a new pass of <code class="i">attempts:</code> with the counter reset.</div><div><b>Close</b> runs the <code class="i">cleanup:</code> list (1 step), then removes the worktree and branch.</div></div><div class="gbtns"><span class="btnquiet">Close</span><span class="btnghost">Accept</span><span class="btnghost">Retry Now</span><span class="btnprimary">Retry</span></div></div></div>
+<div class="vlabel">Accept unavailable (no candidate commit)</div><div class="card esc"><div class="escbanner"><div class="hd"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.5v3.2M8 11.7v.1"/></svg> Escalated at step <code>security</code></div><div>Permanent infrastructure failure: Harness <code>codex</code> is unavailable for step <code>security</code>. No substitution; no Attempt produced a commit.</div></div><div class="gate"><div class="gcopy"><div><b>Accept</b> marks step <code class="i">security</code> (critic) as pass and continues with <code class="i">merge</code>. No re-verify; a candidate commit is required. At the last step, Accept continues to Merge.</div><div><b>Retry</b> starts a new pass of <code class="i">attempts:</code> with the counter reset.</div><div><b>Close</b> runs the <code class="i">cleanup:</code> list (1 step), then removes the worktree and branch.</div><div class="why2">Accept is unavailable: no candidate commit on the Ticket branch.</div></div><div class="gbtns"><span class="btnquiet">Close</span><span class="btnghost dis">Accept</span><span class="btnghost">Retry Now</span><span class="btnprimary">Retry</span></div></div></div>
+<div class="vlabel">Pause and Resume on a running Ticket</div>
+<div class="pausebox"><span class="pill working">working</span><span class="sp">Pause: the in-flight turn finishes before the Ticket holds.</span><span class="btnghost">Pause</span></div>
+<div class="pausebox" style="margin-top:8px"><span class="pill paused">paused</span><span class="sp">Resume continues at the next unexecuted step, <code class="i">verify</code>.</span><span class="btnprimary">Resume</span></div>
+<div class="vlabel">Escalation reasons and the step each affects</div>
+<div class="card" style="padding:8px 12px"><table class="reasons"><tr><th>Escalation reason</th><th>Step it affects</th><th>Accept continues with</th></tr><tr><td>Attempt counter exhausted</td><td><code class="i">security</code> (critic)</td><td><code class="i">merge</code></td></tr><tr><td>Guardrail trip (a <code class="i">run:</code> step created a commit)</td><td><code class="i">lint</code></td><td><code class="i">verify</code></td></tr><tr><td>Permanent infrastructure failure</td><td><code class="i">implement</code> (agent)</td><td><code class="i">verify</code></td></tr><tr><td>Unresolved merge conflict</td><td><code class="i">merge</code></td><td>Merge</td></tr><tr><td>Red post-merge check</td><td><code class="i">post-merge</code> (outside <code class="i">attempts:</code>)</td><td><code class="i">close</code></td></tr></table></div>
+
+</div>
+<script>
+window.toggleSelect = window.toggleSelect || function(el){
+  var c = el.closest('.options');
+  if (c) c.querySelectorAll('.option').forEach(function(o){o.classList.remove('selected')});
+  el.classList.add('selected');
+  window.selectedChoice = el.dataset.choice;
+};
+</script></body></html>
