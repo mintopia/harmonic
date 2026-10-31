@@ -319,17 +319,20 @@ export const classifierEndpointSchema = z.object({
 export type ClassifierEndpoint = z.infer<typeof classifierEndpointSchema>;
 
 export const modelOptionSchema = z.object({
-  /** The Model Option's code: what the classifier returns and workflow steps reference. Unique within one list; an inner list may shadow an outer code. */
+  /** The Model Option's code: what the classifier returns and workflow steps reference. Unique across the global list and a Workspace's local entries. */
   id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option code must be lowercase letters, digits and hyphens' }).meta({ example: 'cheap-fix' }),
   /** Any id: a Harness that is not configured is refused with ADR-0049's wording, not a generic enum error. */
   harness: z.string().trim().min(1).meta({ example: 'claude' }),
   model: z.string().trim().min(1).meta({ example: 'claude-haiku-5-5' }),
   description: z.string().trim().min(1).meta({ example: 'cheap, small fixes' }),
-  /** A Workspace entry with `disabled: true` switches the code off for that Workspace. */
-  disabled: z.boolean().optional().meta({ example: false }),
 });
 export type ModelOption = z.infer<typeof modelOptionSchema>;
 export const modelOptionsSchema = z.array(modelOptionSchema);
+
+/** A `global` entry's `ref` is the Global Model Option's id. */
+export const modelOptionOverlayEntrySchema = overlayEntrySchema('modelOption', modelOptionSchema);
+export type ModelOptionOverlayEntry = z.infer<typeof modelOptionOverlayEntrySchema>;
+export const modelOptionOverrideSchema = z.array(modelOptionOverlayEntrySchema);
 
 /** Messages for a Model Option whose Harness is unconfigured or whose Model its Harness does not list. */
 export function modelOptionIssues(

@@ -138,7 +138,10 @@ export function createHarnessClassifierBackend(deps: {
   return {
     async classify(_input, { timeoutMs, workspace, prompt }) {
       const config = deps.getConfig();
-      const { harness: harnessId, model } = defaultRoute(config, workspace, null);
+      const settings = resolveClassifierSettings(workspace);
+      const { harness: harnessId, model } = settings.harness
+        ? { harness: settings.harness, model: settings.model ?? harnessConfig(config, settings.harness)?.defaultModel ?? '' }
+        : defaultRoute(config, workspace, null);
       const harness = harnessConfig(config, harnessId);
       if (!harness) throw new Error(`Harness '${harnessId}' is not configured`);
       const cwd = await mkdtemp(join(tmpdir(), 'harmonic-route-classifier-'));

@@ -1,5 +1,5 @@
-import type { AppConfig, ModelOption } from '../types';
-import { defaultHarnessId } from './verification-override-model';
+import type { AppConfig, ModelOption, ModelOptionOverlayEntry } from '../types';
+import { defaultHarnessId, withMissingGlobals } from './verification-override-model';
 
 export const MODEL_OPTION_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 export const DESCRIPTION_LIMIT = 400;
@@ -35,7 +35,7 @@ export function validateModelOption(draft: ModelOption, taken: readonly string[]
 export function serverRowErrors(errors: Record<string, string>, offset = 0): Map<number, ModelOptionErrors & { row?: string }> {
   const out = new Map<number, ModelOptionErrors & { row?: string }>();
   for (const [key, message] of Object.entries(errors)) {
-    const m = key.match(/^modelOptions\.(\d+)(?:\.(id|harness|model|description))?$/);
+    const m = key.match(/^modelOptions\.(\d+)(?:\.modelOption)?(?:\.(id|harness|model|description))?$/);
     if (!m) continue;
     const index = Number(m[1]) + offset;
     const row = out.get(index) ?? {};
@@ -50,14 +50,46 @@ export function firstServerMessage(row: (ModelOptionErrors & { row?: string }) |
   return row ? (row.row ?? row.id ?? row.harness ?? row.model ?? row.description ?? null) : null;
 }
 
-/** The first saved row whose code is malformed or repeats an earlier code (globals first). */
-export function firstModelOptionError(local: readonly ModelOption[] | null, globalIds: readonly string[] = []): string | null {
-  const seen = [...globalIds];
-  for (const [index, option] of (local ?? []).entries()) {
-    const id = option.id.trim();
-    if (!MODEL_OPTION_ID_PATTERN.test(id)) return `Model Option ${globalIds.length + index + 1}: code '${id}' must be lowercase letters, digits and hyphens.`;
-    if (seen.includes(id)) return `Model Option ${globalIds.length + index + 1}: code '${id}' is already used.`;
-    seen.push(id);
+/** One displayed Model Option row: a Global row carries the global option it points at, or none when that global was removed. */
+export type ModelOptionRow =
+  | { kind: 'global'; ref: string; enabled: boolean; option: ModelOption }
+  | { kind: 'local'; enabled: boolean; option: ModelOption };
+
+/** The overlay as displayed: any global it does not name is appended enabled, and a ref to a removed global is dropped. */
+export function modelOptionRows(overlay: readonly ModelOptionOverlayEntry[] | null, globals: readonly ModelOption[]): ModelOptionRow[] {
+  const byId = new Map(globals.map((g) => [g.id, g]));
+  return withMissingGlobals<ModelOptionOverlayEntry>(overlay, globals.map((g) => g.id)).flatMap((entry): ModelOptionRow[] => {
+    if (entry.kind === 'local') return [{ kind: 'local', enabled: entry.enabled, option: entry.modelOption }];
+    const option = byId.get(entry.ref);
+    return option ? [{ kind: 'global', ref: entry.ref, enabled: entry.enabled, option }] : [];
+  });
+}
+
+export function rowsToOverlay(rows: readonly ModelOptionRow[]): ModelOptionOverlayEntry[] {
+  return rows.map((row): ModelOptionOverlayEntry =>
+    row.kind === 'global' ? { kind: 'global', ref: row.ref, enabled: row.enabled } : { kind: 'local', enabled: row.enabled, modelOption: row.option },
+  );
+}
+
+/** How many Model Options the classifier would see: the enabled rows. */
+export function enabledOptionCount(overlay: readonly ModelOptionOverlayEntry[] | null, globals: readonly ModelOption[]): number {
+  return modelOptionRows(overlay, globals).filter((row) => row.enabled).length;
+}
+
+/** The first Workspace-local row whose code is malformed or repeats another row's code (Global rows first). */
+export function firstModelOptionError(overlay: readonly ModelOptionOverlayEntry[] | null, globals: readonly ModelOption[] = []): string | null {
+  const rows = modelOptionRows(overlay, globals);
+  const seen = new Set<string>();
+  for (const [index, row] of rows.entries()) {
+    const id = row.option.id.trim();
+    if (row.kind === 'local' && !MODEL_OPTION_ID_PATTERN.test(id)) return `Model Option ${index + 1}: code '${id}' must be lowercase letters, digits and hyphens.`;
+    if (seen.has(id)) return `Model Option ${index + 1}: code '${id}' is already used.`;
+    seen.add(id);
   }
   return null;
+}
+
+/** Same check for the Global list, which is a plain array of options. */
+export function firstGlobalModelOptionError(options: readonly ModelOption[]): string | null {
+  return firstModelOptionError(options.map((modelOption) => ({ kind: 'local' as const, enabled: true, modelOption })));
 }

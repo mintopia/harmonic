@@ -50,7 +50,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => taskExportRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
-  await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive }), { prefix: '/api' });
+  await app.register((fastify) => workspaceRoutes(fastify, { ...contexts.tracking, auth: ctx.auth, tasks: ctx.tasks, archive: ctx.archive, routeClassifier: ctx.routeClassifier }), { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, contexts.execution), { prefix: '/api' });

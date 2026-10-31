@@ -15,6 +15,7 @@ import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
+import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
@@ -58,6 +59,8 @@ export interface WorkspaceRenderCtx {
   blockedByRunningTask: boolean;
   onRequestDelete: () => void;
   dirty?: boolean;
+  saving?: boolean;
+  onSave?: () => void;
   onTab?: (tab: SettingTab) => void;
 }
 
@@ -893,7 +896,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       global:
         'A closed list the Route Classifier picks from. It never picks outside the list. Each Model Option has a code that Task Execution Workflow YAML can reference. Write each description as when it fits: the classifier reads it to choose.',
       workspace:
-        'Global rows are managed in Global settings and always apply here. Model Options you add are local to this Workspace and follow them. Codes are unique across both.',
+        'Global rows are managed in Global settings. You can reorder them and turn them off here; Model Options you add are local to this Workspace. Codes are unique across both.',
     },
     body: (ctx) =>
       ctx.surface === 'global' ? (
@@ -906,11 +909,10 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       ) : (
         <ModelOptionsEditor
           workspace
-          items={ctx.workspace.modelOptions ?? []}
-          globals={ctx.config.modelOptions}
+          overlay={ctx.workspace.modelOptions}
           config={ctx.config}
           errors={ctx.errors}
-          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions: modelOptions.length > 0 ? modelOptions : null })}
+          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions })}
         />
       ),
   },
@@ -925,8 +927,11 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       ctx.surface === 'workspace' ? (
         <RouteClassifierSettings
           workspace={ctx.workspace}
-          optionCount={ctx.config.modelOptions.length + (ctx.workspace.modelOptions?.length ?? 0)}
+          config={ctx.config}
+          optionCount={enabledOptionCount(ctx.workspace.modelOptions, ctx.config.modelOptions)}
           errors={ctx.errors}
+          saving={ctx.saving ?? false}
+          {...(ctx.onSave ? { onSave: ctx.onSave } : {})}
           onChange={ctx.setWorkspace}
         />
       ) : null,

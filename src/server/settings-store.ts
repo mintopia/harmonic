@@ -151,9 +151,15 @@ function migrateWorkspaceOverlayList(value: unknown, itemKey: 'command' | 'criti
 }
 
 /** {@link migrateWorkspaceOverlayList} applied across one stored Workspace override entry's six verifier lists. */
-function migrateWorkspaceOverlays(entry: unknown): unknown {
+function migrateWorkspaceOverlays(entry: unknown, globalModelOptionIds: readonly string[] = []): unknown {
   if (!isRecord(entry)) return entry;
   const migrated: Record<string, unknown> = { ...entry };
+  if (Array.isArray(migrated.modelOptions) && migrated.modelOptions.every((o) => isRecord(o) && !('kind' in o))) {
+    migrated.modelOptions = [
+      ...globalModelOptionIds.map((ref) => ({ kind: 'global', ref, enabled: true })),
+      ...migrated.modelOptions.map((modelOption) => ({ kind: 'local', enabled: true, modelOption })),
+    ];
+  }
   for (const key of COMMAND_OVERLAY_KEYS) {
     if (key in migrated) migrated[key] = migrateWorkspaceOverlayList(migrated[key], 'command', 'cmd');
   }
@@ -254,7 +260,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     const workspaces: Record<string, WorkspaceOverrides> = {};
     const catalog = harnessCatalog(baseline, migratedGlobal);
     for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
-      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry), catalog, global.defaults.harness));
+      workspaces[id] = workspaceOverridesSchema.parse(migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness));
     }
     return { globalPatch, global, workspaces };
   } catch (err) {

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
-import type { AppConfig, ModelOption } from '../types';
+import type { AppConfig, ModelOption, ModelOptionOverlayEntry } from '../types';
 import { btnPrimary, btnQuiet, chip, field } from '../ui';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker';
 import { Precedence, RemoveButton, RoutingListFrame, RoutingRowShell } from './RoutingLabelsEditor';
 import { FieldError, fieldLabel } from './SettingsSection';
+import { Switch } from './Switch';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   DESCRIPTION_LIMIT,
@@ -12,7 +13,10 @@ import {
   firstServerMessage,
   serverRowErrors,
   validateModelOption,
+  modelOptionRows,
+  rowsToOverlay,
   type ModelOptionErrors,
+  type ModelOptionRow,
 } from './model-option-model';
 
 const NOUN = 'Model Option';
@@ -68,7 +72,7 @@ function ModelOptionForm({
         />
         <FieldError message={shown.id} />
         <p className="mt-1 text-small text-faint">
-          Lowercase letters, digits and hyphens, starting with a letter or digit (<code>^[a-z0-9][a-z0-9-]*$</code>). Task Execution Workflow YAML refers to this Model Option by code, so changing it breaks those references.
+          Lowercase letters, digits and hyphens, starting with a letter or digit (<code>opus-deep</code>, <code>codex-bulk</code>). Task Execution Workflow YAML refers to this Model Option by code, so changing it breaks those references.
         </p>
       </div>
       <div>
@@ -120,15 +124,31 @@ function ModelOptionForm({
   );
 }
 
-function ModelOptionSummary({ option }: { option: ModelOption }) {
+const box = 'inline-flex min-h-9 items-center rounded-md border border-edge bg-field px-2.5 py-1 text-ink';
+
+function LocalSummary({ option }: { option: ModelOption }) {
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <code className="font-data text-data text-ink">{option.id}</code>
-        <span className="text-ink">{providerLabel(option.harness)}</span>
-        <span className="font-data text-data text-ink" title={option.model}>{formatModelLabel(option.model)}</span>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <code className={`${box} w-[180px] font-data text-data`}>{option.id}</code>
+        <span className={`${box} w-[150px]`}>{providerLabel(option.harness)}</span>
+        <span className={`${box} w-[190px] font-data text-data`} title={option.model}>{formatModelLabel(option.model)}</span>
       </div>
-      <p className="mt-0.5 text-small text-muted">{option.description}</p>
+      <p className={`${box} mt-1.5 w-full text-small`}>{option.description}</p>
+    </div>
+  );
+}
+
+function GlobalSummary({ option, enabled }: { option: ModelOption; enabled: boolean }) {
+  const off = enabled ? '' : 'opacity-55 line-through';
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-1.5">
+        <code className={`min-w-[140px] font-data text-data text-ink ${off}`}>{option.id}</code>
+        <span className={`text-ink ${off}`}>{providerLabel(option.harness)}</span>
+        <span className={`font-data text-data text-ink ${off}`} title={option.model}>{formatModelLabel(option.model)}</span>
+      </div>
+      <p className="text-small text-muted">{option.description}</p>
     </div>
   );
 }
@@ -144,29 +164,28 @@ function EmptyState() {
 
 type Editing = { index: number; isNew: boolean } | null;
 
-/** The closed list the Route Classifier picks from. Given `globals` (Workspace surface), those render first and locked; `items` are the editable rows behind them. */
-export function ModelOptionsEditor({
-  items,
-  globals = [],
-  workspace = false,
-  config,
-  errors,
-  onChange,
-}: {
-  items: readonly ModelOption[];
-  globals?: readonly ModelOption[];
-  workspace?: boolean;
-  config: AppConfig;
-  errors: Record<string, string>;
-  onChange: (items: ModelOption[]) => void;
-}) {
+/** The closed list the Route Classifier picks from. Given `overlay` (Workspace surface), Global rows can be reordered and turned off, and local rows edited. */
+export function ModelOptionsEditor(
+  props: { config: AppConfig; errors: Record<string, string> } & (
+    | { workspace?: false; items: readonly ModelOption[]; onChange: (items: ModelOption[]) => void }
+    | { workspace: true; overlay: ModelOptionOverlayEntry[] | null; onChange: (overlay: ModelOptionOverlayEntry[]) => void }
+  ),
+) {
+  const { config, errors } = props;
   const [editing, setEditing] = useState<Editing>(null);
-  const offset = globals.length;
+  const workspace = props.workspace === true;
+  const rows: ModelOptionRow[] = props.workspace
+    ? modelOptionRows(props.overlay, config.modelOptions)
+    : props.items.map((option) => ({ kind: 'local', enabled: true, option }));
   const rowErrors = serverRowErrors(errors);
-  const takenFor = (skip: number) => [...globals.map((g) => g.id), ...items.filter((_, i) => i !== skip).map((o) => o.id)];
+  const takenFor = (skip: number) => rows.filter((_, i) => i !== skip).map((r) => r.option.id);
+  const commit = (next: ModelOptionRow[]) => {
+    if (props.workspace) props.onChange(rowsToOverlay(next));
+    else props.onChange(next.map((r) => r.option));
+  };
   const close = () => setEditing(null);
-  const commit = (index: number, option: ModelOption) => {
-    onChange(index >= items.length ? [...items, option] : items.map((o, i) => (i === index ? option : o)));
+  const replace = (index: number, next: ModelOptionRow) => {
+    commit(index >= rows.length ? [...rows, next] : rows.map((r, i) => (i === index ? next : r)));
     close();
   };
 
@@ -176,49 +195,50 @@ export function ModelOptionsEditor({
       <RoutingListFrame
         heading="Model Options"
         addLabel="+ Add Model Option"
-        count={offset + items.length}
+        count={rows.length}
         onMove={(from, to) => {
-          if (from < offset || to < offset) return;
-          onChange(arrayMove([...items], from - offset, to - offset));
+          commit(arrayMove([...rows], from, to));
           close();
         }}
-        onAdd={() => setEditing({ index: items.length, isNew: true })}
+        onAdd={() => setEditing({ index: rows.length, isNew: true })}
         onRemove={(index) => {
-          onChange(items.filter((_, i) => i !== index - offset));
+          commit(rows.filter((_, i) => i !== index));
           close();
         }}
         emptyText={<EmptyState />}
         renderRow={({ id, index, remove }) => {
-          const global = globals[index];
-          if (global) {
+          const row = rows[index];
+          if (!row) return null;
+          const n = index + 1;
+          if (row.kind === 'global') {
             return (
-              <RoutingRowShell id={id} index={index} noun={NOUN} stacked locked pinned>
-                <ModelOptionSummary option={global} />
-                <span className={globalChip}>Global</span>
+              <RoutingRowShell id={id} index={index} noun={NOUN} stacked locked>
+                <GlobalSummary option={row.option} enabled={row.enabled} />
+                <span className="flex items-center gap-3 self-center">
+                  <span className={globalChip}>Global</span>
+                  <Switch checked={row.enabled} label={`Toggle ${NOUN} ${n}`} onChange={(enabled) => replace(index, { ...row, enabled })} />
+                </span>
               </RoutingRowShell>
             );
           }
-          const local = index - offset;
-          const option = items[local];
-          if (!option) return null;
-          if (editing && !editing.isNew && editing.index === local) {
+          if (editing && !editing.isNew && editing.index === index) {
             return (
               <ModelOptionForm
-                initial={option}
-                taken={takenFor(local)}
+                initial={row.option}
+                taken={takenFor(index)}
                 config={config}
-                serverErrors={rowErrors.get(local)}
-                onSave={(next) => commit(local, next)}
+                serverErrors={rowErrors.get(index)}
+                onSave={(option) => replace(index, { ...row, option })}
                 onCancel={close}
               />
             );
           }
           return (
-            <RoutingRowShell id={id} index={index} noun={NOUN} stacked accent={workspace} error={firstServerMessage(rowErrors.get(local))}>
-              <ModelOptionSummary option={option} />
-              <span className="flex items-center gap-3">
+            <RoutingRowShell id={id} index={index} noun={NOUN} stacked accent={workspace} error={firstServerMessage(rowErrors.get(index))}>
+              <LocalSummary option={row.option} />
+              <span className="flex items-center gap-3 self-center">
                 {workspace && <span className={workspaceChip}>Workspace</span>}
-                <button type="button" aria-label={`Edit ${NOUN} ${index + 1}`} className={editButton} onClick={() => setEditing({ index: local, isNew: false })}>
+                <button type="button" aria-label={`Edit ${NOUN} ${n}`} className={editButton} onClick={() => setEditing({ index, isNew: false })}>
                   Edit
                 </button>
                 <RemoveButton index={index} noun={NOUN} inline onRemove={remove} />
@@ -234,7 +254,7 @@ export function ModelOptionsEditor({
             taken={takenFor(-1)}
             config={config}
             serverErrors={rowErrors.get(editing.index)}
-            onSave={(next) => commit(editing.index, next)}
+            onSave={(option) => replace(editing.index, { kind: 'local', enabled: true, option })}
             onCancel={close}
           />
         </div>

@@ -18,7 +18,7 @@ import {
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
 import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
-import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionsSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
@@ -93,7 +93,8 @@ export const workspaceOverridesSchema = z.object({
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   /** Workspace-only Model Options, added after the global list; null adds none. */
-  modelOptions: modelOptionsSchema.nullable().optional(),
+  /** Ordered Model Option overlay (ADR-0037); null inherits every global, enabled. */
+  modelOptions: modelOptionOverrideSchema.nullable().optional(),
   /** Route Classifier on/off override; null inherits off. */
   classifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
   classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
@@ -103,6 +104,10 @@ export const workspaceOverridesSchema = z.object({
   classifierTypesafeModel: z.string().trim().min(1).nullable().optional().meta({ example: 'typesafe/jev-1.13' }),
   /** Name of the ADR-0046 Secret holding the OpenRouter key; null means none. */
   classifierTypesafeSecret: secretNameSchema.nullable().optional().meta({ example: 'OPENROUTER_API_KEY' }),
+  /** Harness the `harness` classifier backend runs on; null uses the Workspace default Harness. */
+  classifierHarness: z.string().min(1).nullable().optional().meta({ example: 'claude' }),
+  /** Model for the `harness` classifier backend; null uses that Harness's default or the Workspace default Model. */
+  classifierModel: z.string().min(1).nullable().optional().meta({ example: 'claude-sonnet-5-5' }),
   /** OpenAI-compatible endpoint for the `openai-compatible` classifier backend; null means none is set. */
   classifierEndpoint: classifierEndpointSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
@@ -193,6 +198,8 @@ export const OVERRIDE_KEYS = [
   'classifierTimeoutSeconds',
   'classifierTypesafeModel',
   'classifierTypesafeSecret',
+  'classifierHarness',
+  'classifierModel',
   'classifierEndpoint',
   'guardrailBudget',
   'guardrailProgress',
@@ -300,6 +307,8 @@ export class WorkspaceService {
       classifierTimeoutSeconds: o.classifierTimeoutSeconds,
       classifierTypesafeModel: o.classifierTypesafeModel,
       classifierTypesafeSecret: o.classifierTypesafeSecret,
+      classifierHarness: o.classifierHarness,
+      classifierModel: o.classifierModel,
       classifierEndpoint: o.classifierEndpoint != null ? JSON.stringify(o.classifierEndpoint) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,

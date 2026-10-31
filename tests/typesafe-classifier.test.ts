@@ -73,7 +73,7 @@ describe('TypeSafe classifier backend', () => {
 
   it('feeds usage and cost to the routing line through the classifier', async () => {
     const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() });
-    const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTimeoutSeconds: 5, classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS) } as never;
+    const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTimeoutSeconds: 5, classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS.map((modelOption) => ({ kind: 'local', enabled: true, modelOption }))) } as never;
     const outcome = await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1 });
     expect(outcome).toMatchObject({ kind: 'chosen', option: { id: 'deep-work' } });
     expect(outcome.routing?.cost?.totalUsd).toBeCloseTo(0.00002);
@@ -82,7 +82,7 @@ describe('TypeSafe classifier backend', () => {
 
   it('picks from the list resolved with the Ticket overrides', async () => {
     const classifier = new RouteClassifier(() => baselineConfig(), { typesafe: backend() });
-    const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS) } as never;
+    const workspace = { id: 7, classifierEnabled: true, classifierBackend: 'typesafe', classifierTypesafeSecret: 'OR_KEY', modelOptions: JSON.stringify(OPTIONS.map((modelOption) => ({ kind: 'local', enabled: true, modelOption }))) } as never;
     const modelOptionOverrides = [{ id: 'deep-work', harness: 'codex', model: 'gpt-5-mini' }];
     const outcome = await classifier.classify({ workspace, title: 't', description: 'd', labels: [], attemptNumber: 1, modelOptionOverrides });
     expect(outcome).toMatchObject({ kind: 'chosen', option: { id: 'deep-work', harness: 'codex', model: 'gpt-5-mini' } });

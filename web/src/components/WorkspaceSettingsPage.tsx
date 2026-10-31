@@ -52,10 +52,7 @@ export function WorkspaceSettingsPage({
   const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
   const routingError =
     firstRoutingOverlayError(local.routingLabels, config.routingLabels) ??
-    firstModelOptionError(
-      local.modelOptions,
-      config.modelOptions.map((o) => o.id),
-    );
+    firstModelOptionError(local.modelOptions, config.modelOptions);
 
   const discard = () => {
     setLocal(pristine);
@@ -97,6 +94,8 @@ export function WorkspaceSettingsPage({
     errors: fieldErrors,
     blockedByRunningTask,
     onRequestDelete: () => setConfirmingDelete(true),
+    saving,
+    onSave: save,
   };
 
   return (

@@ -60,7 +60,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
   modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
-  classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null;
+  classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;
   classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;

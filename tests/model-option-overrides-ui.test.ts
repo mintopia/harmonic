@@ -14,9 +14,9 @@ afterEach(async () => {
 const opt = (id: string, over: Partial<ModelOption> = {}): ModelOption => ({ id, harness: 'claude', model: 'claude-sonnet-5', description: id, ...over });
 const cfg = () => {
   const base = makeConfig();
-  return { ...base, modelOptions: [opt('cheap-fix'), opt('opus-deep'), opt('retired', { disabled: true })] };
+  return { ...base, modelOptions: [opt('cheap-fix'), opt('opus-deep')] };
 };
-const ws = makeWorkspace({ modelOptions: [opt('deep-dive'), opt('opus-deep', { model: 'claude-opus-5-5' })] });
+const ws = makeWorkspace({ modelOptions: [{ kind: 'local', enabled: true, modelOption: opt('deep-dive') }, { kind: 'global', ref: 'cheap-fix', enabled: true }] });
 
 beforeEach(() => {
   vi.spyOn(api, 'config').mockResolvedValue(cfg());
@@ -35,10 +35,10 @@ const choose = async (el: HTMLSelectElement, value: string) => {
 };
 
 describe('availableOptions', () => {
-  it('merges Workspace over global and drops disabled codes', () => {
-    const got = availableOptions(ws, cfg());
-    expect(got.map((o) => o.id)).toEqual(['cheap-fix', 'opus-deep', 'deep-dive']);
-    expect(got.find((o) => o.id === 'opus-deep')!.model).toBe('claude-opus-5-5');
+  it('follows the overlay order, drops disabled globals and appends unnamed globals', () => {
+    expect(availableOptions(ws, cfg()).map((o) => o.id)).toEqual(['deep-dive', 'cheap-fix', 'opus-deep']);
+    const off = makeWorkspace({ modelOptions: [{ kind: 'global', ref: 'cheap-fix', enabled: false }] });
+    expect(availableOptions(off, cfg()).map((o) => o.id)).toEqual(['opus-deep']);
   });
 });
 
@@ -46,7 +46,7 @@ describe('Model Option overrides panel', () => {
   it('offers only defined codes and adds a row with that option\'s route', async () => {
     const host = await mount();
     const add = select(host, 'Add override');
-    expect(Array.from(add.options).map((o) => o.value).filter(Boolean)).toEqual(['cheap-fix', 'opus-deep', 'deep-dive']);
+    expect(Array.from(add.options).map((o) => o.value).filter(Boolean)).toEqual(['deep-dive', 'cheap-fix', 'opus-deep']);
     await choose(add, 'deep-dive');
     expect(host.querySelector('code')?.textContent).toBe('deep-dive');
     expect(select(host, 'Harness for deep-dive').value).toBe('claude');

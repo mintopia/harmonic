@@ -12,11 +12,21 @@ const selectCls = 'hm-select min-h-9 w-full rounded-md border border-edge bg-fie
 const codeCls = `${codeChip} bg-tool-tint text-tool`;
 const EDITABLE: Task['state'][] = ['draft', 'ready'];
 
-/** Workspace overlay shadows the global list; disabled codes are not offered. */
+/** The Workspace overlay's enabled options in its order, then the globals it does not name. */
 export function availableOptions(workspace: Pick<Workspace, 'modelOptions'> | null, config: Pick<AppConfig, 'modelOptions'>): ModelOption[] {
-  const byCode = new Map(config.modelOptions.map((o) => [o.id, o]));
-  for (const o of workspace?.modelOptions ?? []) byCode.set(o.id, o);
-  return [...byCode.values()].filter((o) => !o.disabled);
+  const overlay = workspace?.modelOptions ?? null;
+  if (overlay == null) return [...config.modelOptions];
+  const globals = new Map(config.modelOptions.map((o) => [o.id, o]));
+  const named = new Set<string>();
+  const out: ModelOption[] = [];
+  for (const entry of overlay) {
+    if (entry.kind === 'global') {
+      named.add(entry.ref);
+      const g = globals.get(entry.ref);
+      if (entry.enabled && g) out.push(g);
+    } else if (entry.enabled) out.push(entry.modelOption);
+  }
+  return [...out, ...config.modelOptions.filter((o) => !named.has(o.id))];
 }
 
 /** Server messages read `modelOptionOverrides.<index>.<field>: <text>`. */
