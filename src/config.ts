@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
+import { unconfiguredHarnessReason } from './domain/route.js';
 import { routingLabelIssueMessage, routingLabelIssues } from './domain/setting-override.js';
 import {
   PROMPT_FRAGMENT_NAMES,
@@ -305,6 +306,49 @@ export const routingLabelOverlayEntrySchema = overlayEntrySchema('routingLabel',
 export type RoutingLabelOverlayEntry = z.infer<typeof routingLabelOverlayEntrySchema>;
 export const routingLabelOverrideSchema = z.array(routingLabelOverlayEntrySchema);
 
+export const CLASSIFIER_BACKENDS = ['typesafe', 'openai-compatible', 'harness'] as const;
+export const DEFAULT_CLASSIFIER_TIMEOUT_SECONDS = 30;
+export const DEFAULT_TYPESAFE_MODEL = 'typesafe/jev-1.13';
+
+export const classifierEndpointSchema = z.object({
+  baseUrl: z.url().meta({ example: 'https://api.openai.com/v1' }),
+  model: z.string().trim().min(1).meta({ example: 'gpt-5-mini' }),
+  /** Name of the ADR-0046 Secret holding the API key; the key itself is never stored here. */
+  apiKeySecret: z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/, 'a secret name is 1-64 letters, digits, `_`, `.` or `-`').meta({ example: 'CLASSIFIER_API_KEY' }),
+});
+export type ClassifierEndpoint = z.infer<typeof classifierEndpointSchema>;
+
+export const modelOptionSchema = z.object({
+  /** The Model Option's code: what the classifier returns and workflow steps reference. Unique across the global list and a Workspace's local entries. */
+  id: z.string().trim().min(1).regex(/^[a-z0-9][a-z0-9-]*$/, { message: 'model option code must be lowercase letters, digits and hyphens' }).meta({ example: 'cheap-fix' }),
+  /** Any id: a Harness that is not configured is refused with ADR-0049's wording, not a generic enum error. */
+  harness: z.string().trim().min(1).meta({ example: 'claude' }),
+  model: z.string().trim().min(1).meta({ example: 'claude-haiku-5-5' }),
+  description: z.string().trim().min(1).meta({ example: 'cheap, small fixes' }),
+});
+export type ModelOption = z.infer<typeof modelOptionSchema>;
+export const modelOptionsSchema = z.array(modelOptionSchema);
+
+/** A `global` entry's `ref` is the Global Model Option's id. */
+export const modelOptionOverlayEntrySchema = overlayEntrySchema('modelOption', modelOptionSchema);
+export type ModelOptionOverlayEntry = z.infer<typeof modelOptionOverlayEntrySchema>;
+export const modelOptionOverrideSchema = z.array(modelOptionOverlayEntrySchema);
+
+/** Messages for a Model Option whose Harness is unconfigured or whose Model its Harness does not list. */
+export function modelOptionIssues(
+  options: readonly ModelOption[],
+  harnesses: AppConfig['harnesses'],
+): Array<{ index: number; field: 'harness' | 'model'; message: string }> {
+  return options.flatMap((option, index): Array<{ index: number; field: 'harness' | 'model'; message: string }> => {
+    const harness = (harnesses as Record<string, HarnessConfig | undefined>)[option.harness];
+    if (!harness) return [{ index, field: 'harness' as const, message: unconfiguredHarnessReason(option.harness, null) }];
+    if (harness.models.length > 0 && !harness.models.some((m) => m.id === option.model)) {
+      return [{ index, field: 'model' as const, message: `model option '${option.id}' model '${option.model}' is not in the ${option.harness} harness's model list` }];
+    }
+    return [];
+  });
+}
+
 export const appConfigSchema = z.object({
   /** Operator-chosen display name; feeds the sidebar heading and browser title. Empty (the default) falls back to "Harmonic". */
   name: z.string().meta({ example: 'Production' }),
@@ -329,6 +373,8 @@ export const appConfigSchema = z.object({
   }),
   /** Ordered tracker-label → Harness + Model mappings for mirrored Tickets; the first match in list order wins. */
   routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }),
+  /** Ordered Model Options the Route Classifier may pick from; a Workspace adds its own on top. */
+  modelOptions: modelOptionsSchema.meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5', description: 'cheap, small fixes' }] }),
   /** The default Harness and model a new Conversation starts with; a Workspace stores `null` to inherit. */
   chat: z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
@@ -451,6 +497,14 @@ export const appConfigSchema = z.object({
       path: ['routingLabels', issue.index, 'label'],
       message: routingLabelIssueMessage(issue, config.routingLabels[issue.index]?.label ?? ''),
     });
+  }
+  const seenOptionIds = new Set<string>();
+  config.modelOptions.forEach((option, index) => {
+    if (seenOptionIds.has(option.id)) ctx.addIssue({ code: 'custom', path: ['modelOptions', index, 'id'], message: `model option code '${option.id}' is already used` });
+    seenOptionIds.add(option.id);
+  });
+  for (const issue of modelOptionIssues(config.modelOptions, config.harnesses)) {
+    ctx.addIssue({ code: 'custom', path: ['modelOptions', issue.index, issue.field], message: issue.message });
   }
   const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);
   if (unpriced.length > 0) {

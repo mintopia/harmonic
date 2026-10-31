@@ -6,6 +6,7 @@ import { humanizeSaveError, parseFieldErrors } from './SettingsSection';
 import { Modal } from './Modal';
 import { firstPatternError, normalizeWorkspaceExport } from '../archive-export-model';
 import { firstRoutingOverlayError } from './routing-label-overlay-model';
+import { firstModelOptionError } from './model-option-model';
 import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
@@ -49,7 +50,9 @@ export function WorkspaceSettingsPage({
   }, [workspace]);
 
   const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
-  const routingError = firstRoutingOverlayError(local.routingLabels, config.routingLabels);
+  const routingError =
+    firstRoutingOverlayError(local.routingLabels, config.routingLabels) ??
+    firstModelOptionError(local.modelOptions, config.modelOptions);
 
   const discard = () => {
     setLocal(pristine);
@@ -91,6 +94,8 @@ export function WorkspaceSettingsPage({
     errors: fieldErrors,
     blockedByRunningTask,
     onRequestDelete: () => setConfirmingDelete(true),
+    saving,
+    onSave: save,
   };
 
   return (

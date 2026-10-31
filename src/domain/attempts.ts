@@ -613,6 +613,8 @@ export function serializeAttempt(attempt: AttemptRow): Record<string, unknown> {
     ...rest,
     usage: attempt.usage ? JSON.parse(attempt.usage) : null,
     cost: attempt.cost ? JSON.parse(attempt.cost) : null,
+    routingUsage: attempt.routingUsage ? JSON.parse(attempt.routingUsage) : null,
+    routingCost: attempt.routingCost ? JSON.parse(attempt.routingCost) : null,
     guardrailConfig: attempt.guardrailConfig ? JSON.parse(attempt.guardrailConfig) : null,
     priceTable: attempt.priceTable ? JSON.parse(attempt.priceTable) : null,
   };

@@ -25,6 +25,7 @@ import { StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
 import { StatePill } from './ticket/shared';
 import { Description } from './ticket/Description';
 import { Metrics, Properties } from './ticket/Metrics';
+import { ModelOptionOverrides } from './ticket/ModelOptionOverrides';
 import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
 import { taskExportTarget } from '../export-targets';
@@ -205,7 +206,8 @@ export function TicketPage({
               </div>
               <div className="min-w-0">
                 <Metrics task={task} runs={runs} live={liveUsage} now={now} />
-                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} />
+                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} attempts={attempts} />
+                <ModelOptionOverrides task={detail ?? task} onChanged={onChanged} />
               </div>
             </div>
 

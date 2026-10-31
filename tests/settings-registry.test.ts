@@ -170,6 +170,7 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
       'promptFragmentCriticRole',
       'promptFragmentCriticSecurity',
       'promptFragmentCriticVerdictContract',
+      'promptFragmentRouteClassifier',
       'promptFragmentEpicFailingVerification',
       'driveCommitNudge',
       'mergeConflictPrompt',

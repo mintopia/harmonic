@@ -207,6 +207,21 @@ function ResolvedPromptsStory() {
   );
 }
 
+function RouteClassifierPromptStory() {
+  const event = {
+    id: 1,
+    seq: 1,
+    ts: 1_756_000_000_000,
+    type: 'lifecycle',
+    payload: { event: 'route-classified', optionId: 'cheap-fix', reason: 'small test fix', locator: 'routing/classifier/prompt.md', promptIndex: 0 },
+  } as unknown as AttemptLogEvent;
+  return (
+    <StoryFrame style={{ padding: 30, maxWidth: 760, margin: '0 auto' }}>
+      <ChatTranscript events={[event]} unavailable={false} model="claude-sonnet-5-5" agent="Claude" stepLabel="Implementation" attemptId={1} />
+    </StoryFrame>
+  );
+}
+
 function TranscriptStory() {
   const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
   const codexEvents: AttemptLogEvent[] = [
@@ -465,9 +480,14 @@ function EpicStory() {
 function TicketStory() {
   const routed = params.get('routing');
   const routedTask = routed ? { ...task, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : task;
-  const shown = params.get('state') === 'escalated'
-    ? { ...routedTask, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
+  const withOverrides = params.get('overrides') === '1'
+    ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
     : routedTask;
+  const shown = params.get('state') === 'ready'
+    ? { ...withOverrides, state: 'ready' as const }
+    : params.get('state') === 'escalated'
+      ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
+      : withOverrides;
   return (
     <StoryFrame style={{ height: '100vh' }}>
       <TicketPage
@@ -567,6 +587,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   transcript: TranscriptStory,
   'multi-turn': MultiTurnStory,
   'resolved-prompts': ResolvedPromptsStory,
+  'route-classifier-prompt': RouteClassifierPromptStory,
   timeline: TimelineStory,
   merge: MergeStory,
   compose: ComposeStory,

@@ -21,6 +21,8 @@ import { WorkspaceWatcher } from '../domain/workspace-watcher.js';
 import { logger } from '../logger.js';
 import { ProcessGroupJournal } from '../execution/process-groups.js';
 import { attempted, errorMessage, type FireAndForget } from '../error-handling.js';
+import { createTypesafeClassifierBackend } from '../domain/typesafe-classifier.js';
+import { RouteClassifier, createHarnessClassifierBackend, createOpenAiCompatibleClassifierBackend } from '../domain/route-classifier.js';
 import { createAcpCriticDrive } from '../verification/critic.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 import { singleFlight } from '../reliability/single-flight.js';
@@ -192,6 +194,7 @@ export interface Runtime {
   sessionRetirement: SessionRetirementCoordinator;
   drainRetirement: () => Promise<number>;
   runner: Runner;
+  routeClassifier: RouteClassifier;
   globalPause: GlobalPause;
   escalation: EscalationService;
   autoDrive: AutoDrive;
@@ -384,6 +387,11 @@ export async function createRuntime(deps: {
   };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
+  const routeClassifier = new RouteClassifier(() => settingsStore.getGlobal(), {
+    typesafe: createTypesafeClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
+    harness: createHarnessClassifierBackend({ drive: criticDrive, getConfig: () => settingsStore.getGlobal() }),
+    'openai-compatible': createOpenAiCompatibleClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
+  });
   const runner = new Runner(tasks, asyncDb, () => settingsStore.getGlobal(), {
     isGloballyPaused: () => globalPauseRef?.isLatched ?? false,
     onGloballyPaused: async (taskId) => { await globalPauseRef?.track(taskId); },
@@ -403,6 +411,7 @@ export async function createRuntime(deps: {
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     criticDrive,
+    routeClassifier,
     commandSpawn,
     spawnProcessGroup,
     fireAndForget,
@@ -515,6 +524,7 @@ export async function createRuntime(deps: {
     sessionRetirement,
     drainRetirement,
     runner,
+    routeClassifier,
     globalPause,
     escalation,
     autoDrive,

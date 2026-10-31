@@ -164,6 +164,17 @@ export function withCriticContribution(
   return { usage: mergedUsage, cost: mergedCost };
 }
 
+export function withRoutingContribution(
+  cost: Cost | null,
+  routing: { cost: Cost | null } | null,
+): Cost | null {
+  if (!routing) return cost;
+  const byModel: Record<string, number | null> = { ...(cost?.byModel ?? {}), routing: routing.cost?.totalUsd ?? null };
+  let totalUsd: number | null = null;
+  for (const usd of Object.values(byModel)) if (usd !== null) totalUsd = (totalUsd ?? 0) + usd;
+  return { totalUsd, byModel, incomplete: (cost?.incomplete ?? false) || routing.cost === null || routing.cost.incomplete };
+}
+
 /** Sum Costs already frozen on Attempts, preserving unknown-model floors. */
 export function sumCosts(costs: (Cost | null)[]): Cost | null {
   const present = costs.filter((cost): cost is Cost => cost !== null);

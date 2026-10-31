@@ -22,6 +22,7 @@ export interface TaskWithBlockers extends TaskRow {
     conflictResolveTurns: number | null;
   };
   routing: TaskRouting | null;
+  classifierEnabled: boolean;
 }
 
 export interface TaskBlockerGraphOptions {

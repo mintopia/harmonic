@@ -1,8 +1,10 @@
 import type { Attempt } from '../../types';
-import type { ContentSelection } from '../../task-detail-model';
+import { harnessLabel, type ContentSelection } from '../../task-detail-model';
 import { attemptTone } from '../../attempt-timeline-model';
-import { railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle } from '../../ui';
+import { railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, codeChip } from '../../ui';
+import { formatCost } from '../../cost';
 import { Icon } from '../Icon';
+import { formatModelLabel } from '../TaskIdentity';
 import { NAV_DOT, NAV_WORD } from './shared';
 
 export function AttemptsNav({
@@ -25,7 +27,9 @@ export function AttemptsNav({
         <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
       ) : (
         <ol className="flex flex-col gap-1">
-          {attempts.map((attempt) => {
+          {attempts.map((attempt, index) => {
+            const previous = attempts[index - 1];
+            const harnessChanged = !!previous?.harness && !!attempt.harness && previous.harness !== attempt.harness;
             const tone = attemptTone(attempt.state);
             const selected = attempt.number === selectedNumber;
             return (
@@ -40,12 +44,32 @@ export function AttemptsNav({
                   <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
                   <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${selected && tone === 'failed' ? 'text-ink' : NAV_WORD[tone]}`}>{attempt.state}</span>
                 </button>
+                <AttemptRoute attempt={attempt} harnessChanged={harnessChanged} />
               </li>
             );
           })}
         </ol>
       )}
     </section>
+  );
+}
+
+function AttemptRoute({ attempt, harnessChanged }: { attempt: Attempt; harnessChanged: boolean }) {
+  const { classifier } = attempt;
+  if (!attempt.harness && !classifier) return null;
+  return (
+    <div className="px-2.5 pb-1.5 text-small text-muted">
+      {attempt.harness && (
+        <div>
+          {harnessLabel(attempt.harness)} <span className="font-data">{formatModelLabel(attempt.model ?? '')}</span>
+          {classifier?.optionId && <code className={`${codeChip} ml-1.5 bg-tool-tint text-tool`}>{classifier.optionId}</code>}
+        </div>
+      )}
+      {harnessChanged && <div className="text-accent">Harness changed: cold Session</div>}
+      {classifier?.kind === 'routed' && classifier.reason && <div>Classifier: {classifier.reason}</div>}
+      {attempt.routing && <div className="font-data">Routing {formatCost(attempt.routing.cost) ?? 'cost unavailable'}</div>}
+      {classifier?.kind === 'abstained' && <div>Classifier abstained{classifier.reason ? `: ${classifier.reason}` : ''}</div>}
+    </div>
   );
 }
 

@@ -130,4 +130,12 @@ describe('runCritic archive capture', () => {
     expect((await runCritic({ ...base, archive: failing })).promptKey).toBeNull();
     expect((await runCritic(base)).promptKey).toBeNull();
   });
+
+  it('archives the Route Classifier prompt so its locator reads back through readResolvedPrompt', async () => {
+    const task = await tasks.create({ prompt: 'p' });
+    const archive = archiveFor();
+    const ref = await archive.appendRoutingPrompt(task, 1, 'classify this {"a":1}');
+    expect(ref).toEqual({ locator: 'routing/classifier/prompt.md', promptIndex: 0 });
+    expect(await archive.readResolvedPrompt(task, 1, ref!.locator, ref!.promptIndex)).toBe('classify this {"a":1}');
+  });
 });
