@@ -111,7 +111,7 @@ function EditorBody({
   };
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(360px,1fr)_minmax(0,1.5fr)]">
+    <div className="grid grid-cols-1 items-start gap-4">
     <section className="min-w-0 rounded-lg bg-surface pb-3 shadow-card" aria-label={`Workflow ${doc.name}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
         <h2 className={sectionTitle}>{doc.name}</h2>

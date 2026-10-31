@@ -120,7 +120,7 @@ test('a bundled workflow shows the blocks but offers no editing', async ({ page 
   expect(await builder.locator('input:not([disabled]), select:not([disabled])').count()).toBe(0);
 });
 
-test('the builder matches the #929 mockup layout', async ({ page }) => {
+test('the builder matches the #929 mockup layout', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1800 });
   await openWorkflow(page, 'shot-e2e', GROUPED.replace('group-e2e', 'shot-e2e'));
   await page.locator('[data-block="steps/0/attempts/steps/0"]').getByRole('button').first().click();
@@ -128,5 +128,5 @@ test('the builder matches the #929 mockup layout', async ({ page }) => {
   await expect(builder.getByText('WORKFLOW ACTIONS', { exact: false })).toBeVisible();
   await expect(builder.getByText('In sync with YAML')).toBeVisible();
   await expect(builder.locator('[data-block]')).toHaveCount(4);
-  await builder.screenshot({ path: 'docs/mockups/workflows/screenshots/929-impl.png' });
+  await builder.screenshot({ path: process.env.HARMONIC_SHOT_PATH ?? testInfo.outputPath('929-impl.png') });
 });
