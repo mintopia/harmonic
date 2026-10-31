@@ -48,6 +48,7 @@ export class PodTranscriptMirror {
     private readonly dir: string,
     private readonly sessionId: string,
     private readonly locateDelaysMs: readonly number[] = LOCATE_DELAYS_MS,
+    private readonly onAttached: (path: string) => Promise<void> = async () => undefined,
   ) {
     this.stop = new Promise<void>((resolve) => (this.signalStop = resolve));
   }
@@ -105,6 +106,7 @@ export class PodTranscriptMirror {
     child.stdout!.pipe(out);
     child.stderr!.resume();
     child.on('error', (error) => warn('the tail stream failed', error));
+    await this.onAttached(this.mirrorPath);
   }
 
   private async stopTail(): Promise<void> {
@@ -158,7 +160,7 @@ export interface PodStepTranscriptInput<S> {
 }
 
 export class PodStepTranscript<S extends { workspaceId: number | null }> {
-  private current: { sessionId: string; mirror: PodTranscriptMirror; initialize: AcpInitializeResult } | null = null;
+  private current: { sessionId: string; mirror: PodTranscriptMirror; initialize: AcpInitializeResult; sessionRowId: number | null } | null = null;
 
   constructor(
     private readonly deps: PodTranscriptDeps<S>,
@@ -168,9 +170,12 @@ export class PodStepTranscript<S extends { workspaceId: number | null }> {
   readonly onSessionCreated = async (sessionId: string, initialize: AcpInitializeResult): Promise<void> => {
     if (this.current?.sessionId === sessionId) return;
     await this.finish();
-    const mirror = new PodTranscriptMirror(this.input.pod, this.input.harnessId, this.deps.dir, sessionId, this.deps.locateDelaysMs);
-    this.current = { sessionId, mirror, initialize };
-    mirror.start();
+    const entry: NonNullable<PodStepTranscript<S>['current']> = { sessionId, initialize, sessionRowId: null, mirror: undefined as unknown as PodTranscriptMirror };
+    entry.mirror = new PodTranscriptMirror(this.input.pod, this.input.harnessId, this.deps.dir, sessionId, this.deps.locateDelaysMs, async (path) => {
+      entry.sessionRowId = await this.bindSession(sessionId, initialize, path);
+    });
+    this.current = entry;
+    entry.mirror.start();
   };
 
   async finish(): Promise<void> {
@@ -179,21 +184,15 @@ export class PodStepTranscript<S extends { workspaceId: number | null }> {
     if (!entry) return;
     const path = await entry.mirror.finish();
     if (path === null) return;
-    await this.record(entry.sessionId, entry.initialize, path);
+    if (entry.sessionRowId === null) entry.sessionRowId = await this.bindSession(entry.sessionId, entry.initialize, path);
+    await this.record(entry.sessionId, path);
   }
 
-  private async record(sessionId: string, initialize: AcpInitializeResult, path: string): Promise<void> {
-    const { task, run, harnessId, model, cwd, kind, stepId } = this.input;
+  private async bindSession(sessionId: string, initialize: AcpInitializeResult, path: string): Promise<number | null> {
+    const { task, run, harnessId, model, cwd, kind } = this.input;
     const { attempts } = this.deps;
-    const step = async (label: string, work: () => Promise<unknown>): Promise<void> => {
-      try {
-        await work();
-      } catch (error) {
-        warn(label, error);
-      }
-    };
-    let sessionRowId: number | null = null;
-    await step('recording the Session failed', async () => {
+    let sessionRowId: number;
+    try {
       const session = await this.deps.sessions.recordDispatch({
         harness: harnessId,
         harnessSessionId: sessionId,
@@ -207,16 +206,33 @@ export class PodStepTranscript<S extends { workspaceId: number | null }> {
         now: Date.now(),
       });
       sessionRowId = session.id;
-    });
+    } catch (error) {
+      warn('recording the Session failed', error);
+      return null;
+    }
     if (kind === 'agent') {
-      if (sessionRowId !== null) {
-        const bound = sessionRowId;
-        await step('binding the Session to the Attempt failed', () => attempts.update(run.id, { sessionId, sessionRowId: bound }));
-        await step('linking the step log failed', async () => {
-          const implementation = (await attempts.listSteps(run.id)).find((row) => row.type === 'implementation' && row.state === 'running');
-          if (implementation) await attempts.updateStep(implementation.id, { logLocator: `session:${bound}` });
-        });
+      try {
+        await attempts.update(run.id, { sessionId, sessionRowId });
+        const implementation = (await attempts.listSteps(run.id)).find((row) => row.type === 'implementation' && row.state === 'running');
+        if (implementation) await attempts.updateStep(implementation.id, { logLocator: `session:${sessionRowId}` });
+      } catch (error) {
+        warn('binding the Session to the Attempt failed', error);
       }
+    }
+    return sessionRowId;
+  }
+
+  private async record(sessionId: string, path: string): Promise<void> {
+    const { task, run, harnessId, kind, stepId } = this.input;
+    const { attempts } = this.deps;
+    const step = async (label: string, work: () => Promise<unknown>): Promise<void> => {
+      try {
+        await work();
+      } catch (error) {
+        warn(label, error);
+      }
+    };
+    if (kind === 'agent') {
       await step('recording Usage failed', async () => {
         const models = adapterFor(harnessId).usage?.modelsFromSessionLog(path, sessionId) ?? {};
         if (Object.keys(models).length === 0) return;

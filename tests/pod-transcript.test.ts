@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PodTranscriptMirror } from '../src/execution/pod-transcript.js';
+import { PodStepTranscript, PodTranscriptMirror } from '../src/execution/pod-transcript.js';
 import { hostExec, hostStream } from './fake-pod-api.js';
 
 const SESSION = 'sess-1';
@@ -65,6 +65,34 @@ describe('PodTranscriptMirror', () => {
 
     expect(path).toBe(mirrorFile());
     expect(readFileSync(path!).equals(readFileSync(source))).toBe(true);
+  });
+
+  it('binds the Session and step log to the live mirror before the step ends', async () => {
+    writeFileSync(source, '{"line":"live"}\n');
+    const recorded: { transcriptPath?: string | null }[] = [];
+    const updates: object[] = [];
+    const stepLinks: object[] = [];
+    const transcript = new PodStepTranscript(
+      {
+        dir: mirrorDir,
+        sessions: { recordDispatch: async (input: { transcriptPath?: string | null }) => (recorded.push(input), { id: 7 }) } as never,
+        attempts: {
+          get: async () => ({ usage: null }),
+          update: async (_id: number, patch: object) => (updates.push(patch), {}),
+          listSteps: async () => [{ id: 3, type: 'implementation', state: 'running' }],
+          updateStep: async (_id: number, patch: object) => (stepLinks.push(patch), {}),
+        } as never,
+      },
+      { pod, task: { workspaceId: null }, run: { id: 1 } as never, harnessId: 'claude', model: 'm', cwd: '/w', kind: 'agent', stepId: 's' },
+    );
+    await transcript.onSessionCreated(SESSION, {} as never);
+
+    await until(() => stepLinks.length > 0, 'the step log to be linked while the step runs');
+    expect(recorded[0]?.transcriptPath).toBe(mirrorFile());
+    expect(updates[0]).toEqual({ sessionId: SESSION, sessionRowId: 7 });
+    expect(stepLinks[0]).toEqual({ logLocator: 'session:7' });
+    expect(mirrored().toString('utf8')).toContain('live');
+    await transcript.finish();
   });
 
   it('copies out a file that only appeared after the tail was stopped', async () => {
