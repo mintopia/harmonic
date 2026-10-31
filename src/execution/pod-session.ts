@@ -42,6 +42,7 @@ export interface Checkpoint {
   sha: string | null;
   forced: boolean;
   unchanged: boolean;
+  files?: number;
   error?: string;
 }
 
@@ -184,15 +185,18 @@ cd "$HARMONIC_WORKDIR"
 sha=$(git rev-parse HEAD)
 forced=0
 if [ -n "$HARMONIC_TIP" ] && ! git merge-base --is-ancestor "$HARMONIC_TIP" HEAD 2>/dev/null; then forced=1; fi
+previous="\${HARMONIC_TIP:-refs/remotes/origin/$HARMONIC_BASE}"
+files=$(git diff --name-only "$previous..HEAD" 2>/dev/null | wc -l | tr -d '[:space:]') || files=
 gitWithPass push -q --force origin "HEAD:refs/heads/$HARMONIC_BRANCH"
-echo "$sha $forced"`,
+echo "$sha $forced $files"`,
         { HARMONIC_WORKDIR: this.workdir, HARMONIC_TIP: this.remoteTip ?? '' },
       );
       if (pushed.code !== 0) return { branch, sha: null, forced: false, unchanged: false, error: this.failureText(pushed) || (pushed.timedOut ? 'timed out' : 'the push failed') };
-      const [sha, forced] = pushed.stdout.trim().split('\n').at(-1)!.split(' ');
+      const [sha, forced, filesText] = pushed.stdout.trim().split('\n').at(-1)!.split(' ');
       const unchanged = sha === this.remoteTip;
       this.remoteTip = sha ?? null;
-      return { branch, sha: sha ?? null, forced: forced === '1', unchanged };
+      const files = Number(filesText);
+      return { branch, sha: sha ?? null, forced: forced === '1', unchanged, ...(!unchanged && filesText !== undefined && filesText !== '' && Number.isInteger(files) ? { files } : {}) };
     });
   }
 

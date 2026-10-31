@@ -41,6 +41,7 @@ export const workflowStepsResponseSchema = z.object({
               sha: z.string().nullable().meta({ description: 'The commit the Ticket branch was pushed at; null when the push failed.', example: '3f2a9c1' }),
               forced: z.boolean().meta({ description: 'True when the push rewrote history already on the remote, as after a rebase.', example: false }),
               unchanged: z.boolean().meta({ description: 'True when the step left the branch where the previous checkpoint put it.', example: false }),
+              files: z.number().int().optional().meta({ description: 'How many files this step\'s commits changed against the previous remote tip; absent when unchanged or unknown.', example: 6 }),
               error: z.string().optional().meta({ description: 'Why the push failed.' }),
             })
             .optional()

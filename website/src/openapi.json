@@ -24222,6 +24222,13 @@
                                     "description": "True when the step left the branch where the previous checkpoint put it.",
                                     "example": false
                                   },
+                                  "files": {
+                                    "description": "How many files this step's commits changed against the previous remote tip; absent when unchanged or unknown.",
+                                    "example": 6,
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
                                   "error": {
                                     "description": "Why the push failed.",
                                     "type": "string"
@@ -46765,6 +46772,13 @@
                                     "type": "boolean",
                                     "description": "True when the step left the branch where the previous checkpoint put it.",
                                     "example": false
+                                  },
+                                  "files": {
+                                    "description": "How many files this step's commits changed against the previous remote tip; absent when unchanged or unknown.",
+                                    "example": 6,
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
                                   },
                                   "error": {
                                     "description": "Why the push failed.",

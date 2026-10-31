@@ -73,7 +73,7 @@ describe('workflow pod checkpoints against a real repository through the Reposit
     const task = await tasks.pinWorkflow(created.id, 'flow@1', 'explicit');
     return { task, run: await attempts.create(task.id), branch: `harmonic/task-${task.id}` };
   }
-  const checkpoints = async (taskId: number) => (await new WorkflowStepRunStore(db).listForTask(taskId)).map((row) => JSON.parse(row.outputs!).checkpoint as { sha: string; forced: boolean; unchanged: boolean });
+  const checkpoints = async (taskId: number) => (await new WorkflowStepRunStore(db).listForTask(taskId)).map((row) => JSON.parse(row.outputs!).checkpoint as { sha: string; forced: boolean; unchanged: boolean; files?: number });
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-wf-pod-git-'));
@@ -114,6 +114,7 @@ describe('workflow pod checkpoints against a real repository through the Reposit
     expect(git(upstream, 'rev-parse', `refs/heads/${branch}`)).toBe(second!.sha);
     expect(isAncestor(upstream, first!.sha, second!.sha)).toBe(true);
     expect([first!.forced, second!.forced]).toEqual([false, false]);
+    expect([first!.files, second!.files]).toEqual([1, 1]);
     expect(git(upstream, 'log', '--format=%s', `refs/heads/${branch}`)).toBe('two\none\nbase');
     expect(api.pods.size + api.secrets.size).toBe(0);
   });
@@ -124,6 +125,7 @@ describe('workflow pod checkpoints against a real repository through the Reposit
     await engine(text).run(task, run);
     const [first, second] = await checkpoints(task.id);
     expect(second!.unchanged).toBe(true);
+    expect(second!.files).toBeUndefined();
     expect(git(upstream, 'rev-parse', `refs/heads/${branch}`)).toBe(first!.sha);
     expect(escalations).toHaveLength(1);
   });
