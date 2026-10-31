@@ -4,6 +4,7 @@ import type { Verdict } from '../verification/critic-schema.js';
 import type { PromptFragmentOverrides } from '../domain/prompt-fragments.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 import type { EscalationCause } from '../domain/task-routing.js';
+import type { VarRecord } from '../domain/workflow-vars.js';
 
 /** A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -59,7 +60,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
-  workflow: string | null; workflowLabels: string | null;
+  workflow: string | null; workflowLabels: string | null; workflowVars: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -124,6 +125,8 @@ export const tasks = sqliteTable('tasks', {
   /** How `workflowRef` was resolved; null until the Ticket starts on a workflow. */
   workflowChosen: text('workflow_chosen').$type<WorkflowChosen>(),
   workflowLabel: text('workflow_label'),
+  workflowVarOverrides: text('workflow_var_overrides', { mode: 'json' }).$type<VarRecord>(),
+  workflowVars: text('workflow_vars', { mode: 'json' }).$type<VarRecord>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */

@@ -2003,6 +2003,62 @@
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -2238,6 +2294,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -2473,6 +2531,62 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
             "example": null
           },
           "workflowRef": {
@@ -2914,6 +3028,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3165,6 +3281,62 @@
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -3603,6 +3775,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -3837,6 +4011,62 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
             "example": null
           },
           "workflowRef": {
@@ -4279,6 +4509,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -7261,6 +7493,40 @@
             ],
             "example": null
           },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.",
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -8002,6 +8268,7 @@
           "routingLabels",
           "workflow",
           "workflowLabels",
+          "workflowVars",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -12372,6 +12639,62 @@
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -12609,6 +12932,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -12846,6 +13171,62 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
             "example": null
           },
           "workflowRef": {
@@ -13290,6 +13671,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -13543,6 +13926,62 @@
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
             "example": null
           },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
+            "example": null
+          },
           "workflowRef": {
             "anyOf": [
               {
@@ -13984,6 +14423,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -14220,6 +14661,62 @@
               }
             ],
             "description": "The Workflow Label that chose the workflow when `workflowChosen` is `label`; null otherwise.",
+            "example": null
+          },
+          "workflowVarOverrides": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Ticket's own overrides of the workflow `vars:`; null when none.",
+            "example": null
+          },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vars the pinned workflow runs with, resolved when it was pinned; null before the pin.",
             "example": null
           },
           "workflowRef": {
@@ -14665,6 +15162,8 @@
           "issueWorkflow",
           "workflowChosen",
           "workflowLabel",
+          "workflowVarOverrides",
+          "workflowVars",
           "workflowRef",
           "wayfinderType",
           "mapRef",
@@ -17746,6 +18245,40 @@
             ],
             "example": null
           },
+          "workflowVars": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.",
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -18494,6 +19027,7 @@
           "routingLabels",
           "workflow",
           "workflowLabels",
+          "workflowVars",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -21485,6 +22019,481 @@
           },
           "409": {
             "description": "The task is running and cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/workflow-vars": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "The `vars:` of the Ticket's workflow with each level of override and the effective value; the workflow is the pinned one, or the one the Ticket would run. Key scopes: full, attempt, read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The declared vars, their overrides and effective values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflowRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The pinned workflow, or null while the Ticket is unpinned and `workflow` names the one it would run.",
+                      "example": "implement@1"
+                    },
+                    "workflow": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The workflow whose `vars:` are listed; null when the Ticket has none to run.",
+                      "example": "implement"
+                    },
+                    "vars": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "example": "maxAttempts"
+                          },
+                          "default": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ],
+                            "description": "The workflow default; its type is the type an override must have.",
+                            "example": 2
+                          },
+                          "workspace": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Workspace override; null when none.",
+                            "example": null
+                          },
+                          "ticket": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Ticket override; null when none.",
+                            "example": 5
+                          },
+                          "value": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ],
+                            "description": "The value the workflow runs with: Ticket, then Workspace, then default.",
+                            "example": 5
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "default",
+                              "workspace",
+                              "ticket"
+                            ],
+                            "description": "Which level `value` came from.",
+                            "example": "ticket"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "default",
+                          "workspace",
+                          "ticket",
+                          "value",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "snapshot": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The vars frozen when the workflow was pinned; an override set later applies at the next Retry. Null before the pin.",
+                      "example": null
+                    }
+                  },
+                  "required": [
+                    "workflowRef",
+                    "workflow",
+                    "vars",
+                    "snapshot"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The declared vars, their overrides and effective values."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Replace the Ticket's overrides of its workflow `vars:`. Each value must have the type of the declared default; undeclared names are refused. An empty object clears them. Takes effect when the workflow is next pinned, which is on Retry. Key scopes: full, attempt.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vars": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "example": {
+                      "maxAttempts": 5
+                    }
+                  }
+                },
+                "required": [
+                  "vars"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The vars after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflowRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The pinned workflow, or null while the Ticket is unpinned and `workflow` names the one it would run.",
+                      "example": "implement@1"
+                    },
+                    "workflow": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The workflow whose `vars:` are listed; null when the Ticket has none to run.",
+                      "example": "implement"
+                    },
+                    "vars": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "example": "maxAttempts"
+                          },
+                          "default": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ],
+                            "description": "The workflow default; its type is the type an override must have.",
+                            "example": 2
+                          },
+                          "workspace": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Workspace override; null when none.",
+                            "example": null
+                          },
+                          "ticket": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The Ticket override; null when none.",
+                            "example": 5
+                          },
+                          "value": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ],
+                            "description": "The value the workflow runs with: Ticket, then Workspace, then default.",
+                            "example": 5
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "default",
+                              "workspace",
+                              "ticket"
+                            ],
+                            "description": "Which level `value` came from.",
+                            "example": "ticket"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "default",
+                          "workspace",
+                          "ticket",
+                          "value",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "snapshot": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The vars frozen when the workflow was pinned; an override set later applies at the next Retry. Null before the pin.",
+                      "example": null
+                    }
+                  },
+                  "required": [
+                    "workflowRef",
+                    "workflow",
+                    "vars",
+                    "snapshot"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The vars after the change."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A name is undeclared or a value has the wrong type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Ticket has no workflow to take vars from.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26173,6 +27182,43 @@
                               ]
                             }
                           ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflowVars": {
+                    "example": {
+                      "implement": {
+                        "maxAttempts": 3
+                      }
+                    },
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
+                          }
                         }
                       },
                       {

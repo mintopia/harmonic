@@ -4,6 +4,7 @@ import { DomainError, type ErrorIssue } from './errors.js';
 import { conditionBody, ExpressionError, findInterpolations, parseExpression, type ExpressionRef } from './workflow-expression.js';
 
 export const WORKFLOW_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
+export const VAR_NAME_PATTERN = /^[a-z][a-zA-Z0-9_-]{0,63}$/;
 
 export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic', 'merge', 'open-pr', 'artifact', 'post-merge-check', 'close-ticket', 'comment', 'cleanup'] as const;
 
@@ -25,7 +26,7 @@ const workflowSchema = z
   .object({
     name: z.string().regex(WORKFLOW_NAME_PATTERN, 'a name starts with a lowercase letter and holds lowercase letters, digits, - or _ (max 64)'),
     description: z.string(),
-    vars: z.record(z.string().regex(WORKFLOW_NAME_PATTERN, 'a var name starts with a lowercase letter and holds lowercase letters, digits, - or _'), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    vars: z.record(z.string().regex(VAR_NAME_PATTERN, 'a var name starts with a lowercase letter and holds letters, digits, - or _'), z.union([z.string(), z.number(), z.boolean()])).optional(),
     steps: z.array(z.unknown()).min(1, 'a workflow needs at least one step'),
     cleanup: z.array(stepSchema).optional(),
   })
@@ -102,7 +103,7 @@ interface Located {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const MAX_RULE = `a whole number from 1 to ${MAX_ATTEMPTS_LIMIT}`;
-const MAX_VAR = /^vars\.([a-z][a-z0-9_-]*)$/;
+const MAX_VAR = /^vars\.([a-z][a-zA-Z0-9_-]*)$/;
 
 export function resolveAttemptsMax(max: string | number, vars: Readonly<Record<string, string | number | boolean>>): { ok: true; value: number } | { ok: false; message: string } {
   let value: unknown = max;

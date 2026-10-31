@@ -87,6 +87,13 @@ export const settingsRegistry = {
     label: 'Workflow Labels',
     help: 'Ordered ticket label to workflow assignments; reorder or disable global ones and add Workspace-only ones. Inherits the global list when unset.',
   },
+  workflowVars: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Workflow variables',
+    help: 'Per-workflow overrides of the `vars:` a workflow declares; a Ticket can override these again.',
+  },
   maxConcurrentAttempts: {
     scope: 'overridable',
     control: 'number',

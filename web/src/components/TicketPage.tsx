@@ -33,6 +33,7 @@ import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
 import { AttemptPanel } from './ticket/AttemptPanel';
 import { nextUnexecutedStep, workflowEscalationNotes } from '../task-actions-model';
 import { WorkflowSteps } from './ticket/WorkflowSteps';
+import { TicketVariables } from './WorkflowVarsEditors';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
 export function TicketPage({
@@ -215,6 +216,7 @@ export function TicketPage({
             <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} commandConfigured={commandConfigured} />
 
             <WorkflowSteps data={workflowSteps} />
+            <TicketVariables taskId={task.id} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
 

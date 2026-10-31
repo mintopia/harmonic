@@ -347,19 +347,21 @@ export const api: typeof RealApi = {
   workflows: () =>
     ok({
       workflows: [
-        { name: 'Migrated (global)', description: '', bundled: false, version: 2 },
-        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1 },
-        { name: 'Security review on label', description: '', bundled: false, version: 4 },
-        { name: 'Docs only', description: '', bundled: false, version: 2 },
+        { name: 'Migrated (global)', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Security review on label', description: '', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Docs only', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
       ],
       total: 4,
     }),
-  workflow: (name: string) => ok({ name, description: '', bundled: false, version: 1, text: `name: ${name}\n` }),
+  workflow: (name: string) => ok({ name, description: '', bundled: false, version: 1, text: `name: ${name}\ndescription: t\nvars:\n  maxAttempts: 3\n  continueAttempts: true\n  testCommand: npm test\nsteps:\n  - attempts:\n      max: 3\n      steps:\n        - id: implement\n          run: exit 1\n` }),
   saveWorkflow: (name: string, text: string) => ok({ name, description: '', bundled: false, version: 2, text }),
   importWorkflow: (text: string) => ok({ name: 'imported', description: '', bundled: false, version: 1, text }),
   exportWorkflow: (_name: string) => ok(''),
   duplicateWorkflow: (name: string, newName?: string) => ok({ name: newName ?? `${name}-copy`, description: '', bundled: false, version: 1, text: '' }),
   deleteWorkflow: (_name: string) => ok({}),
+  workflowVars: (_id: number) => ok(storyVars()),
+  setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),
   workflowSteps: (_id: number) => ok(workflowStory
     ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, steps: [{ stepId: 'implement', action: 'agent', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null }, startedAt: 1, endedAt: 2 }] }
     : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
@@ -479,3 +481,18 @@ export const api: typeof RealApi = {
   epicDiffFiles: (_workspaceId: number, _epicRef: TrackerRef) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };
+
+function storyVars(ticket: Record<string, string | number | boolean> = { maxAttempts: 2 }) {
+  const defaults = { maxAttempts: 3, continueAttempts: true, testCommand: 'npm test' };
+  const workspace: Record<string, string | number | boolean> = { maxAttempts: 5, testCommand: 'npm run test:ci' };
+  return {
+    workflowRef: 'Security review on label@4',
+    workflow: 'Security review on label',
+    vars: Object.entries(defaults).map(([name, def]) => {
+      const t = ticket[name] ?? null;
+      const w = workspace[name] ?? null;
+      return { name, default: def, workspace: w, ticket: t, value: t ?? w ?? def, source: t !== null ? ('ticket' as const) : w !== null ? ('workspace' as const) : ('default' as const) };
+    }),
+    snapshot: null,
+  };
+}

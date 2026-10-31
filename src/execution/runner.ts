@@ -50,6 +50,8 @@ import { InFlight } from '../reliability/in-flight.js';
 import { childExited } from './child-exit.js';
 import { killProcessGroup } from './process-groups.js';
 import { resolveTaskWorkflow } from '../domain/workflow-assignment.js';
+import { resolveVars, workspaceVarsFor, type VarRecord } from '../domain/workflow-vars.js';
+import { parseWorkflow } from '../domain/workflow.js';
 import type { WorkflowChosen } from '../db/schema.js';
 import { WorkflowEngine } from './workflow-engine.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
@@ -706,21 +708,26 @@ export class Runner {
     }
   }
 
-  private async assignWorkflow(task: TaskRow): Promise<{ ref: string; chosen: WorkflowChosen; label: string | null } | null> {
+  private async assignWorkflow(task: TaskRow): Promise<{ ref: string; chosen: WorkflowChosen; label: string | null; vars: VarRecord } | null> {
     if (!this.workflows) {
       if (task.workflowRequested !== null) throw new DomainError('invalid_state', `task ${task.id} chose a workflow but no workflow library is configured`);
       return null;
     }
     const { library } = this.workflows;
     const names = new Set(library.list().map((entry) => entry.name));
-    const assignment = resolveTaskWorkflow(task, (await this.getWorkspace?.(task.workspaceId)) ?? null, this.getConfig(), (name) => names.has(name));
-    return assignment && { ref: `${assignment.name}@${library.get(assignment.name).version}`, chosen: assignment.chosen, label: assignment.label ?? null };
+    const workspace = (await this.getWorkspace?.(task.workspaceId)) ?? null;
+    const assignment = resolveTaskWorkflow(task, workspace, this.getConfig(), (name) => names.has(name));
+    if (!assignment) return null;
+    const version = library.get(assignment.name).version;
+    const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
+    const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);
+    return { ref: `${assignment.name}@${version}`, chosen: assignment.chosen, label: assignment.label ?? null, vars };
   }
 
   private async workflowTaskFor(task: TaskRow): Promise<TaskRow | null> {
     if (task.workflowRef !== null) return task;
     const assigned = await this.assignWorkflow(task);
-    return assigned && (await this.taskService.pinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label));
+    return assigned && (await this.taskService.pinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars));
   }
 
   private async repinWorkflow(task: TaskRow): Promise<void> {
@@ -730,7 +737,7 @@ export class Runner {
       await this.taskService.unpinWorkflow(task.id);
       return;
     }
-    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label);
+    if (assigned.ref !== task.workflowRef || assigned.chosen !== task.workflowChosen || assigned.label !== task.workflowLabel || JSON.stringify(assigned.vars) !== JSON.stringify(task.workflowVars)) await this.taskService.repinWorkflow(task.id, assigned.ref, assigned.chosen, assigned.label, assigned.vars);
   }
 
   private async beginWorkflowRun(task: TaskRow, resumedAttempt?: AttemptRow): Promise<AttemptRow> {

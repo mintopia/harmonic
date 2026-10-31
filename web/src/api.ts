@@ -5,6 +5,7 @@ import type {
   WorkflowDocument,
   WorkflowIssue,
   WorkflowLibraryEntry,
+  TaskWorkflowVars,
   WorkflowStepsResponse,
   Attempt,
   ActivityProcess,
@@ -232,6 +233,8 @@ export const api = {
   exportWorkflow: (name: string) => requestText(`/api/workflows/${encodeURIComponent(name)}/export`, 'Export failed'),
   duplicateWorkflow: (name: string, newName?: string) => request<WorkflowDocument>('POST', `/api/workflows/${encodeURIComponent(name)}/duplicate`, newName ? { name: newName } : {}),
   deleteWorkflow: (name: string) => request<unknown>('DELETE', `/api/workflows/${encodeURIComponent(name)}`),
+  workflowVars: (id: number) => request<TaskWorkflowVars>('GET', `/api/tasks/${id}/workflow-vars`),
+  setWorkflowVars: (id: number, vars: Record<string, string | number | boolean>) => request<TaskWorkflowVars>('PUT', `/api/tasks/${id}/workflow-vars`, { vars }),
   workflowSteps: (id: number) => request<WorkflowStepsResponse>('GET', `/api/tasks/${id}/workflow-steps`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) =>
     request<Task>('POST', '/api/tasks', input),
@@ -308,6 +311,7 @@ export const api = {
       routingLabels?: RoutingLabelOverlayEntry[] | null;
       workflow?: string | null;
       workflowLabels?: WorkflowLabelOverlayEntry[] | null;
+      workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

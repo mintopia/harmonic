@@ -318,6 +318,8 @@ CREATE TABLE `tasks` (
 	`workflow_requested` text,
 	`workflow_chosen` text,
 	`workflow_label` text,
+	`workflow_var_overrides` text,
+	`workflow_vars` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,

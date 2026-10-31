@@ -15,6 +15,7 @@ import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
 import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
+import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
@@ -907,6 +908,18 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           onWorkflow={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
         />
       ),
+  },
+  {
+    tab: 'execution',
+    surfaces: ['workspace'],
+    bare: true,
+    wide: true,
+    title: 'Workflow variables',
+    description: '',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <WorkspaceWorkflowVars workspace={ctx.workspace} onChange={(workflowVars) => ctx.setWorkspace({ ...ctx.workspace, workflowVars })} />
+      ) : null,
   },
   {
     tab: 'execution',

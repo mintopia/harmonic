@@ -1,3 +1,4 @@
+import type { VarRecord } from './workflow-vars.js';
 import { trackerRef, type TrackerRef } from '../tracker/adapter.js';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or, type SQL } from 'drizzle-orm';
@@ -819,29 +820,39 @@ export class TaskService {
     });
   }
 
-  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null): Promise<TaskRow> {
-    return this.writeWorkflowPin(id, ref, chosen, label, isNull(tasks.workflowRef));
+  async pinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars, isNull(tasks.workflowRef));
   }
 
-  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null): Promise<TaskRow> {
-    return this.writeWorkflowPin(id, ref, chosen, label);
+  async repinWorkflow(id: number, ref: string, chosen: WorkflowChosen, label: string | null = null, vars: VarRecord | null = null): Promise<TaskRow> {
+    return this.writeWorkflowPin(id, ref, chosen, label, vars);
   }
 
-  async unpinWorkflow(id: number): Promise<TaskRow> {
+  async setWorkflowVarOverrides(id: number, overrides: VarRecord | null): Promise<TaskRow> {
     return withTaskLock(id, async () => {
-      await this.db.write((db) => db.update(tasks).set({ workflowRef: null, workflowChosen: null, workflowLabel: null, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
+      const stored = overrides && Object.keys(overrides).length > 0 ? overrides : null;
+      await this.db.write((db) => db.update(tasks).set({ workflowVarOverrides: stored, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
       const task = await this.get(id);
       this.onChanged(task);
       return task;
     });
   }
 
-  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, unpinned?: SQL): Promise<TaskRow> {
+  async unpinWorkflow(id: number): Promise<TaskRow> {
+    return withTaskLock(id, async () => {
+      await this.db.write((db) => db.update(tasks).set({ workflowRef: null, workflowChosen: null, workflowLabel: null, workflowVars: null, updatedAt: Date.now() }).where(eq(tasks.id, id)).run());
+      const task = await this.get(id);
+      this.onChanged(task);
+      return task;
+    });
+  }
+
+  private async writeWorkflowPin(id: number, ref: string, chosen: WorkflowChosen, label: string | null, vars: VarRecord | null, unpinned?: SQL): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, updatedAt: Date.now() })
+          .set({ workflowRef: ref, workflowChosen: chosen, workflowLabel: label, workflowVars: vars, updatedAt: Date.now() })
           .where(unpinned ? and(eq(tasks.id, id), unpinned) : eq(tasks.id, id))
           .returning()
           .get(),
