@@ -142,7 +142,6 @@ export function directWorkspaceRefusal(library: WorkflowTexts, ws: WorkflowUse &
   return null;
 }
 
-/** Names of Workspaces without a Code Repository that would run workflow `name` as their default or through a Workflow Label. */
 export async function repositoryLessWorkspacesUsing(
   name: string,
   workspaces: readonly (WorkflowUse & Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository'>)[],
@@ -156,7 +155,6 @@ export async function repositoryLessWorkspacesUsing(
   return bare;
 }
 
-/** The refusal for assigning a mixed local and Kubernetes workflow to a Workspace without a Code Repository; null when allowed. */
 export async function mixedWorkflowRefusal(
   library: WorkflowTexts,
   workflow: string,
@@ -167,4 +165,17 @@ export async function mixedWorkflowRefusal(
   if (entry === undefined || !workflowIsMixed(entry.text)) return null;
   if ((await resolveRepository(workspace.workingDir, workspace.codeRepository)) !== null) return null;
   return `Workflow '${workflow}': ${mixedWorkflowReason(`'${workspace.name}'`)}`;
+}
+
+export async function workspaceMixedRefusal(
+  library: WorkflowTexts,
+  ws: WorkflowUse & Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository'>,
+  config: GuardConfig,
+  resolveRepository: typeof resolveCodeRepository = resolveCodeRepository,
+): Promise<string | null> {
+  for (const workflow of workspaceWorkflowNames(ws, config)) {
+    const refusal = await mixedWorkflowRefusal(library, workflow, ws, resolveRepository);
+    if (refusal) return refusal;
+  }
+  return null;
 }

@@ -256,7 +256,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     await Git.pushHeadToRemoteBranch(this.deps.cwdFor(ctx.task), 'origin', this.ticketBranchOf(ctx.task));
   }
 
-  /** Hands the work over through the Ticket branch on the remote and starts the next agent Session cold. */
   private async moveTo(ctx: RunContext<S>, target: string): Promise<void> {
     if (target === ctx.location) return;
     const { task } = ctx;

@@ -13,7 +13,7 @@ import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import type { PodOpener } from '../src/execution/pod-opener.js';
 import type { PodSession } from '../src/execution/pod-session.js';
 import { WorkflowEngine } from '../src/execution/workflow-engine.js';
-import { mixedWorkflowRefusal, repositoryLessWorkspacesUsing } from '../src/execution/workspace-execution-targets.js';
+import { mixedWorkflowRefusal, repositoryLessWorkspacesUsing, workspaceMixedRefusal } from '../src/execution/workspace-execution-targets.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, inBlock, makeSettingsStore, seedWorkspace, testSpawnProcessGroup } from './helpers.js';
 
@@ -51,6 +51,14 @@ describe('workflowIsMixed and its refusals', () => {
     const config = { defaults: { workflow: 'flow' }, workflowLabels: [] } as never;
     const list = [{ ...ws, workflow: null, workflowLabels: null }] as never;
     expect(await repositoryLessWorkspacesUsing('flow', list, config, none)).toEqual(['bare']);
+    expect(await workspaceMixedRefusal(library, { ...ws, workflow: 'flow', workflowLabels: null }, config, none)).toMatch(/Workspace 'bare' has none/);
+    expect(await workspaceMixedRefusal(library, { ...ws, workflow: 'flow', workflowLabels: null }, config, some)).toBeNull();
+  });
+
+  it('refuses a parallel group whose steps run on different targets', async () => {
+    const check = { known: () => true, directWorkspaces: () => [] };
+    const split = wf('  - id: grp\n    parallel:\n      - id: x\n        run: echo\n      - id: y\n        run: echo\n        runs_on: k8s-prod\n');
+    await expect(targetProblems(split, check)).rejects.toThrow(/parallel group 'grp'.*different Execution Targets/);
   });
 });
 
@@ -64,6 +72,7 @@ describe('a workflow mixing local and Kubernetes steps', () => {
   let opened: number;
   let disposed: number;
   let sessionsSeen: (string | undefined)[];
+  let headBeforeLocalAgent = '';
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-wf-mixed-'));
@@ -135,6 +144,7 @@ describe('a workflow mixing local and Kubernetes steps', () => {
       agent: { drive: { run: async (req: { cwd: string; prompt: string; continueSessionId?: string }) => {
         sessionsSeen.push(req.continueSessionId);
         if (req.prompt !== 'a') expect(existsSync(join(req.cwd, req.prompt === 'b' ? 'a.txt' : 'b.txt'))).toBe(true);
+        if (req.prompt === 'c') headBeforeLocalAgent = git(req.cwd, 'rev-parse', 'HEAD');
         writeFileSync(join(req.cwd, `${req.prompt}.txt`), req.prompt);
         git(req.cwd, 'add', '.');
         git(req.cwd, 'commit', '-qm', req.prompt);
@@ -154,6 +164,7 @@ describe('a workflow mixing local and Kubernetes steps', () => {
     expect(git(podDir, 'rev-parse', 'HEAD')).toBe(git(upstream, 'rev-parse', branch));
     expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(git(upstream, 'rev-parse', branch));
     expect(git(repo, 'log', '--format=%s')).toBe('c\nb\na\ninit');
+    expect(headBeforeLocalAgent).toBe(git(upstream, 'rev-parse', branch));
     expect(sessionsSeen).toEqual([undefined, undefined, undefined]);
     expect(opened).toBe(1);
     expect(git(repo, 'rev-parse', 'HEAD~1')).toBe(git(upstream, 'rev-parse', branch));

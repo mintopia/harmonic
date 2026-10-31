@@ -200,19 +200,21 @@ function runsOnRefs(root: unknown): { path: PropertyKey[]; target: string }[] {
   return found;
 }
 
-/** Whether a step runs where the Ticket's work lives (a Harness, command or rebase) rather than in Harmonic itself. */
 export function stepRunsInWorkspace(step: Pick<WorkflowStepDefinition, 'uses' | 'run'>): boolean {
   return step.uses === 'rebase' || step.uses === 'agent' || step.uses === 'critic' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
 }
 
-/** The target a step runs on: its own `runs_on:`, else the workflow's, else `local`. */
 export function stepTarget(step: Pick<WorkflowStepDefinition, 'runs_on'>, workflowRunsOn: string | undefined): string {
   return step.runs_on ?? workflowRunsOn ?? 'local';
 }
 
-/** True when the workflow runs some work steps `local` and others on a Kubernetes Execution Target. */
 export function workflowIsMixed(text: string): boolean {
   return definitionIsMixed(parseWorkflow(text, { lenient: true }));
+}
+
+function splitParallelGroup(text: string): string | undefined {
+  const workflow = parseWorkflow(text, { lenient: true });
+  return [...workflow.steps, ...(workflow.cleanup ?? [])].find((step) => step.parallel && new Set(step.parallel.filter(stepRunsInWorkspace).map((child) => stepTarget(child, workflow.runsOn))).size > 1)?.id;
 }
 
 export function definitionIsMixed(workflow: WorkflowDefinition): boolean {
@@ -228,7 +230,6 @@ export function definitionIsMixed(workflow: WorkflowDefinition): boolean {
 export interface TargetCheck {
   /** True when `name` is `local` or a defined Execution Target. */
   known: (name: string) => boolean | Promise<boolean>;
-  /** Names of Workspaces without a Code Repository that would run workflow `name` as their default or through a Workflow Label. */
   repositoryLessWorkspaces?: () => string[] | Promise<string[]>;
   /** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
   directWorkspaces: () => string[] | Promise<string[]>;
@@ -253,6 +254,8 @@ export async function targetProblems(text: string, check: TargetCheck): Promise<
     issues.push({ message, line: pos.line, column: pos.col });
   }
   if (issues.length > 0) throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
+  const split = splitParallelGroup(text);
+  if (split !== undefined) throw new DomainError('validation', `workflow refused: parallel group '${split}' runs its steps on different Execution Targets; split it so each group runs on one target`);
   if (check.repositoryLessWorkspaces && workflowIsMixed(text)) {
     const bare = await check.repositoryLessWorkspaces();
     if (bare.length > 0) {
