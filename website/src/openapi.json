@@ -7074,6 +7074,39 @@
             ],
             "example": null
           },
+          "classifierEndpoint": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "baseUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://api.openai.com/v1"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "gpt-5-mini"
+                  },
+                  "apiKeySecret": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                    "example": "CLASSIFIER_API_KEY"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "model",
+                  "apiKeySecret"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7819,6 +7852,7 @@
           "classifierTimeoutSeconds",
           "classifierTypesafeModel",
           "classifierTypesafeSecret",
+          "classifierEndpoint",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -17175,6 +17209,40 @@
             ],
             "example": null
           },
+          "classifierEndpoint": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "baseUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://api.openai.com/v1"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "gpt-5-mini"
+                  },
+                  "apiKeySecret": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                    "example": "CLASSIFIER_API_KEY"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "model",
+                  "apiKeySecret"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -17927,6 +17995,7 @@
           "classifierTimeoutSeconds",
           "classifierTypesafeModel",
           "classifierTypesafeSecret",
+          "classifierEndpoint",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -25154,6 +25223,38 @@
                       {
                         "type": "string",
                         "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierEndpoint": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "baseUrl": {
+                            "type": "string",
+                            "format": "uri",
+                            "example": "https://api.openai.com/v1"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "gpt-5-mini"
+                          },
+                          "apiKeySecret": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                            "example": "CLASSIFIER_API_KEY"
+                          }
+                        },
+                        "required": [
+                          "baseUrl",
+                          "model",
+                          "apiKeySecret"
+                        ]
                       },
                       {
                         "type": "null"

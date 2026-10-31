@@ -53,6 +53,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   classifierTimeoutSeconds: null,
   classifierTypesafeModel: null,
   classifierTypesafeSecret: null,
+  classifierEndpoint: null,
   guardrailBudget: null,
   guardrailProgress: null,
   exportEnabled: null,

@@ -213,6 +213,13 @@ export const settingsRegistry = {
     label: 'TypeSafe classifier Secret',
     help: 'Name of the Secret holding the OpenRouter key for the TypeSafe backend.',
   },
+  classifierEndpoint: {
+    scope: 'overridable',
+    control: 'json',
+    tab: 'execution',
+    label: 'Route Classifier endpoint',
+    help: 'Base URL, model name and the name of the Secret holding the API key, for the OpenAI-compatible backend.',
+  },
   guardrailBudget: {
     scope: 'overridable',
     control: 'json',

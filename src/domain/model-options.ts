@@ -1,5 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import { CLASSIFIER_BACKENDS, DEFAULT_CLASSIFIER_TIMEOUT_SECONDS, DEFAULT_TYPESAFE_MODEL, modelOptionsSchema, type AppConfig, type ModelOption } from '../config.js';
+import { CLASSIFIER_BACKENDS, DEFAULT_CLASSIFIER_TIMEOUT_SECONDS, DEFAULT_TYPESAFE_MODEL, classifierEndpointSchema, modelOptionsSchema, type AppConfig, type ClassifierEndpoint, type ModelOption } from '../config.js';
 
 export type ClassifierBackend = (typeof CLASSIFIER_BACKENDS)[number];
 
@@ -13,6 +13,10 @@ export interface ClassifierSettings {
 
 type ModelOptionWorkspace = Pick<WorkspaceRow, 'modelOptions'>;
 type ClassifierWorkspace = Pick<WorkspaceRow, 'classifierEnabled' | 'classifierBackend' | 'classifierTimeoutSeconds' | 'classifierTypesafeModel' | 'classifierTypesafeSecret'>;
+
+export function parseClassifierEndpoint(stored: string | null | undefined): ClassifierEndpoint | null {
+  return stored == null ? null : classifierEndpointSchema.parse(JSON.parse(stored));
+}
 
 export function parseModelOptions(stored: string | null | undefined): ModelOption[] | null {
   return stored == null ? null : modelOptionsSchema.parse(JSON.parse(stored));

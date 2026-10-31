@@ -300,6 +300,12 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+export interface ClassifierEndpoint {
+  baseUrl: string;
+  model: string;
+  apiKeySecret: string;
+}
+
 export interface ModelOption {
   id: string;
   harness: string;
@@ -444,6 +450,8 @@ export interface Workspace extends PromptFragmentOverrides {
   classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null;
   classifierTypesafeSecret: string | null;
+  /** OpenAI-compatible endpoint for the Route Classifier; the API key lives in a Secret named by `apiKeySecret`. */
+  classifierEndpoint: ClassifierEndpoint | null;
   /** Guardrail overrides; `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */

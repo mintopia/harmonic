@@ -37,6 +37,7 @@ import type {
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   ModelOption,
+  ClassifierEndpoint,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -291,6 +292,7 @@ export const api = {
       classifierTimeoutSeconds?: number | null;
       classifierTypesafeModel?: string | null;
       classifierTypesafeSecret?: string | null;
+      classifierEndpoint?: ClassifierEndpoint | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;
