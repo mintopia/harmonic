@@ -10,12 +10,7 @@ import {
   type RoutingLabel,
 } from '../config.js';
 import { composePauseMessage } from '../execution/prompt-assembly.js';
-import {
-  PROMPT_FRAGMENT_NAMES,
-  promptFragmentOverrideKey,
-  type PromptFragmentOverrides,
-  type PromptFragments,
-} from './prompt-fragments.js';
+import type { EnginePrompts } from './bundled-prompts.js';
 import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
@@ -255,48 +250,31 @@ function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrai
 
 /** Resolve the message that asks an active Task to pause at its next turn boundary. */
 export function resolvePauseMessage(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'pauseMessage'>) | null | undefined,
-  config: Pick<AppConfig, 'pauseMessage' | 'promptFragments'>,
+  ws: Pick<WorkspaceRow, 'pauseMessage'> | null | undefined,
+  config: Pick<AppConfig, 'pauseMessage'>,
+  prompts: EnginePrompts,
 ): string {
-  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), resolvePromptFragments(ws, config));
+  return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), prompts);
 }
 
-/** Resolve the Prompt Fragments a Workspace's prompts reference, each `workspace ?? global`. */
-export function resolvePromptFragments(
-  ws: Partial<PromptFragmentOverrides> | null | undefined,
-  config: Pick<AppConfig, 'promptFragments'>,
-): AppConfig['promptFragments'] {
-  return {
-    ...config.promptFragments,
-    ...(Object.fromEntries(
-      PROMPT_FRAGMENT_NAMES.map((name) => {
-        const key = promptFragmentOverrideKey(name);
-        return [name, resolveScoped(key, ws?.[key], config.promptFragments[name])];
-      }),
-    ) as PromptFragments),
-  };
-}
-
-/** Resolve the merge-conflict resolution prompts and their shared fragment for a Workspace, each `workspace ?? global`. */
+/** Resolve the merge-conflict resolution prompts for a Workspace, each `workspace ?? global`. */
 export function resolveMergePrompts(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'>) | null | undefined,
-  config: Pick<AppConfig, 'merge' | 'promptFragments'>,
-): { conflictPrompt: string; epicConflictPrompt: string; fragments: AppConfig['promptFragments'] } {
+  ws: Pick<WorkspaceRow, 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'merge'>,
+): { conflictPrompt: string; epicConflictPrompt: string } {
   return {
     conflictPrompt: resolveScoped('mergeConflictPrompt', ws?.mergeConflictPrompt, config.merge.conflictPrompt),
     epicConflictPrompt: resolveScoped('mergeEpicConflictPrompt', ws?.mergeEpicConflictPrompt, config.merge.epicConflictPrompt),
-    fragments: resolvePromptFragments(ws, config),
   };
 }
 
-/** Resolve the Epic resolver prompts (integration refresh, verification-failure suffix) and the fragments they reference for a Workspace, each `workspace ?? global`. */
+/** Resolve the Epic resolver prompts (integration refresh, verification-failure suffix) for a Workspace, each `workspace ?? global`. */
 export function resolveEpicResolverPrompts(
-  ws: (Partial<PromptFragmentOverrides> & Pick<WorkspaceRow, 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'>) | null | undefined,
-  config: Pick<AppConfig, 'merge' | 'verify' | 'promptFragments'>,
-): { refreshPrompt: string; resolveSuffix: string; fragments: AppConfig['promptFragments'] } {
+  ws: Pick<WorkspaceRow, 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'> | null | undefined,
+  config: Pick<AppConfig, 'merge' | 'verify'>,
+): { refreshPrompt: string; resolveSuffix: string } {
   return {
     refreshPrompt: resolveScoped('mergeEpicRefreshPrompt', ws?.mergeEpicRefreshPrompt, config.merge.epicRefreshPrompt),
     resolveSuffix: resolveScoped('verifyEpicResolveSuffix', ws?.verifyEpicResolveSuffix, config.verify.epic.resolveSuffix),
-    fragments: resolvePromptFragments(ws, config),
   };
 }

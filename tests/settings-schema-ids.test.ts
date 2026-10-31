@@ -2,15 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   SETTINGS_SCHEMA,
   renderSection,
+  sectionsForTab,
   type GlobalRenderCtx,
   type WorkspaceRenderCtx,
   type Surface,
 } from '../web/src/components/settings-schema.js';
-import { blankPromptFragments } from './prompt-fragment-fixtures.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES, PROMPT_FRAGMENT_NAMES } from '../src/domain/prompt-fragments.js';
-import { fragmentKey, templateKey } from '../src/domain/prompt-anatomy.js';
-import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from '../src/domain/prompt-templates.js';
-import { PROMPT_PART_FIELDS } from './prompt-part-fields.js';
 import type { AppConfig, Workspace } from '../web/src/types.js';
 
 function makeConfig(): AppConfig {
@@ -33,7 +29,6 @@ function makeConfig(): AppConfig {
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',
-    promptFragments: blankPromptFragments(),
     merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
@@ -108,7 +103,6 @@ function makeWorkspace(): Workspace {
     driveContinuePrompt: null,
     taskPrompt: null,
     pauseMessage: null,
-    ...NO_PROMPT_FRAGMENT_OVERRIDES,
     mergeConflictPrompt: null,
     mergeEpicConflictPrompt: null,
     mergeEpicRefreshPrompt: null,
@@ -190,31 +184,10 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the Prompts tab as bare full-width sections: anatomy on both surfaces, then the global Prompt Library', () => {
+  it('declares the prompts settings as the global Prompt Library alone, as a bare full-width section', () => {
     const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts');
-    expect(sections.map((s) => s.title)).toEqual(['Prompts', 'Prompt Library']);
-    for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true });
-    expect(sections[0]?.surfaces).toEqual(expect.arrayContaining(['global', 'workspace']));
-    expect(sections[1]?.surfaces).toEqual(['global']);
-  });
-
-  it('keeps prompt part field ids unique per surface and disjoint from the schema fields', () => {
-    for (const surface of ['global', 'workspace'] as const) {
-      const partIds = PROMPT_PART_FIELDS.map((f) => (surface === 'global' ? f.globalId : f.workspaceId)).filter((id): id is string => id !== null);
-      expect(partIds.length).toBeGreaterThan(0);
-      expect(duplicates(partIds)).toEqual([]);
-      const schemaIds = new Set(fieldIdsForSurface(surface));
-      expect(partIds.filter((id) => schemaIds.has(id))).toEqual([]);
-    }
-  });
-
-  it('gives every Prompt Fragment and every overridable template a Workspace field, and the Epic resolve prompt none', () => {
-    const byKey = new Map(PROMPT_PART_FIELDS.map((f) => [f.key, f]));
-    for (const name of PROMPT_FRAGMENT_NAMES) expect(byKey.get(fragmentKey(name))?.workspaceId, name).toBeTruthy();
-    for (const id of PROMPT_TEMPLATE_IDS) {
-      const info = byKey.get(templateKey(id));
-      expect(info?.workspaceId === null, id).toBe(PROMPT_TEMPLATES[id].workspace === null);
-    }
-    expect(byKey.get(templateKey('epicResolvePrompt'))?.workspaceId).toBeNull();
+    expect(sections.map((s) => s.title)).toEqual(['Prompt Library']);
+    expect(sections[0]).toMatchObject({ bare: true, wide: true, surfaces: ['global'] });
+    expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
   });
 });

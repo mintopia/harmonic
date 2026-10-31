@@ -2,6 +2,7 @@
 import { act, createElement, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Tabs } from '../web/src/components/Tabs.js';
+import { sectionsForTab } from '../web/src/components/settings-schema.js';
 import { SettingsForm } from '../web/src/components/SettingsForm.js';
 import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
@@ -40,40 +41,11 @@ describe('settings layout (issue #554)', () => {
 
 
 describe('settings prompts layout', () => {
-  it('renders the Prompts tab as one bare full-width panel organised by anatomy', async () => {
-    const config = makeConfig();
-    const host = await mountComponent(
-      createElement(SettingsForm, {
-        title: 'Settings',
-        intro: 'Configure Harmonic.',
-        tabs: [{ id: 'prompts', label: 'Prompts' }],
-        tab: 'prompts',
-        onTab: () => {},
-        ctx: {
-          surface: 'global',
-          config,
-          baseline: config,
-          setConfig: () => {},
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        },
-        dirty: false,
-        saving: false,
-        error: null,
-        onSave: () => {},
-        onDiscard: () => {},
-      }),
-    );
-
-    const panel = host.querySelector('[role="tabpanel"]');
-    expect(panel?.className).toContain('xl:grid-cols-2');
-    expect(panel?.className).not.toContain('xl:columns-2');
-    expect(panel?.querySelector('[role="tablist"][aria-label="Prompts the agent receives"]')).not.toBeNull();
-    expect(panel?.firstElementChild?.className).toContain('xl:col-span-2');
+  it('renders the Prompts settings as the Prompt Library alone', () => {
+    expect(sectionsForTab('global', 'prompts').map((s) => s.title)).toEqual(['Prompt Library']);
+    expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
   });
 });
-
 
 describe('settings tab keyboard navigation', () => {
   it('keeps one tab in the tab order and activates focused arrow and endpoint destinations', async () => {

@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { baselineConfig } from '../src/config.js';
 import { convertEditedEpicFixPrompts, epicFixTexts } from '../src/domain/epic-fix-prompt.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
+import { NO_RETIRED } from '../src/domain/retired-settings.js';
 import { composeEpicResolvePrompt } from '../src/execution/prompt-assembly.js';
 
 const FIXTURE_EPIC = { ref: '7', title: 'Epic seven', body: 'Body text', url: 'http://x/7' };
@@ -20,11 +22,10 @@ const GOLDEN = [
 
 async function fromLibrary(library: PromptLibrary): Promise<string> {
   const texts = await epicFixTexts(library);
-  const config = baselineConfig();
   return composeEpicResolvePrompt({
     resolvePrompt: texts.resolvePrompt,
     resolveSuffix: texts.resolveSuffix,
-    fragments: { ...config.promptFragments, epicFailingVerification: texts.failingVerification },
+    prompts: library.enginePrompts(),
     epic: FIXTURE_EPIC,
     reason: 'tests red',
     branch: 'epic/7',
@@ -44,12 +45,12 @@ describe('Epic fix prompt from the Prompt Library', () => {
 
   it('is byte-identical to the pre-Library prompt on an unedited install', async () => {
     const library = new PromptLibrary(join(root, 'unedited'));
-    expect(await convertEditedEpicFixPrompts(library, baselineConfig())).toEqual([]);
+    expect(await convertEditedEpicFixPrompts(library, baselineConfig(), NO_RETIRED)).toEqual([]);
     const config = baselineConfig();
     const legacy = composeEpicResolvePrompt({
       resolvePrompt: config.verify.epic.resolvePrompt,
       resolveSuffix: config.verify.epic.resolveSuffix,
-      fragments: config.promptFragments,
+      prompts: bundledEnginePrompts(),
       epic: FIXTURE_EPIC,
       reason: 'tests red',
       branch: 'epic/7',
@@ -62,10 +63,10 @@ describe('Epic fix prompt from the Prompt Library', () => {
     const library = new PromptLibrary(join(root, 'edited'));
     const config = baselineConfig();
     config.verify.epic.resolveSuffix = 'EDITED SUFFIX for {branch}.';
-    config.promptFragments.epicFailingVerification = 'EDITED FAILURE: {reason}';
+    const retired = { global: { epicFailingVerification: 'EDITED FAILURE: {reason}' }, workspaces: {} };
 
-    expect(await convertEditedEpicFixPrompts(library, config)).toEqual(['epicResolveSuffix', 'epicFailingVerification']);
-    expect(await convertEditedEpicFixPrompts(new PromptLibrary(join(root, 'edited')), config)).toEqual([]);
+    expect(await convertEditedEpicFixPrompts(library, config, retired)).toEqual(['epicResolveSuffix', 'epicFailingVerification']);
+    expect(await convertEditedEpicFixPrompts(new PromptLibrary(join(root, 'edited')), config, retired)).toEqual([]);
 
     const codes = (await library.list()).filter((e) => !e.bundled).map((e) => e.code).sort();
     expect(codes).toEqual(['epicFailingVerification-edited', 'epicResolveSuffix-edited']);

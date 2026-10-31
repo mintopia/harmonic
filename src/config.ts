@@ -5,21 +5,9 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { verdictContractError } from './verification/critic-schema.js';
 import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 import { unconfiguredHarnessReason } from './domain/route.js';
 import { routingLabelIssueMessage, routingLabelIssues, workflowLabelIssues } from './domain/setting-override.js';
-import {
-  PROMPT_FRAGMENT_NAMES,
-  PROMPT_FRAGMENTS,
-  missingPromptFragmentTokens,
-  unknownFragmentRefs,
-  unknownFragmentIssues,
-  UNKNOWN_FRAGMENT_MESSAGE,
-  promptFragmentOverrideKey,
-  type PromptFragmentName,
-  type PromptFragmentOverrideKey,
-} from './domain/prompt-fragments.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -30,33 +18,6 @@ export type IsolationMode = (typeof ISOLATION_MODES)[number];
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-/** A Prompt Fragment's text: its `{fragment.<name>}` references must all name a Prompt Fragment, so none can reach the agent literally. */
-export function fragmentTemplateSchema(example: string): z.ZodString {
-  return z
-    .string()
-    .min(1)
-    .refine((text) => unknownFragmentRefs(text).length === 0, { message: UNKNOWN_FRAGMENT_MESSAGE })
-    .meta({ example });
-}
-
-export function promptFragmentSchema(name: PromptFragmentName): z.ZodString {
-  const required = PROMPT_FRAGMENTS[name].required;
-  return fragmentTemplateSchema(PROMPT_FRAGMENTS[name].label)
-    .refine((text) => missingPromptFragmentTokens(name, text).length === 0, {
-      message: `must contain ${required.map((token) => `{${token}}`).join(' ')}`,
-    })
-    .refine((text) => name !== 'criticVerdictContract' || verdictContractError(text) === undefined, {
-      message: 'must ask the critic for a JSON object with a "verdict" key and a "summary" key; without it every critic run is inconclusive',
-    });
-}
-
-export const promptFragmentsShape = Object.fromEntries(
-  PROMPT_FRAGMENT_NAMES.map((name) => [name, promptFragmentSchema(name)]),
-) as Record<PromptFragmentName, z.ZodString>;
-
-export const promptFragmentOverrideShape = Object.fromEntries(
-  PROMPT_FRAGMENT_NAMES.map((name) => [promptFragmentOverrideKey(name), promptFragmentSchema(name).nullable().optional()]),
-) as Record<PromptFragmentOverrideKey, z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 
 export const modelPriceSchema = z.object({
   input: z.number().nonnegative().meta({ example: 3 }),
@@ -389,8 +350,6 @@ export const appConfigSchema = z.object({
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
   taskPrompt: z.string().meta({ example: 'Work on {prompt}.' }),
   pauseMessage: z.string().min(1).meta({ example: 'Please finish the current turn, then pause and wait for further instructions.' }),
-  /** Named pieces of prompt text defined once and referenced from prompts as `{fragment.<name>}`. */
-  promptFragments: z.object(promptFragmentsShape),
   /** End a Conversation with no Turn for this many minutes; 0 disables. Fractional values are allowed. */
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
@@ -399,7 +358,7 @@ export const appConfigSchema = z.object({
   verify: z.object({
     epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }) }),
   }),
-  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `{fragment.conflictResolution}`). */
+  /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `${{ prompts.conflictResolution }}`). */
   merge: z.object({
     postMergeCheck: z.boolean(),
     conflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})\n{paths}' }),
@@ -447,7 +406,6 @@ export const appConfigSchema = z.object({
     }),
   }),
 }).superRefine((config, ctx) => {
-  for (const issue of unknownFragmentIssues(config)) ctx.addIssue({ code: 'custom', ...issue });
   for (const [id, harness] of Object.entries(config.harnesses)) {
     if (harness.models.length > 0 && !harness.models.some((model) => model.id === harness.defaultModel)) {
       ctx.addIssue({

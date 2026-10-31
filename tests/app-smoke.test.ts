@@ -3,8 +3,6 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../web/src/App.js';
-import { blankPromptFragments } from './prompt-fragment-fixtures.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { AppConfig, Conversation, UpdateState, Workspace } from '../web/src/types.js';
 
 class IdleWebSocket {
@@ -53,7 +51,6 @@ function makeConfig(): AppConfig {
     editor: { maxFileSizeBytes: 2_097_152 },
     taskPrompt: '',
     pauseMessage: 'Pause.',
-    promptFragments: blankPromptFragments(),
     merge: { postMergeCheck: true, conflictPrompt: '', epicConflictPrompt: '', epicRefreshPrompt: '' },
     archive: { retain: { days: null, maxTotalMB: null } },
     export: {
@@ -127,7 +124,6 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     driveContinuePrompt: null,
     taskPrompt: null,
     pauseMessage: null,
-    ...NO_PROMPT_FRAGMENT_OVERRIDES,
     mergeConflictPrompt: null,
     mergeEpicConflictPrompt: null,
     mergeEpicRefreshPrompt: null,

@@ -6,12 +6,13 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { baselineConfig, type HarnessConfig } from '../src/config.js';
 import { runCritic, type CriticHarnessDrive } from '../src/verification/critic.js';
 import type { DriveFields } from '../src/execution/prompt-template.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 
-const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+const DEFAULT_PROMPTS = bundledEnginePrompts();
 
 const FIELDS: DriveFields = { taskId: '77', skill: '/implement', ref: '12', url: '', title: 'T', description: 'D' };
 
@@ -72,7 +73,7 @@ describe('runCritic archive capture', () => {
     }, 150);
 
     const attempt = await runCritic({
-      fragments: DEFAULT_PROMPT_FRAGMENTS,
+      prompts: DEFAULT_PROMPTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' },
@@ -99,7 +100,7 @@ describe('runCritic archive capture', () => {
     const task = await tasks.create({ prompt: 'p' });
     const writer = archiveFor().criticStep(task, 1, 'post-merge', 'critic-2');
     const attempt = await runCritic({
-      fragments: DEFAULT_PROMPT_FRAGMENTS,
+      prompts: DEFAULT_PROMPTS,
       cwd: dir,
       verifiedHeadOid: 'abc',
       critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' },
@@ -121,7 +122,7 @@ describe('runCritic archive capture', () => {
   it('reports the prompt locator only when the prompt reached the archive', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const writer = archiveFor().criticStep(task, 1, 'pre-merge', 'critic-3');
-    const base = { fragments: DEFAULT_PROMPT_FRAGMENTS, cwd: dir, verifiedHeadOid: 'abc', critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' }, fields: FIELDS, harness: harness(), harnessId: 'claude', drive, transcriptRetryDelaysMs: [1] };
+    const base = { prompts: DEFAULT_PROMPTS, cwd: dir, verifiedHeadOid: 'abc', critic: { prompt: 'review it', harness: 'claude', model: 'stub-model' }, fields: FIELDS, harness: harness(), harnessId: 'claude', drive, transcriptRetryDelaysMs: [1] };
     const archived = await runCritic({ ...base, archive: writer });
     expect(archived.promptKey).toBe('verification/pre-merge/critic-3/prompt.md');
     expect(readFileSync(join(await writer.dir, 'prompt.md'), 'utf8')).toBe(archived.prompt);

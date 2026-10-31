@@ -14,6 +14,7 @@ import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
+import { NO_RETIRED } from '../src/domain/retired-settings.js';
 import { planSettingsMigration } from '../src/domain/settings-workflow-migration.js';
 import { parseLegacyGlobal, parseLegacyWorkspace, pickLegacyGlobal, withLegacyGlobal, type LegacyGlobalPatch, type LegacySettings, type LegacyWorkspacePatch } from '../src/domain/legacy-execution-settings.js';
 import { splitLegacyConfig, type LegacyConfigOverrides } from './helpers/legacy-settings.js';
@@ -380,7 +381,7 @@ function replanWorkflowsOnSettingsChange(app: App, legacyGlobal: LegacyGlobalPat
   const setOverrides = store.setOverrides.bind(store);
   const replan = async (): Promise<void> => {
     const rows = await app.ctx.workspaces.list();
-    const plan = await planSettingsMigration({ config: withDefaultTimeouts(store.getGlobal()), legacy: legacySettingsOf(legacyGlobal, legacyWorkspaces), workspaces: withDefaultTimeouts(rows), promptText: (code) => prompts.operatorText(code) });
+    const plan = await planSettingsMigration({ config: withDefaultTimeouts(store.getGlobal()), legacy: legacySettingsOf(legacyGlobal, legacyWorkspaces), retired: store.getRetired(), workspaces: withDefaultTimeouts(rows), promptText: (code) => prompts.operatorText(code) });
     for (const entry of plan.prompts) {
       if (prompts.operatorText(entry.code) === entry.text) continue;
       if (prompts.hasOperatorEntry(entry.code)) await prompts.update(entry.code, entry.description, entry.text);
@@ -426,7 +427,7 @@ export async function migratedWorkflowOptions(config: AppConfig, dir: string, le
   const library = new WorkflowLibrary(dir);
   await library.load();
   promptLibrary.attachWorkflows(library);
-  const plan = await planSettingsMigration({ config: withDefaultTimeouts(config), legacy: legacySettingsOf(legacy, new Map()), workspaces: [], promptText: (code) => promptLibrary.operatorText(code) });
+  const plan = await planSettingsMigration({ config: withDefaultTimeouts(config), legacy: legacySettingsOf(legacy, new Map()), retired: NO_RETIRED, workspaces: [], promptText: (code) => promptLibrary.operatorText(code) });
   for (const entry of plan.prompts) await promptLibrary.create(entry.code, entry.description, entry.text);
   for (const workflow of plan.workflows) await library.save(workflow.name, workflow.text);
   return { config: { ...config, defaults: { ...config.defaults, workflow: plan.globalWorkflow } }, promptLibrary, workflows: { library } };

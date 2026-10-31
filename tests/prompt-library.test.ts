@@ -126,18 +126,16 @@ describe('/api/prompts', () => {
   });
 
   it('keeps Settings and the Library in step for a covered prompt', async () => {
-    const patch = await server.api('PATCH', '/api/config', { promptFragments: { criticSecurity: 'SETTINGS EDIT' }, merge: { conflictPrompt: 'MERGE EDIT {taskBranch}' } });
+    const patch = await server.api('PATCH', '/api/config', { merge: { conflictPrompt: 'MERGE EDIT {taskBranch}' } });
     expect(patch.status).toBe(200);
-    expect(patch.body.promptFragments.criticSecurity).toBe('SETTINGS EDIT');
-    expect((await server.api('GET', '/api/prompts/criticSecurity-migrated')).body.text).toBe('SETTINGS EDIT');
     expect((await server.api('GET', '/api/prompts/mergeConflictPrompt-migrated')).body.text).toBe('MERGE EDIT {taskBranch}');
 
-    await server.api('PUT', '/api/prompts/criticSecurity-migrated', { description: 'x', text: 'LIBRARY EDIT' });
-    expect((await server.api('GET', '/api/config')).body.promptFragments.criticSecurity).toBe('LIBRARY EDIT');
+    await server.api('PUT', '/api/prompts/mergeConflictPrompt-migrated', { description: 'x', text: 'LIBRARY EDIT {taskBranch}' });
+    expect((await server.api('GET', '/api/config')).body.merge.conflictPrompt).toBe('LIBRARY EDIT {taskBranch}');
 
     const unrelated = await server.api('PATCH', '/api/config', { maxAttempts: 3 });
-    expect(unrelated.body.promptFragments.criticSecurity).toBe('LIBRARY EDIT');
-    expect((await server.api('GET', '/api/prompts/criticSecurity-migrated')).body.text).toBe('LIBRARY EDIT');
+    expect(unrelated.body.merge.conflictPrompt).toBe('LIBRARY EDIT {taskBranch}');
+    expect((await server.api('GET', '/api/prompts/mergeConflictPrompt-migrated')).body.text).toBe('LIBRARY EDIT {taskBranch}');
   });
 
   it('refuses a cycle and an unknown include at save', async () => {

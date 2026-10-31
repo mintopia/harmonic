@@ -19,6 +19,7 @@ import { resolveModelOption } from '../src/domain/model-options.js';
 import type { ModelOption } from '../src/config.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, inBlock, makeSettingsStore, seedWorkspace, STUB_HARNESS, testSpawnProcessGroup } from './helpers.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -42,7 +43,7 @@ describe('WorkflowEngine', () => {
       secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),
       cwdFor: () => repo,
       baseBranchFor: async () => 'main',
-      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), route: async () => { throw new Error('no route'); }, resolveOption: async () => { throw new Error('no option'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) },
+      agent: { drive: { run: async () => { throw new Error('no agent drive in this test'); } }, getConfig: () => baselineConfig(), prompts: bundledEnginePrompts, route: async () => { throw new Error('no route'); }, resolveOption: async () => { throw new Error('no option'); }, resolvePrompt: async (text) => text, promptFields: async (task) => ({ taskId: String(task.id), skill: '/implement', ref: '', url: '', title: task.prompt, description: '' }) },
       escalate: async (_task, _run, reason) => { escalations.push(reason); },
       complete: async () => { completions += 1; },
       ...over,
@@ -367,6 +368,7 @@ describe('WorkflowEngine', () => {
         agent: {
           drive: recordingDrive(),
           getConfig: stubConfig,
+          prompts: bundledEnginePrompts,
           route: async () => { routeCalls += 1; return resolveRoute(stubConfig(), 'claude', 'stub-model', null); },
           resolveOption: async (_task, code) => resolveModelOption(code, { config: { modelOptions: optionList }, workspace: { modelOptions: overlay } }),
           resolvePrompt: async (text) => text,

@@ -12,6 +12,7 @@ import { RouteClassifier, type ClassifierBackend } from '../src/domain/route-cla
 import { resolveWorkflow } from '../src/domain/workflow-assignment.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 
 const answer = (optionId: string, reason = 'fits') => ({ output: { optionId, reason } });
 
@@ -65,7 +66,7 @@ describe('workflow classifier on a Ticket', () => {
     runner = new Runner(tasks, asyncDb, () => config, {
       ...executionPlumbing(),
       taskEvents,
-      routeClassifier: new RouteClassifier(() => config, { harness: backend }),
+      routeClassifier: new RouteClassifier(() => config, { harness: backend }, bundledEnginePrompts),
     });
     (runner as unknown as { turnDriver: { drive: () => Promise<void> } }).turnDriver.drive = async () => {};
     await new WorkspaceService(asyncDb, settingsStore).update(wsId, { workflowClassifierEnabled: true, classifierBackend: 'harness' } as never);

@@ -6,7 +6,6 @@ import {
   resolveActiveWorkspace,
   storeActiveWorkspaceId,
 } from '../web/src/workspace-model.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import type { Workspace } from '../web/src/types.js';
 
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -78,7 +77,6 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   driveContinuePrompt: null,
   taskPrompt: null,
   pauseMessage: null,
-  ...NO_PROMPT_FRAGMENT_OVERRIDES,
   mergeConflictPrompt: null,
   mergeEpicConflictPrompt: null,
   mergeEpicRefreshPrompt: null,

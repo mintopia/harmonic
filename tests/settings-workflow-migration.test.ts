@@ -6,12 +6,13 @@ import { parse } from 'yaml';
 import { settings, tasks } from '../src/db/schema.js';
 import { baselineConfig, mergeConfig } from '../src/config.js';
 import { parseLegacyGlobal } from '../src/domain/legacy-execution-settings.js';
+import { NO_RETIRED, retiredWorkspaceKey } from '../src/domain/retired-settings.js';
 import { splitLegacyConfig, type LegacyConfigOverrides } from './helpers/legacy-settings.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { planSettingsMigration, SETTINGS_MIGRATION_MARKER, UnconvertibleSettingError } from '../src/domain/settings-workflow-migration.js';
 import { SettingsStore } from '../src/server/settings-store.js';
 import { createTempDirTracker } from './helpers/upgrade-fixture.js';
-import { EDITED_GLOBAL, FIXTURE_WORKSPACES, migrate, openHarness, seedOldSettings, treeOf, type Harness, type Seed } from './helpers/settings-migration-fixture.js';
+import { EDITED_GLOBAL, EDITED_RETIRED_GLOBAL, FIXTURE_WORKSPACES, migrate, openHarness, seedOldSettings, treeOf, type Harness, type Seed } from './helpers/settings-migration-fixture.js';
 
 const { tempDir, cleanupAll } = createTempDirTracker();
 const open: Harness[] = [];
@@ -44,7 +45,7 @@ describe('settings to workflows migration', () => {
   });
 
   it('writes workflow and prompt files matching the fixtures for edited global settings and Workspace overrides', async () => {
-    const harness = await boot({ global: EDITED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
+    const harness = await boot({ global: EDITED_GLOBAL, retiredGlobal: EDITED_RETIRED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
 
     await migrate(harness);
 
@@ -56,7 +57,7 @@ describe('settings to workflows migration', () => {
   });
 
   it('defaults a Workspace to its own workflow only when its overrides change something', async () => {
-    const harness = await boot({ global: EDITED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
+    const harness = await boot({ global: EDITED_GLOBAL, retiredGlobal: EDITED_RETIRED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
 
     await migrate(harness);
 
@@ -83,7 +84,7 @@ describe('settings to workflows migration', () => {
   });
 
   it('is a no-op the second time, even with the done-marker gone', async () => {
-    const harness = await boot({ global: EDITED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
+    const harness = await boot({ global: EDITED_GLOBAL, retiredGlobal: EDITED_RETIRED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
     await migrate(harness);
     const first = treeOf(harness.dir);
 
@@ -96,7 +97,7 @@ describe('settings to workflows migration', () => {
   });
 
   it('converges when a crash follows the second Workspace and the migration runs again', async () => {
-    const seed = { global: EDITED_GLOBAL, workspaces: [...FIXTURE_WORKSPACES, { name: 'Gamma', overrides: { maxAttempts: 4 } }] };
+    const seed = { global: EDITED_GLOBAL, retiredGlobal: EDITED_RETIRED_GLOBAL, workspaces: [...FIXTURE_WORKSPACES, { name: 'Gamma', overrides: { maxAttempts: 4 } }] };
     const clean = await boot(seed);
     await migrate(clean);
 
@@ -136,7 +137,7 @@ describe('settings to workflows migration', () => {
   }, 60_000);
 
   it('leaves every old settings.yaml key byte-identical', async () => {
-    const harness = await boot({ global: { ...EDITED_GLOBAL, defaults: { priority: 'high' } }, workspaces: FIXTURE_WORKSPACES });
+    const harness = await boot({ global: { ...EDITED_GLOBAL, defaults: { priority: 'high' } }, retiredGlobal: EDITED_RETIRED_GLOBAL, workspaces: FIXTURE_WORKSPACES });
     const before = readFileSync(join(harness.dir, 'settings.yaml'), 'utf8');
 
     await migrate(harness);
@@ -178,7 +179,7 @@ describe('settings to workflows migration', () => {
   describe('Merge Fate and post-merge steps', () => {
     const planned = async (patch: LegacyConfigOverrides) => {
       const { config, legacy } = splitLegacyConfig(patch);
-      const plan = await planSettingsMigration({ config: mergeConfig(baselineConfig(), config), legacy: { global: parseLegacyGlobal(legacy), workspaces: new Map() }, workspaces: [], promptText: () => undefined });
+      const plan = await planSettingsMigration({ config: mergeConfig(baselineConfig(), config), legacy: { global: parseLegacyGlobal(legacy), workspaces: new Map() }, retired: NO_RETIRED, workspaces: [], promptText: () => undefined });
       return parseWorkflow(plan.workflows[0]!.text);
     };
 
@@ -226,6 +227,26 @@ describe('settings to workflows migration', () => {
       expect((failure as Error).message).toContain('Workspace "Slow"');
       expect((failure as Error).message).toContain('verify.task.preMerge.commands[0].timeoutSeconds');
       await expectNothingWritten(harness, before);
+    });
+
+    it('names the Workspace and the key when it overrides an engine prompt that no migrated prompt carries', async () => {
+      const harness = await boot({ workspaces: [{ name: 'Peers', retired: { peerLine: 'Peers differ here.' } }] });
+      const before = treeOf(harness.dir);
+
+      const failure = await migrate(harness).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(UnconvertibleSettingError);
+      expect((failure as Error).message).toContain(`Workspace "Peers" ${retiredWorkspaceKey('peerLine')}`);
+      await expectNothingWritten(harness, before);
+    });
+
+    it('migrates a Workspace self-heal override into that Workspace workflow', async () => {
+      const harness = await boot({ workspaces: [{ name: 'Heal', retired: { selfHeal: 'Retry {attempt}: {reason} {output}' } }] });
+
+      await migrate(harness);
+
+      expect(readFileSync(join(harness.dir, 'prompts', 'migrated-w1-selfHeal.json'), 'utf8')).toContain('Retry {attempt}');
+      expect(harness.settings.getOverrides(1).workflow).toBe('migrated-heal');
     });
 
     it('refuses prompt text that a workflow would evaluate', async () => {

@@ -73,10 +73,10 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
     expect((await server.app.ctx.attempts.get(latest.id)).prompt).toBeNull();
   });
 
-  it('renders the operator message through the edited Prompt Fragment', async () => {
+  it('renders the operator message through the edited Library prompt', async () => {
     const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
     const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId!;
-    await server.app.ctx.workspaces.update(workspaceId, { promptFragmentOperatorMessage: 'BOSS SAYS >> {seed}' });
+    await server.app.ctx.promptLibrary.create('operatorMessage-edited', 'edited', 'BOSS SAYS >> {seed}');
     try {
       const mirrored = await server.app.ctx.tasks.upsertMirrored(
         { trackerRef: trackerRef(77002), prompt: 'ticket 77002\n\nfix the lexer', issueWorkflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
@@ -92,7 +92,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
       expect(latest.prompt).toContain('BOSS SAYS >> start with {braces}');
       expect(latest.prompt).not.toContain('## Operator message');
     } finally {
-      await server.app.ctx.workspaces.update(workspaceId, { promptFragmentOperatorMessage: null });
+      await server.app.ctx.promptLibrary.delete('operatorMessage-edited');
     }
   });
 });

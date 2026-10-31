@@ -5,9 +5,10 @@ import { isEpicAttempt, type AttemptRow, type EpicAttemptRow, type WorkspaceRow 
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { pricesForHarness, withCriticContribution } from '../domain/pricing.js';
-import { resolvePromptFragments, resolveVerifiers } from '../domain/setting-override.js';
+import { resolveVerifiers } from '../domain/setting-override.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
 import { integrationBranchName } from '../execution/epic-coordinator.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import type { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { Git } from '../execution/git.js';
@@ -20,7 +21,8 @@ import type { VerificationDecision, VerifierVerdict } from '../verification/comb
 export interface EpicVerificationRunnerDeps {
   workspace: WorkspaceRow;
   getWorkspaces: () => Promise<WorkspaceRow[]>;
-  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses' | 'promptFragments'>;
+  getConfig: () => Pick<AppConfig, 'verify' | 'maxAttempts' | 'defaults' | 'harnesses'>;
+  prompts: () => EnginePrompts;
   worktrees: EpicWorktreePool;
   epicAttempts?: AttemptStore | undefined;
   verificationAttemptStore?: VerificationAttemptStore | undefined;
@@ -165,7 +167,7 @@ export class EpicVerificationRunner {
         verifiedHeadOid: criticHeadOid,
         ...(baseOid ? { baseOid } : {}),
         critic: { prompt: critic.prompt, model: critic.model, harness: critic.harness },
-        fragments: resolvePromptFragments(this.deps.workspace, config),
+        prompts: this.deps.prompts(),
         timeoutMs: critic.timeoutSeconds * 1000,
         fields: { taskId: '', skill: '/implement', ref: String(epicRef), url: '', title: `Epic #${epicRef}`, description: '' },
         harness,

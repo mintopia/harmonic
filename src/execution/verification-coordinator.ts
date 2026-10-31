@@ -13,7 +13,6 @@ import type { ActiveRuns } from './active-runs.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { AppConfig } from '../config.js';
 import type { AttemptRow, WorkspaceRow } from '../db/schema.js';
-import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { RoutingService } from '../domain/routing.js';
@@ -44,7 +43,6 @@ type VerifierWorkspace = Pick<
   WorkspaceRow,
   | 'epicPreMergeCommands' | 'epicPreMergeCritics'
   | 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'
-  | PromptFragmentOverrideKey
 >;
 
 export interface VerificationCoordinatorDeps {
@@ -76,11 +74,10 @@ export class VerificationCoordinator {
     await this.deps.attempts.updateStep(step.id, { state: 'running', startedAt: Date.now() });
     const library = await epicFixTexts(this.deps.promptLibrary);
     const wsSuffix = resolver.resolveSuffix !== config.verify.epic.resolveSuffix;
-    const wsFailing = resolver.fragments.epicFailingVerification !== config.promptFragments.epicFailingVerification;
     const prompt = composeEpicResolvePrompt({
       resolvePrompt: library.resolvePrompt,
       resolveSuffix: wsSuffix ? resolver.resolveSuffix : library.resolveSuffix,
-      fragments: wsFailing ? resolver.fragments : { ...resolver.fragments, epicFailingVerification: library.failingVerification },
+      prompts: this.deps.promptLibrary.enginePrompts(),
       epic: { ref: String(input.epicRef), title: input.title ?? `Epic #${input.epicRef}`, body: input.body ?? '', url: input.url ?? '' },
       reason: input.verificationReason,
       branch,

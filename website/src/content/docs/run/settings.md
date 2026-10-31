@@ -16,7 +16,7 @@ whole instance:
 
 - the harnesses and their models (see [Harnesses](/run/harnesses/)),
 - model prices (so cost is accurate),
-- prompts and prompt fragments, on the Prompts tab (how Harmonic talks to
+- prompts, in the Prompt Library (how Harmonic talks to
   agents and how agents talk to each other),
 - the verification checks that run before a merge (commands and named
   critics, in the order you set),
@@ -58,77 +58,14 @@ you can re-point something that's still waiting in the queue.
 
 ## Prompts
 
-The **Prompts** tab shows every prompt Harmonic sends to an agent, organised
-by **Prompt Anatomy**: one anatomy for each kind of prompt, listed in the
-order the prompts are sent.
+The **Prompts** tab holds the **Prompt Library**: every prompt Harmonic sends to
+an agent, each with a code and a description of what it is for. Prompts that
+ship with Harmonic are **Bundled** and read-only. To change one, duplicate it
+and edit your copy.
 
-- **Implementation turn**: what an agent receives when an Attempt starts a turn.
-- **Nudges mid-Attempt**: the messages sent to a running Attempt between turns.
-- **Merge conflicts**: what the agent receives when it resolves a Task merge
-  conflict, an Epic merge conflict or an Epic refresh conflict.
-- **Epic verification fix**: what the agent receives when it fixes a failing
-  Epic verification.
-- **Critic review**: what a Critic receives when it reviews a candidate.
-
-The tab has three columns on a wide window. The left column lists the anatomies
-and a search box. The middle column holds the parts of the selected anatomy as
-cards, in send order. The right column is the **compiled preview**, the text
-Harmonic would send. On a narrower window the anatomies appear as tabs across
-the top, and the compiled preview is behind a **Show compiled preview** button
-under the parts.
-
-### Parts
-
-Each card is one piece of a prompt. The card's tags show what it is:
-
-- **Template**: a prompt Harmonic sends as a whole, such as the Task prompt or
-  the Continue prompt.
-- **Fragment**: a named piece of text that other prompts include. A fragment
-  used by more than one prompt is tagged **Shared**, and editing it changes
-  every prompt that uses it.
-- **Per critic**: the Critic prompt, which is set on each Critic on the
-  Verification tab. The card links there.
-- **Modified**: the part has been changed. On a Workspace, it overrides the
-  global text.
-- **Fix**: the text is not valid yet. The card says what it must still contain.
-
-Some parts depend on the Task or the Attempt. A part that is sent only under
-a condition shows the condition, for example *when the previous Attempt failed
-Verification*. When a prompt has alternatives, such as a native Task or a
-mirrored one, the alternatives are shown as a group. The one used in the
-compiled preview is tagged **In preview**.
-
-Click a card to open its editor. A template's editor lists the placeholders it
-accepts. A fragment's editor says which placeholders must stay in its text.
-
-### Compiled preview
-
-The compiled preview shows the text that would be sent, joined in the same
-order the agent receives it. Its **Sample conditions** switch conditions on
-and off, such as *Previous Attempt failed Verification* or *Agent Messages on*,
-and choose between alternatives. Use it to check what an agent reads
-in a given situation. Changing a switch in the preview changes only the
-preview; it does not change any setting.
-
-### Search
-
-The **Search prompts…** box finds parts by their name, their description or
-their prompt text. It reports how many parts match and where, and selecting a
-match opens that part. Press Escape to clear the search.
-
-### Overriding per Workspace
-
-On a Workspace, a part that is not overridden shows the global text dimmed.
-Editing it saves a Workspace copy, which is then tagged **Modified**. **Revert**
-puts the part back to inheriting the global text. On the global settings,
-**Revert** restores the default Harmonic ships with.
-
-The **Epic resolve prompt** is global only. Its text is shown on a Workspace
-but can't be changed there.
-
-### What the parts are
-
-The parts include these prompt templates:
+A prompt can include another by its code, written `${{ prompts.<code> }}`, so
+shared text such as **Conflict resolution** is defined once and reused. The
+library covers:
 
 - **Task prompt**: wraps a native Task's own prompt. The default, a bare
   `{prompt}`, sends the prompt as written.
@@ -144,13 +81,11 @@ The parts include these prompt templates:
   when an Epic branch is refreshed from the default branch.
 - **Epic resolve prompt** and **Epic verification resolver suffix**: the turns
   that fix a failing Epic verification.
+- Shared pieces such as **Conflict resolution**, **Self-heal**, **Operator
+  message**, **Prior session**, the peer message prompts that shape how Attempts
+  see each other's messages, and the Critic prompts such as **Critic role**.
 
-Prompt fragments are shared text, referenced from other prompts as
-`{fragment.<name>}`. They include **Read-only restraint**, **Conflict
-resolution**, **Self-heal**, **Operator message**, **Prior session**, the
-peer message fragments that shape how Attempts see each other's messages, and
-the Critic fragments such as **Critic role** and **Critic verdict contract**,
-which set the reply a Critic must give.
+Each Critic's own prompt is set on that Critic on the Verification tab.
 
 A prompt already sent is not rewritten. Edits apply the next time Harmonic
 sends that prompt. To see the prompt an Attempt was sent, read its archive on

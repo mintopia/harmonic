@@ -17,8 +17,7 @@ import { repoKey } from './repo-lock.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SettleProjection, DispositionKind } from '../domain/attempt-settle.js';
 import type { TaskService } from '../domain/tasks.js';
-import type { PromptFragments } from '../domain/prompt-fragments.js';
-import { resolvePromptFragments } from '../domain/setting-override.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { messageText, resolveAgentMessages } from '../domain/agent-messages.js';
 import { SessionContinuation, type PersistSessionContext } from './session-continuation.js';
 import { BaseBranchUnresolved, EpicBaseNotReady } from './merge-coordinator.js';
@@ -72,6 +71,7 @@ export interface TurnDriverDeps {
   usage: UsageSampler;
   tailer: LiveUsageTailer;
   getConfig: () => AppConfig;
+  prompts: () => EnginePrompts;
 
   activeRuns: ActiveRuns;
   sessionContinuation: SessionContinuation;
@@ -568,10 +568,9 @@ export class TurnDriver {
         }
       }
     }
-    const workspaceRow = await this.deps.getWorkspace?.(task.workspaceId);
-    const fragments = resolvePromptFragments(workspaceRow, this.deps.getConfig());
+    const prompts = this.deps.prompts();
     const operatorSeed = this.deps.activeRuns.takePendingOperatorSeed(task.id);
-    const peer = await this.peerContext(task, fragments);
+    const peer = await this.peerContext(task, prompts);
     const promptText = composeAttemptPrompt(
       {
         opening,
@@ -584,13 +583,13 @@ export class TurnDriver {
         rebaseConflict: false,
         codeIndexRepoId,
       },
-      fragments,
+      prompts,
     );
     return { promptText, operatorSeed, heldMessages: peer.held };
   }
 
   /** Held peer messages from the database (left held until the prompt is sent), plus the peer line, when Agent Messages are on. */
-  private async peerContext(task: TaskRow, fragments: PromptFragments): Promise<{ text: string; held: AgentMessageRow[] }> {
+  private async peerContext(task: TaskRow, prompts: EnginePrompts): Promise<{ text: string; held: AgentMessageRow[] }> {
     const store = this.deps.agentMessages;
     if (!store) return { text: '', held: [] };
     const workspace = await this.deps.getWorkspace?.(task.workspaceId);
@@ -603,7 +602,7 @@ export class TurnDriver {
       if (sender) harnesses.set(id, sender.harness);
     }
     const entries = held.map((m) => ({ taskId: m.senderTaskId, harness: harnesses.get(m.senderTaskId) ?? 'agent', text: messageText(m) }));
-    return { text: composePeerContext(entries, fragments), held };
+    return { text: composePeerContext(entries, prompts), held };
   }
 
 }

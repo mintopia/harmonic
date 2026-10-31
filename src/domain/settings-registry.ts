@@ -1,5 +1,3 @@
-import { PROMPT_FRAGMENT_NAMES, PROMPT_FRAGMENTS, promptFragmentOverrideKey, type PromptFragmentOverrideKey } from './prompt-fragments.js';
-
 /** Whether a setting can be overridden per Workspace, or is instance-wide only. */
 export type SettingScope = 'global-only' | 'overridable';
 
@@ -16,19 +14,6 @@ export interface SettingSpec {
   readonly label: string;
   readonly help: string;
 }
-
-const promptFragmentSettings = Object.fromEntries(
-  PROMPT_FRAGMENT_NAMES.map((name) => [
-    promptFragmentOverrideKey(name),
-    {
-      scope: 'overridable',
-      control: 'text',
-      tab: 'prompts',
-      label: PROMPT_FRAGMENTS[name].label,
-      help: `${PROMPT_FRAGMENTS[name].help} Inherits the global fragment when unset.`,
-    },
-  ]),
-) as Record<PromptFragmentOverrideKey, SettingSpec & { readonly scope: 'overridable' }>;
 
 export const settingsRegistry = {
   harness: {
@@ -290,7 +275,6 @@ export const settingsRegistry = {
     label: 'Pause message',
     help: 'Message injected before a running Task pauses; inherits the global message unless overridden.',
   },
-  ...promptFragmentSettings,
   driveCommitNudge: {
     scope: 'overridable',
     control: 'text',
@@ -303,28 +287,28 @@ export const settingsRegistry = {
     control: 'text',
     tab: 'prompts',
     label: 'Merge conflict resolver',
-    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens a Task merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   mergeEpicConflictPrompt: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic merge conflict resolver',
-    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens an Epic integration merge-conflict resolution turn ({turn}, {taskBranch}, {baseBranch}, {paths}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   mergeEpicRefreshPrompt: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic refresh resolver',
-    help: 'Opens the turn that resolves a conflicted Epic integration refresh ({defaultBranch}, {branch}, {detail}, {fragment.conflictResolution}); inherits the global default when unset.',
+    help: 'Opens the turn that resolves a conflicted Epic integration refresh ({defaultBranch}, {branch}, {detail}, ${{ prompts.conflictResolution }}); inherits the global default when unset.',
   },
   verifyEpicResolveSuffix: {
     scope: 'overridable',
     control: 'text',
     tab: 'prompts',
     label: 'Epic verification resolver suffix',
-    help: 'Closes the prompt that asks an agent to fix a failed Epic verification ({branch}, fragments such as {fragment.epicFailingVerification}); inherits the global default when unset.',
+    help: 'Closes the prompt that asks an agent to fix a failed Epic verification ({branch}); inherits the global default when unset.',
   },
   exportEnabled: {
     scope: 'overridable',

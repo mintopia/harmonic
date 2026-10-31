@@ -296,7 +296,7 @@ describe('RouteClassifierSettings', () => {
       action,
       createElement(RouteClassifierSettings, {
         workspace: ws,
-        config: { ...config, promptFragments: { ...config.promptFragments, routeClassifier: 'Pick one optionId.\n{options}\n{ticket}' } },
+        config,
         optionCount,
         saving: savingFlag,
         onSave: onSaveSpy,
@@ -413,7 +413,7 @@ describe('RouteClassifierSettings', () => {
     expect(host.querySelector('#classifier-harness')).toBeNull();
   });
 
-  it('shows the instructions fragment, the output contract and the resolved prompt with the live Model Options', async () => {
+  it('shows the instructions entry, the output contract and the resolved prompt with the live Model Options', async () => {
     const host = await mountClassifier({
       classifierEnabled: true,
       modelOptions: [{ kind: 'local', enabled: true, modelOption: { id: 'cheap-fix', harness: 'claude', model: 'claude-sonnet-4-6', description: 'Tiny fixes' } }],

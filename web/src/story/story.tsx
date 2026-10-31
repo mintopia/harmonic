@@ -34,7 +34,6 @@ import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSe
 import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
-import { PromptsTab } from '../components/prompts/PromptsTab';
 import { workflowStory, workflowTaskFields } from './api-stub';
 import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
@@ -128,28 +127,6 @@ function SettingsStory() {
           <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
         </section>
       </div>
-    </div>
-  );
-}
-
-function PromptsTabStory() {
-  const baseline = structuredClone(storyConfig);
-  const seed = structuredClone(storyConfig);
-  seed.promptFragments.selfHeal = `${seed.promptFragments.selfHeal}\nRe-read the failing output before you change anything.`;
-  const [config, setConfig] = useState(seed);
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
-      <PromptsTab
-        ctx={{
-          surface: 'global',
-          config,
-          baseline,
-          setConfig,
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        }}
-      />
     </div>
   );
 }
@@ -616,7 +593,6 @@ function RetryStory() {
 
 const STORIES: Record<string, () => JSX.Element> = {
   settings: SettingsStory,
-  'prompts-tab': PromptsTabStory,
   'prompt-library': PromptLibraryStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,

@@ -1,8 +1,8 @@
 import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
-import { withEngineFragments } from '../domain/prompt-library-sources.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { access } from 'node:fs/promises';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
-import type { AppConfig, HarnessConfig } from '../config.js';
+import type { HarnessConfig } from '../config.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { parsePermissionRequest, type PermissionRequest } from '../acp/permission-request.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -216,7 +216,7 @@ export interface RunCriticArgs {
   /** True when the worktree still carries uncommitted work pending a pre-merge commit. */
   dirty?: boolean;
   critic: { prompt: string; model: string; harness: string };
-  fragments: AppConfig['promptFragments'];
+  prompts: EnginePrompts;
   /** The Drive-Prompt interpolation tokens filled into the operator's review prompt. */
   fields: DriveFields;
   harness: HarnessConfig;
@@ -325,7 +325,7 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
   const prompt = buildCriticPrompt({
     operatorPrompt: args.critic.prompt,
     fields: args.fields,
-    fragments: withEngineFragments(args.fragments),
+    prompts: args.prompts,
     verifiedHeadOid: args.verifiedHeadOid,
     ...(args.baseOid ? { baseOid: args.baseOid } : {}),
     ...(args.dirty ? { dirty: args.dirty } : {}),

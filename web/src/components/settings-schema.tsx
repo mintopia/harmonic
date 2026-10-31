@@ -24,7 +24,6 @@ import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionS
 import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
-import { PromptsTab } from './prompts/PromptsTab';
 import { PromptLibrary } from './prompt-library/PromptLibrary';
 
 export type Surface = 'global' | 'workspace';
@@ -1012,15 +1011,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       ),
   },
 
-  {
-    tab: 'prompts',
-    surfaces: BOTH,
-    bare: true,
-    wide: true,
-    title: 'Prompts',
-    description: '',
-    body: (ctx) => <PromptsTab ctx={ctx} />,
-  },
   {
     tab: 'prompts',
     surfaces: ['global'],

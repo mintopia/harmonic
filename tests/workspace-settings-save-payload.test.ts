@@ -3,7 +3,6 @@ import { act, createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceSettingsPage } from '../web/src/components/WorkspaceSettingsPage.js';
 import type { WorkspaceRenderCtx } from '../web/src/components/settings-schema.js';
-import { PROMPT_PART_FIELDS } from './prompt-part-fields.js';
 import { settingsRegistry, isOverridable, type SettingKey } from '../src/domain/settings-registry.js';
 import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
@@ -48,14 +47,5 @@ describe('Workspace settings save payload', () => {
     await act(async () => { ctx.setWorkspace({ ...ctx.workspace, mergeEpicRefreshPrompt: 'custom refresh', pauseMessage: 'hold on' }); });
     await act(async () => { host.querySelector('button')!.click(); });
     expect(apiMocks.updateWorkspace.mock.calls[0]![1]).toMatchObject({ mergeEpicRefreshPrompt: 'custom refresh', pauseMessage: 'hold on' });
-  });
-
-  it('gives each overridable prompt part a Workspace field id that mirrors its global id and label', () => {
-    const scoped = PROMPT_PART_FIELDS.filter((f) => f.workspaceId !== null);
-    expect(scoped.length).toBeGreaterThan(0);
-    for (const f of scoped) {
-      expect(f.label).not.toBe('');
-      expect(f.workspaceId!.replace(/^workspace-/, '')).toBe(f.globalId.replace(/^settings-/, ''));
-    }
   });
 });

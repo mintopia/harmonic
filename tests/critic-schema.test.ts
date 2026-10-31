@@ -1,9 +1,6 @@
-import { baselineConfig } from '../src/config.js';
 import { describe, expect, it } from 'vitest';
-import { appConfigSchema } from '../src/config.js';
-import { parseCriticOutput, verdictContractError } from '../src/verification/critic-schema.js';
-
-const DEFAULT_PROMPT_FRAGMENTS = baselineConfig().promptFragments;
+import { CRITIC_VERDICT_CONTRACT } from '../src/domain/bundled-prompts.js';
+import { parseCriticOutput } from '../src/verification/critic-schema.js';
 
 describe('parseCriticOutput (issue #136)', () => {
   it.each(['pass', 'fail', 'inconclusive'] as const)('accepts a valid %s verdict', (verdict) => {
@@ -98,22 +95,10 @@ describe('parseCriticOutput (issue #136)', () => {
   });
 });
 
-describe('verdict contract save gate', () => {
-  it('accepts the default contract', () => {
-    expect(verdictContractError(DEFAULT_PROMPT_FRAGMENTS.criticVerdictContract)).toBeUndefined();
-  });
-
-  it.each([
-    ['verdict', 'Reply as {"summary":"why"}.'],
-    ['summary', 'Reply as {"verdict":"pass"}.'],
-  ])('rejects a contract that drops the "%s" key, naming it', (key, contract) => {
-    expect(verdictContractError(contract)).toContain(`"${key}"`);
-  });
-
-  it('is enforced by the config schema, so a bad contract cannot be saved or booted', () => {
-    const bad = { ...DEFAULT_PROMPT_FRAGMENTS, criticVerdictContract: 'Say pass or fail.' };
-    expect(appConfigSchema.shape.promptFragments.safeParse(bad).success).toBe(false);
-    expect(appConfigSchema.shape.promptFragments.safeParse(DEFAULT_PROMPT_FRAGMENTS).success).toBe(true);
+describe('verdict contract', () => {
+  it('the engine-owned contract asks for the keys the parser reads', () => {
+    expect(CRITIC_VERDICT_CONTRACT).toContain('"verdict"');
+    expect(CRITIC_VERDICT_CONTRACT).toContain('"summary"');
   });
 
   it('still resolves malformed critic output to inconclusive at runtime (ADR-0003 backstop)', () => {

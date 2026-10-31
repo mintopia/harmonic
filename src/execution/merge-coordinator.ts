@@ -13,6 +13,7 @@ import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type Pos
 import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
 import type { TaskArchive } from '../archive/task-archive.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { resolveMergePrompts } from '../domain/setting-override.js';
 import { renderConflictPrompt } from './prompt-assembly.js';
 
@@ -55,6 +56,7 @@ export interface EpicIntegrationMergeInput {
 
 export interface MergeCoordinatorDeps {
   getConfig: () => AppConfig;
+  prompts: () => EnginePrompts;
   attempts: AttemptStore;
   epicMergeEvents: EpicMergeEventStore;
   criticDrive: RunnerOptions['criticDrive'];
@@ -127,7 +129,7 @@ export class MergeCoordinator {
           const { harness: harnessId, model, config: harness } = route;
           const drive = this.deps.criticDrive;
           const merge = resolveMergePrompts(await this.deps.getWorkspace?.(input.workspaceId), config);
-          const prompt = renderConflictPrompt(merge.epicConflictPrompt, merge.fragments, ctx);
+          const prompt = renderConflictPrompt(merge.epicConflictPrompt, this.deps.prompts(), ctx);
           const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId: input.workspaceId, epicRef: input.epicRef }, epicAttempt?.number ?? 1, 'epic-conflict', ctx.turn, prompt);
           if (epicAttempt) await this.recordEpicEvent(epicAttempt.id, { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
           else if (archived) persistStep({ step: 'resolver-prompt', kind: 'merge-conflict', turn: ctx.turn, attempt: 1, ...archived });

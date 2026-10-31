@@ -23,6 +23,7 @@ import {
   type LegacyGlobalRaw,
   type LegacySettings,
 } from '../domain/legacy-execution-settings.js';
+import { RETIRED_GLOBAL_KEY, RETIRED_WORKSPACE_KEYS, NO_RETIRED, type RetiredSettings } from '../domain/retired-settings.js';
 import { logger } from '../logger.js';
 import { isMaskedWorkspaceSecret, restoreConfigSecrets } from '../archive/export-secrets.js';
 
@@ -42,6 +43,7 @@ interface SettingsFile {
    * only non-null (i.e. actually overridden) keys are present. */
   workspaces: Record<string, WorkspaceOverrides>;
   legacy: { preserved: StoredLegacy; view: StoredLegacy };
+  retired: RetiredSettings;
 }
 
 interface StoredLegacy {
@@ -254,6 +256,31 @@ function assertCriticModels(config: AppConfig): AppConfig {
   return config;
 }
 
+/** Lifts the retired prompt keys out of a raw file so the schemas never see them; they are written back untouched. */
+function splitRetired(raw: RawSettingsFile): { global: unknown; workspaces: Record<string, unknown>; retired: RetiredSettings } {
+  let global = raw.global ?? {};
+  let retiredGlobal: Record<string, unknown> = {};
+  if (isRecord(global) && RETIRED_GLOBAL_KEY in global) {
+    const { [RETIRED_GLOBAL_KEY]: lifted, ...rest } = global;
+    global = rest;
+    if (isRecord(lifted)) retiredGlobal = lifted;
+  }
+  const workspaces: Record<string, unknown> = {};
+  const retiredWorkspaces: Record<string, Record<string, unknown>> = {};
+  for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
+    if (!isRecord(entry)) {
+      workspaces[id] = entry;
+      continue;
+    }
+    const kept: Record<string, unknown> = {};
+    const lifted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(entry)) (RETIRED_WORKSPACE_KEYS.includes(key) ? lifted : kept)[key] = value;
+    workspaces[id] = kept;
+    if (Object.keys(lifted).length > 0) retiredWorkspaces[id] = lifted;
+  }
+  return { global, workspaces, retired: { global: retiredGlobal, workspaces: retiredWorkspaces } };
+}
+
 function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
   let raw: RawSettingsFile;
   try {
@@ -262,7 +289,8 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
-    const migratedGlobal = migrateGlobalCriticHarnesses(migrateGlobalVerifierIds(raw.global ?? {}), baseline);
+    const split = splitRetired(raw);
+    const migratedGlobal = migrateGlobalCriticHarnesses(migrateGlobalVerifierIds(split.global), baseline);
     const storedGlobal = (migratedGlobal ?? {}) as DeepPartial<AppConfig>;
     // A flattened (whole-config) global is converted to a sparse patch in
     // inherit mode: a field it doesn't carry is treated as inherited from the
@@ -278,7 +306,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
     const preserved: StoredLegacy = { global: pickLegacyGlobal(raw.global), workspaces: {} };
     const view: StoredLegacy = { global: pickLegacyGlobal(migratedGlobal), workspaces: {} };
     const catalog = harnessCatalog(baseline, migratedGlobal);
-    for (const [id, entry] of Object.entries(raw.workspaces ?? {})) {
+    for (const [id, entry] of Object.entries(split.workspaces)) {
       const migrated = migrateWorkspaceCriticHarnesses(migrateWorkspaceOverlays(entry, global.modelOptions.map((o) => o.id)), catalog, global.defaults.harness);
       workspaces[id] = workspaceOverridesSchema.parse(migrated);
       const stored = pickLegacyWorkspace(entry);
@@ -287,7 +315,7 @@ function loadFromDisk(path: string, baseline: AppConfig): SettingsFile {
         view.workspaces[id] = pickLegacyWorkspace(migrated);
       }
     }
-    return { globalPatch, global, workspaces, legacy: { preserved, view } };
+    return { globalPatch, global, workspaces, legacy: { preserved, view }, retired: split.retired };
   } catch (err) {
     throw new Error(`Invalid Harmonic settings file at ${path}: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -303,6 +331,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
   private globalPatch: unknown;
   private workspaces: Record<string, WorkspaceOverrides>;
   private legacy: SettingsFile['legacy'];
+  private retired: RetiredSettings;
   private loadedMtimeMs = 0;
   private lastCheckMs = 0;
 
@@ -315,6 +344,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
     this.legacy = file.legacy;
+    this.retired = file.retired;
   }
 
   static async create(
@@ -330,7 +360,7 @@ export class SettingsStore implements WorkspaceSettingsStore {
       file = loadFromDisk(path, baselineConfig());
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        file = { globalPatch: {}, global: baselineConfig(), workspaces: {}, legacy: { preserved: NO_STORED_LEGACY(), view: NO_STORED_LEGACY() } };
+        file = { globalPatch: {}, global: baselineConfig(), workspaces: {}, legacy: { preserved: NO_STORED_LEGACY(), view: NO_STORED_LEGACY() }, retired: NO_RETIRED };
       } else {
         throw err;
       }
@@ -354,6 +384,12 @@ export class SettingsStore implements WorkspaceSettingsStore {
       global: parseLegacyGlobal(view.global),
       workspaces: new Map(Object.entries(view.workspaces).map(([id, entry]) => [Number(id), parseLegacyWorkspace(entry)])),
     };
+  }
+
+  /** The retired prompt keys as stored, for the unreleased ADR-0055 migration to read. */
+  getRetired(): RetiredSettings {
+    this.reloadIfChanged();
+    return this.retired;
   }
 
   getBaseline(): AppConfig {
@@ -447,17 +483,20 @@ export class SettingsStore implements WorkspaceSettingsStore {
     this.globalPatch = file.globalPatch;
     this.workspaces = file.workspaces;
     this.legacy = file.legacy;
+    this.retired = file.retired;
     this.loadedMtimeMs = stat.mtimeMs;
   }
 
   private snapshot(): { global: unknown; workspaces: Record<string, unknown> } {
     const { preserved } = this.legacy;
     const workspaces: Record<string, unknown> = {};
-    for (const id of new Set([...Object.keys(this.workspaces), ...Object.keys(preserved.workspaces)])) {
-      const entry = { ...this.workspaces[id], ...preserved.workspaces[id] };
+    for (const id of new Set([...Object.keys(this.workspaces), ...Object.keys(preserved.workspaces), ...Object.keys(this.retired.workspaces)])) {
+      const entry = { ...this.workspaces[id], ...preserved.workspaces[id], ...this.retired.workspaces[id] };
       if (Object.keys(entry).length > 0) workspaces[id] = entry;
     }
-    return { global: withLegacyGlobal(this.globalPatch, preserved.global), workspaces };
+    const withLegacy = withLegacyGlobal(this.globalPatch, preserved.global);
+    const global = Object.keys(this.retired.global).length > 0 ? { ...withLegacy, [RETIRED_GLOBAL_KEY]: this.retired.global } : withLegacy;
+    return { global, workspaces };
   }
 
   private persist(): void {

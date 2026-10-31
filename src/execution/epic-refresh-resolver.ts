@@ -13,6 +13,7 @@ import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import { renderEpicRefreshPrompt } from './prompt-assembly.js';
+import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { resolveEpicResolverPrompts } from '../domain/setting-override.js';
 import { logger } from '../logger.js';
 
@@ -23,6 +24,7 @@ export interface EpicRefreshResolverDeps {
   epicMergeEvents: Pick<EpicMergeEventStore, 'append'>;
   onAttemptEvent?: RunnerEvents['onAttemptEvent'];
   getConfig: () => AppConfig;
+  prompts: () => EnginePrompts;
   getWorkspace: RunnerOptions['getWorkspace'];
   worktreesDir: string;
   criticDrive: RunnerOptions['criticDrive'];
@@ -146,7 +148,7 @@ export class EpicRefreshResolver {
       if (args.conflicted) {
         const drive = this.deps.criticDrive;
         const resolver = resolveEpicResolverPrompts(await this.deps.getWorkspace?.(args.target.workspaceId), this.deps.getConfig());
-        const prompt = renderEpicRefreshPrompt(resolver.refreshPrompt, resolver.fragments, {
+        const prompt = renderEpicRefreshPrompt(resolver.refreshPrompt, this.deps.prompts(), {
           defaultBranch: args.target.defaultBranch,
           branch: args.branch,
           detail: args.conflictDetail,
