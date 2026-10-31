@@ -324,7 +324,10 @@ export type WorkflowStepOutcome = (typeof WORKFLOW_STEP_OUTCOMES)[number];
 /** One execution of a Task Execution Workflow step; `outcome` is null while the step runs. */
 export const workflowStepRuns = sqliteTable('workflow_step_runs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id),
+  /** Exactly one owner: a Task, or a stored Epic identified by workspace and tracker refs. */
+  taskId: integer('task_id').references(() => tasks.id),
+  workspaceId: integer('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+  epicRef: text('epic_ref').$type<TrackerRef>(),
   workflowRef: text('workflow_ref').notNull(),
   stepId: text('step_id').notNull(),
   position: integer('position').notNull(),
@@ -338,7 +341,14 @@ export const workflowStepRuns = sqliteTable('workflow_step_runs', {
   attempt: integer('attempt'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
-}, (t) => [index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId)]);
+}, (t) => [
+  index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId),
+  index('workflow_step_runs_epic_idx').on(t.workspaceId, t.epicRef, t.workflowRef, t.stepId),
+  check(
+    'workflow_step_runs_exactly_one_owner',
+    sql`(${t.taskId} IS NOT NULL AND ${t.workspaceId} IS NULL AND ${t.epicRef} IS NULL) OR (${t.taskId} IS NULL AND ${t.workspaceId} IS NOT NULL AND ${t.epicRef} IS NOT NULL)`,
+  ),
+]);
 export type WorkflowStepRunRow = typeof workflowStepRuns.$inferSelect;
 
 /** Per-Attempt tool-call counts; Task and Epic totals are derived on read. */
@@ -628,6 +638,8 @@ export const epics = sqliteTable('epics', {
   state: text('state').$type<EpicLifecycleState>().notNull(),
   /** Member refs snapshotted at integration (JSON int array); null while live. */
   memberRefs: text('member_refs', { mode: 'json' }).$type<TrackerRef[]>(),
+  /** The `name@version` Epic workflow pinned when Epic Pre-Merge Verification last started; null before the first run. */
+  workflowRef: text('workflow_ref'),
 }, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
 export type EpicRow = typeof epics.$inferSelect;
 

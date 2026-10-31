@@ -17,7 +17,6 @@ import {
   VERIFICATION_MECHANISMS,
   STEP_TYPES,
   WORKFLOW_CHOSEN,
-  WORKFLOW_STEP_OUTCOMES,
   isEpicAttempt,
   isTaskAttempt,
   type AttemptRow,
@@ -35,11 +34,11 @@ import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchem
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
-import { WorkflowStepRunStore, type WorkflowStepOutputs } from '../../domain/workflow-step-runs.js';
-import { parseWorkflow, type WorkflowDefinition } from '../../domain/workflow.js';
+import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
 import { resolveTaskWorkflow } from '../../domain/workflow-assignment.js';
 import { resolveVarSources, validateVarOverrides, varOverridesSchema, varValueSchema, workspaceVarsFor } from '../../domain/workflow-vars.js';
 import { parseWorkflowRef } from '../../execution/workflow-engine.js';
+import { pinnedWorkflow, workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
 import { attemptDiffFiles, attemptDiffStat } from '../../execution/worktree-diff.js';
 
 const workflowVarsResponseSchema = z.object({
@@ -57,39 +56,6 @@ const workflowVarsResponseSchema = z.object({
   ),
   snapshot: z.record(z.string(), varValueSchema).nullable().meta({ description: 'The vars frozen when the workflow was pinned; an override set later applies at the next Retry. Null before the pin.', example: null }),
 });
-
-const workflowStepsResponseSchema = z.object({
-  workflowRef: z.string().nullable().meta({ example: 'implement@1' }),
-  workflowChosen: z.enum(WORKFLOW_CHOSEN).nullable().meta({ example: 'explicit' }),
-  outline: z
-    .array(z.object({ id: z.string().meta({ example: 'verify' }), children: z.array(z.string()).meta({ description: 'Ids of a `parallel:` group\'s steps; empty for a plain step.' }) }))
-    .meta({ description: 'Every step of the pinned workflow in execution order; empty for a Ticket without a workflow.' }),
-  cleanupCount: z.number().int().meta({ description: 'How many steps the workflow\'s `cleanup:` list runs on done and on Close.', example: 1 }),
-  latestVersion: z.number().int().nullable().meta({ description: 'The current Library version of the pinned workflow, which applies from the next Retry; null without a pin or once the workflow left the Library.', example: 5 }),
-  steps: z.array(
-    z.object({
-      stepId: z.string().meta({ example: 'lint' }),
-      action: z.string().meta({ example: 'run' }),
-      position: z.number().int().meta({ example: 0 }),
-      attempt: z.number().int().nullable().meta({ description: 'The `attempts:` block pass this run belongs to, 1-based; null for steps outside the block.', example: 1 }),
-      outcome: z.enum(WORKFLOW_STEP_OUTCOMES).nullable().meta({ description: 'Null while the step is running.', example: 'pass' }),
-      summary: z.string().nullable().meta({ example: 'command exited 0' }),
-      resolvedPrompt: z.string().nullable().meta({ description: 'The prompt an agent step sent, Prompt Library includes expanded; null for other actions.' }),
-      outputs: z.object({ stdout: z.string().meta({ example: 'ok\n' }), exitCode: z.number().int().nullable().meta({ example: 0 }) }).meta({ description: 'Secret values are masked.' }),
-      startedAt: z.number().meta({ example: 1784030400000 }),
-      endedAt: z.number().nullable().meta({ example: 1784030401000 }),
-    }),
-  ),
-});
-
-async function pinnedWorkflow(library: { getVersion(name: string, version: number): Promise<{ text: string }> }, ref: string): Promise<WorkflowDefinition | null> {
-  const { name, version } = parseWorkflowRef(ref);
-  try {
-    return parseWorkflow((await library.getVersion(name, version)).text, { lenient: true });
-  } catch {
-    return null;
-  }
-}
 
 /** A `GitError` whose stderr says the worktree/branch is simply gone — an expected absence, not a failure. */
 const worktreeGone = (err: unknown): boolean =>
@@ -653,28 +619,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       const task = await ctx.tasks.get(req.params.id);
       const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForTask(task.id);
-      const definition = task.workflowRef === null ? null : await pinnedWorkflow(ctx.workflows, task.workflowRef);
-      return {
-        workflowRef: task.workflowRef,
-        workflowChosen: task.workflowChosen,
-        outline: (definition?.steps ?? []).map((step) => ({ id: step.id, children: (step.parallel ?? []).map((child) => child.id) })),
-        cleanupCount: definition?.cleanup?.length ?? 0,
-        latestVersion: ctx.workflows.list().find((entry) => entry.name === task.workflowRef?.split('@')[0])?.version ?? null,
-        steps: rows
-          .filter((row) => row.workflowRef === task.workflowRef)
-          .map((row) => ({
-            stepId: row.stepId,
-            action: row.action,
-            position: row.position,
-            attempt: row.attempt,
-            outcome: row.outcome,
-            summary: row.summary,
-            resolvedPrompt: row.resolvedPrompt,
-            outputs: row.outputs === null ? { stdout: '', exitCode: null } : (JSON.parse(row.outputs) as WorkflowStepOutputs),
-            startedAt: row.startedAt,
-            endedAt: row.endedAt,
-          })),
-      };
+      return await workflowStepsResponse(ctx.workflows, { workflowRef: task.workflowRef, workflowChosen: task.workflowChosen, rows, vars: task.workflowVars });
     },
   );
 

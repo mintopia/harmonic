@@ -4,7 +4,8 @@ import { api, ApiError } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
-import type { DiffFile, EpicAttempt, Task, ModelUsage, VerificationAttempt } from '../types';
+import type { DiffFile, EpicAttempt, Task, ModelUsage, VerificationAttempt, WorkflowStepsResponse } from '../types';
+import { preCutoverAttempts } from '../epic-attempt-history-model';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
@@ -44,6 +45,7 @@ import { CriticSessions } from './ticket/Verification';
 import { ExportPanel } from './ticket/ExportPanel';
 import { epicExportTarget } from '../export-targets';
 import { EpicTimeline } from './EpicTimeline';
+import { WorkflowSteps } from './ticket/WorkflowSteps';
 import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
 import { EPIC_RESOLVER_LABEL } from '../epic-timeline-model';
 
@@ -258,15 +260,7 @@ function EpicVerificationOutput({ attempts }: { attempts: VerificationAttempt[] 
 export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className={sectionCaps}>Epic attempts</h3>
-        <span className="text-data text-muted tabular-nums">{attempts.length}</span>
-      </div>
-      {attempts.length === 0 ? (
-        <EmptyState title="No Epic attempts" className="py-8">
-          A clean Epic verification needs no resolver attempt.
-        </EmptyState>
-      ) : (
+      {attempts.length > 0 && (
         <ol className={`${card} divide-y divide-hairline`} aria-label="Epic attempt timeline">
           {attempts.map((attempt) => (
             <li key={attempt.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
@@ -292,22 +286,18 @@ export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) 
   );
 }
 
-function EpicVerificationStages({ epic }: { epic: Epic }) {
+function EarlierEpicAttempts({ attempts }: { attempts: EpicAttempt[] }) {
+  if (attempts.length === 0) return null;
   return (
-    <section className="mb-6">
-      <div className={`${sectionCaps} mb-3`}>Verification</div>
-      <div className={`${card} divide-y divide-hairline`}>
-        {(epic.verification.stages ?? []).map((stage) => (
-          <div key={stage.label} className="px-4 py-3">
-            <div className="flex items-center justify-between gap-3"><span className="text-small font-semibold text-ink">{stage.label}</span><span className="text-data text-muted">{stage.status ?? 'planned'}</span></div>
-            <div className="mt-2 flex flex-wrap gap-2">{stage.verifiers.length > 0 ? stage.verifiers.map((verifier) => <span key={verifier} className="rounded bg-raised px-2 py-1 font-data text-[11px] text-muted">{verifier}</span>) : <span className="text-small text-faint">No verifiers configured.</span>}</div>
-          </div>
-        ))}
-      </div>
+    <section className="mb-6" aria-label="Earlier Epic attempts">
+      <div className={`${sectionCaps} mb-3`}>Earlier Epic attempts (before the cutover)</div>
+      <p className={`${card} mb-3 px-3 py-2.5 text-small text-muted`}>
+        Epic verifications that ran before the workflow cutover stay listed here as history, one row per verify pass, read-only.
+      </p>
+      <EpicAttemptsTimeline attempts={attempts} />
     </section>
   );
 }
-
 
 /** The whole-Epic diff (ADR-0018): what `epic/<ref>` changes over base, fetched
  * once — unlike the live Attempt ChangesPane on TicketPage, an Epic's diff is
@@ -619,6 +609,7 @@ export function EpicPage({
   const [epic, setEpic] = useState<Epic | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [epicAttempts, setEpicAttempts] = useState<EpicAttempt[] | null>(null);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepsResponse | null>(null);
   const [childTasks, setChildTasks] = useState<Task[] | null>(null);
   const [childTotals, setChildTotals] = useState<Map<number, ModelUsage | null>>(() => new Map());
   const [diffFiles, setDiffFiles] = useState<DiffFile[] | null>(null);
@@ -651,6 +642,10 @@ export function EpicPage({
 
   useLiveEffect((live) => {
     api.epicAttempts(workspaceId, epicRef).then(({ attempts }) => live() && setEpicAttempts(attempts), toastError);
+  }, [workspaceId, epicRef, refreshKey]);
+
+  useLiveEffect((live) => {
+    api.epicWorkflowSteps(workspaceId, epicRef).then((next) => live() && setWorkflowSteps(next), toastError);
   }, [workspaceId, epicRef, refreshKey]);
 
   const childIdsRef = useRef<Set<number>>(new Set());
@@ -811,11 +806,13 @@ export function EpicPage({
                   </div>
 
                   <div className="mb-8">
-                    {epic && !epic.inPlace && <EpicVerificationStages epic={epic} />}
-                    {epicAttempts ? (
-                      <EpicAttemptsTimeline attempts={epicAttempts} />
+                    {epicAttempts && workflowSteps ? (
+                      <>
+                        <EarlierEpicAttempts attempts={preCutoverAttempts(epicAttempts, workflowSteps.steps, workflowSteps.workflowRef)} />
+                        <WorkflowSteps data={workflowSteps} attemptSelector />
+                      </>
                     ) : (
-                      <p className="text-muted">Loading Epic attempts…</p>
+                      <p className="text-muted">Loading Epic steps…</p>
                     )}
                   </div>
 

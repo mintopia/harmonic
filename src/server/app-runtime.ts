@@ -30,6 +30,7 @@ import type { Scheduler } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import { TrackerEpicService, type EpicService } from '../tracker/epic-service.js';
+import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { EventBus } from './bus.js';
@@ -430,14 +431,19 @@ export async function createRuntime(deps: {
         getConfig: promptConfig,
         prompts: () => deps.promptLibrary.enginePrompts(),
         mergeEpicIntegration: (input) => runnerRef!.mergeEpicIntegration(input),
-        criticDrive,
         commandSpawn,
+        workflows: {
+          library: deps.workflowLibrary,
+          stepRuns: new WorkflowStepRunStore(asyncDb),
+          secrets,
+          resolvePrompt: (text) => deps.promptLibrary.resolve(text),
+          drive: { run: (req) => (req.task ? runnerRef!.runEpicAgentTurn(req) : criticDrive.run(req)) },
+        },
       },
       operations: epicOperations,
       dispatchRefreshResolution: (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
       epicMergeEvents,
       epicAttempts: attempts,
-      dispatchEpicResolution: (input) => runnerRef!.resolveEpicVerification(input),
       worktreesDir,
       onEpicAttemptChanged: (attempt) => bus.emit('attempt_changed', attempt),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
@@ -449,9 +455,7 @@ export async function createRuntime(deps: {
           context: payload,
         });
       },
-      verificationAttemptStore: verificationAttempts,
       fireAndForget,
-      archive,
       resolveAdapter: resolveTracker,
     },
   );

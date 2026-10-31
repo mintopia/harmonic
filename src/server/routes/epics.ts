@@ -11,6 +11,8 @@ import { parseUnifiedDiff } from '../../domain/unified-diff.js';
 import { epicAttemptTimelineToApi } from '../serialize.js';
 import { resolveEpicWorkflow } from '../../domain/workflow-assignment.js';
 import { ATTEMPT_STATES } from '../../db/schema.js';
+import { WorkflowStepRunStore } from '../../domain/workflow-step-runs.js';
+import { workflowStepsResponse, workflowStepsResponseSchema } from '../workflow-steps-response.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
 const epicParamsSchema = z.object({
@@ -298,6 +300,31 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       return epicAttemptTimelineToApi(ctx, { workspaceId: req.params.workspaceId, epicRef: req.params.epicRef });
+    },
+  );
+
+  app.get(
+    '/workspaces/:workspaceId/epics/:epicRef/workflow-steps',
+    {
+      schema: {
+        tags: ['Epics'],
+        description: "The Epic workflow pinned on this Epic and every step the engine has executed on it, in execution order. `workflowChosen` is `workspace` or `global`, whichever Epic workflow setting the Epic's workflow resolves from.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: epicParamsSchema,
+        response: {
+          200: workflowStepsResponseSchema.describe('The workflow pin and its executed steps; `steps` is empty for an Epic that has not run on the engine.'),
+          404: errorResponse('No Workspace has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const { workspaceId, epicRef } = req.params;
+      await ctx.workspaces.assertExists(workspaceId);
+      const workflowRef = await ctx.tasks.epicWorkflowRef(workspaceId, epicRef);
+      const rows = await new WorkflowStepRunStore(ctx.asyncDb).listForOwner({ workspaceId, epicRef });
+      const workspace = await ctx.workspaces.get(workspaceId);
+      const assignment = resolveEpicWorkflow(workspace, ctx.settingsStore.getGlobal(), (name) => ctx.workflows.list().some((w) => w.name === name && w.subject === 'epic'));
+      return await workflowStepsResponse(ctx.workflows, { workflowRef, workflowChosen: workflowRef === null ? null : assignment.chosen, rows });
     },
   );
 

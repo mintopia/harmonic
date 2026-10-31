@@ -7,7 +7,7 @@ import { type Epic } from '../src/domain/epic-view.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { type PostMergeHook } from '../src/execution/branch-merge.js';
-import { EpicCoordinator, type EpicGit, type EpicIntegrate, integrationBranchName } from '../src/execution/epic-coordinator.js';
+import { EpicCoordinator, type EpicGit, type EpicIntegrate, type EpicRunWorkflow, integrationBranchName } from '../src/execution/epic-coordinator.js';
 import { type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult, runMergePolicy } from '../src/execution/merge-policy.js';
 import { Runner } from '../src/execution/runner.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
@@ -657,7 +657,7 @@ describe('epic-routes', () => {
       it('is a best-effort no-op on an inbound-only tracker (no close capability)', async () => {
         const readTicket = vi.fn(async (r: TicketRef) => ticket({ ref: r.ref }));
         const adapter = { name: 'freeform', readTicket } as unknown as TrackerAdapter;
-        await expect(closeIntegratedEpic(adapter, trackerRef(42))).resolves.toBeUndefined();
+        await expect(closeIntegratedEpic(adapter, trackerRef(42))).resolves.toBe(false);
         expect(readTicket).not.toHaveBeenCalled();
       });
     });
@@ -1020,12 +1020,10 @@ describe('epic-integrate-git', () => {
   const merged = (mergeOid = 'integrated-oid'): MergePolicyOutcome => ({ kind: 'merged', mergeOid });
 
   type VerifyFn = (args: { repoDir: string; verifiedHeadOid: string }) => Promise<VerificationDecision>;
-  type ResolveFn = (args: { repoDir: string; epicRef: string; verifiedHeadOid: string; verification: VerificationDecision }) => Promise<void>;
 
   const build = (opts: {
     git?: FakeGit;
     verify?: VerifyFn;
-    resolve?: ResolveFn;
     integrate?: EpicIntegrate;
     now?: () => number;
     verifyBackoffMs?: number;
@@ -1036,8 +1034,14 @@ describe('epic-integrate-git', () => {
   } = {}) => {
     const git = opts.git ?? new FakeGit();
     const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
-    const resolve = opts.resolve && vi.fn<ResolveFn>(opts.resolve);
     const integrate = vi.fn<EpicIntegrate>(opts.integrate ?? (async () => merged()));
+    const runWorkflow = vi.fn<EpicRunWorkflow>(async (args) => {
+      const verification = await verify({ repoDir: args.repoDir, verifiedHeadOid: args.verifiedHeadOid });
+      if (verification.outcome !== 'proceed') return { kind: 'escalated', reason: `whole-Epic verification ${verification.reason}` };
+      const merged = await integrate({ repoDir: args.repoDir, epicRef: args.epicRef, defaultBranch: args.defaultBranch, integrationBranch: args.integrationBranch });
+      if (merged.kind === 'escalated') return { kind: 'escalated', reason: `whole-Epic integrate into '${args.defaultBranch}' failed (${merged.reason}): ${merged.message}` };
+      return { kind: 'integrated', mergeOid: merged.mergeOid };
+    });
     const retire = vi.fn(async (_ref: string) => {});
     const escalate = vi.fn<(epicRef: string, reason: string) => void>();
     const markIntegrating = vi.fn(async (_epicRef: string) => {});
@@ -1050,9 +1054,7 @@ describe('epic-integrate-git', () => {
     const coord = new EpicCoordinator({
       repoDir: '/repo',
       git,
-      verify,
-      ...(resolve ? { resolve } : {}),
-      integrate,
+      runWorkflow,
       retire,
       escalate,
       now: opts.now ?? (() => (t += 600_000)),
@@ -1065,7 +1067,7 @@ describe('epic-integrate-git', () => {
       onCompletedInPlace,
       onError,
     });
-    return { coord, git, verify, resolve, integrate, retire, escalate, markIntegrating, recordIntegration, onIntegrated, onError, epicState, onCompletedInPlace };
+    return { coord, git, verify, integrate, retire, escalate, markIntegrating, recordIntegration, onIntegrated, onError, epicState, onCompletedInPlace };
   };
 
   const members = (...m: MemberMergeState[]): MemberMergeState[] => m;
@@ -1208,17 +1210,6 @@ describe('epic-integrate-git', () => {
       expect(escalate).toHaveBeenCalledWith('42', expect.stringContaining('verification'));
     });
 
-    it('verifies before dispatching the resolver and does not merge on a failed verification', async () => {
-      const { coord, verify, resolve, integrate, escalate } = build({ verify: async () => block, resolve: async () => {} });
-      const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
-      expect(out).toEqual({ status: 'waiting', reason: 'whole-Epic verification failed; resolver dispatched' });
-      expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ epicRef: '42', verifiedHeadOid: 'oid-epic-42', verification: block }));
-      if (!resolve) throw new Error('expected resolver');
-      expect(verify.mock.invocationCallOrder[0]!).toBeLessThan(resolve.mock.invocationCallOrder[0]!);
-      expect(integrate).not.toHaveBeenCalled();
-      expect(escalate).not.toHaveBeenCalled();
-    });
-
     it('escalates on an inconclusive/escalate whole-Epic verdict (fail-safe)', async () => {
       const { coord, integrate, escalate } = build({ verify: async () => inconclusive });
       const out = await coord.submit({ ref: trackerRef(42), members: members('completed') });
@@ -1295,8 +1286,7 @@ describe('epic-integrate-git', () => {
       const coordWithBadRetire = new EpicCoordinator({
         repoDir: '/repo',
         git: new FakeGit(),
-        verify: async () => proceed,
-        integrate: async () => merged(),
+        runWorkflow: async () => ({ kind: 'integrated', mergeOid: 'integrated-oid' }),
         retire: async () => {
           throw new Error('branch -d failed');
         },
@@ -1327,8 +1317,7 @@ describe('epic-integrate-git', () => {
       const coord = new EpicCoordinator({
           repoDir: '/repo',
           git,
-          verify: async () => proceed,
-          integrate: async () => merged(),
+          runWorkflow: async () => ({ kind: 'integrated', mergeOid: 'integrated-oid' }),
           retire: async () => {
             throw new Error('branch -d failed');
           },
@@ -1375,8 +1364,7 @@ describe('epic-integrate-git', () => {
       const coord = new EpicCoordinator({
           repoDir: '/repo',
           git,
-          verify: async () => proceed,
-          integrate: async () => merged(),
+          runWorkflow: async () => ({ kind: 'integrated', mergeOid: 'integrated-oid' }),
           retire,
           escalate: vi.fn(),
           now: () => clock,

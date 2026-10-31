@@ -22,6 +22,7 @@ import {
   type PlannedPrompt,
   type PlannedWorkflow,
 } from './settings-workflow-migration.js';
+import { BUNDLED_PROMPTS } from './bundled-prompts.js';
 import { MAX_ATTEMPTS_LIMIT, parseWorkflow } from './workflow.js';
 import type { WorkflowLibrary } from './workflow-library-store.js';
 
@@ -32,6 +33,7 @@ interface EpicScope {
   maxAttempts: number;
   preMerge: ReturnType<typeof resolveVerifiers>['epic']['preMerge'];
   resolvePrompt: string;
+  postMergeCheck: boolean;
 }
 
 export interface EpicMigrationPlan {
@@ -44,7 +46,7 @@ export interface EpicMigrationPlan {
 export interface EpicPlanInput {
   config: AppConfig;
   workspaces: readonly WorkspaceRow[];
-  library: { resolvePrompt: string; resolveSuffix: string };
+  library: { resolvePrompt: string; resolveSuffix: string; failingVerification?: string };
 }
 
 function scopeOf(ws: WorkspaceRow | null, input: EpicPlanInput): EpicScope {
@@ -54,7 +56,8 @@ function scopeOf(ws: WorkspaceRow | null, input: EpicPlanInput): EpicScope {
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
     preMerge: ws ? resolveVerifiers(ws, config).epic.preMerge : config.verify.epic.preMerge,
-    resolvePrompt: `${library.resolvePrompt}\n\n${resolveSuffix}`,
+    resolvePrompt: `${library.resolvePrompt}\n\n${library.failingVerification ?? BUNDLED_PROMPTS.epicFailingVerification.text}\n\n${resolveSuffix}`,
+    postMergeCheck: config.merge.postMergeCheck,
   };
 }
 
@@ -68,6 +71,7 @@ function workflowFor(name: string, label: string, description: string, scopeKey:
     return code;
   };
   refuseExpressions(scope.resolvePrompt, where('verify.epic.resolvePrompt'));
+  const postMergeLines = scope.postMergeCheck ? scope.preMerge.commands.map((command, i) => commandRunLine(command, where(`verify.epic.preMerge.commands[${i}]`))) : [];
   const resolveCode = addEntry(`migrated-${scopeKey}-epic-resolve`, 'Epic resolve prompt, migrated from your settings.', scope.resolvePrompt);
   const verify = scope.preMerge.commands.map((command, i) => ({ id: `verify-${i + 1}`, run: commandRunLine(command, where(`verify.epic.preMerge.commands[${i}]`)) }));
   const critics = scope.preMerge.critics.map((critic, i) => {
@@ -92,7 +96,7 @@ function workflowFor(name: string, label: string, description: string, scopeKey:
         },
       },
       { id: 'merge', uses: 'merge' },
-      { id: 'post-merge-check', uses: 'post-merge-check' },
+      { id: 'post-merge-check', uses: 'post-merge-check', ...(postMergeLines.length > 0 ? { with: { run: postMergeLines.length === 1 ? postMergeLines[0] : `set -e\n${postMergeLines.map((line) => `(${line})`).join('\n')}` } } : {}) },
       { id: 'close-ticket', uses: 'close-ticket' },
     ],
     cleanup: [{ id: 'cleanup', uses: 'cleanup' }],

@@ -16,7 +16,7 @@ export interface LegacyResumeDeps {
 /** Puts a pre-workflow Ticket's workflow at the step its last Attempt reached; a no-op once the workflow has step runs. */
 export async function seedLegacyResume(deps: LegacyResumeDeps, task: TaskRow, run: AttemptRow, escalated: boolean): Promise<void> {
   const ref = task.workflowRef;
-  if (ref === null || (await deps.stepRuns.latestByStep(task.id, ref)).size > 0) return;
+  if (ref === null || (await deps.stepRuns.latestByStep({ taskId: task.id }, ref)).size > 0) return;
   const { name, version } = parseWorkflowRef(ref);
   const workflow = parseWorkflow((await deps.library.getVersion(name, version)).text, { lenient: true });
   const max = resolveAttemptsMax(workflow.attempts.max, snapshotVars(task.workflowVars, workflow.vars));

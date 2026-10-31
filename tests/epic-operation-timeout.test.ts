@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EpicCoordinator, type EpicGit, type EpicIntegrate } from '../src/execution/epic-coordinator.js';
+import { EpicCoordinator, type EpicGit, type EpicRunWorkflow } from '../src/execution/epic-coordinator.js';
 import { RESOLVE_TURN_TIMEOUT_MS } from '../src/execution/merge-coordinator.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
@@ -17,15 +17,14 @@ describe('Epic operation timeout', () => {
 
   const submitWithTwoConflictTurns = async (operationTimeoutMs?: number) => {
     const escalate = vi.fn();
-    const integrate: EpicIntegrate = async () => {
+    const runWorkflow: EpicRunWorkflow = async () => {
       await new Promise((resolve) => setTimeout(resolve, 2 * RESOLVE_TURN_TIMEOUT_MS + 60_000));
-      return { kind: 'merged', mergeOid: 'merged-oid' };
+      return { kind: 'integrated', mergeOid: 'merged-oid' };
     };
     const coord = new EpicCoordinator({
       repoDir: '/repo',
       git: git as EpicGit,
-      verify: async () => ({ outcome: 'proceed', reason: 'ok' }),
-      integrate,
+      runWorkflow,
       retire: async () => {},
       escalate,
       ...(operationTimeoutMs !== undefined ? { operationTimeoutMs } : {}),

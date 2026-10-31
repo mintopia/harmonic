@@ -97,6 +97,11 @@ export interface WorkflowStepsResponse {
   workflowChosen: WorkflowChosen | null;
   outline: { id: string; children: string[] }[];
   cleanupCount: number;
+  /** What the pinned workflow says each step is, by step id; children and cleanup steps included. */
+  stepInfo?: Record<string, { uses: string; detail: string | null; condition: string | null }>;
+  blockStepIds?: string[];
+  cleanupIds?: string[];
+  maxAttempts?: number | null;
   latestVersion: number | null;
   steps: WorkflowStepRun[];
 }
