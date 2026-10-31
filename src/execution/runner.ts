@@ -55,7 +55,7 @@ import { resolveBeforeClassifier, resolveTaskWorkflow, workflowInputOf } from '.
 import { resolveVars, workspaceVarsFor, type VarRecord } from '../domain/workflow-vars.js';
 import { parseWorkflow } from '../domain/workflow.js';
 import type { WorkflowChosen } from '../db/schema.js';
-import { WorkflowEngine } from './workflow-engine.js';
+import { WorkflowEngine, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
 import { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
@@ -245,7 +245,7 @@ export class Runner {
       openPullRequest: (task, run) => this.autoDrive?.openPullRequest(task, run) ?? Promise.resolve(null),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
-      onStepChanged: (taskId) => this.events.onStepChanged?.(taskId),
+      onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),
       boundary: async (task) => (await this.runControl.checkRunBoundary(task.id)).stop,
       agent: {
         drive: { run: (req) => (req.task ? this.turnDriver.runAgentTurn(req) : this.criticDrive.run(req)) },
@@ -1004,6 +1004,10 @@ export class Runner {
   }
 
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
+  async runEpicAgentTurn(req: AgentDriveRequest<EpicSubject>): Promise<AgentDriveResult> {
+    return this.verification.runEpicAgentTurn(req);
+  }
+
   async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
     return this.verification.resolveEpicVerification(input);
   }

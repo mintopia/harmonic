@@ -378,6 +378,7 @@ export const api: typeof RealApi = {
   deleteWorkflow: (_name: string) => ok({}),
   workflowVars: (_id: number) => ok(storyVars()),
   setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),
+  epicWorkflowSteps: (_workspaceId: number, _epicRef: string) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
   workflowSteps: (_id: number) => ok(workflowStory
     ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, steps: [{ stepId: 'implement', action: 'agent', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null }, startedAt: 1, endedAt: 2 }] }
     : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),

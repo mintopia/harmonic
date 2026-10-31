@@ -1,6 +1,22 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { workflowStepRuns, type WorkflowStepOutcome, type WorkflowStepRunRow } from '../db/schema.js';
+import type { TrackerRef } from '../tracker/adapter.js';
+
+/** Who a step run belongs to: a Task, or a stored Epic identified by workspace and tracker refs. */
+export type StepRunOwner = { taskId: number } | { workspaceId: number; epicRef: TrackerRef };
+
+export function stepRunOwnerKey(owner: StepRunOwner): string {
+  return 'taskId' in owner ? `task:${owner.taskId}` : `epic:${owner.workspaceId}:${owner.epicRef}`;
+}
+
+function ownerColumns(owner: StepRunOwner): { taskId: number | null; workspaceId: number | null; epicRef: TrackerRef | null } {
+  return 'taskId' in owner ? { taskId: owner.taskId, workspaceId: null, epicRef: null } : { taskId: null, workspaceId: owner.workspaceId, epicRef: owner.epicRef };
+}
+
+function ownerWhere(owner: StepRunOwner) {
+  return 'taskId' in owner ? eq(workflowStepRuns.taskId, owner.taskId) : and(eq(workflowStepRuns.workspaceId, owner.workspaceId), eq(workflowStepRuns.epicRef, owner.epicRef));
+}
 
 export interface WorkflowStepOutputs {
   stdout: string;
@@ -15,14 +31,13 @@ export interface WorkflowStepOutputs {
   findings?: string[];
 }
 
-export interface WorkflowStepRunStart {
-  taskId: number;
+export type WorkflowStepRunStart = StepRunOwner & {
   workflowRef: string;
   stepId: string;
   position: number;
   action: string;
   attempt?: number | null;
-}
+};
 
 export interface WorkflowStepRunFinish {
   outcome: WorkflowStepOutcome;
@@ -30,8 +45,7 @@ export interface WorkflowStepRunFinish {
   summary: string;
 }
 
-export interface WorkflowStepRunSeed {
-  taskId: number;
+export type WorkflowStepRunSeed = StepRunOwner & {
   workflowRef: string;
   stepId: string;
   position: number;
@@ -39,20 +53,24 @@ export interface WorkflowStepRunSeed {
   attempt: number | null;
   outcome: WorkflowStepOutcome;
   summary: string;
-}
+};
 
 export class WorkflowStepRunStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   start(input: WorkflowStepRunStart, now: number = Date.now()): Promise<WorkflowStepRunRow> {
-    return this.db.write((db) => db.insert(workflowStepRuns).values({ ...input, startedAt: now }).returning().get());
+    const { workflowRef, stepId, position, action, attempt } = input;
+    return this.db.write((db) => db.insert(workflowStepRuns).values({ ...ownerColumns(input), workflowRef, stepId, position, action, attempt, startedAt: now }).returning().get());
   }
 
   async seed(rows: readonly WorkflowStepRunSeed[], now: number = Date.now()): Promise<void> {
     if (rows.length === 0) return;
     const outputs = JSON.stringify({ stdout: '', exitCode: null } satisfies WorkflowStepOutputs);
     await this.db.write(async (db) => {
-      for (const row of rows) await db.insert(workflowStepRuns).values({ ...row, outputs, startedAt: now, endedAt: now }).run();
+      for (const row of rows) {
+        const { workflowRef, stepId, position, action, attempt, outcome, summary } = row;
+        await db.insert(workflowStepRuns).values({ ...ownerColumns(row), workflowRef, stepId, position, action, attempt, outcome, summary, outputs, startedAt: now, endedAt: now }).run();
+      }
     });
   }
 
@@ -70,12 +88,16 @@ export class WorkflowStepRunStore {
     await this.db.write((db) => db.update(workflowStepRuns).set({ resolvedPrompt: prompt }).where(eq(workflowStepRuns.id, id)).run());
   }
 
-  listForTask(taskId: number): Promise<WorkflowStepRunRow[]> {
-    return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.taskId, taskId)).orderBy(asc(workflowStepRuns.id)).all());
+  listForOwner(owner: StepRunOwner): Promise<WorkflowStepRunRow[]> {
+    return this.db.read((db) => db.select().from(workflowStepRuns).where(ownerWhere(owner)).orderBy(asc(workflowStepRuns.id)).all());
   }
 
-  async acceptFailed(taskId: number, workflowRef: string): Promise<number> {
-    const failed = [...(await this.latestByStep(taskId, workflowRef)).values()].filter((row) => row.outcome === 'fail' || row.outcome === 'inconclusive' || row.outcome === 'conflict');
+  listForTask(taskId: number): Promise<WorkflowStepRunRow[]> {
+    return this.listForOwner({ taskId });
+  }
+
+  async acceptFailed(owner: StepRunOwner, workflowRef: string): Promise<number> {
+    const failed = [...(await this.latestByStep(owner, workflowRef)).values()].filter((row) => row.outcome === 'fail' || row.outcome === 'inconclusive' || row.outcome === 'conflict');
     await this.db.write(async (db) => {
       for (const row of failed) {
         await db
@@ -89,9 +111,9 @@ export class WorkflowStepRunStore {
   }
 
   /** The latest run of each step under `workflowRef`, by step id; a run left `running` has a null outcome. */
-  async latestByStep(taskId: number, workflowRef: string): Promise<Map<string, WorkflowStepRunRow>> {
+  async latestByStep(owner: StepRunOwner, workflowRef: string): Promise<Map<string, WorkflowStepRunRow>> {
     const latest = new Map<string, WorkflowStepRunRow>();
-    for (const row of await this.listForTask(taskId)) if (row.workflowRef === workflowRef) latest.set(row.stepId, row);
+    for (const row of await this.listForOwner(owner)) if (row.workflowRef === workflowRef) latest.set(row.stepId, row);
     return latest;
   }
 }

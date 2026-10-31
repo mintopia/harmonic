@@ -22513,6 +22513,87 @@
                       "description": "The current Library version of the pinned workflow, which applies from the next Retry; null without a pin or once the workflow left the Library.",
                       "example": 5
                     },
+                    "stepInfo": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "uses": {
+                            "type": "string",
+                            "example": "command"
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "What the step runs: the command, the Prompt Library name of an agent step, or the model of a critic.",
+                            "example": "npm test"
+                          },
+                          "condition": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The step's `if:` expression.",
+                            "example": "attempt.number > 1"
+                          }
+                        },
+                        "required": [
+                          "uses",
+                          "detail",
+                          "condition"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Per step id, what the pinned workflow says the step is: every step, `parallel:` children and `cleanup:` steps included."
+                    },
+                    "blockStepIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Ids of the steps inside the `attempts:` block.",
+                      "example": [
+                        "resolve",
+                        "verify"
+                      ]
+                    },
+                    "cleanupIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Ids of the `cleanup:` steps in order.",
+                      "example": [
+                        "cleanup"
+                      ]
+                    },
+                    "maxAttempts": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The `attempts:` block bound with vars resolved; null without a block or when it does not resolve.",
+                      "example": 3
+                    },
                     "steps": {
                       "type": "array",
                       "items": {
@@ -22653,6 +22734,10 @@
                     "outline",
                     "cleanupCount",
                     "latestVersion",
+                    "stepInfo",
+                    "blockStepIds",
+                    "cleanupIds",
+                    "maxAttempts",
                     "steps"
                   ],
                   "additionalProperties": false,
@@ -43883,6 +43968,372 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EpicAttemptTimelineResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/workflow-steps": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "The Epic workflow pinned on this Epic and every step the engine has executed on it, in execution order. `workflowChosen` is `workspace` or `global`, whichever Epic workflow setting the Epic's workflow resolves from. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "example": "42",
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workflow pin and its executed steps; `steps` is empty for an Epic that has not run on the engine.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflowRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": "implement@1"
+                    },
+                    "workflowChosen": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "explicit",
+                            "label",
+                            "classifier",
+                            "workspace",
+                            "global"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": "explicit"
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "verify"
+                          },
+                          "children": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Ids of a `parallel:` group's steps; empty for a plain step."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "children"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Every step of the pinned workflow in execution order; empty for a Ticket without a workflow."
+                    },
+                    "cleanupCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "How many steps the workflow's `cleanup:` list runs on done and on Close.",
+                      "example": 1
+                    },
+                    "latestVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The current Library version of the pinned workflow, which applies from the next Retry; null without a pin or once the workflow left the Library.",
+                      "example": 5
+                    },
+                    "stepInfo": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "uses": {
+                            "type": "string",
+                            "example": "command"
+                          },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "What the step runs: the command, the Prompt Library name of an agent step, or the model of a critic.",
+                            "example": "npm test"
+                          },
+                          "condition": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The step's `if:` expression.",
+                            "example": "attempt.number > 1"
+                          }
+                        },
+                        "required": [
+                          "uses",
+                          "detail",
+                          "condition"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Per step id, what the pinned workflow says the step is: every step, `parallel:` children and `cleanup:` steps included."
+                    },
+                    "blockStepIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Ids of the steps inside the `attempts:` block.",
+                      "example": [
+                        "resolve",
+                        "verify"
+                      ]
+                    },
+                    "cleanupIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Ids of the `cleanup:` steps in order.",
+                      "example": [
+                        "cleanup"
+                      ]
+                    },
+                    "maxAttempts": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The `attempts:` block bound with vars resolved; null without a block or when it does not resolve.",
+                      "example": 3
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stepId": {
+                            "type": "string",
+                            "example": "lint"
+                          },
+                          "action": {
+                            "type": "string",
+                            "example": "run"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991,
+                            "example": 0
+                          },
+                          "attempt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The `attempts:` block pass this run belongs to, 1-based; null for steps outside the block.",
+                            "example": 1
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "inconclusive",
+                                  "conflict",
+                                  "skipped"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Null while the step is running.",
+                            "example": "pass"
+                          },
+                          "summary": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": "command exited 0"
+                          },
+                          "resolvedPrompt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The prompt an agent step sent, Prompt Library includes expanded; null for other actions."
+                          },
+                          "outputs": {
+                            "type": "object",
+                            "properties": {
+                              "stdout": {
+                                "type": "string",
+                                "example": "ok\n"
+                              },
+                              "exitCode": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "example": 0
+                              }
+                            },
+                            "required": [
+                              "stdout",
+                              "exitCode"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Secret values are masked."
+                          },
+                          "startedAt": {
+                            "type": "number",
+                            "example": 1784030400000
+                          },
+                          "endedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "example": 1784030401000
+                          }
+                        },
+                        "required": [
+                          "stepId",
+                          "action",
+                          "position",
+                          "attempt",
+                          "outcome",
+                          "summary",
+                          "resolvedPrompt",
+                          "outputs",
+                          "startedAt",
+                          "endedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "workflowRef",
+                    "workflowChosen",
+                    "outline",
+                    "cleanupCount",
+                    "latestVersion",
+                    "stepInfo",
+                    "blockStepIds",
+                    "cleanupIds",
+                    "maxAttempts",
+                    "steps"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The workflow pin and its executed steps; `steps` is empty for an Epic that has not run on the engine."
                 }
               }
             }

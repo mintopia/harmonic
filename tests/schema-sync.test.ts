@@ -7,6 +7,7 @@ import { openAsyncDb } from '../src/db/async.js';
 import { seedWorkspace } from './helpers.js';
 import { parseBaseline, syncSchema } from '../src/db/schema-sync.js';
 import { logger } from '../src/logger.js';
+import { tasks } from '../src/db/schema.js';
 
 const BASELINE = join(import.meta.dirname, '..', 'drizzle', '0000_baseline.sql');
 
@@ -15,7 +16,7 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     const baseline = parseBaseline(readFileSync(BASELINE, 'utf8'));
     expect(baseline.tables.map((t) => t.name)).toContain('epics');
     expect(baseline.tables.find((t) => t.name === 'epics')?.columns.map((c) => c.name)).toEqual([
-      'workspace_id', 'tracker_ref', 'kind', 'merge_commit', 'state', 'member_refs',
+      'workspace_id', 'tracker_ref', 'kind', 'merge_commit', 'state', 'member_refs', 'workflow_ref',
     ]);
     expect(baseline.indexes.length).toBeGreaterThan(0);
   });
@@ -224,5 +225,32 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
       client.close();
       rmSync(dataDir, { recursive: true, force: true });
     });
+  });
+});
+
+describe('workflow_step_runs Epic owner upgrade', () => {
+  it('rebuilds an older workflow_step_runs with a NOT NULL task_id, keeping Ticket rows', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-stepruns-'));
+    const first = await openAsyncDb(dataDir);
+    const taskId = (await first.write((d) => d.insert(tasks).values({ prompt: 'p', state: 'ready', workingDir: '/tmp/x', createdAt: 1, updatedAt: 1 } as typeof tasks.$inferInsert).returning().get())).id;
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('PRAGMA foreign_keys = OFF');
+    await sqlite.execute('DROP TABLE workflow_step_runs');
+    await sqlite.execute(
+      'CREATE TABLE `workflow_step_runs` (`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL, `task_id` integer NOT NULL, `workflow_ref` text NOT NULL, `step_id` text NOT NULL, `position` integer NOT NULL, `action` text NOT NULL, `outcome` text, `outputs` text, `summary` text, `resolved_prompt` text, `attempt` integer, `started_at` integer NOT NULL, `ended_at` integer)',
+    );
+    await sqlite.execute(`INSERT INTO workflow_step_runs (task_id, workflow_ref, step_id, position, action, started_at) VALUES (${taskId}, 'w@1', 's', 0, 'run', 1)`);
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const columns = (await sqlite.execute('pragma table_info(workflow_step_runs)')).rows;
+    expect(columns.map((r) => String(r.name))).toEqual(expect.arrayContaining(['workspace_id', 'epic_ref']));
+    expect(columns.find((r) => r.name === 'task_id')?.notnull).toBe(0);
+    expect((await sqlite.execute('select task_id, workspace_id, epic_ref from workflow_step_runs')).rows.map((r) => [r.task_id, r.workspace_id, r.epic_ref])).toEqual([[taskId, null, null]]);
+    const indexes = (await sqlite.execute("select name from sqlite_master where type = 'index' and tbl_name = 'workflow_step_runs'")).rows.map((r) => String(r.name));
+    expect(indexes).toContain('workflow_step_runs_epic_idx');
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
   });
 });

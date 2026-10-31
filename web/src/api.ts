@@ -255,6 +255,7 @@ export const api = {
   deleteWorkflow: (name: string) => request<unknown>('DELETE', `/api/workflows/${encodeURIComponent(name)}`),
   workflowVars: (id: number) => request<TaskWorkflowVars>('GET', `/api/tasks/${id}/workflow-vars`),
   setWorkflowVars: (id: number, vars: Record<string, string | number | boolean>) => request<TaskWorkflowVars>('PUT', `/api/tasks/${id}/workflow-vars`, { vars }),
+  epicWorkflowSteps: (workspaceId: number, epicRef: TrackerRef) => request<WorkflowStepsResponse>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}/workflow-steps`),
   workflowSteps: (id: number) => request<WorkflowStepsResponse>('GET', `/api/tasks/${id}/workflow-steps`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) =>
     request<Task>('POST', '/api/tasks', input),

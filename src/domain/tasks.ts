@@ -697,6 +697,19 @@ export class TaskService {
     await this.emitEpicHeldMembers(workspaceId, trackerRef);
   }
 
+  async epicWorkflowRef(workspaceId: number, ref: TrackerRef): Promise<string | null> {
+    const row = await this.db.read((db) =>
+      db.select({ workflowRef: epics.workflowRef }).from(epics).where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref))).get(),
+    );
+    return row?.workflowRef ?? null;
+  }
+
+  async setEpicWorkflowRef(workspaceId: number, ref: TrackerRef, workflowRef: string): Promise<void> {
+    await this.db.write(async (db) => {
+      await db.update(epics).set({ workflowRef }).where(and(eq(epics.workspaceId, workspaceId), eq(epics.trackerRef, ref))).run();
+    });
+  }
+
   /** Mark the durable Epic as passing through its whole-Epic verification and merge gate. */
   async markEpicIntegrating(workspaceId: number, trackerRef: TrackerRef): Promise<void> {
     await this.db.write(async (db) => {

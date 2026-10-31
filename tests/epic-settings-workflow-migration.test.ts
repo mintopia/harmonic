@@ -52,6 +52,16 @@ describe('Epic settings to workflows migration', () => {
     expect(readFileSync(join(harness.dir, 'prompts', 'migrated-epic-global-epic-resolve.json'), 'utf8')).toContain('Stay on `{branch}` and be brief.');
   });
 
+  it('feeds the configured Epic commands to the post-merge check and reports the failing verification to the resolver', async () => {
+    const harness = await boot({ global: GLOBAL_EPIC });
+
+    await migrate(harness);
+
+    const post = workflowDef(harness, 'migrated-epic-global').steps.find((step) => step.id === 'post-merge-check');
+    expect(post?.with).toEqual({ run: 'npm test' });
+    expect(readFileSync(join(harness.dir, 'prompts', 'migrated-epic-global-epic-resolve.json'), 'utf8')).toContain('## Failing Epic verification\\n{reason}');
+  });
+
   it('carries the old maxAttempts value into the workflow attempts limit', async () => {
     const harness = await boot({ global: GLOBAL_EPIC, workspaces: [{ name: 'Gamma', overrides: { maxAttempts: 6 } }] });
 

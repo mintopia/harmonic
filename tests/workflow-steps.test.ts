@@ -66,12 +66,13 @@ describe('WorkflowSteps', () => {
     expect(rows).toHaveLength(3);
     expect(rows[0]!.textContent).toContain('build');
     expect(rows[0]!.textContent).toContain('run');
-    expect(rows[0]!.textContent).toContain('passed');
+    expect(rows[0]!.querySelector('[role="img"][aria-label="passed"]')).not.toBeNull();
     expect(rows[0]!.textContent).toContain('exit 0 · 2 lines · last: ok');
     expect(rows[1]!.textContent).toContain('command');
-    expect(rows[1]!.textContent).toContain('failed');
+    expect(rows[1]!.querySelector('[role="img"][aria-label="failed"]')).not.toBeNull();
+    expect(rows[1]!.textContent).toContain('1boom');
     expect(rows[1]!.textContent).toContain('exit 1 · 1 line · last: boom');
-    expect(rows[2]!.textContent).toContain('running');
+    expect(rows[2]!.querySelector('[role="img"][aria-label="running"]')).not.toBeNull();
     expect(rows[2]!.textContent).not.toContain('exit');
     expect(host.textContent).toContain('implement v2');
   });
@@ -81,9 +82,9 @@ describe('WorkflowSteps', () => {
       createElement(WorkflowSteps, { data: response([step({ stepId: 'build', action: 'agent', resolvedPrompt: 'Do the thing' }), step({ stepId: 'lint', position: 1 })]) }),
     );
     const rows = [...host.querySelectorAll('li')];
-    expect(rows[0]!.querySelector('details summary')?.textContent).toBe('Resolved Prompt');
+    expect(rows[0]!.querySelector('details details summary')?.textContent).toBe('Resolved Prompt');
     expect(rows[0]!.querySelector('details pre')?.textContent).toBe('Do the thing');
-    expect(rows[1]!.querySelector('details')).toBeNull();
+    expect(rows[1]!.querySelector('details details')).toBeNull();
   });
 
   it('renders a re-run step as a second row without duplicate keys', async () => {

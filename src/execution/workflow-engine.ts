@@ -2,14 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppConfig, VerificationCommand } from '../config.js';
-import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
+import type { AttemptRow, TaskOrigin, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
+import type { TrackerRef } from '../tracker/adapter.js';
+import type { VarRecord } from '../domain/workflow-vars.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, findInterpolations, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
 import { agentStepWith, criticStepWith, parseWorkflow, resolveAttemptsMax, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { snapshotVars } from '../domain/workflow-vars.js';
 import type { ModelOptionResolution } from '../domain/model-options.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
-import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { stepRunOwnerKey, type StepRunOwner, type WorkflowStepOutputs, type WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
 import { errorMessage } from '../error-handling.js';
 import type { CriticDriveRequest, CriticDriveResult } from '../verification/critic.js';
@@ -22,6 +24,34 @@ import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { PROMPT_CODE_PATTERN } from '../domain/prompt-library.js';
 import { parseCriticOutput } from '../verification/critic-schema.js';
 
+/** What the engine reads of the thing it runs on: a Task row, or an Epic. */
+export interface EngineSubject {
+  id?: number;
+  epicRef?: TrackerRef;
+  workflowRef: string | null;
+  workflowVars: VarRecord | null;
+  prompt: string;
+  feedback: string | null;
+  trackerTitle: string | null;
+  trackerBody: string | null;
+  trackerLabels: string[] | null;
+  trackerRef: TrackerRef | null;
+  origin: TaskOrigin;
+  workspaceId: number | null;
+  workingDir: string;
+}
+
+export interface EpicSubject extends EngineSubject {
+  epicRef: TrackerRef;
+  workspaceId: number;
+}
+
+export function stepRunOwner(subject: EngineSubject): StepRunOwner {
+  if (subject.epicRef !== undefined && subject.workspaceId !== null) return { workspaceId: subject.workspaceId, epicRef: subject.epicRef };
+  if (subject.id !== undefined) return { taskId: subject.id };
+  throw new Error('workflow subject has neither a Task id nor an Epic ref');
+}
+
 export const ONLY_THE_AGENT_COMMITS = 'only the agent commits';
 export const UNCOMMITTED_AFTER_AGENT = 'uncommitted changes remain after the agent turn';
 export const DEFAULT_CONTINUE_PROMPT = 'You have uncommitted changes in the worktree. Commit your work with a clear message, then stop.';
@@ -32,8 +62,8 @@ const DEFAULT_RUN_TIMEOUT_SECONDS = 600;
 const ESCALATION_OUTPUT_CHARS = 4000;
 
 /** An agent step carries `task`, `run` and `stepRowId` so the driver can run a full session turn; a critic request carries none. */
-export interface AgentDriveRequest extends CriticDriveRequest {
-  task?: TaskRow;
+export interface AgentDriveRequest<S extends EngineSubject = TaskRow> extends CriticDriveRequest {
+  task?: S;
   run?: AttemptRow;
   stepRowId?: number;
 }
@@ -45,35 +75,36 @@ export interface AgentDriveResult extends CriticDriveResult {
   escalate?: string;
 }
 
-export interface AgentDrive {
-  run(req: AgentDriveRequest): Promise<AgentDriveResult>;
+export interface AgentDrive<S extends EngineSubject = TaskRow> {
+  run(req: AgentDriveRequest<S>): Promise<AgentDriveResult>;
 }
 
-export interface WorkflowEngineDeps {
+export interface WorkflowEngineDeps<S extends EngineSubject = TaskRow> {
   library: { getVersion(name: string, version: number): Promise<WorkflowEntry> };
   stepRuns: WorkflowStepRunStore;
   spawn: CommandSpawn;
-  secrets: (task: TaskRow) => Promise<Record<string, string>>;
-  workspaceName?: (task: TaskRow) => Promise<string>;
-  cwdFor: (task: TaskRow) => string;
-  baseBranchFor: (task: TaskRow) => Promise<string>;
-  mergeBranch?: (task: TaskRow, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
-  openPullRequest?: (task: TaskRow, run: AttemptRow) => Promise<string | null>;
-  closeTicket?: (task: TaskRow, comment: string | undefined) => Promise<boolean>;
-  markTicketClosePending?: (task: TaskRow) => Promise<void>;
-  commentOnTicket?: (task: TaskRow, body: string) => Promise<boolean>;
-  escalate: (task: TaskRow, run: AttemptRow, reason: string) => Promise<void>;
-  complete: (task: TaskRow, run: AttemptRow) => Promise<void>;
-  onStepChanged?: (taskId: number) => void;
-  boundary?: (task: TaskRow) => Promise<boolean>;
+  secrets: (task: S) => Promise<Record<string, string>>;
+  workspaceName?: (task: S) => Promise<string>;
+  cwdFor: (task: S) => string;
+  baseBranchFor: (task: S) => Promise<string>;
+  mergeBranch?: (task: S, run: AttemptRow) => Promise<MergeIntoBaseOutcome>;
+  openPullRequest?: (task: S, run: AttemptRow) => Promise<string | null>;
+  closeTicket?: (task: S, comment: string | undefined) => Promise<boolean>;
+  markTicketClosePending?: (task: S) => Promise<void>;
+  commentOnTicket?: (task: S, body: string) => Promise<boolean>;
+  escalate: (task: S, run: AttemptRow, reason: string) => Promise<void>;
+  complete: (task: S, run: AttemptRow) => Promise<void>;
+  onStepChanged?: (owner: StepRunOwner) => void;
+  boundary?: (task: S) => Promise<boolean>;
   agent: {
-    drive: AgentDrive;
+    drive: AgentDrive<S>;
     getConfig: () => Pick<AppConfig, 'harnesses'>;
     prompts: () => EnginePrompts;
-    route: (task: TaskRow) => Promise<ResolvedRoute>;
-    resolveOption: (task: TaskRow, code: string) => Promise<ModelOptionResolution>;
+    route: (task: S) => Promise<ResolvedRoute>;
+    resolveOption: (task: S, code: string) => Promise<ModelOptionResolution>;
     resolvePrompt: (text: string) => Promise<string>;
-    promptFields: (task: TaskRow) => Promise<DriveFields>;
+    promptFields: (task: S) => Promise<DriveFields & Record<string, string>>;
+    healFields?: (task: S, heal: { reason: string; output: string }) => { reason: string; output: string };
     timeoutMs?: number;
     criticTimeoutMs?: number;
   };
@@ -105,8 +136,8 @@ interface AgentRunState {
   session?: { key: string; id: string };
 }
 
-interface RunContext {
-  task: TaskRow;
+interface RunContext<S extends EngineSubject> {
+  task: S;
   run: AttemptRow;
   ref: string;
   secrets: string[];
@@ -131,18 +162,18 @@ export function parseWorkflowRef(ref: string): { name: string; version: number }
   return { name: ref.slice(0, at), version: Number(ref.slice(at + 1)) };
 }
 
-export class WorkflowEngine {
-  private readonly warmSessions = new Map<number, { key: string; id: string }>();
+export class WorkflowEngine<S extends EngineSubject = TaskRow> {
+  private readonly warmSessions = new Map<string, { key: string; id: string }>();
 
-  private readonly healOutput = new Map<number, string>();
+  private readonly healOutput = new Map<string, string>();
 
-  constructor(private readonly deps: WorkflowEngineDeps) {}
+  constructor(private readonly deps: WorkflowEngineDeps<S>) {}
 
-  private async prepare(task: TaskRow, run: AttemptRow, reuseSession = false): Promise<{ workflow: ReturnType<typeof parseWorkflow>; ctx: RunContext }> {
+  private async prepare(task: S, run: AttemptRow, reuseSession = false): Promise<{ workflow: ReturnType<typeof parseWorkflow>; ctx: RunContext<S> }> {
     const ref = task.workflowRef!;
     const { name, version } = parseWorkflowRef(ref);
     const workflow = parseWorkflow((await this.deps.library.getVersion(name, version)).text, { lenient: true });
-    const latest = await this.deps.stepRuns.latestByStep(task.id, ref);
+    const latest = await this.deps.stepRuns.latestByStep(stepRunOwner(task), ref);
     const secretMap = await this.deps.secrets(task);
     const stepsContext: Record<string, Value> = {};
     for (const [stepId, prior] of latest) {
@@ -157,13 +188,13 @@ export class WorkflowEngine {
       vars: snapshotVars(task.workflowVars, workflow.vars),
       secrets: secretMap,
     };
-    const warm = reuseSession ? this.warmSessions.get(task.id) : undefined;
-    const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, halted: false };
+    const warm = reuseSession ? this.warmSessions.get(stepRunOwnerKey(stepRunOwner(task))) : undefined;
+    const ctx: RunContext<S> = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: warm ? { session: warm } : {}, halted: false };
     return { workflow, ctx };
   }
 
   /** `resumed` false marks a Retry: the counter and later steps start over. */
-  async run(task: TaskRow, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
+  async run(task: S, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run, reuseSession);
     const { start, end } = workflow.attempts;
     if (!resumed) {
@@ -179,29 +210,29 @@ export class WorkflowEngine {
     if (ctx.halted) return;
     await this.deps.complete(task, run);
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
-    this.warmSessions.delete(task.id);
+    this.warmSessions.delete(stepRunOwnerKey(stepRunOwner(task)));
   }
 
-  async acceptFailed(task: TaskRow): Promise<void> {
-    await this.deps.stepRuns.acceptFailed(task.id, task.workflowRef!);
-    this.deps.onStepChanged?.(task.id);
+  async acceptFailed(task: S): Promise<void> {
+    await this.deps.stepRuns.acceptFailed(stepRunOwner(task), task.workflowRef!);
+    this.deps.onStepChanged?.(stepRunOwner(task));
   }
 
-  async close(task: TaskRow, run: AttemptRow): Promise<void> {
+  async close(task: S, run: AttemptRow): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run);
-    this.warmSessions.delete(task.id);
+    this.warmSessions.delete(stepRunOwnerKey(stepRunOwner(task)));
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
   }
 
-  private async runAttemptsBlock(ctx: RunContext, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[], fresh: boolean): Promise<boolean> {
+  private async runAttemptsBlock(ctx: RunContext<S>, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[], fresh: boolean): Promise<boolean> {
     try {
       return await this.attemptsLoop(ctx, workflow, body, fresh);
     } finally {
-      this.healOutput.delete(ctx.task.id);
+      this.healOutput.delete(stepRunOwnerKey(stepRunOwner(ctx.task)));
     }
   }
 
-  private async attemptsLoop(ctx: RunContext, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[], fresh: boolean): Promise<boolean> {
+  private async attemptsLoop(ctx: RunContext<S>, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[], fresh: boolean): Promise<boolean> {
     const max = resolveAttemptsMax(workflow.attempts.max, snapshotVars(ctx.task.workflowVars, workflow.vars));
     if (!max.ok) {
       await this.deps.escalate(ctx.task, ctx.run, `workflow refused: ${max.message}`);
@@ -211,7 +242,7 @@ export class WorkflowEngine {
     let { previousVerdict, failureReason, failureOutput } = resume;
     for (let number = resume.number; number <= max.value; number++) {
       ctx.context = { ...ctx.context, attempt: { number, previousVerdict, failureReason } };
-      this.healOutput.set(ctx.task.id, failureOutput);
+      this.healOutput.set(stepRunOwnerKey(stepRunOwner(ctx.task)), failureOutput);
       if (number > resume.number || resume.advance) {
         for (const id of stepIds(body)) {
           ctx.latest.delete(id);
@@ -229,10 +260,10 @@ export class WorkflowEngine {
     return false;
   }
 
-  private async resumePoint(ctx: RunContext, body: readonly WorkflowStepDefinition[], max: number): Promise<{ number: number; advance: boolean; previousVerdict: string; failureReason: Value; failureOutput: string }> {
+  private async resumePoint(ctx: RunContext<S>, body: readonly WorkflowStepDefinition[], max: number): Promise<{ number: number; advance: boolean; previousVerdict: string; failureReason: Value; failureOutput: string }> {
     const initial = (ctx.context.attempt as { failureReason: Value }).failureReason;
     const fresh = { number: 1, advance: false, previousVerdict: '', failureReason: initial, failureOutput: '' };
-    const all = (await this.deps.stepRuns.listForTask(ctx.task.id)).filter((row) => row.workflowRef === ctx.ref && row.attempt !== null);
+    const all = (await this.deps.stepRuns.listForOwner(stepRunOwner(ctx.task))).filter((row) => row.workflowRef === ctx.ref && row.attempt !== null);
     const passStart = all.findLastIndex((row, index) => index > 0 && row.attempt! < all[index - 1]!.attempt!);
     const rows = passStart < 0 ? all : all.slice(passStart);
     if (rows.length === 0) return fresh;
@@ -250,7 +281,7 @@ export class WorkflowEngine {
   }
 
   /** Runs `steps`; on a non-pass outcome 'escalate' escalates and stops, 'return' hands the failure back to the attempts loop (a conflict still escalates), 'record' keeps going. Returns the failure that stopped the run, if any. */
-  private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, onFailure: 'escalate' | 'return' | 'record', attempt: number | null = null): Promise<StepFailure | null> {
+  private async runSteps(ctx: RunContext<S>, steps: readonly WorkflowStepDefinition[], firstPosition: number, onFailure: 'escalate' | 'return' | 'record', attempt: number | null = null): Promise<StepFailure | null> {
     const { task, run } = ctx;
     for (const [index, step] of steps.entries()) {
       if (onFailure !== 'record' && (await this.deps.boundary?.(task))) {
@@ -272,14 +303,14 @@ export class WorkflowEngine {
     return null;
   }
 
-  private async runStep(ctx: RunContext, step: WorkflowStepDefinition, position: number, attempt: number | null, groupCondition?: string): Promise<FailedStep | null> {
+  private async runStep(ctx: RunContext<S>, step: WorkflowStepDefinition, position: number, attempt: number | null, groupCondition?: string): Promise<FailedStep | null> {
     const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     const prior = latest.get(step.id)?.outcome;
     if (prior === 'pass' || prior === 'skipped') return null;
     const action = step.run !== undefined ? 'run' : step.uses!;
-    const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action, attempt });
-    this.deps.onStepChanged?.(task.id);
+    const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt });
+    this.deps.onStepChanged?.(stepRunOwner(task));
     let result: StepResult;
     try {
       const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
@@ -304,11 +335,11 @@ export class WorkflowEngine {
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
     stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
-    this.deps.onStepChanged?.(task.id);
+    this.deps.onStepChanged?.(stepRunOwner(task));
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
   }
 
-  private async runGroup(ctx: RunContext, group: WorkflowStepDefinition, position: number, attempt: number | null): Promise<FailedStep | null> {
+  private async runGroup(ctx: RunContext<S>, group: WorkflowStepDefinition, position: number, attempt: number | null): Promise<FailedStep | null> {
     const failures = (await Promise.all((group.parallel ?? []).map((step) => this.runStep(ctx, step, position, attempt, group.if)))).filter((failure): failure is FailedStep => failure !== null);
     if (failures.length === 0) return null;
     const rank: WorkflowStepOutcome[] = ['conflict', 'fail', 'inconclusive'];
@@ -324,7 +355,7 @@ export class WorkflowEngine {
     };
   }
 
-  private async executeCritic(task: TaskRow, step: WorkflowStepDefinition, rowId: number, secrets: string[], context: ExpressionContext): Promise<StepResult> {
+  private async executeCritic(task: S, step: WorkflowStepDefinition, rowId: number, secrets: string[], context: ExpressionContext): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
     try {
@@ -342,7 +373,7 @@ export class WorkflowEngine {
       if (!route.ok) return inconclusive(route.reason);
       const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route), context), agent.prompts());
       await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
-      this.deps.onStepChanged?.(task.id);
+      this.deps.onStepChanged?.(stepRunOwner(task));
       const cwd = this.deps.cwdFor(task);
       const before = await markGit(cwd);
       const dirtyBefore = await Git.isDirty(cwd);
@@ -377,24 +408,26 @@ export class WorkflowEngine {
     return renderAgentPrompt(await this.deps.agent.resolvePrompt(text), fields, context);
   }
 
-  private async promptFields(task: TaskRow, context: ExpressionContext, route: { harness: string; model: string }): Promise<Record<string, string | number>> {
+  private async promptFields(task: S, context: ExpressionContext, route: { harness: string; model: string }): Promise<Record<string, string | number>> {
     const attempt = context.attempt as { number: number; failureReason: string };
     const healing = attempt.number > 1;
+    const heal = healing ? { reason: attempt.failureReason, output: this.healOutput.get(stepRunOwnerKey(stepRunOwner(task))) ?? '' } : { reason: '', output: '' };
+    const shaped = healing && this.deps.agent.healFields ? this.deps.agent.healFields(task, heal) : heal;
     return {
       ...(await this.deps.agent.promptFields(task)),
       prompt: task.prompt,
-      id: task.id,
+      id: task.id ?? task.epicRef ?? '',
       workingDir: this.deps.cwdFor(task),
       harness: route.harness,
       model: route.model,
       feedback: appendFeedback('', task.feedback),
       attempt: attempt.number - 1,
-      reason: healing ? attempt.failureReason : '',
-      output: healing ? (this.healOutput.get(task.id) ?? '') : '',
+      reason: shaped.reason,
+      output: shaped.output,
     };
   }
 
-  private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
+  private async rebase(task: S, mask: (text: string) => string): Promise<StepResult> {
     const cwd = this.deps.cwdFor(task);
     if (cwd === task.workingDir) return { outcome: 'pass', summary: 'the Ticket works in place', stdout: '', exitCode: null, output: '' };
     const baseOid = await Git.revParse(task.workingDir, await this.deps.baseBranchFor(task));
@@ -406,7 +439,7 @@ export class WorkflowEngine {
     return { outcome: 'conflict', summary: `rebase conflict in ${conflictedFiles.join(', ') || 'the working copy'}`, stdout: '', exitCode: null, output: detail, outputs: { baseSha: baseOid, conflictedFiles } };
   }
 
-  private async executeBranchAction(task: TaskRow, run: AttemptRow, action: 'merge' | 'open-pr' | 'artifact'): Promise<StepResult> {
+  private async executeBranchAction(task: S, run: AttemptRow, action: 'merge' | 'open-pr' | 'artifact'): Promise<StepResult> {
     const done = (outcome: WorkflowStepOutcome, summary: string, outputs?: Partial<WorkflowStepOutputs>): StepResult => ({
       outcome,
       summary,
@@ -433,7 +466,7 @@ export class WorkflowEngine {
     return done('pass', `opened ${url}`, { url, ...(number === null ? {} : { number }) });
   }
 
-  private async optionRoute(task: TaskRow, code: string, stepId: string): Promise<{ route: ResolvedRoute } | { failure: StepResult }> {
+  private async optionRoute(task: S, code: string, stepId: string): Promise<{ route: ResolvedRoute } | { failure: StepResult }> {
     const resolved = await this.deps.agent.resolveOption(task, code);
     if (resolved.kind === 'miss') {
       return { failure: { outcome: 'inconclusive', summary: `step ${stepId} names model option '${code}', which is ${resolved.reason} for this Ticket; the step does not fall back to another route`, stdout: '', exitCode: null, output: '', configFailure: true } };
@@ -441,7 +474,7 @@ export class WorkflowEngine {
     return { route: resolveRoute(this.deps.agent.getConfig(), resolved.option.harness, resolved.option.model, null) };
   }
 
-  private async executeAgent(ctx: RunContext, step: WorkflowStepDefinition, rowId: number): Promise<StepResult> {
+  private async executeAgent(ctx: RunContext<S>, step: WorkflowStepDefinition, rowId: number): Promise<StepResult> {
     const { task, run, secrets, agentState: state, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
@@ -469,7 +502,7 @@ export class WorkflowEngine {
       const fields = await this.promptFields(task, context, route);
       const prompt = options.prompt === undefined ? await agent.resolvePrompt(task.prompt) : await this.renderPrompt(options.prompt, fields, context);
       await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
-      this.deps.onStepChanged?.(task.id);
+      this.deps.onStepChanged?.(stepRunOwner(task));
       const cwd = this.deps.cwdFor(task);
       const key = `${route.harness}\u0000${route.model}`;
       let output = '';
@@ -490,7 +523,7 @@ export class WorkflowEngine {
         });
         if (result.sessionId) {
           state.session = { key, id: result.sessionId };
-          this.warmSessions.set(task.id, state.session);
+          this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
         }
         if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
         if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
@@ -505,7 +538,7 @@ export class WorkflowEngine {
     }
   }
 
-  private async postMergeCheck(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
+  private async postMergeCheck(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const script = step.with?.run;
     if (typeof script !== 'string' || script === '') return { outcome: 'pass', summary: 'no post-merge commands configured', stdout: '', exitCode: null, output: '' };
@@ -524,7 +557,7 @@ export class WorkflowEngine {
     }
   }
 
-  private async cleanup(task: TaskRow, run: AttemptRow): Promise<StepResult> {
+  private async cleanup(task: S, run: AttemptRow): Promise<StepResult> {
     const done = (outcome: WorkflowStepOutcome, summary: string): StepResult => ({ outcome, summary, stdout: '', exitCode: null, output: '' });
     const worktree = this.deps.cwdFor(task);
     if (worktree === task.workingDir) return done('pass', 'the Ticket has no worktree to retire');
@@ -532,7 +565,7 @@ export class WorkflowEngine {
     return done('pass', removed ? `retired ${worktree}${run.branch ? ` and branch ${run.branch}` : ''}` : 'nothing to retire');
   }
 
-  private async trackerAction(task: TaskRow, step: WorkflowStepDefinition): Promise<StepResult> {
+  private async trackerAction(task: S, step: WorkflowStepDefinition): Promise<StepResult> {
     const done = (outcome: WorkflowStepOutcome, summary: string): StepResult => ({ outcome, summary, stdout: '', exitCode: null, output: '' });
     const text = typeof step.with?.body === 'string' ? step.with.body : '';
     if (step.uses === 'comment') {
@@ -548,7 +581,7 @@ export class WorkflowEngine {
     return done('pass', 'the tracker refused to close the ticket; the close will be retried');
   }
 
-  private async runGuarded(task: TaskRow, command: VerificationCommand, mask: (text: string) => string): Promise<StepResult> {
+  private async runGuarded(task: S, command: VerificationCommand, mask: (text: string) => string): Promise<StepResult> {
     const cwd = this.deps.cwdFor(task);
     const before = await markGit(cwd);
     const result = await this.deps.spawn.run({
@@ -569,7 +602,7 @@ export class WorkflowEngine {
     };
   }
 
-  private async execute(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
+  private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await this.rebase(task, mask);

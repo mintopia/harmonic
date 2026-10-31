@@ -34,6 +34,7 @@ export async function convertEditedEpicFixPrompts(library: PromptLibrary, config
 export interface EpicFixTexts {
   readonly resolvePrompt: string;
   readonly resolveSuffix: string;
+  readonly failingVerification: string;
 }
 
 /** The text of each Epic fix part: the converted entry when one exists, else the bundled entry, with includes expanded. */
@@ -46,5 +47,6 @@ export async function epicFixTexts(library: PromptLibrary): Promise<EpicFixTexts
   return {
     resolvePrompt: await text('epicResolvePrompt'),
     resolveSuffix: await text('epicResolveSuffix'),
+    failingVerification: await text('epicFailingVerification'),
   };
 }

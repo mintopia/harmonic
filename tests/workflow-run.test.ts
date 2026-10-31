@@ -70,7 +70,7 @@ describe('a Ticket with a chosen workflow', () => {
   it('leaves a Ticket without a workflow unpinned with no steps', async () => {
     const created = await create();
     expect(created.body).toMatchObject({ workflowRef: null, workflowChosen: null });
-    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] });
+    expect((await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`)).body).toEqual({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, stepInfo: {}, blockStepIds: [], cleanupIds: [], maxAttempts: null, latestVersion: null, steps: [] });
   });
   it('keeps an in-flight Ticket on its pinned version after an edit and re-pins only on Retry', async () => {
     await server.api('PUT', '/api/workflows/evolving', { text: flow('evolving', '  - id: nope\n    run: echo v1; exit 1\n') });
