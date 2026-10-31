@@ -1,6 +1,6 @@
 import { loadBaselineConfig, type AppConfig } from '../config.js';
 import { PROMPT_FRAGMENTS, type PromptFragmentName } from './prompt-fragments.js';
-import { PROMPT_TEMPLATES } from './prompt-templates.js';
+import { PROMPT_TEMPLATES, type PromptTemplateId } from './prompt-templates.js';
 import type { PromptLibrary } from './prompt-library-store.js';
 
 export const ENGINE_APPENDED_FRAGMENTS = ['readOnlyRestraint', 'criticVerdictContract'] as const satisfies readonly PromptFragmentName[];
@@ -27,6 +27,20 @@ const LIBRARY_TEMPLATES = {
 
 type LibraryTemplateId = keyof typeof LIBRARY_TEMPLATES;
 
+const EDITED_FRAGMENTS = [
+  'selfHeal',
+  'operatorMessage',
+  'peerMessages',
+  'peerMessage',
+  'peerLine',
+  'rebaseConflict',
+  'priorSession',
+  'codeIndexGuidance',
+  'peerLiveMessage',
+] as const satisfies readonly PromptFragmentName[];
+
+const EDITED_TEMPLATES = ['taskPrompt', 'drivePrompt', 'unattendedReminder', 'continuePrompt', 'commitNudge', 'pauseMessage'] as const satisfies readonly PromptTemplateId[];
+
 type EngineFragments = Pick<AppConfig['promptFragments'], (typeof ENGINE_APPENDED_FRAGMENTS)[number]>;
 
 let engineFragments: EngineFragments | undefined;
@@ -43,32 +57,45 @@ export const withEngineFragments = (fragments: AppConfig['promptFragments']): Ap
 
 export const convertedCode = (code: string): string => `${code}-migrated`;
 
+export const editedCode = (code: string): string => `${code}-edited`;
+
 interface PromptSource {
   readonly code: string;
+  readonly entry: string;
   readonly description: string;
-  readonly read: (config: AppConfig) => string;
+  readonly path: readonly string[];
 }
 
 const SOURCES: readonly PromptSource[] = [
-  ...LIBRARY_FRAGMENTS.map((name) => ({ code: name, description: PROMPT_FRAGMENTS[name].help, read: (c: AppConfig) => c.promptFragments[name] })),
+  ...LIBRARY_FRAGMENTS.map((name) => ({ code: name, entry: convertedCode(name), description: PROMPT_FRAGMENTS[name].help, path: ['promptFragments', name] })),
   ...(Object.keys(LIBRARY_TEMPLATES) as LibraryTemplateId[]).map((id) => ({
     code: id,
+    entry: convertedCode(id),
     description: PROMPT_TEMPLATES[id].help,
-    read: (c: AppConfig) => c.merge[LIBRARY_TEMPLATES[id][1]],
+    path: LIBRARY_TEMPLATES[id] as readonly string[],
   })),
+  ...EDITED_FRAGMENTS.map((name) => ({ code: name, entry: editedCode(name), description: PROMPT_FRAGMENTS[name].help, path: ['promptFragments', name] })),
+  ...EDITED_TEMPLATES.map((id) => ({ code: id, entry: editedCode(id), description: PROMPT_TEMPLATES[id].help, path: PROMPT_TEMPLATES[id].config })),
 ];
 
-/** Turns each edited critic-review or merge-conflict prompt into an operator entry once; an entry that already exists marks the prompt as converted. */
+const readPath = (root: unknown, path: readonly string[]): string => path.reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], root) as string;
+
+function withPathText(config: AppConfig, path: readonly string[], text: string): AppConfig {
+  const [head, ...rest] = path as [keyof AppConfig, ...string[]];
+  if (rest.length === 0) return { ...config, [head]: text };
+  return { ...config, [head]: withPathText(config[head] as never, rest, text) };
+}
+
+/** Turns each edited covered prompt into an operator entry once; an entry that already exists marks the prompt as converted. */
 export async function convertEditedPrompts(library: PromptLibrary, config: AppConfig): Promise<string[]> {
   const baseline = loadBaselineConfig();
   const converted: string[] = [];
   for (const source of SOURCES) {
-    const text = source.read(config);
-    if (text === source.read(baseline)) continue;
-    const code = convertedCode(source.code);
-    if (library.hasOperatorEntry(code)) continue;
-    await library.create(code, source.description, text);
-    converted.push(code);
+    const text = readPath(config, source.path);
+    if (text === readPath(baseline, source.path)) continue;
+    if (library.hasOperatorEntry(source.entry)) continue;
+    await library.create(source.entry, source.description, text);
+    converted.push(source.entry);
   }
   return converted;
 }
@@ -78,33 +105,28 @@ export async function syncEditedPrompts(library: PromptLibrary, config: AppConfi
   const baseline = loadBaselineConfig();
   for (const source of SOURCES) {
     if (only && !only.has(source.code)) continue;
-    const text = source.read(config);
-    const code = convertedCode(source.code);
-    if (text === (library.operatorText(code) ?? source.read(baseline))) continue;
-    if (library.hasOperatorEntry(code)) await library.update(code, source.description, text);
-    else await library.create(code, source.description, text);
+    const text = readPath(config, source.path);
+    if (text === (library.operatorText(source.entry) ?? readPath(baseline, source.path))) continue;
+    if (library.hasOperatorEntry(source.entry)) await library.update(source.entry, source.description, text);
+    else await library.create(source.entry, source.description, text);
   }
 }
 
 export function changedPromptCodes(before: AppConfig, after: AppConfig): Set<string> {
-  return new Set(SOURCES.filter((s) => s.read(before) !== s.read(after)).map((s) => s.code));
+  return new Set(SOURCES.filter((s) => readPath(before, s.path) !== readPath(after, s.path)).map((s) => s.code));
 }
 
-export function namedPromptCodes(patch: { promptFragments?: object | undefined; merge?: object | undefined }): Set<string> {
-  const fragments = Object.keys(patch.promptFragments ?? {});
-  const mergeKeys = new Set(Object.keys(patch.merge ?? {}));
-  const templates = (Object.keys(LIBRARY_TEMPLATES) as LibraryTemplateId[]).filter((id) => mergeKeys.has(LIBRARY_TEMPLATES[id][1]));
-  return new Set([...fragments, ...templates]);
+const patchNamesPath = (patch: unknown, path: readonly string[]): boolean =>
+  path.reduce<unknown>((node, key) => (node !== null && typeof node === 'object' && key in node ? (node as Record<string, unknown>)[key] : undefined), patch) !== undefined;
+
+export function namedPromptCodes(patch: object): Set<string> {
+  return new Set(SOURCES.filter((s) => patchNamesPath(patch, s.path)).map((s) => s.code));
 }
 
-/** The global config with the critic-review and merge-conflict prompts read from the Library: the converted entry when one exists, else the config's own text. */
+/** The global config with the covered prompts read from the Library: the operator entry when one exists, else the config's own text. */
 export function withLibraryPrompts(config: AppConfig, library: PromptLibrary): AppConfig {
-  const promptFragments = { ...config.promptFragments };
-  for (const name of LIBRARY_FRAGMENTS) promptFragments[name] = library.operatorText(convertedCode(name)) ?? promptFragments[name];
-  const merge = { ...config.merge };
-  for (const id of Object.keys(LIBRARY_TEMPLATES) as LibraryTemplateId[]) {
-    const key = LIBRARY_TEMPLATES[id][1];
-    merge[key] = library.operatorText(convertedCode(id)) ?? merge[key];
-  }
-  return { ...config, promptFragments, merge };
+  return SOURCES.reduce((acc, source) => {
+    const text = library.operatorText(source.entry);
+    return text === undefined ? acc : withPathText(acc, source.path, text);
+  }, config);
 }

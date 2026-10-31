@@ -101,11 +101,12 @@ describe('PromptsTab', () => {
 
   it('expands a part, focuses its textarea, and collapses on Escape back to the header', async () => {
     const host = await mountComponent(createElement(GlobalHarness));
-    const header = card(host, 'Drive prompt');
+    await click(tab(host, /Merge conflicts/));
+    const header = card(host, 'Merge conflict resolver');
     expect(header?.getAttribute('aria-expanded')).toBe('false');
     await click(header);
     expect(header?.getAttribute('aria-expanded')).toBe('true');
-    const area = host.querySelector<HTMLTextAreaElement>('textarea#settings-drive-prompt');
+    const area = host.querySelector<HTMLTextAreaElement>('textarea#settings-merge-conflict-prompt');
     expect(area).not.toBeNull();
     expect(document.activeElement).toBe(area);
     expect(document.getElementById(header?.getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe('region');
@@ -114,22 +115,17 @@ describe('PromptsTab', () => {
     expect(document.activeElement).toBe(header);
   });
 
-  it('updates the Compiled preview as the text is typed and reverts to the baseline', async () => {
+  it('points the implementation and nudge prompts at the Prompt Library instead of an editor', async () => {
     const host = await mountComponent(createElement(GlobalHarness));
     await click(tab(host, /Implementation turn/));
-    const preview = () => host.querySelector('section[aria-label="Compiled preview"]')?.textContent ?? '';
-    await click(host.querySelector('[role=radio][aria-checked=false]'));
-    expect(preview()).toContain('drive text');
     await click(card(host, 'Drive prompt'));
-    const area = host.querySelector<HTMLTextAreaElement>('textarea#settings-drive-prompt');
-    if (!area) throw new Error('no textarea');
-    await type(area, 'typed replacement');
-    expect(preview()).toContain('typed replacement');
-    expect(host.textContent).toContain('1 modified');
-    const revert = [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Revert');
-    await click(revert);
-    expect(preview()).toContain('drive text');
-    expect(host.querySelector<HTMLTextAreaElement>('textarea#settings-drive-prompt')?.value).toBe('drive text');
+    expect(host.querySelector('textarea#settings-drive-prompt')).toBeNull();
+    expect(host.textContent).toContain('Prompt Library entry');
+    expect(host.textContent).toContain('drivePrompt-edited');
+    await click(tab(host, /Nudges/));
+    await click(card(host, 'Commit nudge'));
+    expect(host.querySelector('textarea#settings-commit-nudge')).toBeNull();
+    expect(host.textContent).toContain('commitNudge-edited');
   });
 
   it('shows the failing part expanded with a Fix tag when the server rejects it', async () => {

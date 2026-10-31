@@ -35,11 +35,9 @@ async function openPartEditor(host: HTMLElement, tabName: RegExp, label: string)
 }
 
 describe('Prompts tab resolver fields', () => {
-  it('renders each resolver and nudge prompt as an editable textarea', async () => {
+  it('renders each resolver prompt as an editable textarea', async () => {
     const host = await mountComponent(createElement(PromptsTab, { ctx }));
     const parts: [RegExp, string, string][] = [
-      [/Nudges/, 'Commit nudge', 'settings-commit-nudge'],
-      [/Implementation/, 'Peer line', 'settings-fragment-peer-line'],
       [/Merge conflicts/, 'Merge conflict resolver', 'settings-merge-conflict-prompt'],
       [/Merge conflicts/, 'Epic merge conflict resolver', 'settings-epic-conflict-prompt'],
       [/Merge conflicts/, 'Epic refresh resolver', 'settings-epic-refresh-prompt'],
