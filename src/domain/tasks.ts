@@ -194,6 +194,8 @@ export interface TaskWithDeps extends TaskRow {
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
   routing: TaskRouting | null;
+  /** The Workspace's Route Classifier is on; lets the API tell "operator setting won" from "never consulted". */
+  classifierEnabled: boolean;
 }
 
 /** A scheduler candidate with its unfinished local dependency ids. */
@@ -1202,7 +1204,7 @@ export class TaskService {
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(raw),
-      routing: this.routing.routingOf(raw, await this.routing.scopeFor(raw.workspaceId)),
+      ...this.routing.routingFieldsOf(raw, await this.routing.scopeFor(raw.workspaceId)),
     };
   }
 
@@ -1295,7 +1297,7 @@ export class TaskService {
         humanOnly: this.humanOnly(task, containerRefs, triage),
         isEpic: this.isEpic(task, containerRefs),
         overrides: this.overridesOf(raw),
-        routing: this.routing.routingOf(raw, scopeOf(task.workspaceId)),
+        ...this.routing.routingFieldsOf(raw, scopeOf(task.workspaceId)),
       });
     });
     return result;

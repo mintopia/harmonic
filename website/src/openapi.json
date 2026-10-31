@@ -236,6 +236,50 @@
           "reason"
         ]
       },
+      "CostInput": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ]
+      },
       "AttemptInput": {
         "type": "object",
         "properties": {
@@ -390,6 +434,135 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -415,6 +588,10 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ]
@@ -639,50 +816,6 @@
           "totals",
           "toolCalls",
           "source"
-        ]
-      },
-      "CostInput": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ]
       },
       "TimelineAttemptInput": {
@@ -2612,6 +2745,82 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -2814,6 +3023,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3257,6 +3467,82 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -3458,6 +3744,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3886,6 +4173,82 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -4089,6 +4452,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -10247,6 +10611,51 @@
         ],
         "additionalProperties": false
       },
+      "Cost": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ],
+        "additionalProperties": false
+      },
       "Attempt": {
         "type": "object",
         "properties": {
@@ -10402,6 +10811,137 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -10427,6 +10967,10 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ],
@@ -10657,51 +11201,6 @@
           "totals",
           "toolCalls",
           "source"
-        ],
-        "additionalProperties": false
-      },
-      "Cost": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ],
         "additionalProperties": false
       },
@@ -12657,6 +13156,83 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -12859,6 +13435,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -13307,6 +13884,83 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -13508,6 +14162,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -13941,6 +14596,83 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -14144,6 +14876,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",

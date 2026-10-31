@@ -50,7 +50,7 @@ export interface RoutingUsage {
 }
 
 export type ClassifierOutcome =
-  | { kind: 'chosen'; option: ModelOption; reason: string; routing: RoutingUsage | null; prompt?: string }
+  | { kind: 'chosen'; option: ModelOption; position: number; optionCount: number; reason: string; routing: RoutingUsage | null; prompt?: string }
   | { kind: 'abstained'; reason: string; routing: RoutingUsage | null; prompt?: string };
 
 function balancedObjects(text: string): string[] {
@@ -128,7 +128,7 @@ export async function runClassifier(
   if (!parsed.success) return { kind: 'abstained', reason: 'invalid output: expected {optionId, reason}', routing, prompt: ctx.prompt };
   const option = options.find((o) => o.id === parsed.data.optionId);
   if (!option) return { kind: 'abstained', reason: `invalid output: option '${parsed.data.optionId}' is not in the list`, routing, prompt: ctx.prompt };
-  return { kind: 'chosen', option, reason: parsed.data.reason, routing, prompt: ctx.prompt };
+  return { kind: 'chosen', option, position: options.indexOf(option) + 1, optionCount: options.length, reason: parsed.data.reason, routing, prompt: ctx.prompt };
 }
 
 export function createHarnessClassifierBackend(deps: {

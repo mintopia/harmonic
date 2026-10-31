@@ -1,6 +1,6 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { PromptFragmentOverrides, PromptFragments } from '../../src/domain/prompt-fragments.js';
-import type { EscalationCause, TaskRouting } from '../../src/domain/task-routing.js';
+import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
 import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
@@ -76,6 +76,13 @@ export interface Attempt {
     lastActiveAgeMs: number;
     warmWindowMs: number | null;
   } | null;
+  /** The Harness and Model this Attempt started on; null for Attempts that predate the record. */
+  harness: string | null;
+  model: string | null;
+  /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
+  classifier: AttemptClassifier | null;
+  /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+  routing: { cost: Cost | null; models: string[] } | null;
   steps: Step[];
 }
 
@@ -629,6 +636,8 @@ export interface Task {
   };
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. */
   routing: TaskRouting | null;
+  /** What the Route Classifier did for this Ticket; null when it did not decide. */
+  classifier: TaskClassifier | null;
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
   escalationReason: string | null;

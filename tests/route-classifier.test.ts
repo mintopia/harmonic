@@ -168,6 +168,9 @@ describe('Route Classifier', () => {
         expect.objectContaining({ event: 'route-classifier-abstained', message: expect.stringContaining(`Route Classifier abstained: `) }),
       );
       expect(JSON.stringify(await events(bound.id))).toContain(expected);
+      const row = await attempts.get(bound.id);
+      expect(row).toMatchObject({ routeKind: 'abstained', routeOption: null });
+      expect(row.routeReason).toContain(expected);
     });
 
     it('a backend slower than the Workspace timeout abstains; two Workspaces honour different timeouts', async () => {
@@ -259,6 +262,13 @@ describe('Route Classifier', () => {
       expect(row.usage).toBeNull();
       expect(JSON.parse(row.routingUsage!).totals.totalTokens).toBe(1100);
       expect(JSON.parse(row.routingCost!)).toMatchObject({ byModel: { 'claude-haiku-4-5-20251001': expect.any(Number) } });
+    });
+
+    it('persists the chosen option and reason on the routed Attempt', async () => {
+      await setClassifier();
+      backend.classify.mockResolvedValue(answer('cheap-fix', 'small fix'));
+      const bound = await beginRun(await claimMirrored());
+      expect(await attempts.get(bound.id)).toMatchObject({ routeKind: 'classifier', routeOption: 'cheap-fix', routeReason: 'small fix', routeOptionPosition: expect.any(Number), routeOptionCount: expect.any(Number) });
     });
   });
 });

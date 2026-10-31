@@ -50,7 +50,7 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   verifiedRef: null,
   hasCandidate: false,
   wallClockDeadline: null,
-  skipReason: null, routing: null,
+  skipReason: null, routing: null, classifier: null,
   ...extra,
 });
 

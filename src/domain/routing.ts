@@ -71,6 +71,11 @@ export class RoutingService {
     return route ? { label: route.label, applied: routeApplies(raw) } : null;
   }
 
+  /** The Routing Label decision plus whether the Workspace's Route Classifier is on. */
+  routingFieldsOf(raw: RawTaskRow, scope: RoutingScope): { routing: TaskRouting | null; classifierEnabled: boolean } {
+    return { routing: this.routingOf(raw, scope), classifierEnabled: resolveClassifierSettings(scope.workspace).enabled };
+  }
+
   async routingFor(taskId: number): Promise<TaskRouting | null> {
     const raw = await this.getRaw(taskId);
     return this.routingOf(raw, await this.scopeFor(raw.workspaceId));

@@ -52,6 +52,11 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   cost: null,
   routingUsage: null,
   routingCost: null,
+  routeKind: null,
+  routeOption: null,
+  routeReason: null,
+  routeOptionPosition: null,
+  routeOptionCount: null,
   liveUsage: null,
   guardrailConfig: null,
   priceTable: null,
@@ -113,6 +118,7 @@ const taskWithDeps = (over: Partial<TaskWithDeps> = {}): TaskWithDeps => ({
   isEpic: false,
   overrides,
   routing: null,
+  classifierEnabled: false,
   ...over,
 });
 
