@@ -818,7 +818,7 @@ export class TaskService {
     });
   }
 
-  /** Snapshots the workflow version a Ticket starts on; a Ticket already pinned keeps its version unless `replace` (a Retry re-resolves it). */
+  /** Pins the workflow version a Ticket runs on; `replace` overwrites an existing pin. */
   async pinWorkflow(id: number, ref: string, replace = false): Promise<TaskRow> {
     return withTaskLock(id, async () => {
       const row = await this.db.write((db) =>

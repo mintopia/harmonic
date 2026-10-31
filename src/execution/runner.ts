@@ -531,7 +531,6 @@ export class Runner {
     await this.driveAccept(working, running, failedStep.type === 'implementation' ? 'commands' : 'critics');
   }
 
-  /** Accept on a workflow-run Ticket (ADR-0053): the failed step becomes `pass` and the same Attempt continues from the next step. */
   async acceptWorkflowStep(task: TaskRow, run: AttemptRow): Promise<void> {
     await this.workflowEngine!.acceptFailed(task);
     const working = await this.taskService.setState(task.id, 'working');

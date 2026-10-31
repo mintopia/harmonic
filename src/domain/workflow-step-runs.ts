@@ -55,7 +55,6 @@ export class WorkflowStepRunStore {
     return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.taskId, taskId)).orderBy(asc(workflowStepRuns.id)).all());
   }
 
-  /** Overrides each step's latest failed run to `pass` (the operator's Accept); returns how many it changed. */
   async acceptFailed(taskId: number, workflowRef: string): Promise<number> {
     const failed = [...(await this.latestByStep(taskId, workflowRef)).values()].filter((row) => row.outcome === 'fail' || row.outcome === 'inconclusive' || row.outcome === 'conflict');
     await this.db.write(async (db) => {

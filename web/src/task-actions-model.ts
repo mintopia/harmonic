@@ -74,7 +74,6 @@ function latestSteps(steps: readonly StepFacts[]): Map<string, StepFacts> {
 
 const outlineIndex = (outline: WorkflowFacts['outline'], stepId: string): number => outline.findIndex((entry) => entry.id === stepId || entry.children.includes(stepId));
 
-/** What each escalation action does to a workflow-run Ticket's failed step (ADR-0053); null when no step has failed. */
 export function workflowEscalationNotes(workflow: WorkflowFacts): WorkflowEscalationNotes | null {
   const failed = [...latestSteps(workflow.steps).values()].filter((step) => step.outcome !== null && FAILED.has(step.outcome)).at(-1);
   if (!failed) return null;
@@ -89,7 +88,6 @@ export function workflowEscalationNotes(workflow: WorkflowFacts): WorkflowEscala
   };
 }
 
-/** The first outline step with no `pass` or `skipped` run: where Resume continues; null when every step has run. */
 export function nextUnexecutedStep(workflow: Pick<WorkflowFacts, 'steps' | 'outline'>): string | null {
   const latest = latestSteps(workflow.steps);
   const done = (id: string): boolean => latest.get(id)?.outcome === 'pass' || latest.get(id)?.outcome === 'skipped';

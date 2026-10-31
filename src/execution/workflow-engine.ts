@@ -44,7 +44,6 @@ export interface WorkflowEngineDeps {
   escalate: (task: TaskRow, run: AttemptRow, reason: string) => Promise<void>;
   complete: (task: TaskRow, run: AttemptRow) => Promise<void>;
   onStepChanged?: (taskId: number) => void;
-  /** True when the run must stop before its next step: a pending pause was honoured or the Ticket was settled externally. */
   boundary?: (task: TaskRow) => Promise<boolean>;
   agent: {
     drive: CriticHarnessDrive;
@@ -134,7 +133,7 @@ export class WorkflowEngine {
     return { workflow, ctx };
   }
 
-  /** `resumed` continues the Attempt where it stopped; otherwise (a Retry) the `attempts:` block and everything after it starts a new pass with the counter reset. `reuseSession` lets the first agent step continue the Ticket's still-warm Session when its route is unchanged. */
+  /** `resumed` false marks a Retry: the counter and later steps start over. */
   async run(task: TaskRow, run: AttemptRow, resumed = true, reuseSession = true): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run, reuseSession);
     const { start, end } = workflow.attempts;
@@ -154,13 +153,11 @@ export class WorkflowEngine {
     this.warmSessions.delete(task.id);
   }
 
-  /** Marks the Ticket's failed steps `pass` on the operator's say-so; the next `run` continues from the step after them. */
   async acceptFailed(task: TaskRow): Promise<void> {
     await this.deps.stepRuns.acceptFailed(task.id, task.workflowRef!);
     this.deps.onStepChanged?.(task.id);
   }
 
-  /** Runs the workflow's `cleanup:` list for a Ticket the operator closed. */
   async close(task: TaskRow, run: AttemptRow): Promise<void> {
     const { workflow, ctx } = await this.prepare(task, run);
     this.warmSessions.delete(task.id);

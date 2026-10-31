@@ -35,7 +35,6 @@ export interface EscalationHooks {
    * next Step on the same Attempt, merging and settling `done` on an eventual
    * pass or escalating again on a later failure. */
   advance: (task: TaskRow, run: AttemptRow, failedStep: StepRow) => Promise<void>;
-  /** Accept on a workflow-run Ticket (ADR-0053): overrides the failed step and continues from the next one. */
   acceptWorkflow: (task: TaskRow, run: AttemptRow) => Promise<void>;
 }
 
