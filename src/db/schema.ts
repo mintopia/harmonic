@@ -116,6 +116,8 @@ export const tasks = sqliteTable('tasks', {
   trackerRef: text('tracker_ref').$type<TrackerRef>(),
   /** wayfinder (charting) | implement (build tickets). Derived from labels. */
   issueWorkflow: text('issue_workflow').$type<IssueWorkflow>(),
+  /** The Workflow Library version this Ticket is pinned to, as `<name>@<version>`; null until it starts on one. */
+  workflowRef: text('workflow_ref'),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
   /** Why the Ticket is `escalated`; null otherwise. */

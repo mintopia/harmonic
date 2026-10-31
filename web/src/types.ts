@@ -641,6 +641,7 @@ export interface Task {
   trackerRef: TrackerRef | null;
   /** Mirrored role: which Issue Workflow the tracker labelled it; null on native Tasks. */
   issueWorkflow: IssueWorkflow | null;
+  workflowRef: string | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
   /** The parent Map's tracker ref; null when unmapped or native. */

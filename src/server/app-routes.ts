@@ -35,6 +35,8 @@ import { resolveMcpCaller } from '../mcp/caller.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { updateRoutes } from './routes/update.js';
 import { promptRoutes } from './routes/prompts.js';
+import { workflowRoutes } from './routes/workflows.js';
+import type { WorkflowLibrary } from '../domain/workflow-library-store.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
 import type { App, AppContext, AppContexts } from './app-context.js';
 
@@ -48,7 +50,7 @@ function isStaticAssetPath(path: string): boolean {
   return path.startsWith('/assets/') || /\.[a-z0-9]+$/i.test(path);
 }
 
-export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts, prompts: PromptLibrary): Promise<void> {
+export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts, prompts: PromptLibrary, workflows: WorkflowLibrary): Promise<void> {
   await app.register((fastify) => taskRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => taskExportRoutes(fastify, ctx), { prefix: '/api' });
   await app.register((fastify) => mapRoutes(fastify, contexts.tracking), { prefix: '/api' });
@@ -56,6 +58,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => promptRoutes(fastify, { prompts }), { prefix: '/api' });
+  await app.register((fastify) => workflowRoutes(fastify, { workflows }), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, { ...contexts.execution, prompts }), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });

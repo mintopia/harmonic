@@ -314,6 +314,7 @@ CREATE TABLE `tasks` (
 	`origin` text DEFAULT 'native' NOT NULL,
 	`tracker_ref` text,
 	`issue_workflow` text,
+	`workflow_ref` text,
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,
