@@ -71,7 +71,7 @@ describe('bundled implement workflow through the engine', () => {
 
   const run = async (over: Partial<TaskRow>) => {
     const created = await tasks.create({ prompt: String(over.prompt), workflow: 'implement' });
-    const task = { ...(await tasks.pinWorkflow(created.id, 'implement@1')), ...over } as TaskRow;
+    const task = { ...(await tasks.pinWorkflow(created.id, 'implement@1', 'explicit')), ...over } as TaskRow;
     const attempt = await attempts.create(task.id);
     const config = { ...baselineConfig(), harnesses: { claude: { command: 'x', args: [], env: {}, models: [{ id: 'm' }], defaultModel: 'm', cacheWarmSeconds: 300 } } } as unknown as ReturnType<typeof baselineConfig>;
     const fields = (t: TaskRow) => driveFields({ ...t, id: TICKET_TASK.id, trackerRef: TICKET_TASK.trackerRef, mapRef: null } as never, urlFor);
