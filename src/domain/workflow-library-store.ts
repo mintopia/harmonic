@@ -192,6 +192,22 @@ export class WorkflowLibrary {
     }
   }
 
+  /** Removes an operator workflow: its file and every kept version. */
+  delete(name: string): Promise<void> {
+    const run = this.queue.then(() => this.deleteNow(name));
+    this.queue = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async deleteNow(name: string): Promise<void> {
+    const entry = this.get(name);
+    if (entry.bundled) throw new DomainError('forbidden', `${name} is a bundled workflow and cannot be deleted`);
+    if (this.dir === null) throw new DomainError('forbidden', 'This workflow library has no storage');
+    await rm(join(this.dir, `${name}.yaml`), { force: true });
+    await rm(this.versionDir(name), { recursive: true, force: true });
+    this.operator.delete(name);
+  }
+
   /** Imports a YAML file; the workflow's own name is its identity. */
   async import(text: string): Promise<WorkflowEntry> {
     const { name } = parseWorkflow(text);

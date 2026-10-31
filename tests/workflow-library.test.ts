@@ -54,6 +54,38 @@ describe('/api/workflows', () => {
     expect(copy.body.name).toBe('implement-copy');
     expect(copy.body.bundled).toBe(false);
   });
+
+  it('lists inUse and assignedAs for every workflow', async () => {
+    const list = await server.api('GET', '/api/workflows');
+    const implement = list.body.workflows.find((w: { name: string }) => w.name === 'implement');
+    expect(implement.inUse).toEqual({ tickets: 0, workspaces: 0 });
+    expect(implement.assignedAs).toEqual([]);
+  });
+
+  it('deletes an unused workflow with its file and versions, and 404s afterwards', async () => {
+    await server.api('PUT', '/api/workflows/doomed', { text: flow('doomed') });
+    await server.api('PUT', '/api/workflows/doomed', { text: flow('doomed', '  - id: more\n    run: echo\n') });
+    expect(existsSync(join(dataDir, 'workflows', '.versions', 'doomed'))).toBe(true);
+    expect((await server.api('DELETE', '/api/workflows/doomed')).status).toBe(204);
+    expect(existsSync(join(dataDir, 'workflows', 'doomed.yaml'))).toBe(false);
+    expect(existsSync(join(dataDir, 'workflows', '.versions', 'doomed'))).toBe(false);
+    expect((await server.api('GET', '/api/workflows/doomed')).status).toBe(404);
+    expect((await server.api('DELETE', '/api/workflows/doomed')).status).toBe(404);
+  });
+
+  it('refuses to delete a bundled workflow', async () => {
+    expect((await server.api('DELETE', '/api/workflows/implement')).status).toBe(403);
+  });
+
+  it('refuses to delete a workflow a ticket references and counts the use', async () => {
+    await server.api('PUT', '/api/workflows/busy', { text: flow('busy') });
+    const created = await server.api('POST', '/api/tasks', { prompt: 'p', workflow: 'busy' });
+    expect(created.status).toBe(201);
+    const list = await server.api('GET', '/api/workflows');
+    expect(list.body.workflows.find((w: { name: string }) => w.name === 'busy').inUse.tickets).toBe(1);
+    expect((await server.api('DELETE', '/api/workflows/busy')).status).toBe(409);
+    expect(existsSync(join(dataDir, 'workflows', 'busy.yaml'))).toBe(true);
+  });
 });
 
 describe('WorkflowLibrary on a real filesystem', () => {

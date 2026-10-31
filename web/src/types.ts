@@ -40,11 +40,21 @@ export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' 
 export type WorkflowChosen = 'explicit' | 'label' | 'workspace' | 'global';
 export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict' | 'skipped';
 
+export interface WorkflowIssue {
+  message: string;
+  line: number;
+  column: number;
+}
+
+export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'bundled' | 'version'> & { text: string };
+
 export interface WorkflowLibraryEntry {
   name: string;
   description: string;
   bundled: boolean;
   version: number;
+  inUse: { tickets: number; workspaces: number };
+  assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
 }
 
 export interface WorkflowStepRun {

@@ -55,7 +55,7 @@ describe('rail collapse persistence', () => {
 
 describe('scope rails', () => {
   it('keeps Global and Workspace navigation separate', () => {
-    expect(GLOBAL_RAIL_VIEWS).toEqual(['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'api', 'settings']);
+    expect(GLOBAL_RAIL_VIEWS).toEqual(['board', 'table', 'activity', 'timeline', 'stats', 'operations', 'workflows', 'api', 'settings']);
     expect(WORKSPACE_RAIL_VIEWS).toEqual(['board', 'conversations', 'graph', 'activity', 'table', 'timeline', 'stats', 'files', 'operations', 'workspace']);
     expect(GLOBAL_RAIL_VIEWS).not.toContain('workspace');
     expect(WORKSPACE_RAIL_VIEWS).not.toContain('api');
@@ -98,7 +98,7 @@ describe('rail groups drive the divider structure', () => {
     expect(groupViews(GLOBAL_RAIL_GROUPS)).toEqual([
       ['board', 'table'],
       ['activity', 'timeline', 'stats'],
-      ['operations', 'api', 'settings'],
+      ['operations', 'workflows', 'api', 'settings'],
     ]);
   });
 

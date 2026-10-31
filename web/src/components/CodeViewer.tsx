@@ -9,7 +9,7 @@ import { tags as t } from '@lezer/highlight';
 // Colours resolve to the app's --hm-* tokens, so the editor tracks the active
 // theme without rebuilding — the reason line numbers and syntax stay legible in
 // both light and dark.
-const paperTheme = EditorView.theme({
+export const paperTheme = EditorView.theme({
   '&': { color: 'var(--hm-ink)', backgroundColor: 'transparent' },
   '.cm-content': { caretColor: 'var(--hm-accent)' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--hm-accent)' },
@@ -21,7 +21,7 @@ const paperTheme = EditorView.theme({
   '.cm-foldPlaceholder': { backgroundColor: 'var(--hm-raised)', color: 'var(--hm-muted)', border: 'none' },
 });
 
-const paperHighlight = HighlightStyle.define([
+export const paperHighlight = HighlightStyle.define([
   { tag: t.comment, color: 'var(--hm-syntax-comment)', fontStyle: 'italic' },
   { tag: [t.keyword, t.operatorKeyword, t.modifier, t.controlKeyword, t.moduleKeyword, t.definitionKeyword], color: 'var(--hm-syntax-keyword)' },
   { tag: [t.string, t.special(t.string), t.regexp], color: 'var(--hm-syntax-string)' },

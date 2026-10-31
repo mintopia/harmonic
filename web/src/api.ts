@@ -2,6 +2,8 @@ import type { TrackerRef } from './types.js';
 import type { PromptFragmentOverrides } from '../../src/domain/prompt-fragments.js';
 import type {
   Prompt,
+  WorkflowDocument,
+  WorkflowIssue,
   WorkflowLibraryEntry,
   WorkflowStepsResponse,
   Attempt,
@@ -67,6 +69,7 @@ export class ApiError extends Error {
     message: string,
     public code: string | null = null,
     public errorId: string | null = null,
+    public issues: WorkflowIssue[] = [],
   ) {
     super(message);
   }
@@ -112,9 +115,9 @@ async function send(method: string, path: string, body?: unknown): Promise<{ res
 
 function failure(method: string, path: string, res: Response, json: unknown): ApiError {
   const fallback = `${method} ${path} failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
-  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string } }).error : undefined;
+  const envelope = json && typeof json === 'object' && 'error' in json ? (json as { error?: { message?: string; code?: string; id?: string; issues?: WorkflowIssue[] } }).error : undefined;
   const message = envelope?.message ?? fallback;
-  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null);
+  return new ApiError(res.status, envelope?.id ? `${message} (ref ${envelope.id})` : message, envelope?.code ?? null, envelope?.id ?? null, envelope?.issues ?? []);
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -223,6 +226,12 @@ export const api = {
   epicStats: (epicRef: TrackerRef, workspaceId: number) =>
     request<Stats>('GET', `/api/epics/${epicRef}/stats?workspaceId=${workspaceId}`),
   workflows: () => request<{ workflows: WorkflowLibraryEntry[]; total: number }>('GET', '/api/workflows'),
+  workflow: (name: string) => request<WorkflowDocument>('GET', `/api/workflows/${encodeURIComponent(name)}`),
+  saveWorkflow: (name: string, text: string) => request<WorkflowDocument>('PUT', `/api/workflows/${encodeURIComponent(name)}`, { text }),
+  importWorkflow: (text: string) => request<WorkflowDocument>('POST', '/api/workflows/import', { text }),
+  exportWorkflow: (name: string) => requestText(`/api/workflows/${encodeURIComponent(name)}/export`, 'Export failed'),
+  duplicateWorkflow: (name: string, newName?: string) => request<WorkflowDocument>('POST', `/api/workflows/${encodeURIComponent(name)}/duplicate`, newName ? { name: newName } : {}),
+  deleteWorkflow: (name: string) => request<unknown>('DELETE', `/api/workflows/${encodeURIComponent(name)}`),
   workflowSteps: (id: number) => request<WorkflowStepsResponse>('GET', `/api/tasks/${id}/workflow-steps`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) =>
     request<Task>('POST', '/api/tasks', input),

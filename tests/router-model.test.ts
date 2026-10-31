@@ -18,7 +18,7 @@ const workspace = (view: Route['view'] = 'board'): Route => ({
 describe('path routes', () => {
   it.each([
     ['/', 'board'], ['/tasks', 'table'], ['/activity', 'activity'], ['/timeline', 'timeline'],
-    ['/stats', 'stats'], ['/operations', 'operations'], ['/api', 'api'], ['/settings', 'settings'],
+    ['/stats', 'stats'], ['/operations', 'operations'], ['/workflows', 'workflows'], ['/api', 'api'], ['/settings', 'settings'],
   ] as const)('parses global %s', (path, view) => {
     expect(parseRoute(path, '').scope).toEqual({ kind: 'global' });
     expect(parseRoute(path, '').view).toBe(view);

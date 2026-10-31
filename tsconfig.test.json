@@ -15,5 +15,6 @@
     "module": "ESNext",
     "moduleResolution": "bundler"
   },
-  "include": ["src", "tests", "scripts"]
+  "include": ["src", "tests", "scripts"],
+  "exclude": ["tests/e2e"]
 }
