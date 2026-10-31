@@ -833,21 +833,19 @@ never stacked on top of. Enforced by the Auto-Runner as a pick predicate
 _Avoid_: workspace (that is the board container), sandbox
 
 **Verification**:
-The automated gate between implementation and Merge, run at **three configured
-stages**: `verify.task.preMerge` (in the worktree), `verify.task.postMerge`
-(after the merge to the Epic, revert-on-red), and the **Epic Pre-Merge
-Verification** (`verify.epic.preMerge`). Each stage is a pair of lists —
-**verify commands** (ordered, fail-fast, one Verification Step each) that
-**gate** the **Critics** (parallel, all-must-pass, every critic's feedback
-collected before the retry). A stage with zero verifiers passes; resolved
-global default with **per-stage, id-keyed** Workspace verifier overlays (ADR-0037). Any command
-fail or critic reject/*inconclusive* is a **failed Attempt** — feedback into
-the next Attempt, counter +1 (ADR-0003, ADR-0028). The verdict attaches to the
-Attempt, never to a SHA (ADR-0001); Merge never re-checks it. Everything runs
-**in place** in the worktree for that stage. Post-merge commands share the
-administrative worktree where their merge was built (ADR-0039).
-_Avoid_: review gate (deleted), Review Task / single critic (superseded — a
-Critic is a listable verifier now), validation, lint, test (more than either)
+The automated gate between implementation and Merge. For a Ticket it is the
+`run:`, `command` and `critic` steps of its Task Execution Workflow: commands
+run in order and fail fast, **Critics** run in parallel and all must pass, and
+any command fail or critic reject/*inconclusive* is a **failed Attempt**, with
+feedback into the next Attempt and the counter +1 (ADR-0003, ADR-0053). The
+`verify` step is a marker that always passes, and the Task-side
+`verify.task.*` settings are removed (ADR-0055). The **Epic Pre-Merge
+Verification** (`verify.epic.preMerge`) stays a configured stage of command and
+critic lists with **per-stage, id-keyed** Workspace overlays (ADR-0028,
+ADR-0037). The verdict attaches to the Attempt, never to a SHA (ADR-0001);
+Merge never re-checks it. Everything runs **in place** in the worktree for that
+stage.
+_Avoid_: review gate (deleted), Review Task / single critic (superseded), validation, lint, test (more than either)
 
 **Prompt Library**:
 The named prompts Harmonic and operators keep, each with a code and a

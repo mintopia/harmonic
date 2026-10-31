@@ -39,7 +39,6 @@ import type {
   TicketTimelineEvent,
   VerificationAttempt,
   CommandOverlayEntry,
-  TaskCriticOverlayEntry,
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
@@ -324,10 +323,6 @@ export const api = {
       agentMessagesEnabled?: boolean | null;
       agentMessagesSendCap?: number | null;
       contextReuseTokenLimit?: number | null;
-      taskPreMergeCommands?: CommandOverlayEntry[] | null;
-      taskPreMergeCritics?: TaskCriticOverlayEntry[] | null;
-      taskPostMergeCommands?: CommandOverlayEntry[] | null;
-      taskPostMergeCritics?: TaskCriticOverlayEntry[] | null;
       epicPreMergeCommands?: CommandOverlayEntry[] | null;
       epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
@@ -366,8 +361,6 @@ export const api = {
       drivePrompt?: string | null;
       driveUnattendedReminder?: string | null;
       driveContinuePrompt?: string | null;
-      driveMergeFate?: 'auto-merge' | 'open-PR' | 'artifact' | null;
-      driveContinueAttempts?: number | null;
       taskPrompt?: string | null;
     } & Partial<PromptFragmentOverrides>,
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),

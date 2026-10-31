@@ -1,7 +1,6 @@
 import type {
   AppConfig,
   EpicVerificationCritic,
-  TaskVerificationCritic,
   VerificationCommand,
 } from '../types.js';
 import { formatModelLabel, providerLabel } from './TaskIdentity.js';
@@ -11,11 +10,6 @@ import { formatModelLabel, providerLabel } from './TaskIdentity.js';
  * id-keyed for the overlay's `ref`). */
 export function newCommand(): VerificationCommand {
   return { id: crypto.randomUUID(), command: '', args: [], env: {}, timeoutSeconds: 600 };
-}
-
-/** A freshly added task critic, own id (see {@link newCommand}). */
-export function newCritic(start: HarnessStart): TaskVerificationCritic {
-  return { id: crypto.randomUUID(), name: '', issuePrompt: '', noIssuePrompt: '', ...start, timeoutSeconds: 300 };
 }
 
 /** A freshly added epic critic, own id (see {@link newCommand}). */
@@ -121,24 +115,8 @@ export function summarizeCommands(commands: VerificationCommand[]): string {
   return commands.map(summarizeCommand).join(' · ');
 }
 
-/** An editable dimension of the agent critic; the Harness is switched through {@link withHarness}. */
-export type CriticField = 'name' | 'issuePrompt' | 'noIssuePrompt' | 'model' | 'timeoutSeconds';
-
-/**
- * Fold a raw text-input value into the critic object. `prompt`/`model` are free
- * text.
- */
-export function setCriticField(critic: TaskVerificationCritic, field: CriticField, raw: string): TaskVerificationCritic {
-  if (field === 'timeoutSeconds') {
-    const n = Number(raw.trim());
-    return raw.trim() === '' || Number.isNaN(n) || n <= 0 ? critic : { ...critic, timeoutSeconds: n };
-  }
-  return { ...critic, [field]: raw };
-}
-
 export type EpicCriticField = 'name' | 'prompt' | 'model' | 'timeoutSeconds';
 
-/** The epic-critic counterpart of {@link setCriticField}, over the epic critic's single `prompt`. */
 export function setEpicCriticField(
   critic: EpicVerificationCritic,
   field: EpicCriticField,
@@ -156,7 +134,7 @@ export function setEpicCriticField(
  * reviewer Harness and Model by friendly name. An empty model (the seed for
  * an unconfigured global default) reads as "Not configured".
  */
-export function summarizeCritic(critic: Pick<TaskVerificationCritic, 'name' | 'harness' | 'model'>): string {
+export function summarizeCritic(critic: Pick<EpicVerificationCritic, 'name' | 'harness' | 'model'>): string {
   if (critic.model.trim() === '') return 'Not configured';
   const runtime = `${providerLabel(critic.harness)} · ${formatModelLabel(critic.model)}`;
   return `${criticLabel(critic.name)} (${runtime})`;

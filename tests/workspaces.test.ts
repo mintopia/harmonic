@@ -156,34 +156,30 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-verify-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Verified', workingDir: dir });
     expect(created.status).toBe(201);
-    expect(created.body.taskPreMergeCommands).toBeNull();
-    expect(created.body.taskPreMergeCritics).toBeNull();
-    expect(created.body.taskPostMergeCommands).toBeNull();
-    expect(created.body.taskPostMergeCritics).toBeNull();
     expect(created.body.epicPreMergeCommands).toBeNull();
     expect(created.body.epicPreMergeCritics).toBeNull();
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: { id: 'cmd-test', command: 'npm', args: ['test'] } }],
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', harness: 'claude', model: 'claude-opus-5' } }],
+      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: { id: 'cmd-test', command: 'npm', args: ['test'] } }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'review the epic diff', harness: 'claude', model: 'claude-opus-5' } }],
     });
     expect(set.status).toBe(200);
-    expect(set.body.taskPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 } }]);
-    expect(set.body.taskPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', issuePrompt: 'review the issue diff', noIssuePrompt: 'review the Task diff', harness: 'claude', model: 'claude-opus-5' } }]);
+    expect(set.body.epicPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 } }]);
+    expect(set.body.epicPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review the epic diff', harness: 'claude', model: 'claude-opus-5' } }]);
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
-    expect(fetched.body.taskPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
+    expect(fetched.body.epicPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
 
-    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { taskPreMergeCritics: [] });
+    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { epicPreMergeCritics: [] });
     expect(disabled.status).toBe(200);
-    expect(disabled.body.taskPreMergeCritics).toEqual([]);
+    expect(disabled.body.epicPreMergeCritics).toEqual([]);
 
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCommands: null,
+      epicPreMergeCommands: null,
     });
     expect(cleared.status).toBe(200);
-    expect(cleared.body.taskPreMergeCommands).toBeNull();
-    expect(cleared.body.taskPreMergeCritics).toEqual([]);
+    expect(cleared.body.epicPreMergeCommands).toBeNull();
+    expect(cleared.body.epicPreMergeCritics).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -193,23 +189,23 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(created.status).toBe(201);
 
     const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'review it', harness: 'claude', model: 'claude-opus-5' } }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', harness: 'claude', model: 'claude-opus-5' } }],
     });
     expect(rejected.status).toBe(400);
-    expect(rejected.body.error.message).toContain('noIssuePrompt');
+    expect(rejected.body.error.message).toContain('prompt');
 
     const mismatched = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'a', noIssuePrompt: 'b', harness: 'claude', model: 'gpt-6-sol' } }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'a', harness: 'claude', model: 'gpt-6-sol' } }],
     });
     expect(mismatched.status).toBe(400);
     expect(mismatched.body.error.message).toMatch(/gpt-6-sol.*claude/);
-    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.taskPreMergeCritics).toBeNull();
+    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.epicPreMergeCritics).toBeNull();
 
     const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', harness: 'claude', model: 'claude-opus-5' } }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'review the epic', harness: 'claude', model: 'claude-opus-5' } }],
     });
     expect(accepted.status).toBe(200);
-    expect(accepted.body.taskPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', issuePrompt: 'review the issue', noIssuePrompt: 'review the Task', harness: 'claude', model: 'claude-opus-5' } }]);
+    expect(accepted.body.epicPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review the epic', harness: 'claude', model: 'claude-opus-5' } }]);
     rmSync(dir, { recursive: true, force: true });
   });
 

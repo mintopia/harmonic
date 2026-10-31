@@ -111,6 +111,7 @@ tests/session-retirement-coordinator.test.ts
 tests/session-retirement.test.ts
 tests/sessions.test.ts
 tests/setting-override.test.ts
+tests/legacy-execution-settings.test.ts
 tests/settings-workflow-migration.test.ts
 tests/settings-registry.test.ts
 tests/settings-rename.test.ts
@@ -141,7 +142,6 @@ tests/verification-attempts.test.ts
 tests/verification-combine.test.ts
 tests/verification-override-model.test.ts
 tests/verifier-status.test.ts
-tests/verify-channels-unconfigured.test.ts
 tests/waitfor-timeout.test.ts
 tests/work-context-key.test.ts
 tests/work-ordering.test.ts

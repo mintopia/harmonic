@@ -61,9 +61,9 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }] });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) }],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -84,9 +84,7 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
 
     const mainTip = advanceMain(repo, 'other.txt', 'someone else merged\n');
 
-    await server.app.ctx.workspaces.update(wsId, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }],
-    });
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }) }] });
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(200);
@@ -110,10 +108,8 @@ describe('operator Accept merge (ADR-0001, issue #383)', () => {
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
 
     const repo = makeRepo();
-    await server.app.ctx.workspaces.update(wsId, {
-      workingDir: repo,
-      ...failingCritic(),
-    });
+    await server.legacy.setWorkspace(wsId, failingCritic());
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
 
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
@@ -154,10 +150,7 @@ describe('escalated worktree Run diff snapshot', () => {
     try {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       const repo = makeRepo();
-      await server.app.ctx.workspaces.update(wsId, {
-        workingDir: repo,
-        maxAttempts: 1,
-        taskPreMergeCommands: [{
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: [{
           kind: 'local',
           enabled: true,
           command: verificationCommandSchema.parse({
@@ -166,7 +159,10 @@ describe('escalated worktree Run diff snapshot', () => {
             args: ['-e', 'process.exit(1)'],
             timeoutSeconds: 30,
           }),
-        }],
+        }] });
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        maxAttempts: 1,
       });
       await server.app.ctx.settingsStore.updateGlobal({
         drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },

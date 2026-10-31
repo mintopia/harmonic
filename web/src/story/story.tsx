@@ -85,17 +85,16 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
 
 function SettingsStory() {
   const seed = structuredClone(storyConfig);
-  seed.verify.task.preMerge.commands = [
+  seed.verify.epic.preMerge.commands = [
     { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
     { id: 'cmd-typecheck', command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
   ];
-  seed.verify.task.preMerge.critics = [
+  seed.verify.epic.preMerge.critics = [
     {
       id: 'critic-correctness',
       name: 'Correctness',
-      issuePrompt:
+      prompt:
         "Review the diff for {title}. Flag correctness bugs, missing edge cases, and anything that breaks the issue's stated contract.",
-      noIssuePrompt: 'Review the diff for correctness. There is no issue to check against.',
       model: 'claude-opus-5',
       harness: 'claude',
       timeoutSeconds: 300,
@@ -103,13 +102,12 @@ function SettingsStory() {
     {
       id: 'critic-security',
       name: 'Security review',
-      issuePrompt: 'Check the diff for security regressions relevant to {title}.',
-      noIssuePrompt: 'Check the diff for security regressions.',
+      prompt: 'Check the diff for security regressions relevant to {title}.',
       model: 'gpt-5.3-codex',
       harness: 'codex',
       timeoutSeconds: 300,
     },
-    { id: 'critic-narration', name: '', issuePrompt: 'Flag narration comments and commented-out code in the diff.', noIssuePrompt: 'Flag narration comments.', model: '', harness: 'claude', timeoutSeconds: 300 },
+    { id: 'critic-narration', name: '', prompt: 'Flag narration comments and commented-out code in the diff.', model: '', harness: 'claude', timeoutSeconds: 300 },
   ];
   const [config, setConfig] = useState(seed);
   return (
@@ -138,9 +136,6 @@ function PromptsTabStory() {
   const baseline = structuredClone(storyConfig);
   const seed = structuredClone(storyConfig);
   seed.promptFragments.selfHeal = `${seed.promptFragments.selfHeal}\nRe-read the failing output before you change anything.`;
-  seed.verify.task.preMerge.critics = [
-    { id: 'critic-correctness', name: 'Correctness', issuePrompt: 'Review the diff for {title}.', noIssuePrompt: 'Review the diff for correctness.', model: 'claude-opus-5', harness: 'claude', timeoutSeconds: 300 },
-  ];
   const [config, setConfig] = useState(seed);
   return (
     <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>

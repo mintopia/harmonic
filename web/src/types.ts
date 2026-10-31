@@ -501,10 +501,6 @@ export interface Workspace extends PromptFragmentOverrides {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  taskPreMergeCommands: CommandOverlayEntry[] | null;
-  taskPreMergeCritics: TaskCriticOverlayEntry[] | null;
-  taskPostMergeCommands: CommandOverlayEntry[] | null;
-  taskPostMergeCritics: TaskCriticOverlayEntry[] | null;
   epicPreMergeCommands: CommandOverlayEntry[] | null;
   epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
@@ -554,8 +550,6 @@ export interface Workspace extends PromptFragmentOverrides {
   driveUnattendedReminder: string | null;
   driveContinuePrompt: string | null;
   driveCommitNudge: string | null;
-  driveMergeFate: 'auto-merge' | 'open-PR' | 'artifact' | null;
-  driveContinueAttempts: number | null;
   /** Task Prompt override; `null` inherits `config.taskPrompt`. */
   taskPrompt: string | null;
   /** Pause message override; `null` inherits `config.pauseMessage`. */
@@ -580,21 +574,6 @@ export interface VerificationCommand {
   timeoutSeconds: number;
 }
 
-/** An agent critic verifier: a read-only reviewer with
- * its own prompt and model. Mirrors `verificationCriticSchema`. */
-export interface TaskVerificationCritic {
-  /** Stable identity, independent of `name` (not guaranteed unique). */
-  id: string;
-  /** Operator-facing label; the critic's row title in settings. */
-  name: string;
-  issuePrompt: string;
-  noIssuePrompt: string;
-  model: string;
-  harness: string;
-  /** Hard timeout in seconds for the critic's review turn (default 300). */
-  timeoutSeconds: number;
-}
-
 export interface EpicVerificationCritic {
   /** Stable identity, independent of `name` (not guaranteed unique). */
   id: string;
@@ -605,11 +584,6 @@ export interface EpicVerificationCritic {
   harness: string;
   /** Hard timeout in seconds for the critic's review turn (default 300). */
   timeoutSeconds: number;
-}
-
-export interface TaskVerificationStage {
-  commands: VerificationCommand[];
-  critics: TaskVerificationCritic[];
 }
 
 export interface EpicVerificationStage {
@@ -626,12 +600,6 @@ export type CommandOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; command: VerificationCommand };
 
-/** The task-critic counterpart of {@link CommandOverlayEntry}. */
-export type TaskCriticOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; critic: TaskVerificationCritic };
-
-/** The epic-critic counterpart of {@link CommandOverlayEntry}. */
 export type EpicCriticOverlayEntry =
   | { kind: 'global'; ref: string; enabled: boolean }
   | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
@@ -1302,7 +1270,6 @@ export interface AppConfig {
   agentMessages: { enabled: boolean; sendCap: number };
   /** Per-stage command and critic verifier lists. */
   verify: {
-    task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
     epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };
   };
   /** Attempt Guardrails: the global-default budget bounds, progress
@@ -1318,14 +1285,9 @@ export interface AppConfig {
     continuePrompt: string;
     /** Sent when an Attempt ends its turn with uncommitted changes. No placeholders. */
     commitNudge: string;
-    mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
-    /** How many times an Attempt that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
-    continueAttempts: number;
   };
   /** Merge-conflict resolver prompts, with {turn}/{taskBranch}/{baseBranch}/{paths}/{fragment.conflictResolution} placeholders. */
   merge: { postMergeCheck: boolean; conflictPrompt: string; epicConflictPrompt: string; epicRefreshPrompt: string };
-  /** Maximum implementation attempts before the ticket is escalated. */
-  maxAttempts: number;
   /** Reuse a warm Session into the next attempt while its context occupancy stays
    * below this many tokens; at or above it, start a condensed new Session. */
   contextReuseTokenLimit: number;

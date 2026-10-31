@@ -8,7 +8,6 @@ import {
   REVISION,
   TICKET,
   fragmentKey,
-  partLabel,
   selectOption,
   templateKey,
   type AnatomyId,
@@ -31,7 +30,7 @@ import {
   renderEpicRefreshPrompt,
   type ConflictPromptContext,
 } from '../../src/execution/prompt-assembly.js';
-import type { AppConfig, TaskCriticOverlayEntry, TaskVerificationCritic, Workspace } from './types';
+import type { AppConfig, Workspace } from './types';
 
 /** Illustrative values for the `{taskId}/{skill}/{ref}/{url}/{title}/{description}` tokens. */
 export const SAMPLE_DRIVE_FIELDS: DriveFields = {
@@ -87,8 +86,6 @@ export const DRIVE_PLACEHOLDERS: Placeholder[] = [
   { token: '{url}', desc: 'issue URL' },
 ];
 
-export const CRITIC_NO_ISSUE_PLACEHOLDERS: Placeholder[] = [...CORE_TASK, SKILL_PLACEHOLDER];
-
 const EPIC_RESOLVE_PLACEHOLDERS: Placeholder[] = [
   { token: '{title}', desc: 'Epic title', core: true },
   { token: '{description}', desc: 'Epic description', core: true },
@@ -110,30 +107,6 @@ export function fragmentPlaceholders(name: PromptFragmentName): Placeholder[] {
   const spec = PROMPT_FRAGMENTS[name];
   const required: readonly string[] = spec.required;
   return Object.entries<string>(spec.fields).map(([token, desc]) => ({ token: `{${token}}`, desc, core: required.includes(token) }));
-}
-
-/** Compile the critic review prompt exactly as `runCritic` would: the operator
- * note interpolated, plus the appended revision block, restraint instruction, and
- * JSON-verdict scaffolding. Sample revisions stand in for a live Task's. The same
- * operator prompt compiles differently per Task kind, so both variants are shown:
- * a mirrored Task judged against its ticket, and a native Task judged against the
- * instructions alone. */
-export function compileCriticPreview(
-  prompts: { issuePrompt: string; noIssuePrompt: string },
-  fragments: AppConfig['promptFragments'],
-): LabeledPreview[] {
-  const compile = (operatorPrompt: string, fields: DriveFields) =>
-    buildCriticPrompt({
-      operatorPrompt,
-      fields,
-      verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
-      baseOid: SAMPLE_BASE_OID,
-      fragments,
-    });
-  return [
-    { label: 'Mirrored task (has ticket)', text: compile(prompts.issuePrompt, SAMPLE_DRIVE_FIELDS) },
-    { label: 'Native task (no ticket)', text: compile(prompts.noIssuePrompt, SAMPLE_NATIVE_DRIVE_FIELDS) },
-  ];
 }
 
 export function compileEpicCriticPreview(prompt: string, fragments: AppConfig['promptFragments']): string {
@@ -192,7 +165,6 @@ export interface PromptSettingsView {
   template(id: PromptTemplateId): string;
   fragments: PromptFragments;
   /** The first configured Task critic's name and own prompts, or null when none is configured. */
-  criticPrompt: { name: string; issue: string; noIssue: string } | null;
 }
 
 function readString(root: unknown, path: readonly string[]): string | undefined {
@@ -204,31 +176,9 @@ function readString(root: unknown, path: readonly string[]): string | undefined 
   return typeof node === 'string' ? node : undefined;
 }
 
-function firstTaskCritic(
-  overlay: readonly TaskCriticOverlayEntry[] | null | undefined,
-  globals: readonly TaskVerificationCritic[],
-): TaskVerificationCritic | undefined {
-  if (!overlay) return globals[0];
-  const named = new Set<string>();
-  const resolved: TaskVerificationCritic[] = [];
-  for (const entry of overlay) {
-    if (entry.kind === 'global') {
-      named.add(entry.ref);
-      const critic = globals.find((g) => g.id === entry.ref);
-      if (entry.enabled && critic) resolved.push(critic);
-    } else if (entry.enabled) {
-      resolved.push(entry.critic);
-    }
-  }
-  return resolved[0] ?? globals.find((g) => !named.has(g.id));
-}
-
 export function promptSettingsView(ctx: { config: AppConfig; workspace?: Workspace | null }): PromptSettingsView {
   const { config } = ctx;
   const workspace = ctx.workspace ?? null;
-  const { preMerge, postMerge } = config.verify.task;
-  const critic =
-    firstTaskCritic(workspace?.taskPreMergeCritics, preMerge.critics) ?? firstTaskCritic(workspace?.taskPostMergeCritics, postMerge.critics);
   return {
     template(id) {
       const spec = PROMPT_TEMPLATES[id];
@@ -237,7 +187,6 @@ export function promptSettingsView(ctx: { config: AppConfig; workspace?: Workspa
       return readString(workspace, [spec.workspace]) ?? inherited;
     },
     fragments: resolvePromptFragments(workspace, config),
-    criticPrompt: critic ? { name: critic.name, issue: critic.issuePrompt, noIssue: critic.noIssuePrompt } : null,
   };
 }
 
@@ -411,13 +360,12 @@ const assembleEpicFix: Assembler = (tools) =>
     branch: `epic/${SAMPLE_DRIVE_FIELDS.ref}`,
   });
 
-const assembleCritic: Assembler = (tools, view, c) => {
+const assembleCritic: Assembler = (tools, _view, c) => {
   const flag = flagReader<CriticFlagId>(c);
   const hasTicket = selectOption(TICKET, c.choices.ticket, 'ticket') === 'ticket';
   const revision = selectOption(REVISION, c.choices.revision, 'diff');
-  const own = view.criticPrompt ? (hasTicket ? view.criticPrompt.issue : view.criticPrompt.noIssue) : SAMPLE_CRITIC_PROMPT;
   return buildCriticPrompt({
-    operatorPrompt: mark('criticPrompt', own),
+    operatorPrompt: mark('criticPrompt', SAMPLE_CRITIC_PROMPT),
     fields: hasTicket ? SAMPLE_DRIVE_FIELDS : SAMPLE_NATIVE_DRIVE_FIELDS,
     verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
     ...(revision === 'alone' ? {} : { baseOid: revision === 'identical' ? SAMPLE_VERIFIED_HEAD_OID : SAMPLE_BASE_OID }),
@@ -439,8 +387,5 @@ const ASSEMBLERS: Record<AnatomyId, Assembler> = {
 
 /** Compile one anatomy's prompt through the runtime's own compose functions with sample values, as segments keyed by the part that produced each span. */
 export function assemblePreview(id: AnatomyId, view: PromptSettingsView, c: SampleConditions): PreviewSegment[] {
-  const segments = parseMarked(ASSEMBLERS[id](toolkit(view), view, c));
-  const criticName = view.criticPrompt?.name;
-  if (criticName === undefined) return segments;
-  return segments.map((segment) => (segment.key === 'criticPrompt' ? { ...segment, label: `${partLabel(segment.key)} · ${criticName}` } : segment));
+  return parseMarked(ASSEMBLERS[id](toolkit(view), view, c));
 }

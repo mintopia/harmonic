@@ -111,7 +111,6 @@ export function taskLifecycle(
   task: Pick<Task, 'state' | 'isolationMode' | 'branch' | 'trackerRef' | 'mergeStatus'>,
   attempts: readonly Pick<AttemptSummary, 'number' | 'state'>[],
   attemptDetails: readonly Pick<Attempt, 'number' | 'steps'>[],
-  commandConfigured: boolean,
 ): TaskLifecycle {
   const direct = task.isolationMode === 'direct';
   const latest = attempts.at(-1);
@@ -144,7 +143,7 @@ export function taskLifecycle(
     merge: direct ? 'skipped' : finished && implementationPassed ? 'done'
       : merging && task.state === 'escalated' ? 'awaiting'
         : merging && started ? 'current' : 'pending',
-    postMergeCheck: direct || !commandConfigured ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
+    postMergeCheck: direct ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
     closeIssue: direct || task.trackerRef === null ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
     retire: direct ? 'skipped' : finished && implementationPassed && worktreeDone ? 'done' : 'pending',
   };
@@ -152,7 +151,6 @@ export function taskLifecycle(
   if (task.state === 'cancelled' && implementationPassed && !direct) statuses.merge = 'failed';
   const steps = LIFECYCLE_STEPS.map(({ key, label }): LifecycleStep => ({
     key, label, status: statuses[key],
-    ...(key === 'postMergeCheck' && !commandConfigured ? { disabled: true } : {}),
   }));
   return { steps, current };
 }

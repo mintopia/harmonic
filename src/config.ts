@@ -30,9 +30,6 @@ export type IsolationMode = (typeof ISOLATION_MODES)[number];
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
-export type MergeFate = (typeof MERGE_FATES)[number];
-
 /** A Prompt Fragment's text: its `{fragment.<name>}` references must all name a Prompt Fragment, so none can reach the agent literally. */
 export function fragmentTemplateSchema(example: string): z.ZodString {
   return z
@@ -127,7 +124,7 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * An agent critic verifier: a read-only reviewer Harness with its own prompt and
  * model that judges the candidate diff.
  */
-const verificationCriticIdentitySchema = z.object({
+export const verificationCriticIdentitySchema = z.object({
   /** Stable identity, independent of `name` (operator-facing, not guaranteed
    * unique); assigned once on create when absent, never regenerated for an item
    * that already has one. */
@@ -142,12 +139,6 @@ const verificationCriticIdentitySchema = z.object({
   timeoutSeconds: z.number().int().positive().default(300).meta({ example: 300 }),
 });
 
-export const taskVerificationCriticSchema = verificationCriticIdentitySchema.extend({
-  issuePrompt: z.string().min(1).meta({ example: 'Review task {taskId} against issue {ref}: {title}. {description}' }),
-  noIssuePrompt: z.string().min(1).meta({ example: 'Review task {taskId} — {title}: {description}. Judge the candidate change.' }),
-});
-export type TaskVerificationCritic = z.infer<typeof taskVerificationCriticSchema>;
-
 export const epicVerificationCriticSchema = verificationCriticIdentitySchema.extend({
   prompt: z
     .string()
@@ -161,7 +152,7 @@ export type EpicVerificationCritic = z.infer<typeof epicVerificationCriticSchema
  * reorders/disables a global verifier by `ref` (its id) without editing it; a
  * `local` entry inlines a Workspace-owned verifier, fully editable.
  */
-function overlayEntrySchema<TItemKey extends string, TItem extends z.ZodType>(
+export function overlayEntrySchema<TItemKey extends string, TItem extends z.ZodType>(
   itemKey: TItemKey,
   itemSchema: TItem,
 ) {
@@ -177,25 +168,19 @@ function overlayEntrySchema<TItemKey extends string, TItem extends z.ZodType>(
 export const verificationCommandOverlayEntrySchema = overlayEntrySchema('command', verificationCommandSchema);
 export type VerificationCommandOverlayEntry = z.infer<typeof verificationCommandOverlayEntrySchema>;
 
-export const taskVerificationCriticOverlayEntrySchema = overlayEntrySchema('critic', taskVerificationCriticSchema);
-export type TaskVerificationCriticOverlayEntry = z.infer<typeof taskVerificationCriticOverlayEntrySchema>;
-
 export const epicVerificationCriticOverlayEntrySchema = overlayEntrySchema('critic', epicVerificationCriticSchema);
 export type EpicVerificationCriticOverlayEntry = z.infer<typeof epicVerificationCriticOverlayEntrySchema>;
 
 /** Overlay array: `null`/absent inherits every global in global order, enabled; a present array is the ordered overlay (ADR-0037). */
 export const verificationCommandOverrideSchema = z.array(verificationCommandOverlayEntrySchema);
-export const taskVerificationCriticOverrideSchema = z.array(taskVerificationCriticOverlayEntrySchema);
 export const epicVerificationCriticOverrideSchema = z.array(epicVerificationCriticOverlayEntrySchema);
 
 /** One verification stage; commands run before its independent critic list. */
-const verificationStageSchema = <TCritic extends z.ZodType>(criticSchema: TCritic) => z.object({
+export const verificationStageSchema = <TCritic extends z.ZodType>(criticSchema: TCritic) => z.object({
   commands: z.array(verificationCommandSchema),
   critics: z.array(criticSchema),
 });
-export const taskVerificationStageSchema = verificationStageSchema(taskVerificationCriticSchema);
 export const epicVerificationStageSchema = verificationStageSchema(epicVerificationCriticSchema);
-export type TaskVerificationStage = z.infer<typeof taskVerificationStageSchema>;
 export type EpicVerificationStage = z.infer<typeof epicVerificationStageSchema>;
 
 /** Wall-clock is mandatory; tokens and cost are opt-in (null = unset). The effective config is snapshotted onto an Attempt at start. */
@@ -221,11 +206,9 @@ export function unpricedModelsForCostCap(
     for (const m of harness.models) if (!isModelPriced(m.id, prices)) configured.add(`${harnessId}/${m.id}`);
     if (!isModelPriced(harness.defaultModel, prices)) configured.add(`${harnessId}/${harness.defaultModel}`);
   }
-  for (const stage of [config.verify.task.preMerge, config.verify.task.postMerge, config.verify.epic.preMerge]) {
-    for (const critic of stage.critics) {
-      const harness = config.harnesses[critic.harness];
-      if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${critic.harness}/${critic.model}`);
-    }
+  for (const critic of config.verify.epic.preMerge.critics) {
+    const harness = config.harnesses[critic.harness];
+    if (harness && !isModelPriced(critic.model, pricesForHarness(harness))) configured.add(`${critic.harness}/${critic.model}`);
   }
   return [...configured];
 }
@@ -245,23 +228,11 @@ export function criticModelIssues(
   verify: Pick<AppConfig, 'verify'>['verify'],
   harnesses: AppConfig['harnesses'],
 ): Array<{ path: (string | number)[]; message: string }> {
-  const stages = [
-    ['task', 'preMerge', verify.task.preMerge],
-    ['task', 'postMerge', verify.task.postMerge],
-    ['epic', 'preMerge', verify.epic.preMerge],
-  ] as const;
-  return stages.flatMap(([scope, phase, stage]) => stage.critics.flatMap((critic, index) => {
+  return verify.epic.preMerge.critics.flatMap((critic, index) => {
     const models = harnesses[critic.harness]?.models ?? [];
     if (models.length === 0 || models.some((m) => m.id === critic.model)) return [];
-    return [{ path: ['verify', scope, phase, 'critics', index, 'model'], message: criticModelMessage(critic) }];
-  }));
-}
-
-/** True when no verifier is configured for any stage. */
-export function verifyChannelsUnconfigured(verify: Pick<AppConfig, 'verify'>['verify']): boolean {
-  return [verify.task.preMerge, verify.task.postMerge, verify.epic.preMerge].every(
-    (stage) => stage.commands.length === 0 && stage.critics.length === 0,
-  );
+    return [{ path: ['verify', 'epic', 'preMerge', 'critics', index, 'model'], message: criticModelMessage(critic) }];
+  });
 }
 
 export const EXPORT_STATES = ['done', 'cancelled', 'deleted'] as const;
@@ -409,18 +380,10 @@ export const appConfigSchema = z.object({
    * token count (not a fraction), so it is independent of the model's window. */
   contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),
   editor: z.object({ maxFileSizeBytes: z.number().int().positive().meta({ example: 2_097_152 }) }),
-  /**
-   * `prompt` is the global Drive Prompt template; `unattendedReminder` is appended to every auto-driven turn;
-   * `continuePrompt` is the re-prompt nudge; `mergeFate` is the default fate of a completed worktree branch
-   * (research Tasks are always artifacts); `continueAttempts` is how many re-prompts an Attempt gets before it
-   * is verified as-is (0 = single turn).
-   */
   drive: z.object({
     prompt: z.string().meta({ example: 'Resolve tracker issue #{ref} ({url}).' }),
     unattendedReminder: z.string().meta({ example: 'Task {taskId} is running unattended.' }),
     continuePrompt: z.string().meta({ example: 'Continue Task {taskId}.' }),
-    mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
-    continueAttempts: z.number().int().min(0).meta({ example: 10 }),
     commitNudge: z.string().min(1).meta({ example: 'Commit the completed work now, then finish.' }),
   }),
   /** Operator-editable wrapper around a native Task's prompt (`{prompt}`, `{id}`, `{workingDir}`, `{harness}`, `{model}`); defaults to bare `{prompt}`. */
@@ -432,9 +395,8 @@ export const appConfigSchema = z.object({
   conversationIdleTimeoutMinutes: z.number().nonnegative().meta({ example: 30 }),
   /** Trailing debounce for Working Directory watcher events. */
   fileWatcherDebounceMs: z.number().int().positive().meta({ example: 250 }),
-  /** Ordered verifier lists for each Task and Epic verification stage. */
+  /** Ordered verifier lists for the Epic verification stage. */
   verify: z.object({
-    task: z.object({ preMerge: taskVerificationStageSchema, postMerge: taskVerificationStageSchema }),
     epic: z.object({ preMerge: epicVerificationStageSchema, resolvePrompt: z.string().min(1), resolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }) }),
   }),
   /** `postMergeCheck` runs the verification commands on the merged base tip; the off-switch for slow suites. `conflictPrompt`/`epicConflictPrompt` open a conflict-resolution turn (`{turn}`, `{taskBranch}`, `{baseBranch}`, `{paths}`, `{fragment.conflictResolution}`). */

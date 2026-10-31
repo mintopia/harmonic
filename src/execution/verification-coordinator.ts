@@ -11,13 +11,13 @@ import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import type { RunnerEvents } from './runner.js';
 import type { ActiveRuns } from './active-runs.js';
 import type { TaskArchive } from '../archive/task-archive.js';
-import type { AppConfig, VerificationCommand } from '../config.js';
-import type { TaskRow, AttemptRow, WorkspaceRow } from '../db/schema.js';
-import { NO_PROMPT_FRAGMENT_OVERRIDES, type PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
+import type { AppConfig } from '../config.js';
+import type { AttemptRow, WorkspaceRow } from '../db/schema.js';
+import type { PromptFragmentOverrideKey } from '../domain/prompt-fragments.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
 import type { RoutingService } from '../domain/routing.js';
-import { resolveEpicResolverPrompts, resolvePromptFragments, resolveVerifiers, type ResolvedVerifiers } from '../domain/setting-override.js';
+import { resolveEpicResolverPrompts } from '../domain/setting-override.js';
 import { pricesForHarness } from '../domain/pricing.js';
 import { runTimedCriticDrive, type CriticHarnessDrive } from '../verification/critic.js';
 
@@ -42,8 +42,6 @@ export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemp
 
 type VerifierWorkspace = Pick<
   WorkspaceRow,
-  | 'taskPreMergeCommands' | 'taskPreMergeCritics'
-  | 'taskPostMergeCommands' | 'taskPostMergeCritics'
   | 'epicPreMergeCommands' | 'epicPreMergeCritics'
   | 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'
   | PromptFragmentOverrideKey
@@ -62,41 +60,8 @@ export interface VerificationCoordinatorDeps {
   promptLibrary: PromptLibrary;
 }
 
-const DEFAULT_VERIFIER_WORKSPACE: VerifierWorkspace = {
-  taskPreMergeCommands: null,
-  taskPreMergeCritics: null,
-  taskPostMergeCommands: null,
-  taskPostMergeCritics: null,
-  epicPreMergeCommands: null,
-  epicPreMergeCritics: null,
-  mergeEpicRefreshPrompt: null,
-  verifyEpicResolveSuffix: null,
-  ...NO_PROMPT_FRAGMENT_OVERRIDES,
-};
-
 export class VerificationCoordinator {
   constructor(private readonly deps: VerificationCoordinatorDeps) {}
-
-  /** A task's effective verifiers, with the Workspace's own overrides applied over the global defaults. */
-  private async resolveTaskVerifiers(task: TaskRow): Promise<{ config: AppConfig; resolvedTask: ResolvedVerifiers['task']; fragments: AppConfig['promptFragments'] }> {
-    const config = this.deps.getConfig();
-    const ws = await this.deps.getWorkspace?.(task.workspaceId);
-    const { task: resolvedTask } = resolveVerifiers(ws ?? DEFAULT_VERIFIER_WORKSPACE, config);
-    return { config, resolvedTask, fragments: resolvePromptFragments(ws ?? DEFAULT_VERIFIER_WORKSPACE, config) };
-  }
-
-  async preMergeCommandById(task: TaskRow, id: string): Promise<VerificationCommand | undefined> {
-    const { resolvedTask } = await this.resolveTaskVerifiers(task);
-    return resolvedTask.preMerge.commands.find((command) => command.id === id);
-  }
-
-  async preMergeCommands(task: TaskRow): Promise<VerificationCommand[]> {
-    return (await this.resolveTaskVerifiers(task)).resolvedTask.preMerge.commands;
-  }
-
-  async postMergeCommands(task: TaskRow): Promise<VerificationCommand[]> {
-    return (await this.resolveTaskVerifiers(task)).resolvedTask.postMerge.commands;
-  }
 
   async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
     const config = this.deps.getConfig();

@@ -70,8 +70,8 @@ OPENROUTER_API_KEY=... ./scripts/jev-gate.sh --write-baseline --no-html # skip j
 
 Verify commands are `{command, args, cwd, env, timeoutSeconds}` (see
 `src/config.ts`'s `verificationCommandSchema`), run in place in the live
-worktree. Add this to `verify.task.preMerge.commands` (or `postMerge` /
-`epic.preMerge`, per how strict you want the gate):
+worktree. Add this as a `run:` or `command` step in the Ticket workflow, or to
+`epic.preMerge`, per how strict you want the gate:
 
 ```json
 {

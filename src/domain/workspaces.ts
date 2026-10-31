@@ -28,10 +28,8 @@ import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
   workflowLabelOverrideSchema,
-  taskVerificationCriticOverrideSchema,
   epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
-  MERGE_FATES,
 } from '../config.js';
 import { configuredTrackerSchema } from '../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../tracker/triage-labels.js';
@@ -86,10 +84,6 @@ export const workspaceOverridesSchema = z.object({
   agentMessagesSendCap: z.number().int().min(1).nullable().optional().meta({ example: 10 }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
-  taskPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
-  taskPostMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
   epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
@@ -128,10 +122,6 @@ export const workspaceOverridesSchema = z.object({
   driveUnattendedReminder: z.string().min(1).nullable().optional(),
   /** Continue-prompt override; null inherits `config.drive.continuePrompt`. */
   driveContinuePrompt: z.string().min(1).nullable().optional(),
-  /** Merge Fate override; null inherits `config.drive.mergeFate`. */
-  driveMergeFate: z.enum(MERGE_FATES).nullable().optional().meta({ example: 'auto-merge' }),
-  /** Continue-attempts override; null inherits `config.drive.continueAttempts`. */
-  driveContinueAttempts: z.number().int().min(0).nullable().optional().meta({ example: 1 }),
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
@@ -191,10 +181,6 @@ export const OVERRIDE_KEYS = [
   'agentMessagesSendCap',
   'maxAttempts',
   'contextReuseTokenLimit',
-  'taskPreMergeCommands',
-  'taskPreMergeCritics',
-  'taskPostMergeCommands',
-  'taskPostMergeCritics',
   'epicPreMergeCommands',
   'epicPreMergeCritics',
   'routingLabels',
@@ -217,8 +203,6 @@ export const OVERRIDE_KEYS = [
   'drivePrompt',
   'driveUnattendedReminder',
   'driveContinuePrompt',
-  'driveMergeFate',
-  'driveContinueAttempts',
   'taskPrompt',
   'pauseMessage',
   ...PROMPT_FRAGMENT_OVERRIDE_KEYS,
@@ -304,10 +288,6 @@ export class WorkspaceService {
       agentMessagesSendCap: o.agentMessagesSendCap,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
-      taskPreMergeCommands: o.taskPreMergeCommands != null ? JSON.stringify(o.taskPreMergeCommands) : null,
-      taskPreMergeCritics: o.taskPreMergeCritics != null ? JSON.stringify(o.taskPreMergeCritics) : null,
-      taskPostMergeCommands: o.taskPostMergeCommands != null ? JSON.stringify(o.taskPostMergeCommands) : null,
-      taskPostMergeCritics: o.taskPostMergeCritics != null ? JSON.stringify(o.taskPostMergeCritics) : null,
       epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
       epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
@@ -330,8 +310,6 @@ export class WorkspaceService {
       drivePrompt: o.drivePrompt,
       driveUnattendedReminder: o.driveUnattendedReminder,
       driveContinuePrompt: o.driveContinuePrompt,
-      driveMergeFate: o.driveMergeFate,
-      driveContinueAttempts: o.driveContinueAttempts,
       taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
       ...(Object.fromEntries(PROMPT_FRAGMENT_OVERRIDE_KEYS.map((key) => [key, o[key]])) as PromptFragmentOverrides),

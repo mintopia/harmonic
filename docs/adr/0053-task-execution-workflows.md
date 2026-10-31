@@ -280,9 +280,11 @@ install they reproduce today's execution.
 
 - **`research` has no `cleanup:`.** Cleanup deletes the Ticket branch, and that
   branch holds the research artifact.
-- **`verify`** runs the Task's resolved pre-merge command list.
-- **`post-merge-check`** with no `run:` runs the Task's resolved post-merge
-  command list in the detached base checkout. Empty lists pass.
+- **`verify`** is a marker step that always passes. The Task-side verify
+  command and critic lists were removed (ADR-0055), so a Ticket's checks are the
+  explicit `run:`, `command` and `critic` steps in its workflow.
+- **`post-merge-check`** runs its `run:` script in the detached base checkout
+  after the merge. With no `run:` it passes.
 - **Prompt Library codes.** The prompt on an `agent` or `critic` step may select
   a Prompt Library code with an expression. After the Library lookup, `{field}`
   placeholders are filled once. Field values are never expanded again.

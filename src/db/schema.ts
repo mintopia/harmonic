@@ -57,8 +57,6 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
   agentMessagesEnabled: boolean | null; agentMessagesSendCap: number | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
-  taskPreMergeCommands: string | null; taskPreMergeCritics: string | null;
-  taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
   workflow: string | null; workflowLabels: string | null; workflowVars: string | null; workflowClassifierEnabled: boolean | null;
   modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
@@ -66,7 +64,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
-  driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
+  taskPrompt: string | null; pauseMessage: string | null;
   driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
   mergeEpicRefreshPrompt: string | null; verifyEpicResolveSuffix: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;

@@ -336,26 +336,6 @@ const concurrencyCap = scalar(null, {
   max: (c) => c.autoRunner.maxConcurrentAttempts,
 });
 
-const maxAttempts = scalar(
-  registryField('maxAttempts', {
-    id: 'settings-max-attempts',
-    errorKey: 'maxAttempts',
-    min: 1,
-    widthClass: 'w-28',
-    get: (c) => c.maxAttempts,
-    set: (c, raw) => ({ ...c, maxAttempts: Number(raw) }),
-  }),
-  {
-    key: 'maxAttempts',
-    id: 'workspace-max-attempts',
-    errorKey: 'maxAttempts',
-    get: (w) => w.maxAttempts,
-    set: (w, v) => ({ ...w, maxAttempts: v as number | null }),
-    inherited: (c) => c.maxAttempts,
-    min: 1,
-  },
-);
-
 const contextReuseTokenLimit = scalar(
   registryField('contextReuseTokenLimit', {
     id: 'settings-context-reuse-token-limit',
@@ -416,51 +396,6 @@ const agentMessagesSendCap = scalar(
     set: (w, v) => ({ ...w, agentMessagesSendCap: typeof v === 'number' ? v : null }),
     inherited: (c) => c.agentMessages.sendCap,
     min: 1,
-  },
-);
-
-const MERGE_FATE_OPTIONS: FieldOption[] = [
-  { value: 'auto-merge', label: 'Merge automatically' },
-  { value: 'open-PR', label: 'Open a pull request' },
-  { value: 'artifact', label: 'Leave the branch' },
-];
-
-const driveMergeFate = scalar(
-  registryField('driveMergeFate', {
-    id: 'settings-merge-fate',
-    errorKey: 'drive.mergeFate',
-    get: (c) => c.drive.mergeFate,
-    options: () => MERGE_FATE_OPTIONS,
-    set: (c, raw) => ({ ...c, drive: { ...c.drive, mergeFate: raw as AppConfig['drive']['mergeFate'] } }),
-  }),
-  {
-    key: 'driveMergeFate',
-    id: 'workspace-merge-fate',
-    errorKey: 'driveMergeFate',
-    get: (w) => w.driveMergeFate,
-    set: (w, v) => ({ ...w, driveMergeFate: v as 'auto-merge' | 'open-PR' | 'artifact' | null }),
-    inherited: (c) => c.drive.mergeFate,
-    options: () => MERGE_FATE_OPTIONS,
-  },
-);
-
-const driveContinueAttempts = scalar(
-  registryField('driveContinueAttempts', {
-    id: 'settings-continue-attempts',
-    errorKey: 'drive.continueAttempts',
-    min: 0,
-    widthClass: 'w-28',
-    get: (c) => c.drive.continueAttempts,
-    set: (c, raw) => ({ ...c, drive: { ...c.drive, continueAttempts: Number(raw) } }),
-  }),
-  {
-    key: 'driveContinueAttempts',
-    id: 'workspace-continue-attempts',
-    errorKey: 'driveContinueAttempts',
-    get: (w) => w.driveContinueAttempts,
-    set: (w, v) => ({ ...w, driveContinueAttempts: v as number | null }),
-    inherited: (c) => c.drive.continueAttempts,
-    min: 0,
   },
 );
 
@@ -1036,16 +971,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     surfaces: BOTH,
-    title: 'Attempt limit',
-    description: {
-      global: 'The maximum implementation attempts before a ticket is escalated. Workspaces can override this cap.',
-      workspace: 'The maximum implementation attempts before a Task escalates. Inherits the global cap until overridden.',
-    },
-    body: (ctx) => grid('', [maxAttempts], ctx),
-  },
-  {
-    tab: 'execution',
-    surfaces: BOTH,
     title: 'Session reuse',
     description: {
       global:
@@ -1069,22 +994,13 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
 
   {
-    tab: 'execution',
-    surfaces: BOTH,
-    title: 'Unattended drive',
-    description:
-      'What happens to a mirrored Task\'s finished work, and how many times Harmonic re-prompts a turn that ends without `finish_task`.',
-    body: (ctx) => grid('flex flex-wrap items-start gap-x-8 gap-y-4', [driveMergeFate, driveContinueAttempts], ctx),
-  },
-
-  {
     tab: 'verification',
     surfaces: BOTH,
     title: 'Verification',
     wide: true,
     description: {
       global:
-        'Task and Epic verification is configured as independent command and critic lists for each stage.',
+        'Epic verification is configured as command and critic lists for the pre-merge stage.',
       workspace:
         'Global verifiers apply to every Workspace. Here you can reorder or disable them for this Workspace and add its own — the global ones stay locked.',
     },

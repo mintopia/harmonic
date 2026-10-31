@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, taskVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { verificationCommandSchema, epicVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
 import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { resolveVerifiers } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
@@ -41,10 +41,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.agentMessagesEnabled).toBeNull();
     expect(ws.agentMessagesSendCap).toBeNull();
-    expect(ws.taskPreMergeCommands).toBeNull();
-    expect(ws.taskPreMergeCritics).toBeNull();
-    expect(ws.taskPostMergeCommands).toBeNull();
-    expect(ws.taskPostMergeCritics).toBeNull();
     expect(ws.epicPreMergeCommands).toBeNull();
     expect(ws.epicPreMergeCritics).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
@@ -52,8 +48,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.drivePrompt).toBeNull();
     expect(ws.driveUnattendedReminder).toBeNull();
     expect(ws.driveContinuePrompt).toBeNull();
-    expect(ws.driveMergeFate).toBeNull();
-    expect(ws.driveContinueAttempts).toBeNull();
     expect(ws.taskPrompt).toBeNull();
     expect(ws.toolTimeoutMinutes).toBeNull();
   });
@@ -160,48 +154,47 @@ describe('WorkspaceService override persistence (issue #64)', () => {
   it('sets explicit staged verifier overlays as JSON lists', async () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' }) }],
+      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: epicVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' }) }],
     });
-    expect(JSON.parse(updated.taskPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
-    expect(JSON.parse(updated.taskPreMergeCritics!)).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' } }]);
+    expect(JSON.parse(updated.epicPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
+    expect(JSON.parse(updated.epicPreMergeCritics!)).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' } }]);
   });
 
   it('clears staged verifier overlays back to inherit with null', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, {
-      taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      taskPreMergeCritics: [{ kind: 'local', enabled: true, critic: taskVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', issuePrompt: 'review issue', noIssuePrompt: 'review Task', harness: 'claude', model: 'claude-opus-5' }) }],
+      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
+      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: epicVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' }) }],
     });
     const cleared = await workspaces.update(ws.id, {
-      taskPreMergeCommands: null,
-      taskPreMergeCritics: null,
+      epicPreMergeCommands: null,
+      epicPreMergeCritics: null,
     });
-    expect(cleared.taskPreMergeCommands).toBeNull();
-    expect(cleared.taskPreMergeCritics).toBeNull();
+    expect(cleared.epicPreMergeCommands).toBeNull();
+    expect(cleared.epicPreMergeCritics).toBeNull();
   });
 
   it('disabling every named global in the overlay resolves that verifier list to off (ADR-0037: an empty overlay can no longer express this)', async () => {
     const ws = (await workspaces.list())[0]!;
     const updated = await workspaces.update(ws.id, {
-      taskPreMergeCritics: [{ kind: 'global', ref: 'critic-global', enabled: false }],
+      epicPreMergeCritics: [{ kind: 'global', ref: 'critic-global', enabled: false }],
     });
-    expect(JSON.parse(updated.taskPreMergeCritics!)).toEqual([{ kind: 'global', ref: 'critic-global', enabled: false }]);
+    expect(JSON.parse(updated.epicPreMergeCritics!)).toEqual([{ kind: 'global', ref: 'critic-global', enabled: false }]);
     const resolved = resolveVerifiers(updated, {
       verify: {
-        task: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', issuePrompt: 'global issue review', noIssuePrompt: 'global Task review', harness: 'claude', model: 'claude-opus-5' }] }, postMerge: { commands: [], critics: [] } },
-        epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
+        epic: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', prompt: 'global epic review', harness: 'claude', model: 'claude-opus-5' }] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
       },
     } as any);
-    expect(resolved.task.preMerge.critics).toEqual([]);
+    expect(resolved.epic.preMerge.critics).toEqual([]);
   });
 
   it('leaves an omitted verifier override untouched (issue #132)', async () => {
     const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { taskPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }] });
+    await workspaces.update(ws.id, { epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }] });
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
-    expect(JSON.parse(renamed.taskPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
+    expect(JSON.parse(renamed.epicPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
   });
 
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {
@@ -261,34 +254,22 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       drivePrompt: 'WS drive prompt',
       driveUnattendedReminder: 'WS reminder',
       driveContinuePrompt: 'WS continue',
-      driveMergeFate: 'open-PR',
-      driveContinueAttempts: 3,
       taskPrompt: 'WS task prompt',
       toolTimeoutMinutes: 45,
     });
     expect(set.drivePrompt).toBe('WS drive prompt');
     expect(set.driveUnattendedReminder).toBe('WS reminder');
     expect(set.driveContinuePrompt).toBe('WS continue');
-    expect(set.driveMergeFate).toBe('open-PR');
-    expect(set.driveContinueAttempts).toBe(3);
     expect(set.taskPrompt).toBe('WS task prompt');
     expect(set.toolTimeoutMinutes).toBe(45);
 
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
-    expect(renamed.driveMergeFate).toBe('open-PR');
+    expect(renamed.drivePrompt).toBe('WS drive prompt');
     expect(renamed.toolTimeoutMinutes).toBe(45);
 
-    const cleared = await workspaces.update(ws.id, { driveMergeFate: null, toolTimeoutMinutes: null });
-    expect(cleared.driveMergeFate).toBeNull();
+    const cleared = await workspaces.update(ws.id, { toolTimeoutMinutes: null });
     expect(cleared.toolTimeoutMinutes).toBeNull();
     expect(cleared.drivePrompt).toBe('WS drive prompt');
-    expect(cleared.driveContinueAttempts).toBe(3);
-  });
-
-  it('keeps a driveContinueAttempts 0 override distinct from inherit (#339)', async () => {
-    const ws = (await workspaces.list())[0]!;
-    const zero = await workspaces.update(ws.id, { driveContinueAttempts: 0 });
-    expect(zero.driveContinueAttempts).toBe(0);
   });
 
   it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {
@@ -317,10 +298,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       agentMessagesSendCap: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,
-      taskPreMergeCommands: null,
-      taskPreMergeCritics: null,
-      taskPostMergeCommands: null,
-      taskPostMergeCritics: null,
       epicPreMergeCommands: null,
       epicPreMergeCritics: null,
       routingLabels: null,
@@ -343,8 +320,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       drivePrompt: null,
       driveUnattendedReminder: null,
       driveContinuePrompt: null,
-      driveMergeFate: null,
-      driveContinueAttempts: null,
       taskPrompt: null,
       ...NO_PROMPT_FRAGMENT_OVERRIDES,
       driveCommitNudge: null,

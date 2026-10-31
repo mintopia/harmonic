@@ -4,13 +4,9 @@ import type {
   AppConfig,
   EpicCriticOverlayEntry,
   EpicVerificationCritic,
-  TaskCriticOverlayEntry,
-  TaskVerificationCritic,
 } from "../types";
 import {
-  CRITIC_NO_ISSUE_PLACEHOLDERS,
   DRIVE_PLACEHOLDERS,
-  compileCriticPreview,
   compileEpicCriticPreview,
 } from "../prompt-preview-model";
 import { chip, field, selectField } from "../ui";
@@ -20,9 +16,7 @@ import { FieldError, PromptField, fieldLabel } from "./SettingsSection";
 import {
   type HarnessChoices,
   criticLabel,
-  newCritic,
   newEpicCritic,
-  setCriticField,
   setEpicCriticField,
   startingHarness,
   summarizeCritic,
@@ -57,7 +51,7 @@ function CriticRuntimeFields({
   onChange,
   onHarnessChange,
 }: {
-  critic: Pick<TaskVerificationCritic, "model" | "harness" | "timeoutSeconds">;
+  critic: Pick<EpicVerificationCritic, "model" | "harness" | "timeoutSeconds">;
   idPrefix: string;
   harnessModels: HarnessChoices;
   onChange: (field: "model" | "timeoutSeconds", value: string) => void;
@@ -159,7 +153,7 @@ function CriticRowTitle({ name }: { name: string }) {
   );
 }
 
-function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model" | "harness"> }) {
+function CriticRunChip({ critic }: { critic: Pick<EpicVerificationCritic, "model" | "harness"> }) {
   return (
     <span className="hidden items-center gap-1.5 rounded-full bg-raised px-2 py-0.5 text-small text-muted sm:inline-flex">
       <span className="size-1.5 rounded-full bg-tool" aria-hidden="true" />
@@ -174,67 +168,6 @@ function CriticRunChip({ critic }: { critic: Pick<TaskVerificationCritic, "model
   );
 }
 
-/** The editable fields for one task critic, shared by the global editor and a workspace overlay's local rows. */
-function TaskCriticFields({
-  critic,
-  index,
-  idPrefix,
-  errorPrefix,
-  fieldErrors,
-  harnessModels,
-  set,
-}: {
-  critic: TaskVerificationCritic;
-  index: number;
-  idPrefix: string;
-  errorPrefix: string;
-  fieldErrors: Record<string, string>;
-  harnessModels: HarnessChoices;
-  set: (critic: TaskVerificationCritic) => void;
-}) {
-  const fragments = usePromptFragments();
-  const previews = compileCriticPreview(critic, fragments);
-  return (
-    <>
-      <CriticName
-        id={`${idPrefix}-name-${index}`}
-        value={critic.name}
-        onChange={(name) => set(setCriticField(critic, "name", name))}
-      />
-      <CriticRuntimeFields
-        critic={critic}
-        idPrefix={`${idPrefix}-${index}`}
-        harnessModels={harnessModels}
-        onChange={(name, value) => set(setCriticField(critic, name, value))}
-        onHarnessChange={(harness) => set(withHarness(critic, harness, harnessModels))}
-      />
-      <FieldError message={fieldErrors[`${errorPrefix}.${index}.model`]} />
-      <PromptField
-        id={`${idPrefix}-issue-prompt-${index}`}
-        label="Issue prompt"
-        value={critic.issuePrompt}
-        onChange={(value) => set(setCriticField(critic, "issuePrompt", value))}
-        placeholders={DRIVE_PLACEHOLDERS}
-        preview={previews[0]?.text ?? ""}
-        error={fieldErrors[`${errorPrefix}.${index}.issuePrompt`]}
-        rows={5}
-      />
-      <PromptField
-        id={`${idPrefix}-no-issue-prompt-${index}`}
-        label="No-issue prompt"
-        value={critic.noIssuePrompt}
-        onChange={(value) => set(setCriticField(critic, "noIssuePrompt", value))}
-        placeholders={CRITIC_NO_ISSUE_PLACEHOLDERS}
-        preview={previews[1]?.text ?? ""}
-        error={fieldErrors[`${errorPrefix}.${index}.noIssuePrompt`]}
-        rows={5}
-      />
-    </>
-  );
-}
-
-/** The epic-critic counterpart of {@link TaskCriticFields}: same shared-body
- * role, over the epic critic's single `prompt`. */
 function EpicCriticFields({
   critic,
   index,
@@ -282,52 +215,12 @@ function EpicCriticFields({
   );
 }
 
-/** A locked global critic row's read-only summary, shared by the task and
- * epic overlay editors. */
-function LockedCriticSummary({ critic }: { critic: Pick<TaskVerificationCritic, "name" | "harness" | "model"> }) {
+function LockedCriticSummary({ critic }: { critic: Pick<EpicVerificationCritic, "name" | "harness" | "model"> }) {
   return (
     <div className="space-y-1 text-small text-muted">
       <p>Managed globally — edit it in Global settings.</p>
       <p className="text-ink">{summarizeCritic(critic)}</p>
     </div>
-  );
-}
-
-export function TaskCriticListEditor({
-  critics,
-  onChange,
-  idPrefix,
-  errorPrefix,
-  fieldErrors,
-  harnessModels,
-  emptyText,
-}: SharedProps & {
-  critics: TaskVerificationCritic[];
-  onChange: (critics: TaskVerificationCritic[]) => void;
-}) {
-  return (
-    <EntryList
-      items={critics}
-      onChange={onChange}
-      groupLabel="Critics"
-      addLabel="+ Add critic"
-      emptyText={emptyText}
-      itemNoun="critic"
-      makeItem={() => newCritic(startingHarness(harnessModels))}
-      renderTitle={(critic) => <CriticRowTitle name={critic.name} />}
-      renderMeta={(critic) => <CriticRunChip critic={critic} />}
-      renderBody={(critic, index, set) => (
-        <TaskCriticFields
-          critic={critic}
-          index={index}
-          idPrefix={idPrefix}
-          errorPrefix={errorPrefix}
-          fieldErrors={fieldErrors}
-          harnessModels={harnessModels}
-          set={set}
-        />
-      )}
-    />
   );
 }
 
@@ -369,91 +262,6 @@ export function EpicCriticListEditor({
   );
 }
 
-/**
- * The Workspace-scope, additive task-critic editor (ADR-0037): global rows
- * locked/reorderable/disable-able, local rows fully editable, in overlay
- * order. Mirrors {@link CommandOverlayEditor}.
- */
-export function TaskCriticOverlayEditor({
-  overlay,
-  globals,
-  onChange,
-  idPrefix,
-  errorPrefix,
-  fieldErrors,
-  harnessModels,
-  emptyText,
-}: SharedProps & {
-  overlay: TaskCriticOverlayEntry[] | null;
-  globals: TaskVerificationCritic[];
-  onChange: (overlay: TaskCriticOverlayEntry[]) => void;
-}) {
-  const globalById = new Map(globals.map((g) => [g.id, g]));
-  const rows = withMissingGlobals<TaskCriticOverlayEntry>(
-    overlay,
-    globals.map((g) => g.id),
-  );
-  const setEnabled = (index: number, enabled: boolean) =>
-    onChange(rows.map((row, i) => (i === index ? { ...row, enabled } : row)));
-
-  return (
-    <EntryList
-      items={rows}
-      onChange={onChange}
-      groupLabel="Critics"
-      addLabel="+ Add critic"
-      emptyText={emptyText}
-      itemNoun="critic"
-      makeItem={() => ({ kind: "local" as const, enabled: true, critic: newCritic(startingHarness(harnessModels)) })}
-      isLocked={(entry) => entry.kind === "global"}
-      canRemoveLocked={(entry) => entry.kind === "global" && !globalById.has(entry.ref)}
-      renderRowControl={(entry, index) => (
-        <Switch
-          checked={entry.enabled}
-          onChange={(enabled) => setEnabled(index, enabled)}
-          label={entry.enabled ? `Disable ${idPrefix} critic ${index + 1}` : `Enable ${idPrefix} critic ${index + 1}`}
-        />
-      )}
-      renderTitle={(entry) => {
-        const critic = entry.kind === "global" ? globalById.get(entry.ref) : entry.critic;
-        const name = critic ? critic.name : "";
-        return (
-          <span className={entry.enabled ? "" : "opacity-60 line-through"}>
-            <CriticRowTitle name={critic ? name : "Removed"} />
-          </span>
-        );
-      }}
-      renderMeta={(entry) =>
-        entry.kind === "global" ? (
-          <span className={globalChip}>Global</span>
-        ) : (
-          <CriticRunChip critic={entry.critic} />
-        )
-      }
-      renderLockedBody={(entry) => {
-        const critic = entry.kind === "global" ? globalById.get(entry.ref) : undefined;
-        if (!critic) return <p className="text-small text-muted">This global critic was removed. Remove this row too.</p>;
-        return <LockedCriticSummary critic={critic} />;
-      }}
-      renderBody={(entry, index, set) => {
-        if (entry.kind !== "local") return null;
-        return (
-          <TaskCriticFields
-            critic={entry.critic}
-            index={index}
-            idPrefix={idPrefix}
-            errorPrefix={errorPrefix}
-            fieldErrors={fieldErrors}
-            harnessModels={harnessModels}
-            set={(critic) => set({ ...entry, critic })}
-          />
-        );
-      }}
-    />
-  );
-}
-
-/** The epic-critic counterpart of {@link TaskCriticOverlayEditor}. */
 export function EpicCriticOverlayEditor({
   overlay,
   globals,

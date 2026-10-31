@@ -433,10 +433,9 @@ describe('escalation-routes', () => {
     });
     beforeEach(async () => {
       criticResult = { verdict: 'fail', summary: 'not good enough yet' };
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: null, ...critic() });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: null,
-        ...critic(),
       });
     });
 
@@ -468,12 +467,11 @@ describe('escalation-routes', () => {
     /** Escalates via a failing pre-merge command (no critic configured), so the
      * escalated Attempt's last failed Step is `verification`, not `review`. */
     async function escalateViaCommandFail(): Promise<{ taskId: number; attemptId: number; file: string }> {
+      await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: [
+          { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+        ], taskPreMergeCritics: null });
       await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'worktree',
-        taskPreMergeCommands: [
-          { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
-        ],
-        taskPreMergeCritics: null,
       });
       const { taskId, attemptId, file } = await createAndRun();
       const task = await waitFor(async () => {
@@ -540,13 +538,10 @@ describe('escalation-routes', () => {
       });
 
       it('verification-fail: Accept escalates again when the step after the overridden one fails', async () => {
-        await server.app.ctx.workspaces.update(workspaceId, {
-          taskPreMergeCommands: [
+        await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: [
             { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
             { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail-2', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
-          ],
-          taskPreMergeCritics: null,
-        });
+          ], taskPreMergeCritics: null });
         const { taskId } = await createAndRun();
         await waitForState(taskId, 'escalated');
 
@@ -571,12 +566,11 @@ describe('escalation-routes', () => {
       });
 
       it('409s conflict when the escalated ticket has no candidate to accept (the branch has no commits ahead of its base)', async () => {
+        await server.legacy.setWorkspace(workspaceId, { taskPreMergeCommands: [
+            { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+          ], taskPreMergeCritics: null });
         await server.app.ctx.workspaces.update(workspaceId, {
           isolationMode: 'worktree',
-          taskPreMergeCommands: [
-            { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
-          ],
-          taskPreMergeCritics: null,
         });
         const created = await server.api('POST', '/api/tasks', {
           prompt: JSON.stringify({ stopReason: 'end_turn' }),

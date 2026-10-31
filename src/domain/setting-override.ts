@@ -3,9 +3,6 @@ import {
   type AppConfig,
   type VerificationCommand,
   type VerificationCommandOverlayEntry,
-  type TaskVerificationCritic,
-  type TaskVerificationCriticOverlayEntry,
-  type TaskVerificationStage,
   type EpicVerificationCritic,
   type EpicVerificationCriticOverlayEntry,
   type EpicVerificationStage,
@@ -49,7 +46,6 @@ export function resolveCap(workspaceCap: number | null | undefined, hostCeiling:
 
 /** A Workspace's effective Verification verifiers, resolved at stage/list grain. */
 export type ResolvedVerifiers = {
-  task: { preMerge: TaskVerificationStage; postMerge: TaskVerificationStage };
   epic: { preMerge: EpicVerificationStage };
 };
 
@@ -59,14 +55,10 @@ export type ResolvedVerifiers = {
  * just that verifier list off. Nothing executes here.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
+  ws: Pick<WorkspaceRow, 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
   return {
-    task: {
-      preMerge: resolveTaskStage('taskPreMergeCommands', ws.taskPreMergeCommands, 'taskPreMergeCritics', ws.taskPreMergeCritics, config.verify.task.preMerge),
-      postMerge: resolveTaskStage('taskPostMergeCommands', ws.taskPostMergeCommands, 'taskPostMergeCritics', ws.taskPostMergeCritics, config.verify.task.postMerge),
-    },
     epic: { preMerge: resolveEpicStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
   };
 }
@@ -217,25 +209,6 @@ export function mergeLabelOverlay<T extends { label: string }, E extends { kind:
   const globalSet = new Set<T>(globals);
   const enabledGlobalRefs = new Set(merged.filter((item) => globalSet.has(item)).map(routingLabelRef));
   return merged.filter((item) => globalSet.has(item) || !enabledGlobalRefs.has(routingLabelRef(item)));
-}
-
-function resolveTaskStage(
-  commandsKey: SettingKey,
-  commandsStored: string | null,
-  criticsKey: SettingKey,
-  criticsStored: string | null,
-  globalDefault: TaskVerificationStage,
-): TaskVerificationStage {
-  return {
-    commands: resolveOverlay<VerificationCommand, VerificationCommandOverlayEntry>(
-      commandsKey, commandsStored, globalDefault.commands,
-      (e) => e.ref, (e) => e.command,
-    ),
-    critics: resolveOverlay<TaskVerificationCritic, TaskVerificationCriticOverlayEntry>(
-      criticsKey, criticsStored, globalDefault.critics,
-      (e) => e.ref, (e) => e.critic,
-    ),
-  };
 }
 
 function resolveEpicStage(

@@ -54,9 +54,6 @@ export interface WorkflowEngineDeps {
   library: { getVersion(name: string, version: number): Promise<WorkflowEntry> };
   stepRuns: WorkflowStepRunStore;
   spawn: CommandSpawn;
-  commandById: (task: TaskRow, id: string) => Promise<VerificationCommand | undefined>;
-  preMergeCommands: (task: TaskRow) => Promise<VerificationCommand[]>;
-  postMergeCommands: (task: TaskRow) => Promise<VerificationCommand[]>;
   secrets: (task: TaskRow) => Promise<Record<string, string>>;
   workspaceName?: (task: TaskRow) => Promise<string>;
   cwdFor: (task: TaskRow) => string;
@@ -512,24 +509,16 @@ export class WorkflowEngine {
   private async postMergeCheck(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     const script = step.with?.run;
-    const commands: VerificationCommand[] =
-      typeof script === 'string' && script !== ''
-        ? [{ id: step.id, command: 'sh', args: ['-c', script], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS }]
-        : await this.deps.postMergeCommands(task);
-    if (commands.length === 0) return { outcome: 'pass', summary: 'no post-merge commands configured', stdout: '', exitCode: null, output: '' };
+    if (typeof script !== 'string' || script === '') return { outcome: 'pass', summary: 'no post-merge commands configured', stdout: '', exitCode: null, output: '' };
+    const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', script], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
     const base = run.baseBranch ?? (await this.deps.baseBranchFor(task));
     const scratch = await mkdtemp(join(tmpdir(), 'harmonic-post-merge-'));
     const checkout = join(scratch, 'base');
     try {
       await Git.addDetachedWorktree(task.workingDir, checkout, base);
-      let last: StepResult | undefined;
-      for (const command of commands) {
-        const result = await this.deps.spawn.run({ command, cwd: command.cwd ? join(checkout, command.cwd) : checkout, timeoutMs: this.deps.runTimeoutMs ?? command.timeoutSeconds * 1000, outputCap: OUTPUT_CHAR_CAP });
-        const verdict = exitCodeToVerdict(result);
-        last = { outcome: verdict.verdict, summary: mask(verdict.summary), stdout: mask(result.stdout), exitCode: result.code, output: mask(result.output) };
-        if (last.outcome !== 'pass') break;
-      }
-      return last!;
+      const result = await this.deps.spawn.run({ command, cwd: checkout, timeoutMs: this.deps.runTimeoutMs ?? command.timeoutSeconds * 1000, outputCap: OUTPUT_CHAR_CAP });
+      const verdict = exitCodeToVerdict(result);
+      return { outcome: verdict.verdict, summary: mask(verdict.summary), stdout: mask(result.stdout), exitCode: result.code, output: mask(result.output) };
     } finally {
       await Git.removeWorktree(task.workingDir, checkout).catch(() => undefined);
       await rm(scratch, { recursive: true, force: true });
@@ -581,38 +570,19 @@ export class WorkflowEngine {
     };
   }
 
-  private async verify(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
-    const commands = await this.deps.preMergeCommands(task);
-    if (commands.length === 0) return { outcome: 'pass', summary: 'no verification commands configured', stdout: '', exitCode: null, output: '' };
-    let last!: StepResult;
-    for (const command of commands) {
-      last = await this.runGuarded(task, command, mask);
-      if (last.outcome !== 'pass') return last;
-    }
-    return last;
-  }
-
   private async execute(task: TaskRow, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await this.rebase(task, mask);
-      if (step.uses === 'verify') return await this.verify(task, mask);
+      if (step.uses === 'verify') return { outcome: 'pass', summary: 'no verification commands configured', stdout: '', exitCode: null, output: '' };
       if (step.uses === 'post-merge-check') return await this.postMergeCheck(task, run, step, env, secrets);
       if (step.uses === 'cleanup') return await this.cleanup(task, run);
       if (step.uses === 'comment' || step.uses === 'close-ticket') return await this.trackerAction(task, step);
       if (step.uses === 'merge' || step.uses === 'open-pr' || step.uses === 'artifact') return await this.executeBranchAction(task, run, step.uses);
-      if (step.run === undefined && step.uses !== 'command') {
+      if (step.run === undefined) {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
       }
-      let command: VerificationCommand;
-      if (step.run !== undefined) {
-        command = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
-      } else {
-        const id = step.with?.id;
-        const found = typeof id === 'string' ? await this.deps.commandById(task, id) : undefined;
-        if (!found) return { outcome: 'inconclusive', summary: `no configured verification command '${String(id)}'`, stdout: '', exitCode: null, output: '' };
-        command = found;
-      }
+      const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
       return await this.runGuarded(task, command, mask);
     } catch (error) {
       return { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };

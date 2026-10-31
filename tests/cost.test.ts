@@ -239,19 +239,17 @@ describe('cost surfaces (API)', () => {
     // attempt 2 lets it complete normally to `done`.
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 1 });
-    await server.app.ctx.workspaces.update(ws.id, {
-      taskPreMergeCommands: [{
+    await server.legacy.setWorkspace(ws.id, { taskPreMergeCommands: [{
         kind: 'local',
         enabled: true,
         command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
-      }],
-    });
+      }] });
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir: workDir });
     const taskId = created.body.id as number;
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
-    await server.app.ctx.workspaces.update(ws.id, { taskPreMergeCommands: null });
+    await server.legacy.setWorkspace(ws.id, { taskPreMergeCommands: null });
     expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '' })).status).toBe(200);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {

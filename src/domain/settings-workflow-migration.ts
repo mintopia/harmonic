@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { eq } from 'drizzle-orm';
 import { stringify } from 'yaml';
-import type { AppConfig, MergeFate, TaskVerificationCritic, TaskVerificationStage, VerificationCommand } from '../config.js';
+import type { AppConfig, VerificationCommand } from '../config.js';
 import { loadBaselineConfig } from '../config.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings, type TaskRow, type WorkspaceRow } from '../db/schema.js';
@@ -11,7 +11,14 @@ import { DomainError } from './errors.js';
 import { ENGINE_APPENDED_FRAGMENTS, libraryEntryFor } from './prompt-library-sources.js';
 import type { PromptLibrary } from './prompt-library-store.js';
 import { PROMPT_FRAGMENTS, type PromptFragmentName } from './prompt-fragments.js';
-import { resolvePromptFragments, resolveScoped, resolveVerifiers } from './setting-override.js';
+import {
+  resolveLegacyExecution,
+  type LegacySettings,
+  type MergeFate,
+  type TaskVerificationCritic,
+  type TaskVerificationStage,
+} from './legacy-execution-settings.js';
+import { resolvePromptFragments, resolveScoped } from './setting-override.js';
 import type { TaskService } from './tasks.js';
 import { MAX_ATTEMPTS_LIMIT, parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
 import { resolveTaskWorkflow } from './workflow-assignment.js';
@@ -43,20 +50,16 @@ interface ScopeSettings {
   fragments: AppConfig['promptFragments'];
 }
 
-type VerifierOverrides = Pick<WorkspaceRow, 'taskPreMergeCommands' | 'taskPreMergeCritics' | 'taskPostMergeCommands' | 'taskPostMergeCritics' | 'epicPreMergeCommands' | 'epicPreMergeCritics'>;
-
-const NO_VERIFIER_OVERRIDES: VerifierOverrides = { taskPreMergeCommands: null, taskPreMergeCritics: null, taskPostMergeCommands: null, taskPostMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null };
-
-function scopeSettings(ws: WorkspaceRow | null, config: AppConfig): ScopeSettings {
-  const verifiers = resolveVerifiers(ws ?? NO_VERIFIER_OVERRIDES, config);
+function scopeSettings(ws: WorkspaceRow | null, config: AppConfig, legacy: LegacySettings): ScopeSettings {
+  const execution = resolveLegacyExecution(legacy.global, ws ? legacy.workspaces.get(ws.id) ?? null : null);
   const fragments = resolvePromptFragments(ws, config);
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
-    continueAttempts: resolveScoped('driveContinueAttempts', ws?.driveContinueAttempts, config.drive.continueAttempts),
-    mergeFate: resolveScoped('driveMergeFate', ws?.driveMergeFate as MergeFate | null | undefined, config.drive.mergeFate),
+    continueAttempts: execution.continueAttempts,
+    mergeFate: execution.mergeFate,
     postMergeCheck: config.merge.postMergeCheck,
-    preMerge: verifiers.task.preMerge,
-    postMerge: verifiers.task.postMerge,
+    preMerge: execution.preMerge,
+    postMerge: execution.postMerge,
     prompts: {
       drivePrompt: resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt),
       unattendedReminder: resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder),
@@ -88,6 +91,7 @@ export interface SettingsMigrationPlan {
 
 export interface PlanInput {
   config: AppConfig;
+  legacy: LegacySettings;
   workspaces: readonly WorkspaceRow[];
   promptText: (code: string) => string | undefined;
 }
@@ -264,11 +268,11 @@ export async function planSettingsMigration(input: PlanInput): Promise<SettingsM
   const entries = new Map<string, PlannedPrompt>();
   const workflows: PlannedWorkflow[] = [];
   const taken = new Set(['migrated-global']);
-  const global = scopeSettings(null, input.config);
+  const global = scopeSettings(null, input.config, input.legacy);
   workflows.push({ name: 'migrated-global', text: new ScopePlanner('', 'global', global, input, entries).workflow('migrated-global', 'Migrated (global)') });
   const workspaceWorkflows: { workspaceId: number; workflow: string }[] = [];
   await forEachYielding([...input.workspaces].sort((a, b) => a.id - b.id), (workspace) => {
-    const own = scopeSettings(workspace, input.config);
+    const own = scopeSettings(workspace, input.config, input.legacy);
     if (isDeepStrictEqual(comparable(own), comparable(global))) return;
     const name = workflowNameFor(workspace, taken);
     const planner = new ScopePlanner(`Workspace "${workspace.name}"`, `w${workspace.id}`, own, input, entries);
@@ -319,6 +323,7 @@ export async function migrateSettingsToWorkflows(deps: SettingsMigrationDeps): P
   if (done) return;
   const plan = await planSettingsMigration({
     config: deps.settings.getGlobal(),
+    legacy: deps.settings.getLegacySettings(),
     workspaces: await deps.workspaces.list(),
     promptText: (code) => deps.prompts.operatorText(code),
   });

@@ -144,10 +144,9 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
     '(a) an afk auto-merge Task with a REAL post-merge check merges as an ordinary merge commit (never a fast-forward), closes the ticket, and does not deadlock',
     async () => {
       const repo = makeRepo();
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(passingVerifier()), taskPostMergeCommands: local(passingVerifier()) });
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        taskPreMergeCommands: local(passingVerifier()),
-        taskPostMergeCommands: local(passingVerifier()),
       });
       await server.app.ctx.settingsStore.updateGlobal({
         merge: { postMergeCheck: true },
@@ -171,7 +170,8 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
   it('(b) a sibling advancing the base mid-verification does not trigger re-verification — the candidate still merges as an ordinary merge commit', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-auto-merge-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, taskPreMergeCommands: local(siblingAdvanceVerifier(repo, flag)) });
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(siblingAdvanceVerifier(repo, flag)) });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -192,9 +192,9 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
 
   it('escalates with a visible reason when the merge throws a non-conflict git failure, rather than retrying the agent', async () => {
     const repo = makeRepo();
+    await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: local(lockWorktreeAdminVerifier(repo)) });
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      taskPreMergeCommands: local(lockWorktreeAdminVerifier(repo)),
     });
     await server.app.ctx.settingsStore.updateGlobal({
       merge: { postMergeCheck: false },
@@ -213,7 +213,7 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();
     } finally {
       chmodSync(join(repo, '.git', 'worktrees'), 0o755);
-      await server.app.ctx.workspaces.update(wsId, { taskPreMergeCommands: null });
+      await server.legacy.setWorkspace(wsId, { taskPreMergeCommands: null });
     }
   });
 });
