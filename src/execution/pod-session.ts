@@ -244,6 +244,15 @@ echo "$sha $forced $files"`,
     });
   }
 
+  async isLost(): Promise<boolean> {
+    if (this.disposed || !this.created) return false;
+    try {
+      return await this.api.podGone(this.spec.target.namespace, this.name);
+    } catch {
+      return false;
+    }
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;

@@ -48,6 +48,7 @@ export interface PodApi {
   waitForRunning(namespace: string, name: string, timeoutMs: number): Promise<void>;
   exec(namespace: string, pod: string, argv: string[], options: PodExecOptions): Promise<PodExecResult>;
   execStream(namespace: string, pod: string, argv: string[], options: PodStreamOptions): Promise<ChildProcess>;
+  podGone(namespace: string, name: string): Promise<boolean>;
   deletePod(namespace: string, name: string): Promise<void>;
   deleteSecret(namespace: string, name: string): Promise<void>;
   listServices(namespace: string, labelSelector: string): Promise<string[]>;
@@ -173,6 +174,15 @@ export const defaultPodApiFactory: PodApiFactory = (access) => {
       return proc.asChildProcess();
     },
     deletePod: (namespace, name) => ignoreNotFound(core.deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 })),
+    async podGone(namespace, name) {
+      try {
+        const pod = await core.readNamespacedPod({ name, namespace });
+        const phase = pod.status?.phase;
+        return pod.metadata?.deletionTimestamp !== undefined || phase === 'Failed' || phase === 'Succeeded';
+      } catch (err) {
+        return statusCodeOf(err) === 404;
+      }
+    },
     deleteSecret: (namespace, name) => ignoreNotFound(core.deleteNamespacedSecret({ name, namespace })),
     async listServices(namespace, labelSelector) {
       const list = await core.listNamespacedService({ namespace, labelSelector });

@@ -397,51 +397,78 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt });
     this.deps.onStepChanged?.(stepRunOwner(task));
     let result: StepResult;
-    let pod: PodSession | undefined;
-    let ownPod: PodSession | undefined;
-    try {
-      const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
-      if (falsy !== undefined) {
-        result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
-      } else {
-        const [resolved, env] = resolveStep(step, context);
-        let stepCtx = ctx;
-        if (ctx.mixed) {
-          await this.relocate(ctx, resolved);
-          pod = this.podFor(ctx, resolved);
-        } else if (this.opensOwnPod(resolved)) {
-          if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
-          pod = ownPod = await this.deps.pods.open(task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
-          secrets.push(...ownPod.credentialValues);
-          stepCtx = { ...ctx, podTarget: resolved.runs_on!, agentState: {}, coldPod: true };
+    let losses = 0;
+    for (;;) {
+      let pod: PodSession | undefined;
+      let ownPod: PodSession | undefined;
+      let lost = false;
+      try {
+        const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
+        if (falsy !== undefined) {
+          result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
         } else {
-          pod = this.podFor(ctx, resolved);
+          const [resolved, env] = resolveStep(step, context);
+          let stepCtx = ctx;
+          if (ctx.mixed) {
+            await this.relocate(ctx, resolved);
+            pod = this.podFor(ctx, resolved);
+          } else if (this.opensOwnPod(resolved)) {
+            if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
+            pod = ownPod = await this.deps.pods.open(task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
+            secrets.push(...ownPod.credentialValues);
+            stepCtx = { ...ctx, podTarget: resolved.runs_on!, agentState: {}, coldPod: true };
+          } else {
+            pod = this.podFor(ctx, resolved);
+          }
+          result =
+            resolved.uses === 'agent'
+              ? await this.executeAgent(stepCtx, resolved, row.id, pod)
+              : resolved.uses === 'critic'
+                ? await this.executeCritic(stepCtx, resolved, row.id, pod)
+                : await this.execute(task, run, resolved, env, secrets, pod);
         }
-        result =
-          resolved.uses === 'agent'
-            ? await this.executeAgent(stepCtx, resolved, row.id, pod)
-            : resolved.uses === 'critic'
-              ? await this.executeCritic(stepCtx, resolved, row.id, pod)
-              : await this.execute(task, run, resolved, env, secrets, pod);
+      } catch (error) {
+        result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
       }
-    } catch (error) {
-      result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
-    }
-    try {
-      if (result.halt) {
-        ctx.halted = true;
-        return null;
+      try {
+        if (result.halt) {
+          ctx.halted = true;
+          return null;
+        }
+        if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
+        lost = pod !== undefined && result.outcome !== 'pass' && result.outcome !== 'skipped' && (await pod.isLost());
+        if (!lost && ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
+      } finally {
+        await ownPod?.dispose();
       }
-      if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
-      if (ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
-    } finally {
-      await ownPod?.dispose();
+      if (!lost) break;
+      losses++;
+      if (losses > 1) {
+        result = { ...result, outcome: 'inconclusive', summary: 'the pod was lost twice during this step: permanent infrastructure failure', configFailure: true };
+        break;
+      }
+      try {
+        if (!ownPod) await this.replaceWorkflowPod(ctx);
+      } catch (error) {
+        result = { outcome: 'inconclusive', summary: mask(`the pod was lost and could not be replaced: ${errorMessage(error)}`), stdout: '', exitCode: null, output: '', configFailure: true };
+        break;
+      }
     }
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
     stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
     this.deps.onStepChanged?.(stepRunOwner(task));
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
+  }
+
+  private async replaceWorkflowPod(ctx: RunContext<S>): Promise<void> {
+    const target = ctx.podTarget;
+    await ctx.pod?.dispose();
+    delete ctx.pod;
+    delete ctx.podTarget;
+    delete ctx.agentState.session;
+    this.warmSessions.delete(stepRunOwnerKey(stepRunOwner(ctx.task)));
+    if (target !== undefined) await this.openPod(ctx, target);
   }
 
   private opensOwnPod(step: WorkflowStepDefinition): boolean {

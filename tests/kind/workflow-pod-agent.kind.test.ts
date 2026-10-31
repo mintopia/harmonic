@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,7 @@ const NAMESPACE = 'harmonic-agents';
 const IMAGE = process.env.HARMONIC_KIND_AGENT_IMAGE ?? 'node:22-bookworm';
 const TOKEN = 'kind-fake-oauth-token';
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+const kubectl = (...args: string[]): string => execFileSync('kubectl', ['--kubeconfig', kubeconfigPath!, '-n', NAMESPACE, ...args], { encoding: 'utf8' }).trim();
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim();
 const agentSource = readFileSync(resolve(import.meta.dirname, '../fixtures/pod-acp-agent.mjs'), 'utf8').replace('process.env.POD_AGENT_SESSION', "'1'").replace('process.env.POD_AGENT_HOLD_MS ?? 0', "'8000'");
 
@@ -85,8 +86,9 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
   }, 360_000);
 
   it('mirrors the in-pod session file so the transcript, Archive and Usage match a local run', async () => {
+    rmSync(mirrorFile(), { force: true });
     const started = await start('agent-claude');
-    await waitFor(async () => readFileSync(mirrorFile(), 'utf8').includes('h\u00e9llo'), { timeoutMs: 120_000, intervalMs: 250 }).catch(() => undefined);
+    await waitFor(async () => existsSync(mirrorFile()) && readFileSync(mirrorFile(), 'utf8').includes('h\u00e9llo'), { timeoutMs: 120_000, intervalMs: 250 }).catch(() => undefined);
     const liveText = (() => {
       try {
         return readFileSync(mirrorFile(), 'utf8');
@@ -118,4 +120,43 @@ describe.skipIf(!kubeconfigPath)('an agent step on a real kind cluster', () => {
     expect(task.state).toBe('escalated');
     expect(JSON.stringify(task)).toContain('has no credential for Harness Codex');
   }, 360_000);
+
+  const livePods = (id: number): string[] => {
+    const list = JSON.parse(kubectl('get', 'pods', '-l', `harmonic.mintopia.net/task=${id}`, '-o', 'json')) as { items: { metadata: { name: string; deletionTimestamp?: string }; status?: { phase?: string } }[] };
+    return list.items.filter((pod) => pod.metadata.deletionTimestamp === undefined && pod.status?.phase === 'Running').map((pod) => pod.metadata.name);
+  };
+  const agentRunningIn = (pod: string): boolean => {
+    try {
+      return kubectl('exec', pod, '--', 'sh', '-c', 'grep -l "[i]nput-type" /proc/[0-9]*/cmdline 2>/dev/null | head -n 1') !== '';
+    } catch {
+      return false;
+    }
+  };
+  const deleteOnceAgentIsLive = async (id: number, except: string[] = []): Promise<string> => {
+    const pod = await waitFor(async () => livePods(id).find((name) => !except.includes(name) && agentRunningIn(name)), { timeoutMs: 180_000, intervalMs: 500 });
+    kubectl('delete', 'pod', pod, '--force', '--grace-period=0', '--wait=false');
+    return pod;
+  };
+
+  it('brings up a new pod from the checkpoint when the pod is deleted mid-step, re-runs the step once and keeps the Attempt number', async () => {
+    const id = await start('agent-claude');
+    const lost = await deleteOnceAgentIsLive(id);
+    await runToDone('agent-claude', id);
+    const task = (await server.api('GET', `/api/tasks/${id}`)).body;
+    expect(task.state).toBe('done');
+    const steps = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body.steps as { outcome: string; attempt: number | null }[];
+    expect(steps.map((step) => step.outcome)).toEqual(['pass']);
+    expect(steps[0]!.attempt).toBe(1);
+    expect(livePods(id)).not.toContain(lost);
+  }, 420_000);
+
+  it('escalates with reason 3 when the replacement pod is deleted too', async () => {
+    const id = await start('agent-claude');
+    const first = await deleteOnceAgentIsLive(id);
+    await deleteOnceAgentIsLive(id, [first]);
+    await runToDone('agent-claude', id);
+    const task = (await server.api('GET', `/api/tasks/${id}`)).body;
+    expect(task.state).toBe('escalated');
+    expect(JSON.stringify(task)).toContain('permanent infrastructure failure');
+  }, 420_000);
 });
