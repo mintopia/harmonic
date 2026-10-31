@@ -8,7 +8,7 @@ import { PROMPT_FRAGMENT_OVERRIDE_KEYS, type PromptFragmentOverrideKey } from '.
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema, codeRepositorySchema } from '../../domain/workspaces.js';
 import { configuredTrackerSchema } from '../../tracker/configured.js';
 import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
-import { EXPORT_STATES, redactPatternsSchema } from '../../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionIssues, modelOptionsSchema, redactPatternsSchema } from '../../config.js';
 import {
   verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
@@ -29,6 +29,7 @@ import { parseRoutingLabelOverlay } from '../../domain/routing-labels.js';
 import { parseWorkflowLabelOverlay, workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import { parseWorkspaceWorkflowVars, validateVarOverrides, workspaceWorkflowVarsSchema } from '../../domain/workflow-vars.js';
 import { parseWorkflow } from '../../domain/workflow.js';
+import { parseClassifierEndpoint, parseModelOptions } from '../../domain/model-options.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
@@ -91,6 +92,13 @@ const workspaceSchema = z
     workflow: z.string().nullable().meta({ example: null }),
     workflowLabels: workflowLabelOverrideSchema.nullable().meta({ example: null }),
     workflowVars: workspaceWorkflowVarsSchema.nullable().meta({ description: 'Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.', example: null }),
+    modelOptions: modelOptionsSchema.nullable().meta({ example: null }),
+    classifierEnabled: z.boolean().nullable().meta({ example: null }),
+    classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().meta({ example: null }),
+    classifierTimeoutSeconds: z.number().nullable().meta({ example: null }),
+    classifierTypesafeModel: z.string().nullable().meta({ example: null }),
+    classifierTypesafeSecret: z.string().nullable().meta({ example: null }),
+    classifierEndpoint: classifierEndpointSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
@@ -163,6 +171,8 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
     workflowVars: parseWorkspaceWorkflowVars(ws.workflowVars),
+    modelOptions: parseModelOptions(ws.modelOptions),
+    classifierEndpoint: parseClassifierEndpoint(ws.classifierEndpoint),
     exportRedactPatterns: ws.exportRedactPatterns ? JSON.parse(ws.exportRedactPatterns) : null,
     exportIncludeStates: ws.exportIncludeStates ? JSON.parse(ws.exportIncludeStates) : null,
     configuredTracker: ws.configuredTracker ? JSON.parse(ws.configuredTracker) : null,
@@ -285,6 +295,15 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
           const first = validateVarOverrides(defaults, overrides)[0];
           if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
         }
+      }
+      if (req.body.modelOptions) {
+        const taken = new Set<string>();
+        req.body.modelOptions.forEach((option, index) => {
+          if (taken.has(option.id)) throw new DomainError('validation', `modelOptions.${index}.id: model option code '${option.id}' is already used in this Workspace`);
+          taken.add(option.id);
+        });
+        const [first] = modelOptionIssues(req.body.modelOptions, harnesses);
+        if (first) throw new DomainError('validation', `modelOptions.${first.index}.${first.field}: ${first.message}`);
       }
       for (const [key, list] of [['taskPreMergeCritics', req.body.taskPreMergeCritics], ['taskPostMergeCritics', req.body.taskPostMergeCritics], ['epicPreMergeCritics', req.body.epicPreMergeCritics]] as const) {
         list?.forEach((entry, index) => {

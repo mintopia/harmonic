@@ -263,6 +263,50 @@
           "reason"
         ]
       },
+      "CostInput": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ]
+      },
       "AttemptInput": {
         "type": "object",
         "properties": {
@@ -417,6 +461,135 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/CostInput"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -442,6 +615,10 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ]
@@ -666,50 +843,6 @@
           "totals",
           "toolCalls",
           "source"
-        ]
-      },
-      "CostInput": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ]
       },
       "TimelineAttemptInput": {
@@ -2804,6 +2937,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -2838,6 +3000,82 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -3045,8 +3283,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3552,6 +3792,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -3586,6 +3855,82 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -3792,8 +4137,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -4284,6 +4631,35 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ]
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -4318,6 +4694,82 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -4526,8 +4978,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -7527,6 +7981,146 @@
             "description": "Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.",
             "example": null
           },
+          "modelOptions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "example": "cheap-fix"
+                    },
+                    "harness": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude"
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude-haiku-5-5"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "cheap, small fixes"
+                    },
+                    "disabled": {
+                      "example": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "harness",
+                    "model",
+                    "description"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTimeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEndpoint": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "baseUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://api.openai.com/v1"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "gpt-5-mini"
+                  },
+                  "apiKeySecret": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                    "example": "CLASSIFIER_API_KEY"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "model",
+                  "apiKeySecret"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -7914,6 +8508,17 @@
             ],
             "example": null
           },
+          "promptFragmentRouteClassifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentEpicFailingVerification": {
             "anyOf": [
               {
@@ -8269,6 +8874,13 @@
           "workflow",
           "workflowLabels",
           "workflowVars",
+          "modelOptions",
+          "classifierEnabled",
+          "classifierBackend",
+          "classifierTimeoutSeconds",
+          "classifierTypesafeModel",
+          "classifierTypesafeSecret",
+          "classifierEndpoint",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -8301,6 +8913,7 @@
           "promptFragmentCriticRole",
           "promptFragmentCriticSecurity",
           "promptFragmentCriticVerdictContract",
+          "promptFragmentRouteClassifier",
           "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
@@ -8880,6 +9493,45 @@
               }
             ]
           },
+          "modelOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9][a-z0-9-]*$",
+                  "example": "cheap-fix"
+                },
+                "harness": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude-haiku-5-5"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "cheap, small fixes"
+                },
+                "disabled": {
+                  "example": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model",
+                "description"
+              ]
+            }
+          },
           "chat": {
             "type": "object",
             "properties": {
@@ -9090,6 +9742,11 @@
                 "type": "string",
                 "minLength": 1,
                 "example": "Critic verdict contract"
+              },
+              "routeClassifier": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Route Classifier instructions"
               },
               "epicFailingVerification": {
                 "type": "string",
@@ -10872,6 +11529,51 @@
         ],
         "additionalProperties": false
       },
+      "Cost": {
+        "type": "object",
+        "properties": {
+          "totalUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 0.52
+          },
+          "byModel": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "example": {
+              "sonnet-5": 0.52
+            }
+          },
+          "incomplete": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "totalUsd",
+          "byModel",
+          "incomplete"
+        ],
+        "additionalProperties": false
+      },
       "Attempt": {
         "type": "object",
         "properties": {
@@ -11027,6 +11729,137 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "cost": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Cost"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "cost",
+                  "models"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -11052,6 +11885,10 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
+          "routing",
           "verifierStatuses",
           "steps"
         ],
@@ -11282,51 +12119,6 @@
           "totals",
           "toolCalls",
           "source"
-        ],
-        "additionalProperties": false
-      },
-      "Cost": {
-        "type": "object",
-        "properties": {
-          "totalUsd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": 0.52
-          },
-          "byModel": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "example": {
-              "sonnet-5": 0.52
-            }
-          },
-          "incomplete": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "totalUsd",
-          "byModel",
-          "incomplete"
         ],
         "additionalProperties": false
       },
@@ -13446,6 +14238,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -13481,6 +14303,83 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -13688,8 +14587,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -14199,6 +15100,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -14234,6 +15165,83 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -14440,8 +15448,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -14936,6 +15946,36 @@
             "type": "string",
             "example": "Add rate limiting to POST /api/tasks"
           },
+          "modelOptionOverrides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model"
+              ],
+              "additionalProperties": false
+            },
+            "example": [
+              {
+                "id": "cheap-fix",
+                "harness": "claude",
+                "model": "claude-haiku-5-5"
+              }
+            ]
+          },
           "cost": {
             "anyOf": [
               {
@@ -14971,6 +16011,83 @@
             "example": {
               "label": "reasoning",
               "applied": true
+            }
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optionCount": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason",
+                  "position",
+                  "optionCount"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
             }
           },
           "url": {
@@ -15179,8 +16296,10 @@
           "isEpic",
           "overrides",
           "summary",
+          "modelOptionOverrides",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -18279,6 +19398,148 @@
             "description": "Per-workflow overrides of declared `vars:`, keyed by workflow name then var name; null when none.",
             "example": null
           },
+          "modelOptions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "example": "cheap-fix"
+                    },
+                    "harness": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude"
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "claude-haiku-5-5"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "example": "cheap, small fixes"
+                    },
+                    "disabled": {
+                      "example": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "harness",
+                    "model",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierBackend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTimeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierTypesafeSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "classifierEndpoint": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "baseUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://api.openai.com/v1"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "gpt-5-mini"
+                  },
+                  "apiKeySecret": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                    "example": "CLASSIFIER_API_KEY"
+                  }
+                },
+                "required": [
+                  "baseUrl",
+                  "model",
+                  "apiKeySecret"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "guardrailBudget": {
             "anyOf": [
               {
@@ -18672,6 +19933,17 @@
             ],
             "example": null
           },
+          "promptFragmentRouteClassifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "promptFragmentEpicFailingVerification": {
             "anyOf": [
               {
@@ -19028,6 +20300,13 @@
           "workflow",
           "workflowLabels",
           "workflowVars",
+          "modelOptions",
+          "classifierEnabled",
+          "classifierBackend",
+          "classifierTimeoutSeconds",
+          "classifierTypesafeModel",
+          "classifierTypesafeSecret",
+          "classifierEndpoint",
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
@@ -19060,6 +20339,7 @@
           "promptFragmentCriticRole",
           "promptFragmentCriticSecurity",
           "promptFragmentCriticVerdictContract",
+          "promptFragmentRouteClassifier",
           "promptFragmentEpicFailingVerification",
           "driveCommitNudge",
           "mergeConflictPrompt",
@@ -19652,6 +20932,46 @@
               }
             ]
           },
+          "modelOptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[a-z0-9][a-z0-9-]*$",
+                  "example": "cheap-fix"
+                },
+                "harness": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude"
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "claude-haiku-5-5"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "example": "cheap, small fixes"
+                },
+                "disabled": {
+                  "example": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "harness",
+                "model",
+                "description"
+              ],
+              "additionalProperties": false
+            }
+          },
           "chat": {
             "type": "object",
             "properties": {
@@ -19866,6 +21186,11 @@
                 "type": "string",
                 "minLength": 1,
                 "example": "Critic verdict contract"
+              },
+              "routeClassifier": {
+                "type": "string",
+                "minLength": 1,
+                "example": "Route Classifier instructions"
               },
               "epicFailingVerification": {
                 "type": "string",
@@ -21911,6 +23236,42 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "modelOptionOverrides": {
+                    "example": [
+                      {
+                        "id": "cheap-fix",
+                        "harness": "claude",
+                        "model": "claude-haiku-5-5"
+                      }
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "example": "cheap-fix"
+                        },
+                        "harness": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude-haiku-5-5"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "harness",
+                        "model"
+                      ]
+                    }
                   }
                 }
               }
@@ -27226,6 +28587,147 @@
                       }
                     ]
                   },
+                  "modelOptions": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[a-z0-9][a-z0-9-]*$",
+                              "example": "cheap-fix"
+                            },
+                            "harness": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "claude-haiku-5-5"
+                            },
+                            "description": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "cheap, small fixes"
+                            },
+                            "disabled": {
+                              "example": false,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "harness",
+                            "model",
+                            "description"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierEnabled": {
+                    "example": true,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierBackend": {
+                    "example": "harness",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "typesafe",
+                          "openai-compatible",
+                          "harness"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTimeoutSeconds": {
+                    "example": 30,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTypesafeModel": {
+                    "example": "typesafe/jev-1.13",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierTypesafeSecret": {
+                    "example": "OPENROUTER_API_KEY",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "classifierEndpoint": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "baseUrl": {
+                            "type": "string",
+                            "format": "uri",
+                            "example": "https://api.openai.com/v1"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "gpt-5-mini"
+                          },
+                          "apiKeySecret": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                            "example": "CLASSIFIER_API_KEY"
+                          }
+                        },
+                        "required": [
+                          "baseUrl",
+                          "model",
+                          "apiKeySecret"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "guardrailBudget": {
                     "anyOf": [
                       {
@@ -27635,6 +29137,18 @@
                         "type": "string",
                         "minLength": 1,
                         "example": "Critic verdict contract"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "promptFragmentRouteClassifier": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Route Classifier instructions"
                       },
                       {
                         "type": "null"
@@ -30544,6 +32058,54 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -30803,6 +32365,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -30832,6 +32399,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -31598,6 +33166,7 @@
                     "defaults",
                     "routingLabels",
                     "workflowLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -31943,6 +33512,54 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -32202,6 +33819,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -32231,6 +33853,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -32997,6 +34620,7 @@
                     "defaults",
                     "routingLabels",
                     "workflowLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -33317,6 +34941,53 @@
                       }
                     ]
                   },
+                  "modelOptions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "example": "cheap-fix"
+                        },
+                        "harness": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "claude-haiku-5-5"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "cheap, small fixes"
+                        },
+                        "disabled": {
+                          "example": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "harness",
+                        "model",
+                        "description"
+                      ]
+                    },
+                    "example": [
+                      {
+                        "id": "cheap-fix",
+                        "harness": "claude",
+                        "model": "claude-haiku-5-5",
+                        "description": "cheap, small fixes"
+                      }
+                    ]
+                  },
                   "chat": {
                     "type": "object",
                     "properties": {
@@ -33571,6 +35242,11 @@
                         "minLength": 1,
                         "example": "Critic verdict contract"
                       },
+                      "routeClassifier": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Route Classifier instructions"
+                      },
                       "epicFailingVerification": {
                         "type": "string",
                         "minLength": 1,
@@ -33600,6 +35276,7 @@
                       "criticRole",
                       "criticSecurity",
                       "criticVerdictContract",
+                      "routeClassifier",
                       "epicFailingVerification"
                     ]
                   },
@@ -34317,6 +35994,7 @@
                   "defaults",
                   "routingLabels",
                   "workflowLabels",
+                  "modelOptions",
                   "chat",
                   "autoRunner",
                   "agentMessages",
@@ -34643,6 +36321,54 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -34902,6 +36628,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -34931,6 +36662,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -35697,6 +37429,7 @@
                     "defaults",
                     "routingLabels",
                     "workflowLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",
@@ -36037,6 +37770,54 @@
                             }
                           ]
                         },
+                        "modelOptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                                "example": "cheap-fix"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude-haiku-5-5"
+                              },
+                              "description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "cheap, small fixes"
+                              },
+                              "disabled": {
+                                "example": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "harness",
+                              "model",
+                              "description"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "id": "cheap-fix",
+                              "harness": "claude",
+                              "model": "claude-haiku-5-5",
+                              "description": "cheap, small fixes"
+                            }
+                          ]
+                        },
                         "chat": {
                           "type": "object",
                           "properties": {
@@ -36296,6 +38077,11 @@
                               "minLength": 1,
                               "example": "Critic verdict contract"
                             },
+                            "routeClassifier": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Route Classifier instructions"
+                            },
                             "epicFailingVerification": {
                               "type": "string",
                               "minLength": 1,
@@ -36325,6 +38111,7 @@
                             "criticRole",
                             "criticSecurity",
                             "criticVerdictContract",
+                            "routeClassifier",
                             "epicFailingVerification"
                           ],
                           "additionalProperties": false
@@ -37091,6 +38878,7 @@
                         "defaults",
                         "routingLabels",
                         "workflowLabels",
+                        "modelOptions",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -37402,6 +39190,54 @@
                             }
                           ]
                         },
+                        "modelOptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                                "example": "cheap-fix"
+                              },
+                              "harness": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude"
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude-haiku-5-5"
+                              },
+                              "description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "cheap, small fixes"
+                              },
+                              "disabled": {
+                                "example": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "harness",
+                              "model",
+                              "description"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "example": [
+                            {
+                              "id": "cheap-fix",
+                              "harness": "claude",
+                              "model": "claude-haiku-5-5",
+                              "description": "cheap, small fixes"
+                            }
+                          ]
+                        },
                         "chat": {
                           "type": "object",
                           "properties": {
@@ -37661,6 +39497,11 @@
                               "minLength": 1,
                               "example": "Critic verdict contract"
                             },
+                            "routeClassifier": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "Route Classifier instructions"
+                            },
                             "epicFailingVerification": {
                               "type": "string",
                               "minLength": 1,
@@ -37690,6 +39531,7 @@
                             "criticRole",
                             "criticSecurity",
                             "criticVerdictContract",
+                            "routeClassifier",
                             "epicFailingVerification"
                           ],
                           "additionalProperties": false
@@ -38456,6 +40298,7 @@
                         "defaults",
                         "routingLabels",
                         "workflowLabels",
+                        "modelOptions",
                         "chat",
                         "autoRunner",
                         "agentMessages",
@@ -38829,6 +40672,54 @@
                         }
                       ]
                     },
+                    "modelOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9-]*$",
+                            "example": "cheap-fix"
+                          },
+                          "harness": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude"
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-haiku-5-5"
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "cheap, small fixes"
+                          },
+                          "disabled": {
+                            "example": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "harness",
+                          "model",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "example": [
+                        {
+                          "id": "cheap-fix",
+                          "harness": "claude",
+                          "model": "claude-haiku-5-5",
+                          "description": "cheap, small fixes"
+                        }
+                      ]
+                    },
                     "chat": {
                       "type": "object",
                       "properties": {
@@ -39088,6 +40979,11 @@
                           "minLength": 1,
                           "example": "Critic verdict contract"
                         },
+                        "routeClassifier": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "Route Classifier instructions"
+                        },
                         "epicFailingVerification": {
                           "type": "string",
                           "minLength": 1,
@@ -39117,6 +41013,7 @@
                         "criticRole",
                         "criticSecurity",
                         "criticVerdictContract",
+                        "routeClassifier",
                         "epicFailingVerification"
                       ],
                       "additionalProperties": false
@@ -39883,6 +41780,7 @@
                     "defaults",
                     "routingLabels",
                     "workflowLabels",
+                    "modelOptions",
                     "chat",
                     "autoRunner",
                     "agentMessages",

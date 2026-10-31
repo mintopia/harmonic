@@ -82,8 +82,8 @@ describe('PromptsTab', () => {
     expect(tab(host, /Nudges/)?.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tab(host, /Nudges/));
     await key(tab(host, /Nudges/), 'End');
-    expect(tab(host, /Critic review/)?.getAttribute('aria-selected')).toBe('true');
-    await key(tab(host, /Critic review/), 'Home');
+    expect(tab(host, /Route Classifier/)?.getAttribute('aria-selected')).toBe('true');
+    await key(tab(host, /Route Classifier/), 'Home');
     expect(tab(host, /Implementation turn/)?.getAttribute('aria-selected')).toBe('true');
     expect(host.querySelector('[role=tabpanel]')?.getAttribute('aria-labelledby')).toBe(tab(host, /Implementation turn/)?.id);
   });

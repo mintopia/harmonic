@@ -19,6 +19,7 @@ import {
   promptFragmentsShape,
   routingLabelSchema,
   workflowLabelSchema,
+  modelOptionsSchema,
 } from '../../config.js';
 import { workflowReferenceProblems } from '../../domain/workflow-labels.js';
 import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
@@ -100,6 +101,8 @@ const configPatchBodySchema = z
     /** Replaces the whole ordered list; labels are unique case-insensitively and each Harness must be configured. */
     routingLabels: z.array(routingLabelSchema).meta({ example: [{ label: 'reasoning', harness: 'claude', model: 'claude-opus-5-5' }] }).optional(),
     workflowLabels: z.array(workflowLabelSchema).meta({ example: [{ label: 'bug', workflow: 'implement' }] }).optional(),
+    /** Replaces the whole ordered list; ids are unique, each Harness must be configured and each Model in that Harness's catalog. */
+    modelOptions: modelOptionsSchema.optional(),
     chat: z
       .object({
         /** Default Harness a new Conversation starts with. */

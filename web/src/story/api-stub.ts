@@ -170,7 +170,7 @@ const syntheticAttempt = (s: ReturnType<typeof timelineSpans>[number]): Attempt 
     verifiedSha: null,
     workingDir: null,
     escalationReason: s.state === 'escalated' ? 'escalated to human' : null,
-    verifierStatuses: [],
+    harness: null, model: null, classifier: null, routing: null, verifierStatuses: [],
     continuation: null,
     steps: [
       { id: s.attemptId * 10 + 1, attemptId: s.attemptId, type: 'rebase', position: 1, state: 'passed', command: null, verdict: 'clean', logLocator: null, startedAt: at(0), endedAt: at(0.08) },
@@ -237,6 +237,19 @@ const trackerKindFixtures: TrackerKindInfo[] = [
     capabilities: {},
   },
 ];
+
+const storyClassifierPrompt = [
+  'You route software tickets to an AI model. Choose exactly one option from the list below.',
+  'Prefer the cheapest option that can plausibly finish the ticket.',
+  'Reply with only a JSON object: {"optionId": "<id from the options list>", "reason": "<one short line>"}.',
+  '',
+  'Options:',
+  '- cheap-fix: cheap, small fixes (claude claude-haiku-4-5)',
+  '- deep-work: hard, cross-cutting work (claude claude-opus-5-5)',
+  '',
+  'Ticket:',
+  '{ "title": "Fix the flaky login test", "labels": ["bug"], "attemptNumber": 1 }',
+].join('\n');
 
 const storyResolvedPrompts = [
   'Your implementation left uncommitted changes. Commit the completed work now, then finish.',
@@ -399,7 +412,12 @@ export const api: typeof RealApi = {
   updateWorkspace: (_id: number, _patch: object) => ok(workspaceFixture),
   deleteWorkspace: (_id: number) => ok(null),
   refreshTracker: (_id: number) => ok({ ok: true as const }),
-  updateTask: (_id: number, _input: object) => ok(f.task),
+  updateTask: (_id: number, input: { modelOptionOverrides?: { model: string }[] }) => {
+    const bad = input.modelOptionOverrides?.findIndex((o) => o.model.includes('gpt-9')) ?? -1;
+    return bad >= 0
+      ? Promise.reject(new Error(`modelOptionOverrides.${bad}.model: model '${input.modelOptionOverrides![bad]!.model}' is not in the claude model catalog`))
+      : ok(f.task);
+  },
   promoteTask: (_id: number) => ok(f.task),
   cancelTask: (_id: number, _withDependents = false) => ok(f.task),
   pauseTask: (_id: number) => ok(f.task),
@@ -434,7 +452,9 @@ export const api: typeof RealApi = {
   epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   resolvedPrompt: (_owner: ResolvedPromptOwner, locator: string, index?: number) =>
-    index === undefined
+    locator === 'routing/classifier/prompt.md'
+      ? ok(storyClassifierPrompt)
+      : index === undefined
       ? ok(f.criticPrompts[locator] ?? '')
       : index === 9
         ? Promise.reject(new ApiError(404, 'not archived'))

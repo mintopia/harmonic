@@ -19,6 +19,7 @@ import { type CriticHarnessDrive } from '../verification/critic.js';
 import type { CommandSpawn } from '../verification/command-verifier.js';
 import type { SpawnProcessGroup } from './process-groups.js';
 import type { FireAndForget } from '../error-handling.js';
+import type { RouteClassifier } from '../domain/route-classifier.js';
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -110,6 +111,8 @@ export interface RunnerOptions {
   >;
   /** The agent-critic drive; the real one spawns the builder's configured harness as a contained read-only reviewer. */
   criticDrive: CriticHarnessDrive;
+  /** The Route Classifier consulted at each Attempt start; absent means no classification. */
+  routeClassifier?: RouteClassifier;
   commandSpawn: CommandSpawn;
   spawnProcessGroup: SpawnProcessGroup;
   fireAndForget: FireAndForget;

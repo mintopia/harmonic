@@ -14,6 +14,10 @@ import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
 
+function rejectOptionId(request: PermissionRequest): string | null {
+  return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
+}
+
 function grantOptionId(request: PermissionRequest): string | null {
   const options = request.options;
   const pick =
@@ -22,10 +26,6 @@ function grantOptionId(request: PermissionRequest): string | null {
 }
 
 const READ_ONLY_PERMITTED_KINDS = new Set(['read', 'search', 'fetch', 'think', 'execute']);
-
-function rejectOptionId(request: PermissionRequest): string | null {
-  return (request.options.find((o) => o.kind === 'reject_once') ?? request.options.find((o) => o.kind === 'reject_always'))?.optionId ?? null;
-}
 
 /** What a drive of one critic turn produced. */
 export interface CriticDriveResult {
@@ -47,6 +47,8 @@ export interface CriticDriveRequest {
   cwd: string;
   prompt: string;
   timeoutMs: number;
+  /** Refuse every permission request and never switch to the unattended mode; for sessions that must have no tool access. */
+  denyPermissions?: boolean;
   /** Each ACP `session/update` from the critic turn, verbatim, for a live
    * transcript that renders exactly like the builder's. */
   onUpdate?: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
@@ -140,7 +142,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
               return { outcome: 'cancelled' };
             }
             permissionRequests.push(request);
-            if (req.readOnly && !READ_ONLY_PERMITTED_KINDS.has(request.toolCall.kind ?? '')) {
+            if (req.denyPermissions || (req.readOnly && !READ_ONLY_PERMITTED_KINDS.has(request.toolCall.kind ?? ''))) {
               const denied = rejectOptionId(request);
               return denied ? { outcome: 'selected', optionId: denied } : { outcome: 'cancelled' };
             }
@@ -176,7 +178,7 @@ export function createAcpCriticDrive(spawnProcessGroup: SpawnProcessGroup): Crit
         }
         if (initialize && sessionId !== req.continueSessionId) await req.onSessionCreated?.(sessionId, initialize);
 
-        const mode = req.readOnly ? null : adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
+        const mode = req.denyPermissions || req.readOnly ? null : adapterFor(req.harnessId).unattendedPermissionMode(driver.availableModes, req.harness.permissionMode);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);
         }

@@ -18,8 +18,9 @@ import {
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
 import { PROMPT_FRAGMENT_OVERRIDE_KEYS, unknownWorkspaceFragmentIssues, type PromptFragmentOverrides } from './prompt-fragments.js';
-import { EXPORT_STATES, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionsSchema, exportDirectoryPathSchema, exportS3EndpointSchema, promptFragmentOverrideShape, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
+import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { workspaceWorkflowVarsSchema } from './workflow-vars.js';
@@ -96,6 +97,19 @@ export const workspaceOverridesSchema = z.object({
   workflow: z.string().min(1).nullable().optional().meta({ example: 'implement' }),
   workflowLabels: workflowLabelOverrideSchema.nullable().optional(),
   workflowVars: workspaceWorkflowVarsSchema.nullable().optional().meta({ example: { implement: { maxAttempts: 3 } } }),
+  /** Workspace-only Model Options, added after the global list; null adds none. */
+  modelOptions: modelOptionsSchema.nullable().optional(),
+  /** Route Classifier on/off override; null inherits off. */
+  classifierEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  classifierBackend: z.enum(CLASSIFIER_BACKENDS).nullable().optional().meta({ example: 'harness' }),
+  /** Seconds the Route Classifier may take before it abstains; null inherits 30. */
+  classifierTimeoutSeconds: z.number().positive().nullable().optional().meta({ example: 30 }),
+  /** OpenRouter model id for the TypeSafe backend; null inherits the default. */
+  classifierTypesafeModel: z.string().trim().min(1).nullable().optional().meta({ example: 'typesafe/jev-1.13' }),
+  /** Name of the ADR-0046 Secret holding the OpenRouter key; null means none. */
+  classifierTypesafeSecret: secretNameSchema.nullable().optional().meta({ example: 'OPENROUTER_API_KEY' }),
+  /** OpenAI-compatible endpoint for the `openai-compatible` classifier backend; null means none is set. */
+  classifierEndpoint: classifierEndpointSchema.nullable().optional(),
   /** Budget-Guardrail override; null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override; null inherits `config.guardrails.progress`. */
@@ -181,6 +195,13 @@ export const OVERRIDE_KEYS = [
   'workflow',
   'workflowLabels',
   'workflowVars',
+  'modelOptions',
+  'classifierEnabled',
+  'classifierBackend',
+  'classifierTimeoutSeconds',
+  'classifierTypesafeModel',
+  'classifierTypesafeSecret',
+  'classifierEndpoint',
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
@@ -284,6 +305,13 @@ export class WorkspaceService {
       workflow: o.workflow,
       workflowLabels: o.workflowLabels != null ? JSON.stringify(o.workflowLabels) : null,
       workflowVars: o.workflowVars != null ? JSON.stringify(o.workflowVars) : null,
+      modelOptions: o.modelOptions != null ? JSON.stringify(o.modelOptions) : null,
+      classifierEnabled: o.classifierEnabled,
+      classifierBackend: o.classifierBackend,
+      classifierTimeoutSeconds: o.classifierTimeoutSeconds,
+      classifierTypesafeModel: o.classifierTypesafeModel,
+      classifierTypesafeSecret: o.classifierTypesafeSecret,
+      classifierEndpoint: o.classifierEndpoint != null ? JSON.stringify(o.classifierEndpoint) : null,
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,

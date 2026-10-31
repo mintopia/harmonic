@@ -43,6 +43,8 @@ import type {
   EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
+  ModelOption,
+  ClassifierEndpoint,
   VerifierStatus,
   Workspace,
   TrackerKindInfo,
@@ -312,6 +314,13 @@ export const api = {
       workflow?: string | null;
       workflowLabels?: WorkflowLabelOverlayEntry[] | null;
       workflowVars?: Record<string, Record<string, string | number | boolean>> | null;
+      modelOptions?: ModelOption[] | null;
+      classifierEnabled?: boolean | null;
+      classifierBackend?: 'typesafe' | 'openai-compatible' | 'harness' | null;
+      classifierTimeoutSeconds?: number | null;
+      classifierTypesafeModel?: string | null;
+      classifierTypesafeSecret?: string | null;
+      classifierEndpoint?: ClassifierEndpoint | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
       exportEnabled?: boolean | null;

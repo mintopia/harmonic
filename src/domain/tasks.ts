@@ -31,8 +31,9 @@ import { resolveWorkspace } from './workspaces.js';
 import { defaultRoute, routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
 import { harnessConfig } from './route.js';
+import { isModelOptionDefined, type ModelOptionOverride, resolveClassifierSettings } from './model-options.js';
 import type { EscalationCause, TaskRouting } from './task-routing.js';
-import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
+import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, modelOptionIssues, modelOptionSchema, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
@@ -70,6 +71,8 @@ export const createTaskInputSchema = z.object({
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
+const modelOptionOverrideSchema = modelOptionSchema.pick({ id: true, harness: true, model: true });
+
 export const updateTaskInputSchema = createTaskInputSchema
   .omit({ state: true, dependsOn: true, workspaceId: true, workflow: true })
   .partial()
@@ -80,6 +83,8 @@ export const updateTaskInputSchema = createTaskInputSchema
     priority: createTaskInputSchema.shape.priority.nullable(),
     conflictResolveTurns: createTaskInputSchema.shape.conflictResolveTurns.nullable(),
     baseBranch: createTaskInputSchema.shape.baseBranch.nullable(),
+    /** Replaces the Ticket's Model Option overrides; each changes only the Harness/Model of a code defined in the Workspace or globally. */
+    modelOptionOverrides: z.array(modelOptionOverrideSchema).optional().meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
   });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
@@ -197,6 +202,8 @@ export interface TaskWithDeps extends TaskRow {
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
   routing: TaskRouting | null;
+  /** The Workspace's Route Classifier is on; lets the API tell "operator setting won" from "never consulted". */
+  classifierEnabled: boolean;
 }
 
 /** A scheduler candidate with its unfinished local dependency ids. */
@@ -327,7 +334,7 @@ export class TaskService {
 
   /** A mirrored Attempt in flight keeps the Harness/Model it started with; relabelling applies from the next Attempt. */
   private isRoutePinned(raw: RawTaskRow): boolean {
-    return IN_FLIGHT_STATES.includes(raw.state) && raw.origin === 'mirrored' && routeApplies(raw);
+    return IN_FLIGHT_STATES.includes(raw.state) && routeApplies(raw);
   }
 
   private async runningRoutes(taskIds: readonly number[]): Promise<Map<number, { harness: string; model: string }>> {
@@ -469,6 +476,21 @@ export class TaskService {
     if (harness && !harnessConfig(config, harness)) {
       throw new DomainError('validation', `harness '${harness}' is not configured`);
     }
+  }
+
+  private async assertModelOptionOverrides(task: TaskRow, overrides: readonly ModelOptionOverride[]): Promise<void> {
+    const config = this.getConfig();
+    const workspace = await this.resolveWorkspace(task.workspaceId ?? undefined);
+    const seen = new Set<string>();
+    overrides.forEach((override, index) => {
+      if (seen.has(override.id)) throw new DomainError('validation', `modelOptionOverrides.${index}.id: model option code '${override.id}' is listed twice`);
+      seen.add(override.id);
+      if (!isModelOptionDefined(override.id, workspace, config)) {
+        throw new DomainError('validation', `modelOptionOverrides.${index}.id: model option code '${override.id}' is not defined in this Workspace or globally`);
+      }
+    });
+    const [first] = modelOptionIssues(overrides.map((o) => ({ ...o, description: o.id })), config.harnesses);
+    if (first) throw new DomainError('validation', `modelOptionOverrides.${first.index}.${first.field}: ${first.message}`);
   }
 
   async create(input: CreateTaskInput): Promise<TaskRow> {
@@ -804,7 +826,8 @@ export class TaskService {
       if (!claimed) return undefined;
       const scope = await this.routing.scopeFor(claimed.workspaceId);
       const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
-      const pinned = claimed.origin === 'mirrored' ? defaults : { harness, model, ...defaults };
+      const classified = routeApplies(claimed) && resolveClassifierSettings(scope.workspace).enabled;
+      const pinned = claimed.origin === 'mirrored' || classified ? defaults : { harness, model, ...defaults };
       const row = await this.db.write((db) =>
         db
           .update(tasks)
@@ -888,10 +911,16 @@ export class TaskService {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
     this.assertHarnessConfigured(input.harness);
+    const { modelOptionOverrides, ...columns } = input;
+    if (modelOptionOverrides) await this.assertModelOptionOverrides(task, modelOptionOverrides);
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ ...input, updatedAt: Date.now() })
+        .set({
+          ...columns,
+          ...(modelOptionOverrides ? { modelOptionOverrides: modelOptionOverrides.length > 0 ? modelOptionOverrides : null } : {}),
+          updatedAt: Date.now(),
+        })
         .where(eq(tasks.id, id))
         .returning()
         .get(),
@@ -1248,7 +1277,7 @@ export class TaskService {
       humanOnly: this.humanOnly(task, containerRefs, triage),
       isEpic: this.isEpic(task, containerRefs),
       overrides: this.overridesOf(raw),
-      routing: this.routing.routingOf(raw, await this.routing.scopeFor(raw.workspaceId)),
+      ...this.routing.routingFieldsOf(raw, await this.routing.scopeFor(raw.workspaceId)),
     };
   }
 
@@ -1341,7 +1370,7 @@ export class TaskService {
         humanOnly: this.humanOnly(task, containerRefs, triage),
         isEpic: this.isEpic(task, containerRefs),
         overrides: this.overridesOf(raw),
-        routing: this.routing.routingOf(raw, scopeOf(task.workspaceId)),
+        ...this.routing.routingFieldsOf(raw, scopeOf(task.workspaceId)),
       });
     });
     return result;

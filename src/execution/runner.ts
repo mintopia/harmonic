@@ -24,6 +24,7 @@ import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, AttemptRow, StepRow } from '../db/schema.js';
 import { SessionStore } from '../domain/sessions.js';
+import type { ClassifierOutcome } from '../domain/route-classifier.js';
 import { DomainError } from '../domain/errors.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
@@ -83,6 +84,7 @@ export class Runner {
   private readonly agentMessages: RunnerOptions['agentMessages'];
   private readonly postMerge: RunnerOptions['postMerge'];
   private readonly criticDrive: RunnerOptions['criticDrive'];
+  private readonly routeClassifier: RunnerOptions['routeClassifier'];
   private readonly commandSpawn: RunnerOptions['commandSpawn'];
   private readonly spawnProcessGroup: RunnerOptions['spawnProcessGroup'];
   private readonly fireAndForget: FireAndForget;
@@ -131,6 +133,7 @@ export class Runner {
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.criticDrive = options.criticDrive;
+    this.routeClassifier = options.routeClassifier;
     this.commandSpawn = options.commandSpawn;
     this.spawnProcessGroup = options.spawnProcessGroup;
     this.fireAndForget = options.fireAndForget;
@@ -594,9 +597,10 @@ export class Runner {
   }
 
   private async beginRun(requested: TaskRow, parent?: SpanContext, resumedAttempt?: AttemptRow): Promise<AttemptRow> {
-    const task: TaskRow = resumedAttempt?.harness
+    let task: TaskRow = resumedAttempt?.harness
       ? { ...requested, harness: resumedAttempt.harness, model: resumedAttempt.model ?? requested.model }
       : requested;
+    let classification: ClassifierOutcome | null = null;
     // Covers the pre-spawn/between-turns gaps too, so a steer can't mistake a healthy Task for stranded.
     this.activeRuns.markDriving(task.id);
     let created: AttemptRow | undefined;
@@ -623,6 +627,10 @@ export class Runner {
       const workflowTask = resumedAttempt ? (task.workflowRef !== null ? task : null) : await this.workflowTaskFor(task);
       if (workflowTask) return await this.beginWorkflowRun(workflowTask, resumedAttempt);
       const config = this.getConfig();
+      if (!resumedAttempt) {
+        classification = await this.classifyRoute(task);
+        if (classification?.kind === 'chosen') task = { ...task, harness: classification.option.harness, model: classification.option.model };
+      }
       const route = await this.taskService.routing.ticketRoute(task);
       if (!route.ok) {
         const unspawned = await this.attempts.create(task.id);
@@ -656,7 +664,10 @@ export class Runner {
       }
       const run = created;
       const bound = await this.sessionContinuation.bindContinuationIfEligible(task, run);
-      if (!resumedAttempt) await this.recordRouteChange(task, bound);
+      if (!resumedAttempt) {
+        if (classification) await this.recordClassification(task, bound, classification);
+        await this.recordRouteChange(task, bound);
+      }
       if ((await this.checkRunBoundary(task.id)).stop) {
         this.activeRuns.clearDriving(task.id);
         return bound;
@@ -762,6 +773,55 @@ export class Runner {
       }
     })(), 'runner.drive');
     return run;
+  }
+
+  /** Runs the Route Classifier when it decides this Ticket's route; never throws, since the classifier is advisory. */
+  private async classifyRoute(task: TaskRow): Promise<ClassifierOutcome | null> {
+    const classifier = this.routeClassifier;
+    if (!classifier) return null;
+    try {
+      const workspace = await this.taskService.routing.classifierWorkspace(task);
+      if (!workspace) return null;
+      const previous = (await this.attempts.listForTask(task.id)).findLast((a) => a.state !== 'running');
+      return await classifier.classify({
+        workspace,
+        title: task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`,
+        description: task.prompt,
+        labels: task.trackerLabels ?? [],
+        attemptNumber: (previous?.number ?? 0) + 1,
+        previousVerdict: previous ? (previous.reason ?? previous.state) : undefined,
+        previousFailureReason: previous ? (previous.detail ?? previous.feedback ?? undefined) : undefined,
+        modelOptionOverrides: task.modelOptionOverrides,
+      });
+    } catch (error) {
+      return { kind: 'abstained', reason: errorMessage(error), routing: null };
+    }
+  }
+
+  private async recordClassification(task: TaskRow, bound: AttemptRow, outcome: ClassifierOutcome): Promise<void> {
+    await bestEffort(async () => {
+      await this.attempts.update(bound.id, {
+        routeKind: outcome.kind === 'chosen' ? 'classifier' : 'abstained',
+        routeOption: outcome.kind === 'chosen' ? outcome.option.id : null,
+        routeReason: outcome.reason,
+        routeOptionPosition: outcome.kind === 'chosen' ? outcome.position : null,
+        routeOptionCount: outcome.kind === 'chosen' ? outcome.optionCount : null,
+        ...(outcome.routing
+          ? {
+              routingUsage: JSON.stringify(outcome.routing.usage),
+              routingCost: outcome.routing.cost ? JSON.stringify(outcome.routing.cost) : null,
+            }
+          : {}),
+      });
+      const archived = outcome.prompt === undefined ? null : await this.archive?.appendRoutingPrompt(task, bound.number, outcome.prompt);
+      const promptRef = archived ? { locator: archived.locator, promptIndex: archived.promptIndex } : {};
+      const payload =
+        outcome.kind === 'chosen'
+          ? { ...promptRef, event: 'route-classified', optionId: outcome.option.id, harness: outcome.option.harness, model: outcome.option.model, reason: outcome.reason }
+          : { ...promptRef, event: 'route-classifier-abstained', message: `Route Classifier abstained: ${outcome.reason}`, reason: outcome.reason };
+      const persisted = await this.attempts.appendEvent(bound.id, { type: 'lifecycle', payload });
+      this.events.onAttemptEvent?.(persisted);
+    }, { op: 'runner.beginRun.recordClassification', level: 'warn', context: { attemptId: bound.id } });
   }
 
   private async recordRouteChange(task: TaskRow, bound: AttemptRow): Promise<void> {

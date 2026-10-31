@@ -61,6 +61,9 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   taskPostMergeCommands: string | null; taskPostMergeCritics: string | null;
   epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
   workflow: string | null; workflowLabels: string | null; workflowVars: string | null;
+  modelOptions: string | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
+  classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null;
+  classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
   drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
   driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null; pauseMessage: string | null;
@@ -147,6 +150,8 @@ export const tasks = sqliteTable('tasks', {
   trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>(),
+  /** Ticket-scoped Model Option overrides (code, Harness, Model); null when none. */
+  modelOptionOverrides: text('model_option_overrides', { mode: 'json' }).$type<Array<{ id: string; harness: string; model: string }>>(),
   /** The ticket's title at last scan, verbatim (`prompt` is the derived title+body blend). */
   trackerTitle: text('tracker_title'),
   trackerBody: text('tracker_body'),
@@ -248,6 +253,18 @@ export const attempts = sqliteTable('attempts', {
   usage: text('usage'),
   /** JSON: Cost frozen when the final Usage is recorded. */
   cost: text('cost'),
+  /** JSON: Usage and Cost of the Route Classifier call that routed this Attempt; a separate line, never a Step's or the implementation Cost. */
+  routingUsage: text('routing_usage'),
+  routingCost: text('routing_cost'),
+  /** How the Route Classifier decided this Attempt: `classifier` chose an option, `abstained` fell to the default; null when it was not consulted. */
+  routeKind: text('route_kind', { enum: ['classifier', 'abstained'] }),
+  /** The Model Option id the classifier chose; null unless `routeKind` is `classifier`. */
+  routeOption: text('route_option'),
+  /** The classifier's one-line reason, or the abstention cause. */
+  routeReason: text('route_reason'),
+  /** The chosen option's 1-based place in the Model Option list the classifier saw, and that list's length; null unless `routeKind` is `classifier`. */
+  routeOptionPosition: integer('route_option_position'),
+  routeOptionCount: integer('route_option_count'),
   /** JSON: latest live-usage snapshot, overwritten on a coarse cadence and on finish. */
   liveUsage: text('live_usage'),
   /** JSON: `ResolvedGuardrails` snapshotted at Attempt start; a later config change never alters it. */

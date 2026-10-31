@@ -11,7 +11,7 @@ import type {
   NotificationRow,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import type { TaskRouting } from '../domain/task-routing.js';
+import { classifierRouteOf, type AttemptClassifier, type TaskClassifier, type TaskRouting } from '../domain/task-routing.js';
 import type { PersistedAttemptEvent } from '../domain/attempts.js';
 import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
@@ -90,6 +90,13 @@ export interface ApiAttempt {
   escalationReason: string | null;
   workingDir: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
+  /** The Harness and Model this Attempt started on; null for Attempts that predate the record. */
+  harness: string | null;
+  model: string | null;
+  /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
+  classifier: AttemptClassifier | null;
+  /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
+  routing: { cost: Cost | null; models: string[] } | null;
   verifierStatuses: VerifierStatus[];
   steps: ApiStep[];
 }
@@ -154,6 +161,18 @@ export function attemptToTimelineApi(
     escalationReason,
     workingDir,
     continuation: continuationToApi(attempt.continuation),
+    harness: attempt.harness,
+    model: attempt.model,
+    classifier: attempt.routeKind
+      ? {
+          kind: attempt.routeKind === 'classifier' ? 'routed' : 'abstained',
+          optionId: attempt.routeOption,
+          reason: attempt.routeReason,
+          position: attempt.routeOptionPosition,
+          optionCount: attempt.routeOptionCount,
+        }
+      : null,
+    routing: attempt.routingUsage ? { cost: parseCost(attempt.routingCost), models: Object.keys(parseUsage(attempt.routingUsage)?.models ?? {}) } : null,
     verifierStatuses: verifierStatuses({ verifiers: verifiers.task.preMerge, attempts: attemptVerifications, stepType }),
     steps: stepRows.map(stepToApi),
   };
@@ -403,8 +422,10 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | TrackerFactColumns> & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | 'classifierEnabled' | TrackerFactColumns> & {
   workspaceId: number;
+  /** Ticket-scoped Model Option overrides; empty when none. */
+  modelOptionOverrides: Array<{ id: string; harness: string; model: string }>;
   /** Resolved effective value; always one of `ISOLATION_MODES` (`config.ts`) at rest. */
   isolationMode: IsolationMode;
   /** Resolved effective value; always one of `PRIORITIES` (`config.ts`) at rest. */
@@ -415,6 +436,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'isolationMode' | 'prio
   };
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
   routing: TaskRouting | null;
+  /** What the Route Classifier did for this Ticket; null when it did not decide (a Routing Label won, the classifier is off, or no Attempt consulted it). */
+  classifier: TaskClassifier | null;
   /** The prompt's first line, bounded; the full `prompt` is item-GET-only. */
   summary: string;
   cost: Cost | null;
@@ -514,7 +537,9 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
     humanOnly: true,
     isEpic: true,
     overrides: { harness: null, model: null, isolationMode: null, priority: null, conflictResolveTurns: null },
+    modelOptionOverrides: [],
     routing: null,
+    classifier: null,
     summary: ticket.title,
     cost: null,
     url: ticket.url,
@@ -535,7 +560,7 @@ export function epicToListRow(ticket: Ticket, workspaceId: number): ApiEpicListR
   };
 }
 
-function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId' | 'workflowRequested'> {
+function stripTrackerFactCols(task: Omit<TaskWithDeps, 'classifierEnabled'>): Omit<TaskWithDeps, TrackerFactColumns | 'archiveId' | 'workflowRequested' | 'classifierEnabled'> {
   const {
     archiveId,
     workflowRequested,
@@ -581,8 +606,15 @@ export function taskToApiDto(
   },
 ): ApiTask {
   const running = runs.find((r) => r.state === 'running');
+  const { classifierEnabled, ...rest } = task;
   return {
-    ...stripTrackerFactCols(task),
+    ...stripTrackerFactCols(rest),
+    classifier: classifierRouteOf({
+      enabled: classifierEnabled,
+      labelMatched: task.routing !== null,
+      operatorSet: task.overrides.harness !== null || task.overrides.model !== null,
+      latest: runs.at(-1),
+    }),
     isolationMode: task.isolationMode as IsolationMode,
     priority: task.priority as Priority,
     overrides: {
@@ -590,6 +622,7 @@ export function taskToApiDto(
       isolationMode: task.overrides.isolationMode as IsolationMode | null,
       priority: task.overrides.priority as Priority | null,
     },
+    modelOptionOverrides: task.modelOptionOverrides ?? [],
     workspaceId: atRestWorkspaceId(task.workspaceId),
     summary: summarize(task.prompt),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
