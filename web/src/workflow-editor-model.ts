@@ -12,26 +12,24 @@ export interface WorkflowEditorIssue {
 export interface WorkflowEditorValidation {
   issues: WorkflowEditorIssue[];
   diagram: WorkflowDiagramModel | null;
-  stale: boolean;
 }
 
 export function toEditorIssues(issues: readonly ErrorIssue[], source: WorkflowEditorIssue['source']): WorkflowEditorIssue[] {
   return issues.map((i) => ({ line: i.line, column: i.column, message: i.message, source }));
 }
 
-export function validateWorkflowText(text: string, prev: WorkflowDiagramModel | null): WorkflowEditorValidation {
+export function validateWorkflowText(text: string): WorkflowEditorValidation {
   try {
-    return { issues: [], diagram: buildWorkflowDiagram(parseWorkflow(text)), stale: false };
+    return { issues: [], diagram: buildWorkflowDiagram(parseWorkflow(text)) };
   } catch (error) {
     const issues = (error as { issues?: ErrorIssue[] }).issues;
     const found = issues?.length ? toEditorIssues(issues, 'schema') : [{ line: 1, column: 1, message: error instanceof Error ? error.message : 'invalid workflow', source: 'schema' as const }];
-    return { issues: found, diagram: prev, stale: prev !== null };
+    return { issues: found, diagram: null };
   }
 }
 
 export interface MessagePart { text: string; code: boolean }
 
-/** Splits `unknown key: x (did you mean y?)` so the offending token and the suggestion render as code chips. */
 export function messageParts(message: string): MessagePart[] {
   const m = /^unknown key: (\S+?)(?: \(did you mean (\S+?)\?\))?$/.exec(message);
   if (!m) return [{ text: message, code: false }];

@@ -10,7 +10,7 @@ import { Icon } from '../Icon';
 import { downloadText } from './download';
 import { YamlEditor } from './YamlEditor';
 import { WorkflowDiagram } from '../WorkflowDiagram';
-import { validateWorkflowText } from '../../workflow-editor-model';
+import { messageParts, toEditorIssues, validateWorkflowText } from '../../workflow-editor-model';
 import type { WorkflowDiagramModel } from '../../../../src/domain/workflow-diagram.js';
 import { deleteBlock, editorReducer, editorStatus, initialEditor, issuesOf, type EditorStatusKind } from './workflows-model';
 
@@ -62,10 +62,10 @@ function EditorBody({
   const [state, dispatch] = useReducer(editorReducer, initialEditor(doc.text, doc.version));
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [lastGood, setLastGood] = useState<WorkflowDiagramModel | null>(null);
-  const parsed = useMemo(() => validateWorkflowText(state.text, null), [state.text]);
+  const parsed = useMemo(() => validateWorkflowText(state.text), [state.text]);
   if (parsed.diagram !== null && parsed.diagram !== lastGood) setLastGood(parsed.diagram);
-  const live = parsed.diagram === null ? { ...parsed, diagram: lastGood, stale: lastGood !== null } : parsed;
-  const issues = useMemo(() => [...live.issues, ...state.issues], [live.issues, state.issues]);
+  const live = { issues: parsed.issues, diagram: parsed.diagram ?? lastGood, stale: parsed.diagram === null && lastGood !== null };
+  const issues = useMemo(() => [...live.issues, ...toEditorIssues(state.issues, 'server')], [live.issues, state.issues]);
   const status = editorStatus({ ...state, issues });
   const blocked = deleteBlock(entry);
   const readOnly = doc.bundled;
@@ -142,6 +142,28 @@ function EditorBody({
             <span className="font-semibold text-ink">Read-only.</span>
             <span>Bundled workflows ship with Harmonic and are upgraded with it. Duplicate this one to edit a copy.</span>
           </div>
+        </div>
+      )}
+      {issues.length > 0 && (
+        <div className="px-3.5 pb-2">
+          <ul aria-label="Workflow errors" className="m-0 list-none p-0 text-small text-fail">
+            {issues.map((issue, i) => (
+              <li key={i} className="flex gap-2 py-0.5">
+                <span className="min-w-[76px] whitespace-nowrap font-data text-label text-muted">Line {issue.line}, col {issue.column}</span>
+                <span>
+                  {messageParts(issue.message).map((part, j) =>
+                    part.code ? (
+                      <code key={j} className="rounded-sm bg-raised px-1 font-data text-ink">
+                        {part.text}
+                      </code>
+                    ) : (
+                      part.text
+                    ),
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="px-3.5">

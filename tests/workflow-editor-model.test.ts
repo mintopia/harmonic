@@ -6,34 +6,21 @@ const bad = good.replace('uses: agent', 'uses: agent\n          retries: 3');
 
 describe('validateWorkflowText', () => {
   it('builds a diagram for valid text', () => {
-    const r = validateWorkflowText(good, null);
+    const r = validateWorkflowText(good);
     expect(r.issues).toEqual([]);
     expect(r.diagram).not.toBeNull();
-    expect(r.stale).toBe(false);
   });
 
-  it('flags an unknown key at its line, keeps the last diagram as stale, and recovers', () => {
-    const first = validateWorkflowText(good, null);
-    const r = validateWorkflowText(bad, first.diagram);
+  it('flags an unknown key at its line with a null diagram', () => {
+    const r = validateWorkflowText(bad);
     expect(r.issues).toEqual([{ line: 11, column: 11, message: 'unknown key: retries', source: 'schema' }]);
-    expect(r.diagram).toBe(first.diagram);
-    expect(r.stale).toBe(true);
-    const fixed = validateWorkflowText(good, r.diagram);
-    expect(fixed.issues).toEqual([]);
-    expect(fixed.stale).toBe(false);
-  });
-
-  it('has no stale diagram when nothing valid was ever parsed', () => {
-    const r = validateWorkflowText(bad, null);
     expect(r.diagram).toBeNull();
-    expect(r.stale).toBe(false);
   });
-
 });
 
 describe('step-list unknown key hint', () => {
   it('suggests attempts for retries as a step entry', () => {
-    const r = validateWorkflowText(['name: w', 'description: d', 'steps:', '  - retries: 2', ''].join('\n'), null);
+    const r = validateWorkflowText(['name: w', 'description: d', 'steps:', '  - retries: 2', ''].join('\n'));
     expect(r.issues[0]!.message).toContain('(did you mean attempts?)');
   });
 });

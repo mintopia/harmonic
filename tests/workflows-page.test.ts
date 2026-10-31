@@ -104,7 +104,7 @@ describe('Workflows page', () => {
     expect(flagged).toHaveLength(1);
     expect(flagged[0]!.textContent).toContain('retries: 1');
     expect(flagged[0]!.getAttribute('data-issue-line')).toBe('5');
-    expect(host.querySelector('.cm-issue-message')!.textContent).toBe('Line 5, col 5: unknown key: retries');
+    expect(host.querySelector('.cm-issue-message')!.textContent).toBe('serverLine 5, col 5:unknown key: retries');
     expect(host.textContent).toContain('1 error');
     expect((button(host, 'Save · 1 error') as HTMLButtonElement).disabled).toBe(true);
 

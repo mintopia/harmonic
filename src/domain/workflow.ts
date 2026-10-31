@@ -44,7 +44,6 @@ function editDistance(a: string, b: string): number {
   return prev[b.length]!;
 }
 
-/** The valid name closest to a mistyped one: a known synonym, or within two edits. */
 export function didYouMean(input: string, candidates: readonly string[]): string | undefined {
   const alias = KEY_ALIASES[input];
   if (alias !== undefined && candidates.includes(alias)) return alias;
