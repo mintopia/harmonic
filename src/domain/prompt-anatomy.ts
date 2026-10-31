@@ -99,12 +99,12 @@ export const ORIGIN = {
   by: 'origin',
   label: 'One of, by Task origin',
   options: [
-    { value: 'native', label: 'Native', when: 'when the Task is native', parts: [template('taskPrompt')] },
+    { value: 'native', label: 'Native', when: 'when the Task is native', parts: [template('taskPrompt', { library: 'taskPrompt' })] },
     {
       value: 'mirrored',
       label: 'Mirrored',
       when: 'when the Task is mirrored from a ticket',
-      parts: [template('drivePrompt'), template('unattendedReminder')],
+      parts: [template('drivePrompt', { library: 'drivePrompt' }), template('unattendedReminder', { library: 'unattendedReminder' })],
     },
   ],
 } as const satisfies AnatomyChoice;
@@ -118,11 +118,11 @@ export const NUDGE_EVENT = {
       value: 'continue',
       label: 'Continue',
       when: 'when a turn ends without finishing or escalating',
-      parts: [template('continuePrompt'), template('unattendedReminder')],
+      parts: [template('continuePrompt', { library: 'continuePrompt' }), template('unattendedReminder', { library: 'unattendedReminder' })],
     },
-    { value: 'commit', label: 'Commit', when: 'when a turn ends with uncommitted changes', parts: [template('commitNudge')] },
-    { value: 'pause', label: 'Pause', when: 'when the Task is paused', parts: [template('pauseMessage')] },
-    { value: 'peer', label: 'Peer message', when: 'when a peer message reaches a running Attempt', parts: [fragment('peerLiveMessage')] },
+    { value: 'commit', label: 'Commit', when: 'when a turn ends with uncommitted changes', parts: [template('commitNudge', { library: 'commitNudge' })] },
+    { value: 'pause', label: 'Pause', when: 'when the Task is paused', parts: [template('pauseMessage', { library: 'pauseMessage' })] },
+    { value: 'peer', label: 'Peer message', when: 'when a peer message reaches a running Attempt', parts: [fragment('peerLiveMessage', { library: 'peerLiveMessage' })] },
   ],
 } as const satisfies AnatomyChoice;
 
@@ -202,11 +202,11 @@ export const PROMPT_ANATOMIES: readonly PromptAnatomy[] = [
         when: 'operatorSeeded',
         note: 'A steer into an already-open Attempt replaces the whole prompt with this message; a fresh Session replaces the opening with the prior-session context.',
       }),
-      fragment('peerMessages', { when: 'heldPeerMessages', nested: [fragment('peerMessage', { via: 'slot' })] }),
-      fragment('peerLine', { when: 'agentMessages' }),
-      fragment('rebaseConflict', { when: 'rebaseConflict' }),
-      fragment('priorSession', { when: 'priorSession' }),
-      fragment('codeIndexGuidance', { when: 'codeIndex' }),
+      fragment('peerMessages', { library: 'peerMessages', when: 'heldPeerMessages', nested: [fragment('peerMessage', { library: 'peerMessage', via: 'slot' })] }),
+      fragment('peerLine', { library: 'peerLine', when: 'agentMessages' }),
+      fragment('rebaseConflict', { library: 'rebaseConflict', when: 'rebaseConflict' }),
+      fragment('priorSession', { library: 'priorSession', when: 'priorSession' }),
+      fragment('codeIndexGuidance', { library: 'codeIndexGuidance', when: 'codeIndex' }),
     ],
   },
   {
