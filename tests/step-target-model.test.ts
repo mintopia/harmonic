@@ -1,0 +1,26 @@
+import { describe, expect, it } from 'vitest';
+import { checkpointView, podStateView, stepTarget, targetSourceLabel } from '../web/src/step-target-model.js';
+
+const out = (checkpoint?: { branch: string; sha: string | null; forced: boolean; changed?: boolean }) => ({ outputs: { stdout: '', exitCode: 0, ...(checkpoint ? { checkpoint } : {}) } });
+
+describe('step target model', () => {
+  it('shows no chip without an execution, local without a checkpoint, the target with one', () => {
+    expect(stepTarget(out(), null)).toBeNull();
+    expect(stepTarget(out(), { target: 'k8s-prod' })).toEqual({ kind: 'local' });
+    expect(stepTarget(out({ branch: 'b', sha: null, forced: false }), { target: 'k8s-prod' })).toEqual({ kind: 'k8s', name: 'k8s-prod' });
+  });
+
+  it('shortens the sha and flags no-change and forced checkpoints', () => {
+    expect(checkpointView(out())).toBeNull();
+    expect(checkpointView(out({ branch: 'b', sha: '7be03d1aa0', forced: false, changed: true }))).toMatchObject({ sha: '7be03d1', noChanges: false });
+    expect(checkpointView(out({ branch: 'b', sha: null, forced: false, changed: false }))).toMatchObject({ sha: null, noChanges: true });
+    expect(checkpointView(out({ branch: 'b', sha: 'a41c9e2ff', forced: true, changed: false }))).toMatchObject({ forced: true, noChanges: false });
+  });
+
+  it('maps pod states and sources', () => {
+    expect(podStateView('pending').tone).toBe('working');
+    expect(podStateView('deleted')).toEqual({ label: 'Pod deleted', tone: 'off' });
+    expect(podStateView('lost').tone).toBe('lost');
+    expect(targetSourceLabel('step')).toBe('from step ');
+  });
+});

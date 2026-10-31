@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { WorkflowStepOutcome, WorkflowStepRun, WorkflowStepsResponse } from '../../types';
+import type { TaskExecution, WorkflowStepOutcome, WorkflowStepRun, WorkflowStepsResponse } from '../../types';
 import { newerVersion, parseWorkflowRef } from '../../workflow-ref-model';
+import { checkpointView, stepTarget } from '../../step-target-model';
 import { sectionCaps } from './shared';
+import { CheckpointLine, TargetChip } from './TargetParts';
 
 type IconKind = 'pass' | 'fail' | 'running' | 'pending' | 'skipped';
 
@@ -102,7 +104,9 @@ function Chips({ info, fallbackUses }: { info: StepInfo | undefined; fallbackUse
 
 const ROW = 'flex items-center gap-2.5 px-3.5 py-[9px] text-[13px]';
 
-function StepRow({ step, info, child, open, now }: { step: WorkflowStepRun; info: StepInfo | undefined; child: boolean; open: boolean; now: number }) {
+function StepRow({ step, info, child, open, now, execution }: { step: WorkflowStepRun; info: StepInfo | undefined; child: boolean; open: boolean; now: number; execution: TaskExecution | null | undefined }) {
+  const target = stepTarget(step, execution);
+  const checkpoint = checkpointView(step);
   const kind: IconKind = step.outcome === null ? 'running' : OUTCOME_ICON[step.outcome];
   const failed = kind === 'fail';
   const duration =
@@ -113,6 +117,7 @@ function StepRow({ step, info, child, open, now }: { step: WorkflowStepRun; info
       <StatusIcon kind={kind} label={step.outcome === null ? 'running' : step.outcome === 'skipped' ? 'skipped' : kind === 'pass' ? 'passed' : step.outcome === 'fail' ? 'failed' : step.outcome} />
       <span className={`font-semibold ${step.outcome === 'skipped' ? 'text-faint' : 'text-ink'}`}>{step.stepId}</span>
       <Chips info={info} fallbackUses={step.action} />
+      {target && <TargetChip target={target} />}
       {failed && <span className="rounded-[3px] bg-fail-tint px-[7px] py-px text-[10px] font-bold uppercase tracking-[0.04em] text-fail">{step.outcome}</span>}
       <span className="ml-auto text-[12px] text-muted">{duration}</span>
     </>
@@ -122,9 +127,12 @@ function StepRow({ step, info, child, open, now }: { step: WorkflowStepRun; info
     <li className="border-b border-hairline">
       {hasPane ? (
         <details open={open} className="group">
-          <summary className={`${ROW} ${indent} cursor-pointer list-none hover:bg-sunken [&::-webkit-details-marker]:hidden`}>
-            <Chevron />
-            {body}
+          <summary className="cursor-pointer list-none hover:bg-sunken [&::-webkit-details-marker]:hidden">
+            <div className={`${ROW} ${indent}`}>
+              <Chevron />
+              {body}
+            </div>
+            {checkpoint && <CheckpointLine view={checkpoint} className={`${indent} pb-2 pl-[42px]`} />}
           </summary>
           <div className="overflow-x-auto border-t border-hairline bg-sunken py-2 font-data text-[12px] leading-[19px]">
             {logLines(step).map((line, index) => (
@@ -143,10 +151,13 @@ function StepRow({ step, info, child, open, now }: { step: WorkflowStepRun; info
           </div>
         </details>
       ) : (
-        <div className={`${ROW} ${indent}`}>
-          <span className="w-2.5 shrink-0" />
-          {body}
-        </div>
+        <>
+          <div className={`${ROW} ${indent}`}>
+            <span className="w-2.5 shrink-0" />
+            {body}
+          </div>
+          {checkpoint && <CheckpointLine view={checkpoint} className={`${indent} pb-2 pl-[42px]`} />}
+        </>
       )}
     </li>
   );
@@ -225,7 +236,7 @@ interface Item {
   pending?: 'pending' | 'notRun';
 }
 
-export function WorkflowSteps({ data, attemptSelector = false }: { data: WorkflowStepsResponse | null; attemptSelector?: boolean }) {
+export function WorkflowSteps({ data, attemptSelector = false, execution }: { data: WorkflowStepsResponse | null; attemptSelector?: boolean; execution?: TaskExecution | null }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const running = data?.steps.some((step) => step.outcome === null) ?? false;
@@ -273,7 +284,7 @@ export function WorkflowSteps({ data, attemptSelector = false }: { data: Workflo
         item.run === undefined ? (
           <PendingRow key={item.key} id={item.id} info={info[item.id]} child={parent !== undefined} notRun={item.pending === 'notRun'} />
         ) : (
-          <StepRow key={item.key} now={now} step={item.run} info={info[item.id]} child={parent !== undefined} open={index === openIndex || (item.run.outcome !== null && item.run.outcome !== 'pass' && item.run.outcome !== 'skipped')} />
+          <StepRow key={item.key} now={now} execution={execution} step={item.run} info={info[item.id]} child={parent !== undefined} open={index === openIndex || (item.run.outcome !== null && item.run.outcome !== 'pass' && item.run.outcome !== 'skipped')} />
         );
       return label ? [label, row] : row;
     });

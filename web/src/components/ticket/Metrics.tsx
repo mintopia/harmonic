@@ -10,6 +10,7 @@ import { formatModelLabel } from '../TaskIdentity';
 import { harnessLabel, pullRequestLink } from '../../task-detail-model';
 import { wallClockRemaining } from '../../wall-clock-model';
 import { parseWorkflowRef, snapshotNote } from '../../workflow-ref-model';
+import { ExecutionFacts } from './TargetParts';
 
 export function fmtDur(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -254,6 +255,7 @@ export function Properties({ task, allTasks, workspaceName, latestVersion, attem
         {task.routing && <RoutedByNote routing={task.routing} />}
         {task.classifier && <ClassifierNote task={task} classifier={task.classifier} attempts={attempts} />}
       </Fact>
+      {task.execution && <ExecutionFacts execution={task.execution} />}
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">
         <DependsOn task={task} allTasks={allTasks} />

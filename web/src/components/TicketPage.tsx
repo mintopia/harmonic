@@ -217,7 +217,7 @@ export function TicketPage({
 
             <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
 
-            <WorkflowSteps data={workflowSteps} attemptSelector />
+            <WorkflowSteps data={workflowSteps} attemptSelector execution={task.execution} />
             <TicketVariables taskId={task.id} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />

@@ -119,3 +119,22 @@ describe('Properties workflow row', () => {
     expect(host.textContent).not.toContain('Workflow');
   });
 });
+
+describe('execution target UI', () => {
+  it('renders target chips and checkpoint lines for pod steps', async () => {
+    const pod = { target: 'k8s-prod', podName: 'p-1', podState: 'running' as const, namespace: 'ns', image: 'img:1', source: 'workflow' as const };
+    const steps = [step({ stepId: 'rebase' }), step({ stepId: 'build', outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'harmonic/task-1', sha: '7be03d1aa0', forced: false, changed: true } } })];
+    const host = await mountComponent(createElement(WorkflowSteps, { data: response(steps), execution: pod }));
+    expect(host.textContent).toContain('local');
+    expect(host.textContent).toContain('k8s-prod');
+    expect(host.textContent).toContain('Checkpoint pushed to harmonic/task-1 via Repository Proxy · 7be03d1');
+  });
+
+  it('shows the pod facts and the deleted caption', async () => {
+    const execution = { target: 'k8s-prod', podName: 'p-1', podState: 'deleted' as const, namespace: 'ns', image: 'img:1', source: 'step' as const };
+    const host = await mountComponent(createElement(Properties, { task: makeTask({ execution }), allTasks: [], workspaceName: null }));
+    expect(host.textContent).toContain('from step runs_on');
+    expect(host.textContent).toContain('Pod deleted');
+    expect(host.textContent).toContain('per-pod Secret are gone');
+  });
+});
