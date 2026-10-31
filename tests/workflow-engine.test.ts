@@ -589,12 +589,12 @@ describe('WorkflowEngine', () => {
     });
 
     it('honours the Ticket override frozen into the pin over the workflow default', async () => {
-      const text = `name: flow\ndescription: test\nvars:\n  tries: 3\nsteps:\n  - attempts:\n      max: \${{ vars.tries }}\n      steps:\n        - id: try\n          run: exit 1\n`;
+      const text = `name: flow\ndescription: test\nvars:\n  maxAttempts: 3\nsteps:\n  - attempts:\n      max: \${{ vars.maxAttempts }}\n      steps:\n        - id: try\n          run: exit 1\n`;
       workflows.set('flow@1', text);
       const created = await tasks.create({ prompt: 'p', workflow: 'flow' });
-      await tasks.setWorkflowVarOverrides(created.id, { tries: 2 });
+      await tasks.setWorkflowVarOverrides(created.id, { maxAttempts: 2 });
       const overridden = await tasks.get(created.id);
-      const task = await tasks.pinWorkflow(created.id, 'flow@1', 'explicit', null, resolveVars({ tries: 3 }, null, overridden.workflowVarOverrides));
+      const task = await tasks.pinWorkflow(created.id, 'flow@1', 'explicit', null, resolveVars({ maxAttempts: 3 }, null, overridden.workflowVarOverrides));
       await engine().run(task, await attempts.create(task.id));
       expect(await stepRows(task.id)).toHaveLength(2);
     });

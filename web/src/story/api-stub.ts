@@ -347,14 +347,14 @@ export const api: typeof RealApi = {
   workflows: () =>
     ok({
       workflows: [
-        { name: 'Migrated (global)', description: '', bundled: false, version: 2 },
-        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1 },
-        { name: 'Security review on label', description: '', bundled: false, version: 4 },
-        { name: 'Docs only', description: '', bundled: false, version: 2 },
+        { name: 'Migrated (global)', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (harmonic)', description: '', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Security review on label', description: '', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Docs only', description: '', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
       ],
       total: 4,
     }),
-  workflow: (name: string) => ok({ name, description: '', bundled: false, version: 1, text: `name: ${name}\ndescription: t\nvars:\n  maxattempts: 3\n  continueattempts: true\n  testcommand: npm test\nsteps:\n  - attempts:\n      max: 3\n      steps:\n        - id: implement\n          run: exit 1\n` }),
+  workflow: (name: string) => ok({ name, description: '', bundled: false, version: 1, text: `name: ${name}\ndescription: t\nvars:\n  maxAttempts: 3\n  continueAttempts: true\n  testCommand: npm test\nsteps:\n  - attempts:\n      max: 3\n      steps:\n        - id: implement\n          run: exit 1\n` }),
   saveWorkflow: (name: string, text: string) => ok({ name, description: '', bundled: false, version: 2, text }),
   importWorkflow: (text: string) => ok({ name: 'imported', description: '', bundled: false, version: 1, text }),
   exportWorkflow: (_name: string) => ok(''),
@@ -482,9 +482,9 @@ export const api: typeof RealApi = {
   maps: (_opts?: { workspaceId?: number; limit?: number; offset?: number; q?: string }) => ok({ maps: [], total: 0 }),
 };
 
-function storyVars(ticket: Record<string, string | number | boolean> = { maxattempts: 2 }) {
-  const defaults = { maxattempts: 3, continueattempts: true, testcommand: 'npm test' };
-  const workspace: Record<string, string | number | boolean> = { maxattempts: 5, testcommand: 'npm run test:ci' };
+function storyVars(ticket: Record<string, string | number | boolean> = { maxAttempts: 2 }) {
+  const defaults = { maxAttempts: 3, continueAttempts: true, testCommand: 'npm test' };
+  const workspace: Record<string, string | number | boolean> = { maxAttempts: 5, testCommand: 'npm run test:ci' };
   return {
     workflowRef: 'Security review on label@4',
     workflow: 'Security review on label',

@@ -37,24 +37,70 @@ async function declaredVars(): Promise<{ name: string; vars: Record<string, VarV
   return loaded.filter((entry) => Object.keys(entry.vars).length > 0);
 }
 
+function WorkspaceVarsCard({ workspace, name, vars, onChange }: { workspace: Workspace; name: string; vars: Record<string, VarValue>; onChange: (workflowVars: Workspace['workflowVars']) => void }) {
+  const [draft, setDraft] = useState<VarRow[] | null>(null);
+  const [invalid, setInvalid] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const onInvalid = useCallback((value: boolean) => setInvalid(value), []);
+  const rows = draft ?? workspaceVarRows(vars, workspace.workflowVars?.[name]);
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const next = withWorkflowOverrides(workspace.workflowVars, name, overridesFrom(rows, 'workspace'));
+      await api.updateWorkspace(workspace.id, { workflowVars: next });
+      onChange(next);
+      setDraft(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section aria-label={`Variables for ${name}`} className={`${card} p-5`}>
+      <div className="mb-2 flex items-center gap-2 text-small text-muted">
+        <span className="rounded-sm bg-running-tint px-2 py-0.5 font-semibold text-running">Workspace</span>
+        <span>{workspace.name} › Settings › Execution</span>
+      </div>
+      <h3 className="text-title font-semibold">Variables for “{name}”</h3>
+      <p className="mb-4 mt-0.5 text-muted">Overrides apply to every Ticket in this Workspace that uses a workflow declaring the variable.</p>
+      <VariablesTable
+        level="workspace"
+        rows={rows}
+        defaultCell={(row) => String(row.default)}
+        inheritedFor={(row) => ({ value: row.default, source: 'default' })}
+        onChange={setDraft}
+        onInvalid={onInvalid}
+      />
+      {error && (
+        <p role="alert" className="mt-2 text-small text-fail">
+          {error}
+        </p>
+      )}
+      {draft && (
+        <div className="mt-3 flex justify-end gap-2">
+          <button type="button" className={btnGhost} onClick={() => setDraft(null)}>
+            Cancel
+          </button>
+          <button type="button" disabled={invalid || saving} className={btnPrimary} onClick={save}>
+            Save
+          </button>
+        </div>
+      )}
+      {SECRETS_NOTE}
+    </section>
+  );
+}
+
 export function WorkspaceWorkflowVars({ workspace, onChange }: { workspace: Workspace; onChange: (workflowVars: Workspace['workflowVars']) => void }) {
   const declared = useAsyncResource(declaredVars, []).data ?? [];
   if (declared.length === 0) return <p className="text-muted">No workflow in the Library declares variables.</p>;
   return (
     <div className="flex flex-col gap-5">
       {declared.map(({ name, vars }) => (
-        <section key={name} aria-label={`Variables for ${name}`} className={`${card} p-5`}>
-          <h3 className="text-title font-semibold">Variables for “{name}”</h3>
-          <p className="mb-4 mt-0.5 text-muted">Overrides apply to every Ticket in this Workspace that uses a workflow declaring the variable.</p>
-          <VariablesTable
-            level="workspace"
-            rows={workspaceVarRows(vars, workspace.workflowVars?.[name])}
-            defaultCell={(row) => String(row.default)}
-            inheritedFor={(row) => ({ value: row.default, source: 'default' })}
-            onChange={(rows) => onChange(withWorkflowOverrides(workspace.workflowVars, name, overridesFrom(rows, 'workspace')))}
-          />
-          {SECRETS_NOTE}
-        </section>
+        <WorkspaceVarsCard key={name} workspace={workspace} name={name} vars={vars} onChange={onChange} />
       ))}
     </div>
   );
