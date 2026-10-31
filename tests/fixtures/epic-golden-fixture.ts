@@ -27,12 +27,10 @@ export const FIXTURE_FAILING_VERIFIER_REASON = [
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 export interface FixtureEpicRun {
-  /** Resolved Prompts the Epic resolve loop sent, one per resolve turn, in order. */
   prompts: string[];
   outcomes: string[];
 }
 
-/** Drives a two-member Epic through one failing then one passing whole-Epic verify on the current (ADR-0028) path, capturing every Resolved Prompt the resolve turn sends. */
 export async function runFixtureEpic(resolvePrompt?: string): Promise<FixtureEpicRun> {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-epic-golden-'));
   try {
