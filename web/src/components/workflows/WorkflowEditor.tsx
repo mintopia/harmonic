@@ -9,6 +9,7 @@ import { LoadError } from '../LoadError';
 import { Icon } from '../Icon';
 import { downloadText } from './download';
 import { YamlEditor } from './YamlEditor';
+import { WorkflowBuilder } from './WorkflowBuilder';
 import { WorkflowDiagram } from '../WorkflowDiagram';
 import { messageParts, toEditorIssues, validateWorkflowText } from '../../workflow-editor-model';
 import type { WorkflowDiagramModel } from '../../../../src/domain/workflow-diagram.js';
@@ -110,7 +111,7 @@ function EditorBody({
   };
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(360px,1fr)_minmax(0,1.5fr)]">
+    <div className="grid grid-cols-1 items-start gap-4">
     <section className="min-w-0 rounded-lg bg-surface pb-3 shadow-card" aria-label={`Workflow ${doc.name}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
         <h2 className={sectionTitle}>{doc.name}</h2>
@@ -166,6 +167,7 @@ function EditorBody({
           </ul>
         </div>
       )}
+      <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} onChange={(text) => dispatch({ type: 'edit', text })} />
       <div className="px-3.5">
         <YamlEditor text={state.text} readOnly={readOnly} issues={issues} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
       </div>
