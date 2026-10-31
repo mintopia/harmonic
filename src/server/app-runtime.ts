@@ -395,7 +395,7 @@ export async function createRuntime(deps: {
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
   await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal());
-  const routeClassifier = new RouteClassifier(() => settingsStore.getGlobal(), {
+  const routeClassifier = new RouteClassifier(promptConfig, {
     typesafe: createTypesafeClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),
     harness: createHarnessClassifierBackend({ drive: criticDrive, getConfig: () => settingsStore.getGlobal() }),
     'openai-compatible': createOpenAiCompatibleClassifierBackend({ reveal: (workspaceId, name) => secrets.reveal(workspaceId, name) }),

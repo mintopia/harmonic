@@ -263,7 +263,7 @@ export const PROMPT_ANATOMIES: readonly PromptAnatomy[] = [
     description: 'What the Route Classifier receives when it picks a Model Option for a Ticket.',
     flags: [],
     selectorDefaults: {},
-    parts: [fragment('routeClassifier')],
+    parts: [fragment('routeClassifier', { library: 'routeClassifier' })],
   },
 ];
 

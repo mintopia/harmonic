@@ -37,6 +37,7 @@ const EDITED_FRAGMENTS = [
   'priorSession',
   'codeIndexGuidance',
   'peerLiveMessage',
+  'routeClassifier',
 ] as const satisfies readonly PromptFragmentName[];
 
 const EDITED_TEMPLATES = ['taskPrompt', 'drivePrompt', 'unattendedReminder', 'continuePrompt', 'commitNudge', 'pauseMessage'] as const satisfies readonly PromptTemplateId[];
