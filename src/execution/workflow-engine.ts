@@ -153,6 +153,7 @@ interface RunContext<S extends EngineSubject> {
   halted: boolean;
   pod?: PodSession;
   podTarget?: string;
+  coldPod?: boolean;
 }
 
 interface GitMark {
@@ -344,28 +345,42 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     this.deps.onStepChanged?.(stepRunOwner(task));
     let result: StepResult;
     let pod: PodSession | undefined;
+    let ownPod: PodSession | undefined;
     try {
       const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
       if (falsy !== undefined) {
         result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
       } else {
         const [resolved, env] = resolveStep(step, context);
-        pod = this.podFor(ctx, resolved);
+        let stepCtx = ctx;
+        if (this.opensOwnPod(resolved)) {
+          if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
+          pod = ownPod = await this.deps.pods.open(task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
+          secrets.push(...ownPod.credentialValues);
+          stepCtx = { ...ctx, podTarget: resolved.runs_on!, agentState: {}, coldPod: true };
+        } else {
+          pod = this.podFor(ctx, resolved);
+        }
         result =
           resolved.uses === 'agent'
-            ? await this.executeAgent(ctx, resolved, row.id, pod)
+            ? await this.executeAgent(stepCtx, resolved, row.id, pod)
             : resolved.uses === 'critic'
-              ? await this.executeCritic(ctx, resolved, row.id, pod)
+              ? await this.executeCritic(stepCtx, resolved, row.id, pod)
               : await this.execute(task, run, resolved, env, secrets, pod);
       }
     } catch (error) {
       result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
     }
-    if (result.halt) {
-      ctx.halted = true;
-      return null;
+    try {
+      if (result.halt) {
+        ctx.halted = true;
+        return null;
+      }
+      if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
+      if (ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
+    } finally {
+      await ownPod?.dispose();
     }
-    if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
     stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
@@ -373,10 +388,28 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
   }
 
+  private opensOwnPod(step: WorkflowStepDefinition): boolean {
+    return step.runs_on !== undefined && step.runs_on !== LOCAL_TARGET && this.stepRunsInPod(step);
+  }
+
+  private stepRunsInPod(step: WorkflowStepDefinition): boolean {
+    return step.uses === 'rebase' || step.uses === 'agent' || step.uses === 'critic' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
+  }
+
   private podFor(ctx: RunContext<S>, step: WorkflowStepDefinition): PodSession | undefined {
     if (!ctx.pod) return undefined;
-    const inPod = step.uses === 'rebase' || step.uses === 'agent' || step.uses === 'critic' || (step.run !== undefined && (step.uses === undefined || step.uses === 'command'));
-    return inPod && (step.runs_on === undefined || step.runs_on === ctx.podTarget) ? ctx.pod : undefined;
+    return this.stepRunsInPod(step) && step.runs_on === undefined ? ctx.pod : undefined;
+  }
+
+  private async resyncWorkflowPod(workflowPod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {
+    let failure: string | null;
+    try {
+      failure = await workflowPod.sync();
+    } catch (error) {
+      failure = errorMessage(error);
+    }
+    if (failure === null || result.outcome !== 'pass') return result;
+    return { ...result, outcome: 'inconclusive', summary: mask(`workflow pod could not pick up the step's checkpoint: ${failure}`) };
   }
 
   private async checkpointed(pod: PodSession, result: StepResult, mask: (text: string) => string): Promise<StepResult> {
@@ -607,7 +640,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
         });
         if (result.sessionId) {
           state.session = { key, id: result.sessionId };
-          this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
+          if (!ctx.coldPod) this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
         }
         if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
         if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };

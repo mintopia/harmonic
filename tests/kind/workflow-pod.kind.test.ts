@@ -76,6 +76,8 @@ describe.skipIf(!kubeconfigPath)('a workflow pod on a real kind cluster', () => 
       await server.api('PATCH', '/api/execution-targets/kind', { repositoryProxyUrl: proxyUrl });
     }
     await server.api('PUT', '/api/workflows/two-steps', { text: flow('two-steps', commitStep('one', 'one.txt') + commitStep('two', 'two.txt')) });
+    const perStep = ['one', 'two', 'three'].map((id) => `  - id: ${id}\n    runs_on: kind\n    run: echo ${id} > ${id}.txt && git add ${id}.txt && git commit -qm ${id}\n`).join('');
+    await server.api('PUT', '/api/workflows/per-step', { text: `name: per-step\ndescription: kind\nsteps:\n${inBlock(perStep)}` });
     await server.api('PUT', '/api/workflows/rebasing', { text: flow('rebasing', '  - id: rb\n    uses: rebase\n' + commitStep('after', 'after.txt')) });
   }, 120_000);
 
@@ -129,6 +131,28 @@ describe.skipIf(!kubeconfigPath)('a workflow pod on a real kind cluster', () => 
     expect(isAncestor(upstream, early, tip)).toBe(false);
     expect(isAncestor(upstream, git(upstream, 'rev-parse', 'refs/heads/main'), tip)).toBe(true);
     expect(git(upstream, 'log', '--format=%s', `refs/heads/${branch}`)).toBe('after\nearly\nbase moved\nbase');
+    expect(await leftovers(id)).toEqual({ pods: [], secrets: [] });
+  }, 300_000);
+  it('starts a fresh pod per step from the previous checkpoint and leaves none behind', async () => {
+    const id = await newTask('per-step');
+    const seen = new Set<string>();
+    const poll = setInterval(() => {
+      core.listNamespacedPod({ namespace: NAMESPACE, labelSelector: `harmonic.mintopia.net/task=${id}` }).then((list) => list.items.forEach((p) => seen.add(p.metadata!.name!)), () => undefined);
+    }, 250);
+    try {
+      await runToDone(id);
+    } finally {
+      clearInterval(poll);
+    }
+
+    expect((await server.api('GET', `/api/tasks/${id}`)).body.state).toBe('done');
+    const rows = await steps(id);
+    expect(rows.map((r) => r.outcome)).toEqual(['pass', 'pass', 'pass']);
+    const shas = rows.map((r) => r.outputs.checkpoint!.sha);
+    expect(new Set(shas).size).toBe(3);
+    expect(isAncestor(upstream, shas[0]!, shas[1]!) && isAncestor(upstream, shas[1]!, shas[2]!)).toBe(true);
+    expect(git(upstream, 'log', '--format=%s', `refs/heads/harmonic/task-${id}`)).toBe('three\ntwo\none\nbase');
+    expect(seen.size).toBe(3);
     expect(await leftovers(id)).toEqual({ pods: [], secrets: [] });
   }, 300_000);
 });

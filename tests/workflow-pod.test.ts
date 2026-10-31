@@ -232,4 +232,35 @@ describe('a workflow whose runs_on names a Kubernetes Execution Target', () => {
     }
     expect(executions).toEqual([]);
   });
+  it('starts a fresh pod per step for step-level runs_on, each deleted before the next starts', async () => {
+    const api = new FakePodApi(scripted());
+    const steps = ['one', 'two', 'three'].map((id) => `  - id: ${id}\n    runs_on: k8s-prod\n    run: echo ${id}\n`).join('');
+    const { task, run } = await start(flow(steps, ''));
+    await engine(api).run(task, run);
+
+    expect((await stepRows(task.id)).map((r) => [r.stepId, r.outcome])).toEqual([['one', 'pass'], ['two', 'pass'], ['three', 'pass']]);
+    const names = [...new Set(api.calls.filter((c) => c.startsWith('createPod')).map((c) => c.split(' ')[1]))];
+    expect(names).toHaveLength(3);
+    const kinds = api.calls.map((c) => c.split(' ')[0]);
+    expect(kinds.filter((k) => k === 'createPod')).toHaveLength(3);
+    const order = api.calls.filter((c) => c.startsWith('createPod') || c.startsWith('deletePod')).map((c) => c.split(' ')[0]);
+    expect(order).toEqual(['createPod', 'deletePod', 'createPod', 'deletePod', 'createPod', 'deletePod']);
+    expect(api.execs.map((e) => e.argv.at(-1)!).filter((s) => s.includes('--force origin'))).toHaveLength(3);
+    expect(api.pods.size + api.secrets.size).toBe(0);
+    expect(completions).toBe(1);
+  });
+  it('re-syncs the workflow pod to the Ticket branch after a step that ran in its own pod, before the next workflow-pod step', async () => {
+    const api = new FakePodApi(scripted());
+    const { task, run } = await start(flow('  - id: a\n    run: echo a\n  - id: b\n    runs_on: k8s-prod\n    run: echo b\n  - id: c\n    run: echo c\n'));
+    await engine(api).run(task, run);
+
+    expect((await stepRows(task.id)).map((r) => [r.stepId, r.outcome])).toEqual([['a', 'pass'], ['b', 'pass'], ['c', 'pass']]);
+    const scripts = api.execs.map((e) => e.argv.at(-1)!);
+    const resync = scripts.findIndex((s) => s.includes('reset -q --hard'));
+    expect(resync).toBeGreaterThan(scripts.indexOf('echo b'));
+    expect(resync).toBeLessThan(scripts.indexOf('echo c'));
+    expect(scripts.filter((s) => s.includes('reset -q --hard'))).toHaveLength(1);
+    expect(api.calls.filter((c) => c.startsWith('createPod'))).toHaveLength(2);
+    expect(api.pods.size + api.secrets.size).toBe(0);
+  });
 });
