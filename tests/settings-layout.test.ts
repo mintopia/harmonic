@@ -8,38 +8,6 @@ import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-
 
 afterEach(cleanup);
 
-describe('settings layout (issue #554)', () => {
-  it('gives verification the full desktop settings grid', async () => {
-    const config = makeConfig();
-    const host = await mountComponent(
-      createElement(SettingsForm, {
-        title: 'Settings',
-        intro: 'Configure Harmonic.',
-        tabs: [{ id: 'verification', label: 'Verification' }],
-        tab: 'verification',
-        onTab: () => {},
-        ctx: {
-          surface: 'global',
-          config,
-          baseline: config,
-          setConfig: () => {},
-          errors: {},
-          harnessPermissionModes: {},
-          channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} },
-        },
-        dirty: false,
-        saving: false,
-        error: null,
-        onSave: () => {},
-        onDiscard: () => {},
-      }),
-    );
-
-    expect(host.querySelector('section')?.className).toContain('xl:col-span-2');
-  });
-});
-
-
 describe('settings prompts layout', () => {
   it('renders the Prompts settings as the Prompt Library alone', () => {
     expect(sectionsForTab('global', 'prompts').map((s) => s.title)).toEqual(['Prompt Library']);
@@ -78,7 +46,7 @@ describe('settings tab keyboard navigation', () => {
 
 describe('settings Execution tab without Ticket-side execution controls (ADR-0055)', () => {
   const channels = { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} };
-  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution' | 'verification') => {
+  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution') => {
     const config = makeConfig();
     const workspace = makeWorkspace();
     const ctx =
@@ -119,17 +87,7 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
       expect(host.querySelector(`#${id}`), id).toBeNull();
     }
     expect(text).toContain('Session reuse');
-  });
-
-  it.each(['global', 'workspace'] as const)('keeps Epic verification controls and drops the Task ones on the %s verification tab', async (surface) => {
-    const host = await mountTab(surface, 'verification');
-    const text = host.textContent ?? '';
-    expect(host.querySelector('[role="tablist"][aria-label="Verification scope"]')).toBeNull();
-    expect(text).toContain('before the epic merges');
-    expect(text).not.toContain('before the task merges');
-    expect(text).not.toContain('Post-merge');
-    expect(host.querySelector('[id^="settings-task-"], [id^="workspace-task-"]')).toBeNull();
-    expect(text).toContain('+ Add command');
-    expect(text).toContain('+ Add critic');
+    expect(text).not.toContain('before the epic merges');
+    expect(text).not.toContain('+ Add critic');
   });
 });

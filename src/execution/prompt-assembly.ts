@@ -108,27 +108,6 @@ export function renderEpicRefreshPrompt(
   });
 }
 
-export function composeEpicResolvePrompt(i: {
-  resolvePrompt: string;
-  resolveSuffix: string;
-  prompts: EnginePrompts;
-  epic: { ref: string; title: string; body: string; url: string };
-  reason: string;
-  branch: string;
-}): string {
-  return [
-    expandIncludes(i.resolvePrompt, i.prompts)
-      .replaceAll('{ref}', () => i.epic.ref)
-      .replaceAll('{title}', () => i.epic.title)
-      .replaceAll('{description}', () => i.epic.body)
-      .replaceAll('{url}', () => i.epic.url),
-    '',
-    renderPrompt('epicFailingVerification', i.prompts, { reason: i.reason }),
-    '',
-    fillTemplate(expandIncludes(i.resolveSuffix, i.prompts), { branch: i.branch }),
-  ].join('\n');
-}
-
 export interface BuildCriticPromptArgs {
   /** The operator's configured critic prompt; supports the Drive Prompt's
    * `{taskId}/{skill}/{ref}/{url}/{title}/{description}` interpolation. */

@@ -19,7 +19,6 @@ import type { SettingsStore } from '../src/server/settings-store.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
 import { readFileSync } from 'node:fs';
-import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { engineWiring, epicWorkflow, WORKFLOW_NAME } from './fixtures/epic-engine-harness.js';
@@ -339,60 +338,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
       return { outcome, driveCalls, escalations };
     }
 
-    async function resolveOn(epicLabels: string[], config = routedConfig()) {
-      const routedTasks = new TaskService(asyncDb, () => config, allWorkspaces(asyncDb, settingsStore));
-      const workspace = await new WorkspaceService(asyncDb, settingsStore).create({ name: 'Routed resolve', workingDir: repo });
-      await mirrorScan(routedTasks, [ticket({ ref: trackerRef(5), labels: epicLabels }), ticket({ ref: trackerRef(6), parent: trackerRef(5), labels: ['cheap'] })], workspace.id);
-      const attempts = new AttemptStore(asyncDb);
-      const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
-      const liveWorktree = join(dir, 'epic-routed-resolve');
-      git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
-      const driveCalls: CriticDriveRequest[] = [];
-      const runner = new Runner(routedTasks, asyncDb, () => config, {
-        ...executionPlumbing(),
-        worktreesDir: join(dir, 'worktrees'),
-        criticDrive: {
-          run: async (req) => {
-            driveCalls.push(req);
-            writeFileSync(join(req.cwd, 'resolved.txt'), 'fixed\n');
-            git(req.cwd, 'add', 'resolved.txt');
-            git(req.cwd, 'commit', '-m', 'Resolve verification');
-            return { output: 'fixed', permissionRequests: [] };
-          },
-        },
-      });
-      const result = await runner.resolveEpicVerification({
-        workspaceId: workspace.id,
-        epicRef: trackerRef(5),
-        repoDir: repo,
-        worktreePath: liveWorktree,
-        attempt,
-        verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
-        verificationReason: 'tests red',
-      }).then(() => null, (err: unknown) => err as Error);
-      return { driveCalls, error: result };
-    }
-
-    it('the Epic resolve turn runs on the reasoning route while a cheap-labelled member exists', async () => {
-      const { driveCalls, error } = await resolveOn(['epic', 'reasoning']);
-      expect(error).toBeNull();
-      expect(driveCalls.map((c) => [c.harnessId, c.model])).toEqual([['claude', 'claude-opus-5-5']]);
-    });
-
-    it('an unlabelled Epic resolves on the defaults regardless of its cheap-labelled member', async () => {
-      const config = routedConfig();
-      const { driveCalls } = await resolveOn(['epic'], config);
-      expect(driveCalls.map((c) => [c.harnessId, c.model])).toEqual([[config.defaults.harness, config.harnesses[config.defaults.harness]!.defaultModel]]);
-    });
-
-    it('the Epic resolve turn fails naming the label when its routed Harness is not configured', async () => {
-      const config = routedConfig();
-      delete (config.harnesses as Record<string, unknown>).claude;
-      const { driveCalls, error } = await resolveOn(['epic', 'reasoning'], config);
-      expect(driveCalls).toEqual([]);
-      expect(error?.message).toContain("Routing Label 'reasoning' needs Harness 'claude', which is not configured.");
-    });
-
     it('an Epic labelled reasoning refreshes on the reasoning route while its member is labelled cheap', async () => {
       const { driveCalls, escalations } = await refreshOn(['epic', 'reasoning']);
       expect(escalations).toEqual([]);
@@ -655,83 +600,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(await archive.readResolvedPrompt({ workspaceId: workspace.id, epicRef: trackerRef(5) }, 1, step.locator, 0)).toBe(driven[0]);
   });
 
-  it('uses an existing Epic checkout and persists the resolver session, usage, process identity, and Step', async () => {
-    const workspaces = new WorkspaceService(asyncDb, settingsStore);
-    const workspace = await workspaces.create({ name: 'Epic resolver', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: trackerRef(5), kind: 'epic' }]);
-    const attempts = new AttemptStore(asyncDb);
-    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
-    const liveWorktree = join(dir, 'epic-live');
-    git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
-    const cwd: string[] = [];
-    const updates: { attemptId: number; payload: { sessionUpdate: string } }[] = [];
-    const resolveConfig = baselineConfig();
-    const promptLibrary = new PromptLibrary(join(dir, 'data'));
-    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix Epic {ref}: {title}\n{description}\n{url}');
-    await promptLibrary.create('epicResolveSuffix-edited', 'edited', 'CUSTOM SUFFIX for {branch}.');
-    const archive = new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: async () => 'unused', workspaceName: async () => workspace.name });
-    const runner = new Runner(tasks, asyncDb, () => resolveConfig, {
-      ...executionPlumbing(),
-      archive,
-      promptLibrary,
-      worktreesDir: join(dir, 'worktrees'),
-      events: {
-        onAttemptLogEvent: (event) => updates.push(event),
-      },
-      criticDrive: {
-        run: async (req) => {
-          cwd.push(req.cwd);
-          await req.onSessionCreated?.('epic-resolve-session', { agentCapabilities: {} });
-          req.onUpdate?.({ sessionUpdate: 'tool_call', kind: 'read' });
-          writeFileSync(join(req.cwd, 'resolved.txt'), 'fixed\n');
-          git(req.cwd, 'add', 'resolved.txt');
-          git(req.cwd, 'commit', '-m', 'Resolve verification');
-          return {
-            output: 'fixed',
-            permissionRequests: [],
-            sessionId: 'epic-resolve-session',
-            usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
-          };
-        },
-      },
-    });
-
-    await runner.resolveEpicVerification({
-      workspaceId: workspace.id,
-      epicRef: trackerRef(5),
-      repoDir: repo,
-      worktreePath: liveWorktree,
-      attempt,
-      verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
-      verificationReason: 'test failed',
-      title: 'Resolver epic',
-      body: 'Preserve the public API.',
-      url: 'https://example.test/issues/5',
-    });
-
-    const stored = await attempts.get(attempt.id);
-    expect(cwd).toEqual([liveWorktree]);
-    expect(stored).toMatchObject({ sessionId: 'epic-resolve-session' });
-    expect(stored.prompt).toBeNull();
-    expect(JSON.parse(stored.usage ?? '{}')).toMatchObject({ totals: { totalTokens: 15 } });
-    expect(await attempts.listToolCalls(attempt.id)).toEqual(new Map([['Read', 1]]));
-    const epicDir = await archive.ensureEpic(workspace.id, trackerRef(5));
-    const archived = readFileSync(join(epicDir, 'attempts', String(attempt.number), 'resolution', 'epic-resolve-1', 'prompt.md'), 'utf8');
-    expect(archived).toContain('Fix Epic 5: Resolver epic\nPreserve the public API.\nhttps://example.test/issues/5');
-    expect(archived).toContain('## Failing Epic verification\ntest failed');
-    expect(archived).toContain('CUSTOM SUFFIX for epic/5.');
-    expect((await attempts.listEvents(attempt.id)).map((e) => e.payload)).toContainEqual({
-      event: 'epic-resolve',
-      kind: 'verification',
-      locator: 'resolution/epic-resolve-1/prompt.md',
-      promptIndex: 0,
-    });
-    expect(updates).toContainEqual(expect.objectContaining({ attemptId: attempt.id, payload: expect.objectContaining({ sessionUpdate: 'tool_call' }) }));
-    expect(await attempts.listSteps(attempt.id)).toContainEqual(expect.objectContaining({ type: 'implementation', state: 'passed', logLocator: expect.stringContaining('session:') }));
-    expect(git(repo, 'worktree', 'list')).toContain(liveWorktree);
-    git(repo, 'worktree', 'remove', '--force', liveWorktree);
-  });
-
   const refreshPromptDriven = async (name: string, override?: Parameters<WorkspaceService['update']>[1]): Promise<string> => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name, workingDir: repo });
@@ -782,51 +650,6 @@ describe('epic refresh corrective turn (issue #315)', () => {
     });
     expect(prompt).toMatch(/^WS refresh epic\/5: This checkout \(`.+`\) has `epic\/5` checked out with that merge in progress/);
     expect(prompt).toContain("keeps both `epic/5`'s and `develop`'s work");
-  });
-
-  it('applies the Workspace Epic verification suffix and the Library failing-verification prompt, expanding includes in the suffix', async () => {
-    const workspaces = new WorkspaceService(asyncDb, settingsStore);
-    const workspace = await workspaces.create({ name: 'Suffix override', workingDir: repo });
-    await tasks.syncEpics(workspace.id, [{ ref: trackerRef(5), kind: 'epic' }]);
-    const attempts = new AttemptStore(asyncDb);
-    const attempt = await attempts.createForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });
-    await workspaces.update(workspace.id, {
-      verifyEpicResolveSuffix: 'WS SUFFIX for {branch}. ${{ prompts.criticSpecTicket }}',
-    });
-    const liveWorktree = join(dir, 'epic-suffix');
-    git(repo, 'worktree', 'add', liveWorktree, 'epic/5');
-    const driven: string[] = [];
-    const promptLibrary = new PromptLibrary(join(dir, 'data'));
-    await promptLibrary.create('epicResolvePrompt-edited', 'edited', 'Fix it ${{ prompts.criticSpecTicket }}');
-    await promptLibrary.create('epicFailingVerification-edited', 'edited', 'WS FAILURE: {reason}');
-    const runner = new Runner(tasks, asyncDb, () => baselineConfig(), {
-      ...executionPlumbing(),
-      archive: new TaskArchive({ dataDir: join(dir, 'data'), ensureArchiveId: async () => 'unused', workspaceName: async () => workspace.name }),
-      promptLibrary,
-      worktreesDir: join(dir, 'worktrees'),
-      getWorkspace: async (id) => (id === null ? undefined : workspaces.get(id)),
-      criticDrive: {
-        run: async (req) => {
-          driven.push(req.prompt);
-          writeFileSync(join(req.cwd, 'resolved.txt'), 'fixed\n');
-          git(req.cwd, 'add', 'resolved.txt');
-          git(req.cwd, 'commit', '-m', 'Resolve verification');
-          return { output: 'fixed', permissionRequests: [] };
-        },
-      },
-    });
-    await runner.resolveEpicVerification({
-      workspaceId: workspace.id,
-      epicRef: trackerRef(5),
-      repoDir: repo,
-      worktreePath: liveWorktree,
-      attempt,
-      verifiedHeadOid: git(repo, 'rev-parse', 'epic/5'),
-      verificationReason: 'tests red',
-    });
-    expect(driven).toHaveLength(1);
-    expect(driven[0]).toBe('Fix it the referenced ticket\n\nWS FAILURE: tests red\n\nWS SUFFIX for epic/5. the referenced ticket');
-    git(repo, 'worktree', 'remove', '--force', liveWorktree);
   });
 
   it('keeps the Epic checkout in place from failed verification through the resolver', async () => {
