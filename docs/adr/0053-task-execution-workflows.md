@@ -233,3 +233,40 @@ Amends ADR-0020 (the work run after Accept and Retry comes from the workflow;
 states and transitions unchanged), ADR-0028 (its verify lists no longer
 govern Tickets and Native Tasks) and ADR-0037 (verifier overlays are replaced
 by workflow steps; the overlay pattern is reused for Workflow Labels).
+
+## Amendment (2026-10-31): Steps reference Model Options by code
+
+An `agent` or `critic` step can name a Model Option (ADR-0052) instead of a
+Harness and Model, so a workflow reuses the operator's curated choices rather
+than hard-coding model ids. Issue #944.
+
+- **Model Options carry a code.** Each Model Option has a short, unique code
+  (lowercase letters, digits and hyphens, e.g. `opus-deep`). The Route
+  Classifier's `optionId` is this code.
+- **`with: { option: <code> }`** on `agent` and `critic` steps. It is mutually
+  exclusive with `harness` and `model`; a step that sets both is refused at
+  save. A step with `option:` has explicit values, so it ignores routing like
+  any other explicit step (§ Interaction with routing).
+- **Resolution: Ticket, then Workspace, then global.** When the step runs, a
+  code resolves against the Ticket's own Model Options, then the Workspace
+  overlay, then the global list; the innermost definition wins. A Ticket sets
+  its Model Options only in a panel on the Ticket page, and only for codes
+  already in the Workspace overlay or the global list, as Ticket `vars:`
+  overrides are limited to declared vars. A Ticket override changes that code's Harness and
+  Model for that Ticket only. The Route Classifier picks from the same
+  resolved list.
+- **Refused at save, escalated at run.** Workflows are global, so the save
+  check refuses a code defined nowhere: not in the global list and in no
+  Workspace overlay. The editor reports it at its line and column, and Save is
+  refused until it is fixed. A code that is missing or disabled in the Ticket's
+  resolved list when the step runs escalates the step as a configuration
+  failure. It never falls back to the route or to another option, consistent
+  with invariant 5.
+- **Editor and builder.** Completion offers the defined codes after `option:`,
+  each with its Harness, Model and description. The block builder offers the
+  same codes as a picker on agent and critic blocks.
+
+This amends ADR-0052: a Model Option gains a code, a Ticket override joins the
+global list and Workspace overlay, and a code may repeat across those three
+lists, the inner definition shadowing the outer. Within one list a code is
+unique.
