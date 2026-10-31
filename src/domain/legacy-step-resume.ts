@@ -48,11 +48,7 @@ function unitsOf(workflow: WorkflowDefinition): Unit[] {
   });
 }
 
-/**
- * The step runs that put a legacy-pipeline Ticket at the point its pre-workflow Attempt reached.
- * `attemptNumber` is the Attempt's number within its escalation budget. An escalated Ticket also gets its
- * target step seeded `fail`, so an operator Accept flips it; an escalation with no legacy steps seeds everything before `merge`.
- */
+/** Step runs placing a pre-workflow Ticket at the step its legacy Attempt reached; an escalated Ticket also gets its target seeded `fail`. */
 export function planLegacyResume(
   workflow: WorkflowDefinition,
   legacySteps: readonly LegacyStepRow[],

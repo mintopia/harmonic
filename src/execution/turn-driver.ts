@@ -174,7 +174,7 @@ export class TurnDriver {
       }
 
       if (active.pauseRequested) {
-        // A pause before the first prompt consumed the seed from the pending map; put it back (ADR-0005 §6).
+        // A pause before the first prompt consumed the seed from the pending map; put it back.
         if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
           this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
         }
@@ -239,8 +239,7 @@ export class TurnDriver {
     await this.deps.attempts.update(run.id, { stopReason: result?.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null });
   }
 
-  /** Prepare the workspace and spawn the harness process. On a handled failure,
-   * settles the run appropriately and reports `ok: false`; other errors propagate. */
+  /** Prepares the workspace and spawns the harness; a handled failure settles the run and reports `ok: false`. */
   private async spawnTurn(input: {
     task: TaskRow;
     run: AttemptRow;

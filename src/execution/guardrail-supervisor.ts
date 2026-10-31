@@ -223,7 +223,6 @@ export class GuardrailSupervisor {
     return (await this.deps.attempts.currentStepType(this.turn.taskId, this.turn.attemptNumber)) ?? 'implementation';
   }
 
-  /** One wall-clock watchdog fire. */
   async evaluateWallClock(): Promise<void> {
     if (!this.budget) return;
     if (this.turn.isSettled()) return;

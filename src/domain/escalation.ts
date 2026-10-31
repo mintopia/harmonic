@@ -24,8 +24,9 @@ export interface EscalationHooks {
 /**
  * The one human surface: an `escalated` ticket exposes three actions. Accept is
  * the operator's judgement that the failed workflow step is fine: it overrides
- * that step and resumes the workflow after it (ADR-0038). Retry optionally records guidance as feedback, resets the attempt budget, and
- * requeues the ticket to `ready` (or starts the next Attempt immediately).
+ * that step and resumes the workflow after it (ADR-0038). Retry optionally
+ * records guidance as feedback, resets the attempt budget, and requeues the
+ * ticket to `ready` (or starts the next Attempt immediately).
  * Close cancels the ticket and cleans up. Nothing else moves a ticket out of
  * `escalated`.
  */

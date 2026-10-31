@@ -10,7 +10,7 @@ import type { TaskArchive } from '../archive/task-archive.js';
  * Boot-time crash recovery, run once before anything can execute. A
  * `working`/`escalated` Task whose latest Attempt already `passed` is completed
  * to `done`; whatever is still `running` after that is marked `interrupted`
- * and its workflow resumes. Idempotent: a second boot re-selects nothing.
+ * and its workflow resumes.
  */
 export class CrashRecoveryCoordinator {
   constructor(
