@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
+import { groupByAttempt, WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
 import type { WorkflowStepRun, WorkflowStepsResponse } from '../web/src/types.js';
 import { cleanup, makeTask, mountComponent } from './component-smoke-harness.js';
@@ -31,6 +31,11 @@ describe('WorkflowSteps', () => {
     const host = await mountComponent(createElement(WorkflowSteps, { data: response([step({ stepId: 'rebase' }), step({ stepId: 'build', attempt: 1, outcome: 'fail' }), step({ stepId: 'build', attempt: 2 })]) }));
     const headings = [...host.querySelectorAll('h4')].map((h) => h.textContent);
     expect(headings).toEqual(['Attempt 1', 'Attempt 2']);
+  });
+
+  it('gives every group a distinct position when steps surround the block', () => {
+    const groups = groupByAttempt([step({ stepId: 'rebase' }), step({ stepId: 'build', attempt: 1 }), step({ stepId: 'build', attempt: 2 }), step({ stepId: 'merge' })]);
+    expect(groups.map((g) => [g.attempt, g.firstIndex])).toEqual([[null, 0], [1, 1], [2, 2], [null, 3]]);
   });
 
   it('shows a step skipped by if: as skipped', async () => {

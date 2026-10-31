@@ -470,6 +470,32 @@ describe('WorkflowEngine', () => {
       expect(completions).toBe(1);
     });
 
+    const seed = async (taskId: number, rows: { attempt: number; outcome: 'fail' | 'pass' }[]): Promise<void> => {
+      const store = new WorkflowStepRunStore(db);
+      for (const { attempt, outcome } of rows) {
+        const row = await store.start({ taskId, workflowRef: 'flow@1', stepId: 'try', position: 0, action: 'run', attempt });
+        await store.finish(row.id, { outcome, outputs: { stdout: '', exitCode: outcome === 'pass' ? 0 : 1 }, summary: `seeded ${outcome}` });
+      }
+    };
+
+    it('resumes at the next Attempt after a recorded failed one, keeping the max', async () => {
+      const { task, run } = await startTask(flow('  - id: try\n    run: echo n=${{ attempt.number }} prev=${{ attempt.previousVerdict }}\n', 2));
+      await seed(task.id, [{ attempt: 1, outcome: 'fail' }]);
+      await engine().run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((r) => [r.attempt, r.outcome])).toEqual([[1, 'fail'], [2, 'pass']]);
+      expect(rows[1]!.outputs).toContain('n=2 prev=fail');
+    });
+
+    it('restarts the counter when the recorded Attempts already used the whole max', async () => {
+      const { task, run } = await startTask(flow('  - id: try\n    run: echo n=${{ attempt.number }}\n', 2));
+      await seed(task.id, [{ attempt: 1, outcome: 'fail' }, { attempt: 2, outcome: 'fail' }]);
+      await engine().run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.at(-1)).toMatchObject({ attempt: 1, outcome: 'pass' });
+      expect(rows.at(-1)!.outputs).toContain('n=1');
+    });
+
     it('escalates a fail outside the block without retrying', async () => {
       const text = `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: ok\n    run: echo ok\n')}  - id: post\n    run: exit 1\n`;
       const { task, run } = await startTask(text);

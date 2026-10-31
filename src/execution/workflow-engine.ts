@@ -93,7 +93,6 @@ export function parseWorkflowRef(ref: string): { name: string; version: number }
 export class WorkflowEngine {
   constructor(private readonly deps: WorkflowEngineDeps) {}
 
-  /** Runs the Task's pinned workflow from the first step that has not passed; a failing step escalates the Task. */
   async run(task: TaskRow, run: AttemptRow): Promise<void> {
     const ref = task.workflowRef!;
     const { name, version } = parseWorkflowRef(ref);
@@ -122,19 +121,17 @@ export class WorkflowEngine {
     await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
   }
 
-  /** Runs the `attempts:` block until one pass has no `fail` or `inconclusive` step; exhausting `max` escalates. Returns whether the Task may continue. */
   private async runAttemptsBlock(ctx: RunContext, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[]): Promise<boolean> {
     const max = resolveAttemptsMax(workflow.attempts.max, workflow.vars);
     if (!max.ok) {
       await this.deps.escalate(ctx.task, ctx.run, `workflow refused: ${max.message}`);
       return false;
     }
-    const first = ctx.context.attempt as { failureReason: Value };
-    let previousVerdict = '';
-    let failureReason = first.failureReason;
-    for (let number = 1; number <= max.value; number++) {
+    const resume = await this.resumePoint(ctx, body, max.value);
+    let { previousVerdict, failureReason } = resume;
+    for (let number = resume.number; number <= max.value; number++) {
       ctx.context = { ...ctx.context, attempt: { number, previousVerdict, failureReason } };
-      if (number > 1) {
+      if (number > resume.number || resume.advance) {
         for (const step of body) {
           ctx.latest.delete(step.id);
           delete ctx.stepsContext[step.id];
@@ -150,7 +147,24 @@ export class WorkflowEngine {
     return false;
   }
 
-  /** Runs `steps`. A non-pass outcome escalates the Task and stops (`escalate`), is returned to the caller (`return`, except `conflict`, which always escalates), or is recorded while the remaining steps still run (`record`). Returns the stopping failure, or null when the Task may continue. */
+  private async resumePoint(ctx: RunContext, body: readonly WorkflowStepDefinition[], max: number): Promise<{ number: number; advance: boolean; previousVerdict: string; failureReason: Value }> {
+    const initial = (ctx.context.attempt as { failureReason: Value }).failureReason;
+    const fresh = { number: 1, advance: false, previousVerdict: '', failureReason: initial };
+    const rows = (await this.deps.stepRuns.listForTask(ctx.task.id)).filter((row) => row.workflowRef === ctx.ref && row.attempt !== null);
+    if (rows.length === 0) return fresh;
+    const last = Math.max(...rows.map((row) => row.attempt!));
+    const isFailure = (outcome: WorkflowStepOutcome | null): boolean => outcome === 'fail' || outcome === 'inconclusive' || outcome === 'conflict';
+    const failureIn = (attempt: number) => rows.findLast((row) => row.attempt === attempt && isFailure(row.outcome));
+    const open = body.some((step) => isFailure(ctx.latest.get(step.id)?.outcome ?? null));
+    if (open) {
+      if (last >= max) return fresh;
+      const failed = failureIn(last)!;
+      return { number: last + 1, advance: true, previousVerdict: failed.outcome!, failureReason: `workflow step ${failed.stepId} ${failed.outcome}: ${failed.summary ?? ''}` };
+    }
+    const earlier = last > 1 ? failureIn(last - 1) : undefined;
+    return { number: last, advance: false, previousVerdict: earlier?.outcome ?? '', failureReason: earlier ? `workflow step ${earlier.stepId} ${earlier.outcome}: ${earlier.summary ?? ''}` : initial };
+  }
+
   private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, onFailure: 'escalate' | 'return' | 'record', attempt: number | null = null): Promise<StepFailure | null> {
     const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);

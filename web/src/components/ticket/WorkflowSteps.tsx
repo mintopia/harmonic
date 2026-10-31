@@ -53,13 +53,12 @@ function StepRow({ step }: { step: WorkflowStepRun }) {
   );
 }
 
-/** Consecutive steps sharing an `attempts:` pass form one group; steps outside the block stay ungrouped. */
-export function groupByAttempt(steps: WorkflowStepRun[]): { attempt: number | null; steps: WorkflowStepRun[] }[] {
-  const groups: { attempt: number | null; steps: WorkflowStepRun[] }[] = [];
-  for (const step of steps) {
+export function groupByAttempt(steps: WorkflowStepRun[]): { attempt: number | null; firstIndex: number; steps: WorkflowStepRun[] }[] {
+  const groups: { attempt: number | null; firstIndex: number; steps: WorkflowStepRun[] }[] = [];
+  for (const [index, step] of steps.entries()) {
     const last = groups.at(-1);
     if (last && last.attempt === step.attempt) last.steps.push(step);
-    else groups.push({ attempt: step.attempt, steps: [step] });
+    else groups.push({ attempt: step.attempt, firstIndex: index, steps: [step] });
   }
   return groups;
 }
@@ -77,7 +76,7 @@ export function WorkflowSteps({ data }: { data: WorkflowStepsResponse | null }) 
       ) : (
         <div className="space-y-4">
           {groupByAttempt(data.steps).map((group) => (
-            <div key={group.attempt ?? 'outside'}>
+            <div key={`${group.attempt ?? 'outside'}:${group.firstIndex}`}>
               {group.attempt !== null && <h4 className="mb-2 text-[12px] font-semibold text-muted">Attempt {group.attempt}</h4>}
               <ol className="space-y-2">
                 {group.steps.map((step, index) => (

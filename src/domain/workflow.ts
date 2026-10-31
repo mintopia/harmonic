@@ -99,7 +99,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const MAX_RULE = `a whole number from 1 to ${MAX_ATTEMPTS_LIMIT}`;
 const MAX_VAR = /^vars\.([a-z][a-z0-9_-]*)$/;
 
-/** Resolves `attempts.max` against the vars; the message says why a value is not a bounded positive integer. */
 export function resolveAttemptsMax(max: string | number, vars: Readonly<Record<string, string | number | boolean>>): { ok: true; value: number } | { ok: false; message: string } {
   let value: unknown = max;
   if (typeof max === 'string') {
@@ -115,7 +114,6 @@ export function resolveAttemptsMax(max: string | number, vars: Readonly<Record<s
   return { ok: true, value: max };
 }
 
-/** Flattens `steps:` into execution order, recording the one `attempts:` block and refusing zero, many and nested blocks. */
 function layout(wf: z.infer<typeof workflowSchema>): { located: Located[]; block: AttemptsBlock | undefined; problems: Problem[] } {
   const problems: Problem[] = [];
   const located: Located[] = [];
