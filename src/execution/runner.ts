@@ -14,7 +14,7 @@ import { ActiveRuns, type ActiveRun } from './active-runs.js';
 import { LIVE_RUN_LOG_EVENT_ID_OFFSET } from './live-events.js';
 import { driveFields } from './prompt-template.js';
 import { PromptLibrary } from '../domain/prompt-library-store.js';
-import { VerificationCoordinator, type EpicVerificationResolutionInput, type VerificationCoordinatorDeps } from './verification-coordinator.js';
+import { VerificationCoordinator, type VerificationCoordinatorDeps } from './verification-coordinator.js';
 import { TurnDriver, type TurnDriverDeps } from './turn-driver.js';
 import { EpicRefreshResolver, type EpicRefreshResolverDeps } from './epic-refresh-resolver.js';
 import { WorkspaceProvisioner, type WorkspaceProvisionerDeps } from './workspace-provisioner.js';
@@ -62,7 +62,6 @@ import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { createChildProcessSpawn } from '../verification/command-verifier.js';
 
 export type { LiveAttemptEvent } from './live-events.js';
-export type { EpicVerificationResolutionInput } from './verification-coordinator.js';
 export type { RunnerEvents, RunnerOptions, Workspace } from './runner-options.js';
 import type { RunnerEvents, RunnerOptions } from './runner-options.js';
 
@@ -308,15 +307,11 @@ export class Runner {
 
   private verificationCoordinatorDeps(): VerificationCoordinatorDeps {
     return {
-      routing: this.taskService.routing,
       attempts: this.attempts,
       sessionStore: this.sessionStore,
       activeRuns: this.activeRuns,
       archive: this.archive,
-      promptLibrary: this.promptLibrary,
       events: this.events,
-      getConfig: this.getConfig,
-      getWorkspace: this.getWorkspace,
       criticDrive: this.criticDrive,
     };
   }
@@ -1006,10 +1001,6 @@ export class Runner {
   /** Run the corrective turn for a failed whole-Epic verification in a checked-out integration worktree. */
   async runEpicAgentTurn(req: AgentDriveRequest<EpicSubject>): Promise<AgentDriveResult> {
     return this.verification.runEpicAgentTurn(req);
-  }
-
-  async resolveEpicVerification(input: EpicVerificationResolutionInput): Promise<void> {
-    return this.verification.resolveEpicVerification(input);
   }
 
   /** @see {@link EpicRefreshResolver.enqueueEpicRefreshResolution} */

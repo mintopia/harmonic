@@ -5,7 +5,7 @@ export type SettingScope = 'global-only' | 'overridable';
 export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
-export type SettingTab = 'general' | 'execution' | 'verification' | 'prompts' | 'integrations' | 'security' | 'archive';
+export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'security' | 'archive';
 
 export interface SettingSpec {
   readonly scope: SettingScope;
@@ -138,14 +138,14 @@ export const settingsRegistry = {
   epicPreMergeCommands: {
     scope: 'overridable',
     control: 'verifier',
-    tab: 'verification',
+    tab: 'execution',
     label: 'Epic pre-merge commands',
     help: 'Command verifiers run before an Epic merges to its default branch.',
   },
   epicPreMergeCritics: {
     scope: 'overridable',
     control: 'verifier',
-    tab: 'verification',
+    tab: 'execution',
     label: 'Epic pre-merge critics',
     help: 'Critics run after Epic pre-merge commands pass.',
   },
@@ -457,7 +457,6 @@ export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boo
 export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'execution', label: 'Execution' },
-  { id: 'verification', label: 'Verification' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security' },

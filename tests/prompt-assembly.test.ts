@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { bundledEnginePrompts, type EnginePrompts } from '../src/domain/bundled-prompts.js';
 import {
   composeAttemptPrompt,
-  composeEpicResolvePrompt,
   composePauseMessage,
   composePeerContext,
   peerFrame,
@@ -138,19 +137,6 @@ describe('resolver prompts', () => {
       worktreePath: '/wt',
     });
     expect(out).toBe('develop|epic/3|D|/wt|epic/3|develop');
-  });
-
-  it('composeEpicResolvePrompt joins prompt, failing verification and suffix with blank lines', () => {
-    const prompts = { ...defaults(), epicFailingVerification: 'FAILED: {reason}' };
-    const out = composeEpicResolvePrompt({
-      resolvePrompt: 'Fix {ref} {title} {description} {url}',
-      resolveSuffix: 'Push to {branch}.',
-      prompts,
-      epic: { ref: '3', title: 'Epic three', body: '$& body', url: 'http://x/3' },
-      reason: 'tests red',
-      branch: 'epic/3',
-    });
-    expect(out).toBe('Fix 3 Epic three $& body http://x/3\n\nFAILED: tests red\n\nPush to epic/3.');
   });
 });
 

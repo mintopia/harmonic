@@ -21,7 +21,6 @@ import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
-import { GlobalVerificationSettings, WorkspaceVerificationSettings } from './VerificationSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 import { PromptLibrary } from './prompt-library/PromptLibrary';
@@ -1017,25 +1016,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         'The budget caps, stall detector, and tool timeout that trip an Attempt here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
     },
     body: (ctx) => (ctx.surface === 'global' ? <GlobalGuardrails ctx={ctx} /> : <WorkspaceGuardrails ctx={ctx} />),
-  },
-
-  {
-    tab: 'verification',
-    surfaces: BOTH,
-    title: 'Verification',
-    wide: true,
-    description: {
-      global:
-        'Epic verification is configured as command and critic lists for the pre-merge stage.',
-      workspace:
-        'Global verifiers apply to every Workspace. Here you can reorder or disable them for this Workspace and add its own — the global ones stay locked.',
-    },
-    body: (ctx) =>
-      ctx.surface === 'global' ? (
-        <GlobalVerificationSettings config={ctx.config} setConfig={ctx.setConfig} fieldErrors={ctx.errors} />
-      ) : (
-        <WorkspaceVerificationSettings workspace={ctx.workspace} config={ctx.config} setWorkspace={ctx.setWorkspace} fieldErrors={ctx.errors} />
-      ),
   },
 
   {

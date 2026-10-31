@@ -4,33 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { baselineConfig } from '../src/config.js';
 import { convertEditedEpicFixPrompts, epicFixTexts } from '../src/domain/epic-fix-prompt.js';
-import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { NO_RETIRED } from '../src/domain/retired-settings.js';
-import { composeEpicResolvePrompt } from '../src/execution/prompt-assembly.js';
-
-const FIXTURE_EPIC = { ref: '7', title: 'Epic seven', body: 'Body text', url: 'http://x/7' };
-
-const GOLDEN = [
-  'Resolve the Epic verification failures, then commit the fix.',
-  '',
-  '## Failing Epic verification',
-  'tests red',
-  '',
-  'Work in the checked-out integration branch `epic/7`. Fix the failure and commit the result. Do not create or switch branches, and do not push.',
-].join('\n');
-
-async function fromLibrary(library: PromptLibrary): Promise<string> {
-  const texts = await epicFixTexts(library);
-  return composeEpicResolvePrompt({
-    resolvePrompt: texts.resolvePrompt,
-    resolveSuffix: texts.resolveSuffix,
-    prompts: library.enginePrompts(),
-    epic: FIXTURE_EPIC,
-    reason: 'tests red',
-    branch: 'epic/7',
-  });
-}
 
 describe('Epic fix prompt from the Prompt Library', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-epic-fix-'));
@@ -40,23 +15,16 @@ describe('Epic fix prompt from the Prompt Library', () => {
     const library = new PromptLibrary(join(root, 'duplicated'));
     await library.duplicate('epicResolveSuffix', 'epicResolveSuffix-edited');
     await library.update('epicResolveSuffix-edited', 'mine', 'MY SUFFIX for {branch}.');
-    expect(await fromLibrary(library)).toContain('\n\nMY SUFFIX for epic/7.');
+    expect((await epicFixTexts(library)).resolveSuffix).toBe('MY SUFFIX for {branch}.');
   });
 
-  it('is byte-identical to the pre-Library prompt on an unedited install', async () => {
+  it('leaves an unedited install on the bundled entries', async () => {
     const library = new PromptLibrary(join(root, 'unedited'));
     expect(await convertEditedEpicFixPrompts(library, baselineConfig(), NO_RETIRED)).toEqual([]);
     const config = baselineConfig();
-    const legacy = composeEpicResolvePrompt({
-      resolvePrompt: config.verify.epic.resolvePrompt,
-      resolveSuffix: config.verify.epic.resolveSuffix,
-      prompts: bundledEnginePrompts(),
-      epic: FIXTURE_EPIC,
-      reason: 'tests red',
-      branch: 'epic/7',
-    });
-    expect(await fromLibrary(library)).toBe(GOLDEN);
-    expect(legacy).toBe(GOLDEN);
+    const texts = await epicFixTexts(library);
+    expect(texts.resolvePrompt).toBe(config.verify.epic.resolvePrompt);
+    expect(texts.resolveSuffix).toBe(config.verify.epic.resolveSuffix);
   });
 
   it('converts edited settings exactly once across two boots and keeps the edited text', async () => {
@@ -70,8 +38,8 @@ describe('Epic fix prompt from the Prompt Library', () => {
 
     const codes = (await library.list()).filter((e) => !e.bundled).map((e) => e.code).sort();
     expect(codes).toEqual(['epicFailingVerification-edited', 'epicResolveSuffix-edited']);
-    expect(await fromLibrary(library)).toBe(
-      'Resolve the Epic verification failures, then commit the fix.\n\nEDITED FAILURE: tests red\n\nEDITED SUFFIX for epic/7.',
-    );
+    const texts = await epicFixTexts(library);
+    expect(texts.failingVerification).toBe('EDITED FAILURE: {reason}');
+    expect(texts.resolveSuffix).toBe('EDITED SUFFIX for {branch}.');
   });
 });

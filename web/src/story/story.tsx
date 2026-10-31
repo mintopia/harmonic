@@ -3,7 +3,6 @@ import { api, ApiError } from '../api';
 import type { JSX } from 'react';
 import ReactDOM from 'react-dom/client';
 import '../index.css';
-import { GlobalVerificationSettings } from '../components/VerificationSettings';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import { PromptSent } from '../components/ticket/Description';
@@ -78,55 +77,6 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
   return (
     <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', ...style }}>
       {children}
-    </div>
-  );
-}
-
-function SettingsStory() {
-  const seed = structuredClone(storyConfig);
-  seed.verify.epic.preMerge.commands = [
-    { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
-    { id: 'cmd-typecheck', command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 120 },
-  ];
-  seed.verify.epic.preMerge.critics = [
-    {
-      id: 'critic-correctness',
-      name: 'Correctness',
-      prompt:
-        "Review the diff for {title}. Flag correctness bugs, missing edge cases, and anything that breaks the issue's stated contract.",
-      model: 'claude-opus-5',
-      harness: 'claude',
-      timeoutSeconds: 300,
-    },
-    {
-      id: 'critic-security',
-      name: 'Security review',
-      prompt: 'Check the diff for security regressions relevant to {title}.',
-      model: 'gpt-5.3-codex',
-      harness: 'codex',
-      timeoutSeconds: 300,
-    },
-    { id: 'critic-narration', name: '', prompt: 'Flag narration comments and commented-out code in the diff.', model: '', harness: 'claude', timeoutSeconds: 300 },
-  ];
-  const [config, setConfig] = useState(seed);
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24 }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
-        <section
-          style={{
-            background: 'var(--hm-surface)',
-            borderRadius: 12,
-            boxShadow: 'var(--hm-shadow-card)',
-            padding: 20,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 700 }}>Verification</h2>
-          <p style={{ margin: '2px 0 16px', color: 'var(--hm-muted)', fontSize: 13 }}>
-            What runs before work merges, in order.
-          </p>
-          <GlobalVerificationSettings config={config} setConfig={setConfig} fieldErrors={{}} />
-        </section>
-      </div>
     </div>
   );
 }
@@ -592,7 +542,6 @@ function RetryStory() {
 }
 
 const STORIES: Record<string, () => JSX.Element> = {
-  settings: SettingsStory,
   'prompt-library': PromptLibraryStory,
   board: BoardStory,
   'critic-running': CriticRunningStory,
