@@ -3,7 +3,7 @@ import { api } from '../../api';
 import { toastError, toastSuccess } from '../../toast';
 import { useAsyncResource } from '../../useAsyncResource';
 import type { WorkflowLibraryEntry } from '../../types';
-import { btnGhost, btnPrimary, card, chip, field, labelType, searchField, sectionTitle } from '../../ui';
+import { btnGhost, btnPrimary, card, field, labelType, searchField, sectionTitle } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
 import { LoadError } from '../LoadError';
@@ -166,7 +166,7 @@ function Library({
                       <td className="py-2.5 pr-4">
                         <div className="flex min-h-11 flex-wrap items-center gap-1">
                           {assignedChips(entry).map((c) => (
-                            <span key={c.text} className={`${chip} normal-case ${CHIP_STYLES[c.tone]}`}>
+                            <span key={c.text} className={`rounded-full px-2 py-0.5 text-label font-semibold tracking-normal ${CHIP_STYLES[c.tone]}`}>
                               {c.text}
                             </span>
                           ))}
