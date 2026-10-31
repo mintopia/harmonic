@@ -390,6 +390,77 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -415,6 +486,9 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
           "verifierStatuses",
           "steps"
         ]
@@ -2612,6 +2686,56 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -2814,6 +2938,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3257,6 +3382,56 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -3458,6 +3633,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -3886,6 +4062,56 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -4089,6 +4315,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -10402,6 +10629,78 @@
               }
             ]
           },
+          "harness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "claude-opus-5-5"
+          },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "verifierStatuses": {
             "type": "array",
             "items": {
@@ -10427,6 +10726,9 @@
           "escalationReason",
           "workingDir",
           "continuation",
+          "harness",
+          "model",
+          "classifier",
           "verifierStatuses",
           "steps"
         ],
@@ -12657,6 +12959,57 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -12859,6 +13212,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -13307,6 +13661,57 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -13508,6 +13913,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",
@@ -13941,6 +14347,57 @@
               "applied": true
             }
           },
+          "classifier": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "routed",
+                      "abstained",
+                      "overridden"
+                    ]
+                  },
+                  "optionId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "optionId",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": {
+              "kind": "routed",
+              "optionId": "opus-deep",
+              "reason": "Cross-cutting refactor; needs deep reasoning."
+            }
+          },
           "url": {
             "anyOf": [
               {
@@ -14144,6 +14601,7 @@
           "summary",
           "cost",
           "routing",
+          "classifier",
           "url",
           "mapTitle",
           "trackerLabel",

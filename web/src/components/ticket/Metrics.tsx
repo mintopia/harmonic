@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatCost } from '../../cost';
 import type { AttemptSummary, AttemptUsageEvent, Task } from '../../types';
 import { changedFilesFromNumstat } from '../../attempt-rail-model';
@@ -119,6 +119,58 @@ function RoutedByNote({ routing }: { routing: NonNullable<Task['routing']> }) {
   );
 }
 
+function ClassifierNote({ task, classifier }: { task: Task; classifier: NonNullable<Task['classifier']> }) {
+  const [open, setOpen] = useState(false);
+  if (classifier.kind === 'overridden') {
+    return (
+      <span className="text-small text-muted">
+        {' '}
+        — <span className="font-medium text-ink">set on this Ticket</span>; the classifier was not consulted
+      </span>
+    );
+  }
+  if (classifier.kind === 'abstained') {
+    return (
+      <>
+        {' '}
+        <span className="rounded-full bg-raised px-[7px] py-px text-[10px] font-semibold uppercase tracking-[0.03em] text-muted">abstained</span>
+        <span className="text-small text-muted">
+          {' '}
+          — Route Classifier abstained{classifier.reason ? ` (${classifier.reason})` : ''}; used Workspace default {harnessLabel(task.harness)} {formatModelLabel(task.model)}.
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="text-small text-muted"> — routed by classifier</span>{' '}
+      {classifier.optionId && <code className={`${codeChip} bg-tool-tint text-tool`}>{classifier.optionId}</code>}{' '}
+      {classifier.reason && (
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="text-small font-semibold text-accent hover:underline">
+          {open ? 'Hide ▴' : 'Why ▾'}
+        </button>
+      )}
+      {open && classifier.reason && (
+        <div className="mt-2 flex max-w-[640px] flex-col gap-2 rounded-md bg-raised p-3">
+          <div>
+            <div className="text-label font-bold uppercase tracking-[0.03em] text-muted">Reason</div>
+            <p className="border-l-2 border-tool pl-2 text-small text-ink">{classifier.reason}</p>
+          </div>
+          {classifier.optionId && (
+            <div>
+              <div className="text-label font-bold uppercase tracking-[0.03em] text-muted">Chosen</div>
+              <p className="text-small text-ink">
+                <code className={`${codeChip} bg-tool-tint text-tool`}>{classifier.optionId}</code> · {harnessLabel(task.harness)}{' '}
+                <span className="text-muted">{formatModelLabel(task.model)}</span>
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Properties({ task, allTasks, workspaceName }: { task: Task; allTasks: Task[]; workspaceName: string | null }) {
   const createdAt = new Date(task.createdAt);
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
@@ -126,7 +178,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
       <Fact label="Priority">{task.priority}</Fact>
-      <Fact label="Agent" className={task.routing ? 'col-span-2' : ''}>
+      <Fact label="Agent" className={task.routing || task.classifier ? 'col-span-2' : ''}>
         {notStarted ? (
           <span className="text-muted">Not started</span>
         ) : (
@@ -135,6 +187,7 @@ export function Properties({ task, allTasks, workspaceName }: { task: Task; allT
           </>
         )}
         {task.routing && <RoutedByNote routing={task.routing} />}
+        {task.classifier && <ClassifierNote task={task} classifier={task.classifier} />}
       </Fact>
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>
       <Fact label="Depends on">

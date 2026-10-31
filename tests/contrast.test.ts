@@ -194,7 +194,7 @@ it('uses contrast-safe ink for a selected failed Attempt label', () => {
   const failed: Attempt = {
     id: 1, taskId: 1, number: 1, state: 'failed', startedAt: 0, endedAt: 1,
     feedback: null, verifiedSha: null, escalationReason: null, workingDir: null,
-    verifierStatuses: [], continuation: null, steps: [],
+    harness: null, model: null, classifier: null, verifierStatuses: [], continuation: null, steps: [],
   };
   const html = renderToStaticMarkup(createElement(AttemptsNav, {
     attempts: [failed], maxAttempts: 3, selectedNumber: 1, onSelect: () => {},

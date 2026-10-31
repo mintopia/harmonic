@@ -663,12 +663,17 @@ export class Runner {
 
   private async recordClassification(task: TaskRow, bound: AttemptRow, outcome: ClassifierOutcome): Promise<void> {
     await bestEffort(async () => {
-      if (outcome.routing) {
-        await this.attempts.update(bound.id, {
-          routingUsage: JSON.stringify(outcome.routing.usage),
-          routingCost: outcome.routing.cost ? JSON.stringify(outcome.routing.cost) : null,
-        });
-      }
+      await this.attempts.update(bound.id, {
+        routeKind: outcome.kind === 'chosen' ? 'classifier' : 'abstained',
+        routeOption: outcome.kind === 'chosen' ? outcome.option.id : null,
+        routeReason: outcome.reason,
+        ...(outcome.routing
+          ? {
+              routingUsage: JSON.stringify(outcome.routing.usage),
+              routingCost: outcome.routing.cost ? JSON.stringify(outcome.routing.cost) : null,
+            }
+          : {}),
+      });
       const archived = outcome.prompt === undefined ? null : await this.archive?.appendRoutingPrompt(task, bound.number, outcome.prompt);
       const promptRef = archived ? { locator: archived.locator, promptIndex: archived.promptIndex } : {};
       const payload =

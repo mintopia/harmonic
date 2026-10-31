@@ -6,6 +6,7 @@ import {
   CONVERSATION_STATES,
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
+import { attemptClassifierSchema } from '../domain/task-routing.js';
 import { trackerRef } from '../tracker/adapter.js';
 
 /** A tracker ref path param, branded at the boundary so handlers never cast. */
@@ -86,6 +87,13 @@ export const attemptSchema = z
       lastActiveAgeMs: z.number(),
       warmWindowMs: z.number().nullable(),
     }).nullable(),
+    /** The Harness and Model this Attempt started on; null for Attempts that predate the record. */
+    harness: z.string().nullable().meta({ example: 'claude' }),
+    model: z.string().nullable().meta({ example: 'claude-opus-5-5' }),
+    /** The Route Classifier's decision for this Attempt; null when it was not consulted. */
+    classifier: attemptClassifierSchema
+      .nullable()
+      .meta({ example: { kind: 'routed', optionId: 'opus-deep', reason: 'Cross-cutting refactor; needs deep reasoning.' } }),
     /** One row per verifier category, including skipped and disabled states. */
     verifierStatuses: z.array(verifierStatusSchema),
     steps: z.array(stepSchema),

@@ -570,6 +570,27 @@
           "notNull": false,
           "autoincrement": false
         },
+        "route_kind": {
+          "name": "route_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "route_option": {
+          "name": "route_option",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "route_reason": {
+          "name": "route_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "live_usage": {
           "name": "live_usage",
           "type": "text",
