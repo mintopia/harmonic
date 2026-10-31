@@ -655,6 +655,7 @@ export class Runner {
         attemptNumber: (previous?.number ?? 0) + 1,
         previousVerdict: previous ? (previous.reason ?? previous.state) : undefined,
         previousFailureReason: previous ? (previous.detail ?? previous.feedback ?? undefined) : undefined,
+        modelOptionOverrides: task.modelOptionOverrides,
       });
     } catch (error) {
       return { kind: 'abstained', reason: errorMessage(error), routing: null };

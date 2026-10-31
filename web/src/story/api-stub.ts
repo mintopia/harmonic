@@ -363,7 +363,12 @@ export const api: typeof RealApi = {
   updateWorkspace: (_id: number, _patch: object) => ok(workspaceFixture),
   deleteWorkspace: (_id: number) => ok(null),
   refreshTracker: (_id: number) => ok({ ok: true as const }),
-  updateTask: (_id: number, _input: object) => ok(f.task),
+  updateTask: (_id: number, input: { modelOptionOverrides?: { model: string }[] }) => {
+    const bad = input.modelOptionOverrides?.findIndex((o) => o.model.includes('gpt-9')) ?? -1;
+    return bad >= 0
+      ? Promise.reject(new Error(`modelOptionOverrides.${bad}.model: model '${input.modelOptionOverrides![bad]!.model}' is not in the claude model catalog`))
+      : ok(f.task);
+  },
   promoteTask: (_id: number) => ok(f.task),
   cancelTask: (_id: number, _withDependents = false) => ok(f.task),
   pauseTask: (_id: number) => ok(f.task),

@@ -332,6 +332,7 @@ CREATE TABLE `tasks` (
 	`tracker_parent` text,
 	`tracker_blocked_by` text,
 	`tracker_labels` text,
+	`model_option_overrides` text,
 	`tracker_title` text,
 	`tracker_body` text,
 	`tracker_url` text,

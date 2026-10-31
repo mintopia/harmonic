@@ -9,7 +9,7 @@ import { defaultRoute } from './routing.js';
 import { buildClassifierPrompt } from '../execution/prompt-assembly.js';
 import { resolvePromptFragments } from './setting-override.js';
 import { harnessConfig } from './route.js';
-import { parseClassifierEndpoint, resolveClassifierSettings, resolveModelOptions, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
+import { parseClassifierEndpoint, resolveClassifierSettings, resolveModelOptions, type ModelOptionOverride, type ClassifierBackend as ClassifierBackendId } from './model-options.js';
 import { costOfUsages, pricesForHarness, type Cost } from './pricing.js';
 import type { AttemptUsage } from './usage.js';
 
@@ -244,6 +244,7 @@ export interface ClassifyRequest {
   attemptNumber: number;
   previousVerdict?: string | undefined;
   previousFailureReason?: string | undefined;
+  modelOptionOverrides?: readonly ModelOptionOverride[] | null | undefined;
 }
 
 export class RouteClassifier {
@@ -259,7 +260,7 @@ export class RouteClassifier {
   async classify(request: ClassifyRequest): Promise<ClassifierOutcome> {
     const config = this.getConfig();
     const settings = resolveClassifierSettings(request.workspace);
-    const options = resolveModelOptions(request.workspace, config);
+    const options = resolveModelOptions(request.workspace, config, request.modelOptionOverrides);
     if (options.length === 0) return { kind: 'abstained', reason: 'no Model Options are configured', routing: null };
     const backend = this.backends[settings.backend];
     if (!backend) return { kind: 'abstained', reason: `the ${settings.backend} backend is not available`, routing: null };

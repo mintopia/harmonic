@@ -96,6 +96,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   trackerParent: null,
   trackerBlockedBy: null,
   trackerLabels: null,
+  modelOptionOverrides: null,
   trackerTitle: null,
   archiveId: null,
   trackerBody: null,

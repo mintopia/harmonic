@@ -139,6 +139,8 @@ export const tasks = sqliteTable('tasks', {
   trackerParent: text('tracker_parent').$type<TrackerRef>(),
   trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>(),
   trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>(),
+  /** Ticket-scoped Model Option overrides (code, Harness, Model); null when none. */
+  modelOptionOverrides: text('model_option_overrides', { mode: 'json' }).$type<Array<{ id: string; harness: string; model: string }>>(),
   /** The ticket's title at last scan, verbatim (`prompt` is the derived title+body blend). */
   trackerTitle: text('tracker_title'),
   trackerBody: text('tracker_body'),

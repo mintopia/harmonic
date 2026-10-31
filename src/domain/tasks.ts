@@ -29,9 +29,9 @@ import { resolveWorkspace } from './workspaces.js';
 import { defaultRoute, routeApplies, RoutingService, type RoutingScope } from './routing.js';
 import { resolveScoped } from './setting-override.js';
 import { harnessConfig } from './route.js';
-import { resolveClassifierSettings } from './model-options.js';
+import { isModelOptionDefined, type ModelOptionOverride, resolveClassifierSettings } from './model-options.js';
 import type { EscalationCause, TaskRouting } from './task-routing.js';
-import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
+import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, modelOptionIssues, modelOptionSchema, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { logger } from '../logger.js';
 import { decideTaskDeletion, type DeletionDecision } from './task-deletion.js';
@@ -67,6 +67,8 @@ export const createTaskInputSchema = z.object({
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
+const modelOptionOverrideSchema = modelOptionSchema.pick({ id: true, harness: true, model: true });
+
 export const updateTaskInputSchema = createTaskInputSchema
   .omit({ state: true, dependsOn: true, workspaceId: true })
   .partial()
@@ -77,6 +79,8 @@ export const updateTaskInputSchema = createTaskInputSchema
     priority: createTaskInputSchema.shape.priority.nullable(),
     conflictResolveTurns: createTaskInputSchema.shape.conflictResolveTurns.nullable(),
     baseBranch: createTaskInputSchema.shape.baseBranch.nullable(),
+    /** Replaces the Ticket's Model Option overrides; each changes only the Harness/Model of a code defined in the Workspace or globally. */
+    modelOptionOverrides: z.array(modelOptionOverrideSchema).optional().meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
   });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
@@ -470,6 +474,21 @@ export class TaskService {
     }
   }
 
+  private async assertModelOptionOverrides(task: TaskRow, overrides: readonly ModelOptionOverride[]): Promise<void> {
+    const config = this.getConfig();
+    const workspace = await this.resolveWorkspace(task.workspaceId ?? undefined);
+    const seen = new Set<string>();
+    overrides.forEach((override, index) => {
+      if (seen.has(override.id)) throw new DomainError('validation', `modelOptionOverrides.${index}.id: model option code '${override.id}' is listed twice`);
+      seen.add(override.id);
+      if (!isModelOptionDefined(override.id, workspace, config)) {
+        throw new DomainError('validation', `modelOptionOverrides.${index}.id: model option code '${override.id}' is not defined in this Workspace or globally`);
+      }
+    });
+    const [first] = modelOptionIssues(overrides.map((o) => ({ ...o, description: o.id })), config.harnesses);
+    if (first) throw new DomainError('validation', `modelOptionOverrides.${first.index}.${first.field}: ${first.message}`);
+  }
+
   async create(input: CreateTaskInput): Promise<TaskRow> {
     const workspace = await this.resolveWorkspace(input.workspaceId);
     this.assertHarnessConfigured(input.harness);
@@ -844,10 +863,16 @@ export class TaskService {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
     this.assertHarnessConfigured(input.harness);
+    const { modelOptionOverrides, ...columns } = input;
+    if (modelOptionOverrides) await this.assertModelOptionOverrides(task, modelOptionOverrides);
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ ...input, updatedAt: Date.now() })
+        .set({
+          ...columns,
+          ...(modelOptionOverrides ? { modelOptionOverrides: modelOptionOverrides.length > 0 ? modelOptionOverrides : null } : {}),
+          updatedAt: Date.now(),
+        })
         .where(eq(tasks.id, id))
         .returning()
         .get(),

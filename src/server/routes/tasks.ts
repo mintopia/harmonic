@@ -213,6 +213,8 @@ const taskSchema = taskWithDepsSchema
   .extend({
     /** The prompt's first line, bounded: the card title; the full `prompt` is item-GET-only. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
+    /** Ticket-scoped Model Option overrides (Ticket > Workspace > global); empty when none. */
+    modelOptionOverrides: z.array(z.object({ id: z.string(), harness: z.string(), model: z.string() })).meta({ example: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }),
     cost: costSchema.nullable(),
     /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches or on native Tasks. */
     routing: taskRoutingSchema.nullable().meta({ example: { label: 'reasoning', applied: true } }),
