@@ -5,6 +5,8 @@ import { workflowStepRuns, type WorkflowStepOutcome, type WorkflowStepRunRow } f
 export interface WorkflowStepOutputs {
   stdout: string;
   exitCode: number | null;
+  baseSha?: string;
+  conflictedFiles?: string[];
 }
 
 export interface WorkflowStepRunStart {

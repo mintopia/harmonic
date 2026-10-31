@@ -20,6 +20,7 @@ export interface WorkflowEngineDeps {
   commandById: (task: TaskRow, id: string) => Promise<VerificationCommand | undefined>;
   secretValues: (task: TaskRow) => Promise<string[]>;
   cwdFor: (task: TaskRow) => string;
+  baseBranchFor: (task: TaskRow) => Promise<string>;
   escalate: (task: TaskRow, run: AttemptRow, reason: string) => Promise<void>;
   complete: (task: TaskRow, run: AttemptRow) => Promise<void>;
   onStepChanged?: (taskId: number) => void;
@@ -32,6 +33,7 @@ interface StepResult {
   stdout: string;
   exitCode: number | null;
   output: string;
+  extra?: Pick<WorkflowStepOutputs, 'baseSha' | 'conflictedFiles'>;
 }
 
 interface GitMark {
@@ -62,10 +64,11 @@ export class WorkflowEngine {
       const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position, action });
       this.deps.onStepChanged?.(task.id);
       const result = await this.execute(task, step, secrets);
-      const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode };
+      const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.extra };
       await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
       this.deps.onStepChanged?.(task.id);
       if (result.outcome !== 'pass') {
+        if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
         const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
         await this.deps.escalate(task, run, `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`);
         return;
@@ -74,9 +77,21 @@ export class WorkflowEngine {
     await this.deps.complete(task, run);
   }
 
+  private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
+    const cwd = this.deps.cwdFor(task);
+    const baseOid = await Git.revParse(task.workingDir, await this.deps.baseBranchFor(task));
+    const rebased = await Git.rebaseOnto(cwd, baseOid);
+    if (rebased.ok) return { outcome: 'pass', summary: `rebased onto ${baseOid}`, stdout: '', exitCode: 0, output: '', extra: { baseSha: baseOid, conflictedFiles: [] } };
+    const detail = mask(rebased.detail);
+    if (!rebased.conflict) return { outcome: 'inconclusive', summary: detail, stdout: '', exitCode: null, output: detail, extra: { baseSha: baseOid, conflictedFiles: [] } };
+    const conflictedFiles = await Git.conflictedFiles(cwd);
+    return { outcome: 'conflict', summary: `rebase conflict in ${conflictedFiles.join(', ') || 'the working copy'}`, stdout: '', exitCode: null, output: detail, extra: { baseSha: baseOid, conflictedFiles } };
+  }
+
   private async execute(task: TaskRow, step: WorkflowDefinition['steps'][number], secrets: string[]): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
+      if (step.uses === 'rebase') return await this.rebase(task, mask);
       if (step.run === undefined && step.uses !== 'command') {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
       }

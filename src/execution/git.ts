@@ -757,6 +757,18 @@ export const Git = {
     );
   },
 
+  async conflictedFiles(worktreeDir: string): Promise<string[]> {
+    const out = await git(worktreeDir, 'diff', '--name-only', '--diff-filter=U');
+    return out.split('\n').filter((line) => line.length > 0);
+  },
+
+  /** Abort a rebase left in progress, restoring the pre-rebase tip; a no-op when none is in progress. */
+  async abortRebase(worktreeDir: string): Promise<void> {
+    await git(worktreeDir, 'rebase', '--abort').catch((err) => {
+      logger.debug('git: rebase --abort found nothing to abort', { 'git.dir': worktreeDir, error: errorMessage(err) });
+    });
+  },
+
   /**
    * Fast-forward the checkout at `dir` to `oid` (`merge --ff-only`), under the
    * base-repo lock, advancing the branch ref and the working tree together.
