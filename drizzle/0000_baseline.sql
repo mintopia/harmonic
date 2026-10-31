@@ -395,6 +395,7 @@ CREATE TABLE `workflow_step_runs` (
 	`outputs` text,
 	`summary` text,
 	`resolved_prompt` text,
+	`attempt` integer,
 	`started_at` integer NOT NULL,
 	`ended_at` integer,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action

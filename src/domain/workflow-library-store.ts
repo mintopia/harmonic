@@ -25,12 +25,15 @@ description: Build the ticket, verify it, review it and merge it.
 steps:
   - id: rebase
     uses: rebase
-  - id: build
-    uses: agent
-  - id: verify
-    uses: verify
-  - id: review
-    uses: critic
+  - attempts:
+      max: 2
+      steps:
+        - id: build
+          uses: agent
+        - id: verify
+          uses: verify
+        - id: review
+          uses: critic
   - id: merge
     uses: merge
 `;

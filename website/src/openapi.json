@@ -20972,6 +20972,20 @@
                             "maximum": 9007199254740991,
                             "example": 0
                           },
+                          "attempt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The `attempts:` block pass this run belongs to, 1-based; null for steps outside the block.",
+                            "example": 1
+                          },
                           "outcome": {
                             "anyOf": [
                               {
@@ -21061,6 +21075,7 @@
                           "stepId",
                           "action",
                           "position",
+                          "attempt",
                           "outcome",
                           "summary",
                           "resolvedPrompt",

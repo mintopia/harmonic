@@ -5,7 +5,7 @@ import type { AppConfig, VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { WorkflowEntry } from '../domain/workflow-library-store.js';
 import { evaluateCondition, interpolate, type ExpressionContext, type Value } from '../domain/workflow-expression.js';
-import { agentStepWith, parseWorkflow, type WorkflowStepDefinition } from '../domain/workflow.js';
+import { agentStepWith, parseWorkflow, resolveAttemptsMax, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from '../domain/route.js';
 import type { WorkflowStepOutputs, WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { maskSecrets } from '../secrets/mask.js';
@@ -57,6 +57,11 @@ interface StepResult {
   outputs?: Partial<WorkflowStepOutputs>;
 }
 
+interface StepFailure {
+  outcome: WorkflowStepOutcome;
+  reason: string;
+}
+
 interface AgentRunState {
   route?: Promise<ResolvedRoute>;
   session?: { key: string; id: string };
@@ -103,26 +108,57 @@ export class WorkflowEngine {
     const context: ExpressionContext = {
       steps: stepsContext,
       ticket: { title: task.trackerTitle ?? task.prompt, body: task.trackerBody ?? '', labels: task.trackerLabels ?? [], ref: task.trackerRef ?? '' },
-      attempt: { number: run.number, failureReason: run.feedback ?? task.feedback ?? '' },
+      attempt: { number: run.number, previousVerdict: '', failureReason: run.feedback ?? task.feedback ?? '' },
       workspace: { id: task.workspaceId ?? null, name: (await this.deps.workspaceName?.(task)) ?? '' },
       vars: workflow.vars,
       secrets: secretMap,
     };
     const ctx: RunContext = { task, run, ref, secrets: Object.values(secretMap), latest, stepsContext, context, agentState: {} };
-    if (!(await this.runSteps(ctx, workflow.steps, 0, true))) return;
+    const { start, end } = workflow.attempts;
+    if (await this.runSteps(ctx, workflow.steps.slice(0, start), 0, 'escalate')) return;
+    if (!(await this.runAttemptsBlock(ctx, workflow, workflow.steps.slice(start, end)))) return;
+    if (await this.runSteps(ctx, workflow.steps.slice(end), end, 'escalate')) return;
     await this.deps.complete(task, run);
-    await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, false);
+    await this.runSteps(ctx, workflow.cleanup ?? [], workflow.steps.length, 'record');
   }
 
-  /** Runs `steps`; with `escalateOnFailure` a non-pass outcome escalates the Task and stops, otherwise the failure is recorded and the remaining steps still run. Returns whether the Task may continue. */
-  private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, escalateOnFailure: boolean): Promise<boolean> {
+  /** Runs the `attempts:` block until one pass has no `fail` or `inconclusive` step; exhausting `max` escalates. Returns whether the Task may continue. */
+  private async runAttemptsBlock(ctx: RunContext, workflow: ReturnType<typeof parseWorkflow>, body: readonly WorkflowStepDefinition[]): Promise<boolean> {
+    const max = resolveAttemptsMax(workflow.attempts.max, workflow.vars);
+    if (!max.ok) {
+      await this.deps.escalate(ctx.task, ctx.run, `workflow refused: ${max.message}`);
+      return false;
+    }
+    const first = ctx.context.attempt as { failureReason: Value };
+    let previousVerdict = '';
+    let failureReason = first.failureReason;
+    for (let number = 1; number <= max.value; number++) {
+      ctx.context = { ...ctx.context, attempt: { number, previousVerdict, failureReason } };
+      if (number > 1) {
+        for (const step of body) {
+          ctx.latest.delete(step.id);
+          delete ctx.stepsContext[step.id];
+        }
+      }
+      const failure = await this.runSteps(ctx, body, workflow.attempts.start, 'return', number);
+      if (failure === null) return true;
+      if (failure.outcome === 'conflict') return false;
+      previousVerdict = failure.outcome;
+      failureReason = failure.reason;
+    }
+    await this.deps.escalate(ctx.task, ctx.run, `workflow attempts exhausted after ${max.value}: ${String(failureReason)}`);
+    return false;
+  }
+
+  /** Runs `steps`. A non-pass outcome escalates the Task and stops (`escalate`), is returned to the caller (`return`, except `conflict`, which always escalates), or is recorded while the remaining steps still run (`record`). Returns the stopping failure, or null when the Task may continue. */
+  private async runSteps(ctx: RunContext, steps: readonly WorkflowStepDefinition[], firstPosition: number, onFailure: 'escalate' | 'return' | 'record', attempt: number | null = null): Promise<StepFailure | null> {
     const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     for (const [index, step] of steps.entries()) {
       const prior = latest.get(step.id)?.outcome;
       if (prior === 'pass' || prior === 'skipped') continue;
       const action = step.run !== undefined ? 'run' : step.uses!;
-      const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position: firstPosition + index, action });
+      const row = await this.deps.stepRuns.start({ taskId: task.id, workflowRef: ref, stepId: step.id, position: firstPosition + index, action, attempt });
       this.deps.onStepChanged?.(task.id);
       let result: StepResult;
       try {
@@ -141,13 +177,15 @@ export class WorkflowEngine {
       this.deps.onStepChanged?.(task.id);
       if (result.outcome !== 'pass' && result.outcome !== 'skipped') {
         if (result.outcome === 'conflict') await Git.abortRebase(this.deps.cwdFor(task));
-        if (!escalateOnFailure) continue;
+        if (onFailure === 'record') continue;
         const tail = result.output.length > ESCALATION_OUTPUT_CHARS ? result.output.slice(-ESCALATION_OUTPUT_CHARS) : result.output;
-        await this.deps.escalate(task, run, `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`);
-        return false;
+        const reason = `workflow step ${step.id} ${result.outcome}: ${result.summary}${tail ? `\n${tail}` : ''}`;
+        if (onFailure === 'return' && result.outcome !== 'conflict') return { outcome: result.outcome, reason };
+        await this.deps.escalate(task, run, reason);
+        return { outcome: result.outcome, reason };
       }
     }
-    return true;
+    return null;
   }
 
   private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {

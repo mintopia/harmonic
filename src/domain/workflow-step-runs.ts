@@ -18,6 +18,7 @@ export interface WorkflowStepRunStart {
   stepId: string;
   position: number;
   action: string;
+  attempt?: number | null;
 }
 
 export interface WorkflowStepRunFinish {

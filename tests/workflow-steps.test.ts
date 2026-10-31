@@ -13,6 +13,7 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
     stepId: 's1',
     action: 'run',
     position: 0,
+    attempt: null,
     outcome: 'pass',
     summary: null,
     resolvedPrompt: null,
@@ -26,6 +27,12 @@ function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
 const response = (steps: WorkflowStepRun[]): WorkflowStepsResponse => ({ workflowRef: 'implement@2', workflowChosen: 'explicit', steps });
 
 describe('WorkflowSteps', () => {
+  it('groups steps under their Attempt number', async () => {
+    const host = await mountComponent(createElement(WorkflowSteps, { data: response([step({ stepId: 'rebase' }), step({ stepId: 'build', attempt: 1, outcome: 'fail' }), step({ stepId: 'build', attempt: 2 })]) }));
+    const headings = [...host.querySelectorAll('h4')].map((h) => h.textContent);
+    expect(headings).toEqual(['Attempt 1', 'Attempt 2']);
+  });
+
   it('shows a step skipped by if: as skipped', async () => {
     const host = await mountComponent(createElement(WorkflowSteps, { data: response([step({ stepId: 'maybe', outcome: 'skipped', summary: 'if: false was false', outputs: { stdout: '', exitCode: null } })]) }));
     expect(host.textContent).toContain('skipped');

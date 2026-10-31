@@ -22,7 +22,7 @@ const workflowSchema = z
     name: z.string().regex(WORKFLOW_NAME_PATTERN, 'a name starts with a lowercase letter and holds lowercase letters, digits, - or _ (max 64)'),
     description: z.string(),
     vars: z.record(z.string().regex(WORKFLOW_NAME_PATTERN, 'a var name starts with a lowercase letter and holds lowercase letters, digits, - or _'), z.union([z.string(), z.number(), z.boolean()])).optional(),
-    steps: z.array(stepSchema).min(1, 'a workflow needs at least one step'),
+    steps: z.array(z.unknown()).min(1, 'a workflow needs at least one step'),
     cleanup: z.array(stepSchema).optional(),
   })
   .strict();
@@ -42,10 +42,22 @@ export interface WorkflowStepDefinition {
   if?: string | undefined;
 }
 
+export const MAX_ATTEMPTS_LIMIT = 20;
+
+export interface AttemptsBlock {
+  /** The literal number, or the `${{ vars.NAME }}` text resolved against the vars at run time. */
+  readonly max: string | number;
+  /** The block's steps are `steps.slice(start, end)`. */
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface WorkflowDefinition {
   readonly name: string;
   readonly description: string;
+  /** Every step in execution order, the `attempts:` block's steps included. */
   readonly steps: readonly WorkflowStepDefinition[];
+  readonly attempts: AttemptsBlock;
   readonly cleanup?: readonly WorkflowStepDefinition[] | undefined;
   readonly vars: Readonly<Record<string, string | number | boolean>>;
 }
@@ -61,7 +73,8 @@ export function parseWorkflow(text: string): WorkflowDefinition {
   const issues: ErrorIssue[] = doc.errors.map((e) => ({ message: e.message.split('\n')[0]!, ...at(e.pos[0]) }));
   if (issues.length === 0) {
     const parsed = workflowSchema.safeParse(doc.toJS());
-    const invariants: Problem[] = parsed.success ? [...stepInvariants(parsed.data), ...expressionProblems(parsed.data, doc, text)] : [];
+    const shaped = parsed.success ? layout(parsed.data) : undefined;
+    const invariants: Problem[] = parsed.success && shaped ? [...shaped.problems, ...stepInvariants(shaped.located, parsed.data), ...expressionProblems(shaped.located, parsed.data, doc, text)] : [];
     const problems: Problem[] = parsed.success ? invariants : parsed.error.issues.flatMap((i): Problem[] => (i.code === 'unrecognized_keys' ? i.keys.map((k) => ({ path: [...i.path, k], message: `unknown key: ${k}`, key: true })) : [{ path: i.path, message: i.message }]));
     for (const problem of problems) {
       const node = problem.offset ?? (problem.key ? keyOffset(doc, problem.path) : nearestNode(doc, problem.path));
@@ -72,7 +85,86 @@ export function parseWorkflow(text: string): WorkflowDefinition {
     throw new DomainError('validation', `workflow refused: ${issues.map((i) => `${i.line}:${i.column} ${i.message}`).join('; ')}`, issues);
   }
   const definition = workflowSchema.parse(doc.toJS());
-  return { ...definition, vars: definition.vars ?? {} } as WorkflowDefinition;
+  const { located, block } = layout(definition);
+  return { name: definition.name, description: definition.description, cleanup: definition.cleanup, vars: definition.vars ?? {}, steps: located.map((l) => l.step), attempts: block! };
+}
+
+interface Located {
+  step: WorkflowStepDefinition;
+  path: PropertyKey[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const MAX_RULE = `a whole number from 1 to ${MAX_ATTEMPTS_LIMIT}`;
+const MAX_VAR = /^vars\.([a-z][a-z0-9_-]*)$/;
+
+/** Resolves `attempts.max` against the vars; the message says why a value is not a bounded positive integer. */
+export function resolveAttemptsMax(max: string | number, vars: Readonly<Record<string, string | number | boolean>>): { ok: true; value: number } | { ok: false; message: string } {
+  let value: unknown = max;
+  if (typeof max === 'string') {
+    const spans = findInterpolations(max);
+    const name = spans.length === 1 && max.trim() === max.slice(spans[0]!.start, spans[0]!.end) ? MAX_VAR.exec(spans[0]!.source)?.[1] : undefined;
+    if (name === undefined) return { ok: false, message: `attempts.max must be ${MAX_RULE} or a single \${{ vars.NAME }}` };
+    value = vars[name];
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) value = Number(value);
+    if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > MAX_ATTEMPTS_LIMIT) return { ok: false, message: `attempts.max var ${name} must be ${MAX_RULE}, not ${String(value ?? 'unset')}` };
+    return { ok: true, value: value as number };
+  }
+  if (!Number.isInteger(value) || max < 1 || max > MAX_ATTEMPTS_LIMIT) return { ok: false, message: `attempts.max must be ${MAX_RULE}, not ${String(max)}` };
+  return { ok: true, value: max };
+}
+
+/** Flattens `steps:` into execution order, recording the one `attempts:` block and refusing zero, many and nested blocks. */
+function layout(wf: z.infer<typeof workflowSchema>): { located: Located[]; block: AttemptsBlock | undefined; problems: Problem[] } {
+  const problems: Problem[] = [];
+  const located: Located[] = [];
+  const blocks: number[] = [];
+  let block: AttemptsBlock | undefined;
+  const addStep = (raw: unknown, path: PropertyKey[]): void => {
+    if (isRecord(raw) && 'attempts' in raw) {
+      problems.push({ path: [...path, 'attempts'], message: 'attempts: blocks cannot be nested', key: true });
+      return;
+    }
+    const parsed = stepSchema.safeParse(raw);
+    if (parsed.success) located.push({ step: parsed.data, path });
+    else problems.push(...stepProblems(parsed.error.issues, path));
+  };
+  wf.steps.forEach((raw, i) => {
+    const path: PropertyKey[] = ['steps', i];
+    if (!isRecord(raw) || !('attempts' in raw)) return addStep(raw, path);
+    blocks.push(i);
+    if (blocks.length > 1) return;
+    const extra = Object.keys(raw).filter((k) => k !== 'attempts');
+    for (const key of extra) problems.push({ path: [...path, key], message: `unknown key: ${key}`, key: true });
+    const body = raw.attempts;
+    if (!isRecord(body)) {
+      problems.push({ path: [...path, 'attempts'], message: 'attempts needs max and steps' });
+      return;
+    }
+    for (const key of Object.keys(body).filter((k) => k !== 'max' && k !== 'steps')) problems.push({ path: [...path, 'attempts', key], message: `unknown key: ${key}`, key: true });
+    const max = body.max;
+    const inner = body.steps;
+    if (typeof max !== 'number' && typeof max !== 'string') problems.push({ path: [...path, 'attempts', 'max'], message: `attempts.max must be ${MAX_RULE} or a single \${{ vars.NAME }}` });
+    else {
+      const resolved = resolveAttemptsMax(max, wf.vars ?? {});
+      if (!resolved.ok) problems.push({ path: [...path, 'attempts', 'max'], message: resolved.message });
+    }
+    if (!Array.isArray(inner) || inner.length === 0) {
+      problems.push({ path: [...path, 'attempts', 'steps'], message: 'an attempts: block needs at least one step' });
+      return;
+    }
+    const start = located.length;
+    inner.forEach((entry, j) => addStep(entry, [...path, 'attempts', 'steps', j]));
+    if (typeof max === 'number' || typeof max === 'string') block = { max, start, end: located.length };
+  });
+  if (blocks.length === 0) problems.push({ path: ['steps'], message: 'a workflow needs exactly one attempts: block, found none' });
+  if (blocks.length > 1) problems.push({ path: ['steps', blocks[1]!], message: `a workflow needs exactly one attempts: block, found ${blocks.length}` });
+  return { located, block, problems };
+}
+
+function stepProblems(issues: z.core.$ZodIssue[], path: PropertyKey[]): Problem[] {
+  return issues.flatMap((i): Problem[] => (i.code === 'unrecognized_keys' ? i.keys.map((k) => ({ path: [...path, ...i.path, k], message: `unknown key: ${k}`, key: true })) : [{ path: [...path, ...i.path], message: i.message }]));
 }
 
 const agentWithSchema = z
@@ -92,25 +184,27 @@ export function agentStepWith(input: unknown): AgentStepWith | null {
   return parsed.success ? parsed.data : null;
 }
 
-function stepInvariants(wf: z.infer<typeof workflowSchema>): Problem[] {
+function allLocated(located: Located[], wf: z.infer<typeof workflowSchema>): Located[] {
+  return [...located, ...(wf.cleanup ?? []).map((step, i) => ({ step, path: ['cleanup', i] as PropertyKey[] }))];
+}
+
+function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>): Problem[] {
   const problems: Problem[] = [];
   const seen = new Set<string>();
-  for (const list of ['steps', 'cleanup'] as const) {
-    (wf[list] ?? []).forEach((step, i) => {
-      if (seen.has(step.id)) problems.push({ path: [list, i, 'id'], message: `duplicate step id: ${step.id}` });
-      seen.add(step.id);
-      if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path: [list, i], message: `step ${step.id} needs exactly one of run or uses` });
-      if (step.with !== undefined && step.uses === undefined) problems.push({ path: [list, i, 'with'], message: 'with is only valid beside uses' });
-      if (step.uses === 'agent') {
-        const parsed = agentWithSchema.safeParse(step.with ?? {});
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            if (issue.code === 'unrecognized_keys') for (const key of issue.keys) problems.push({ path: [list, i, 'with', key], message: `unknown key: ${key}`, key: true });
-            else problems.push({ path: [list, i, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` });
-          }
+  for (const { step, path } of allLocated(located, wf)) {
+    if (seen.has(step.id)) problems.push({ path: [...path, 'id'], message: `duplicate step id: ${step.id}` });
+    seen.add(step.id);
+    if ((step.run === undefined) === (step.uses === undefined)) problems.push({ path, message: `step ${step.id} needs exactly one of run or uses` });
+    if (step.with !== undefined && step.uses === undefined) problems.push({ path: [...path, 'with'], message: 'with is only valid beside uses' });
+    if (step.uses === 'agent') {
+      const parsed = agentWithSchema.safeParse(step.with ?? {});
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          if (issue.code === 'unrecognized_keys') for (const key of issue.keys) problems.push({ path: [...path, 'with', key], message: `unknown key: ${key}`, key: true });
+          else problems.push({ path: [...path, 'with', ...issue.path], message: `with.${issue.path.join('.')}: ${issue.message}` });
         }
       }
-    });
+    }
   }
   return problems;
 }
@@ -131,7 +225,7 @@ function keyOffset(doc: ReturnType<typeof parseDocument>, path: PropertyKey[]): 
 }
 
 const TICKET_FIELDS = ['title', 'body', 'labels', 'ref'];
-const ATTEMPT_FIELDS = ['number', 'failureReason'];
+const ATTEMPT_FIELDS = ['number', 'previousVerdict', 'failureReason'];
 const WORKSPACE_FIELDS = ['id', 'name'];
 
 function badReference(ref: string[], earlier: Set<string>, declared: Set<string>): string | undefined {
@@ -150,7 +244,7 @@ function badReference(ref: string[], earlier: Set<string>, declared: Set<string>
   return undefined;
 }
 
-function expressionProblems(wf: z.infer<typeof workflowSchema>, doc: ReturnType<typeof parseDocument>, text: string): Problem[] {
+function expressionProblems(located: Located[], wf: z.infer<typeof workflowSchema>, doc: ReturnType<typeof parseDocument>, text: string): Problem[] {
   const problems: Problem[] = [];
   const declared = new Set(Object.keys(wf.vars ?? {}));
   const earlier = new Set<string>();
@@ -174,13 +268,11 @@ function expressionProblems(wf: z.infer<typeof workflowSchema>, doc: ReturnType<
   const checkText = (path: PropertyKey[], value: string): void => {
     for (const span of findInterpolations(value)) check(path, span.source);
   };
-  for (const [list, steps] of [['steps', wf.steps], ['cleanup', wf.cleanup ?? []]] as const) {
-    steps.forEach((step, i) => {
-      if (step.if !== undefined) check([list, i, 'if'], conditionBody(step.if).source);
-      if (step.run !== undefined) checkText([list, i, 'run'], step.run);
-      for (const [key, value] of Object.entries(step.with ?? {})) if (typeof value === 'string') checkText([list, i, 'with', key], value);
-      earlier.add(step.id);
-    });
+  for (const { step, path } of allLocated(located, wf)) {
+    if (step.if !== undefined) check([...path, 'if'], conditionBody(step.if).source);
+    if (step.run !== undefined) checkText([...path, 'run'], step.run);
+    for (const [key, value] of Object.entries(step.with ?? {})) if (typeof value === 'string') checkText([...path, 'with', key], value);
+    earlier.add(step.id);
   }
   return problems;
 }

@@ -465,3 +465,6 @@ export async function withArchivedPrompt<T extends { taskId: number | null; numb
   const prompts = await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, 'implementation/prompt.md');
   return { ...run, prompt: (containing === undefined ? prompts?.at(-1) : prompts?.findLast((prompt) => prompt.includes(containing))) ?? null } as never;
 }
+
+/** Wraps a 2-space-indented `steps:` list body in a single-pass `attempts:` block, so fixtures keep one-pass behaviour. */
+export const inBlock = (steps: string, max = 1): string => `  - attempts:\n      max: ${max}\n      steps:\n${steps.replace(/^(?=.)/gm, '      ')}`;

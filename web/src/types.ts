@@ -51,6 +51,8 @@ export interface WorkflowStepRun {
   stepId: string;
   action: string;
   position: number;
+  /** The `attempts:` block pass (1-based); null outside the block. */
+  attempt: number | null;
   /** null while the step is still running. */
   outcome: WorkflowStepOutcome | null;
   summary: string | null;

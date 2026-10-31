@@ -14,7 +14,7 @@ import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, UNCOMMITTED_AFTER_AGENT, type W
 import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { resolveRoute } from '../src/domain/route.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
-import { allWorkspaces, makeSettingsStore, seedWorkspace, STUB_HARNESS, testSpawnProcessGroup } from './helpers.js';
+import { allWorkspaces, inBlock, makeSettingsStore, seedWorkspace, STUB_HARNESS, testSpawnProcessGroup } from './helpers.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -30,7 +30,7 @@ describe('WorkflowEngine', () => {
   let secretValues: string[];
   let commands: Record<string, { command: string; args: string[]; timeoutSeconds: number }>;
 
-  const flow = (steps: string): string => `name: flow\ndescription: test\nsteps:\n${steps}`;
+  const flow = (steps: string, max = 1): string => `name: flow\ndescription: test\nsteps:\n${inBlock(steps, max)}`;
   const engine = (over: Partial<WorkflowEngineDeps> = {}): WorkflowEngine =>
     new WorkflowEngine({
       library: { getVersion: async (name, version) => ({ name, description: '', text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
@@ -138,7 +138,7 @@ describe('WorkflowEngine', () => {
   });
 
   it('reads vars, ticket and attempt context in run: text', async () => {
-    const { task, run } = await startTask('name: flow\ndescription: test\nvars:\n  word: hi\nsteps:\n  - id: ctx\n    run: echo ${{ vars.word }}-${{ attempt.number }}\n');
+    const { task, run } = await startTask('name: flow\ndescription: test\nvars:\n  word: hi\nsteps:\n' + inBlock('  - id: ctx\n    run: echo ${{ vars.word }}-${{ attempt.number }}\n'));
     await engine().run(task, run);
     expect(JSON.parse((await stepRows(task.id))[0]!.outputs!).stdout).toBe(`hi-${run.number}\n`);
   });
@@ -424,9 +424,72 @@ describe('WorkflowEngine', () => {
     });
   });
 
+  describe('the attempts: block', () => {
+    const counter = (): string => join(dir, 'count');
+
+    it('escalates after max fail Attempts', async () => {
+      const { task, run } = await startTask(flow('  - id: try\n    run: echo nope; exit 1\n', 2));
+      await engine().run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((r) => [r.stepId, r.attempt, r.outcome])).toEqual([['try', 1, 'fail'], ['try', 2, 'fail']]);
+      expect(escalations).toHaveLength(1);
+      expect(escalations[0]).toContain('attempts exhausted after 2');
+      expect(completions).toBe(0);
+    });
+
+    it('completes when a later Attempt passes, feeding it the previous verdict and reason', async () => {
+      const script = `if [ ! -f ${counter()} ]; then touch ${counter()}; echo first; exit 1; fi; echo n=\${{ attempt.number }} prev=\${{ attempt.previousVerdict }} why=\${{ attempt.failureReason }}`;
+      const { task, run } = await startTask(flow(`  - id: try\n    run: ${JSON.stringify(script)}\n`, 2));
+      await engine().run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((r) => [r.attempt, r.outcome])).toEqual([[1, 'fail'], [2, 'pass']]);
+      expect(rows[1]!.outputs).toContain('n=2 prev=fail why=workflow step try fail');
+      expect(escalations).toEqual([]);
+      expect(completions).toBe(1);
+    });
+
+    it('counts an inconclusive outcome as a failure', async () => {
+      const { task, run } = await startTask(flow('  - id: try\n    uses: command\n    with:\n      id: missing\n', 2));
+      await engine().run(task, run);
+      expect((await stepRows(task.id)).map((r) => [r.attempt, r.outcome])).toEqual([[1, 'inconclusive'], [2, 'inconclusive']]);
+      expect(escalations).toHaveLength(1);
+    });
+
+    it('re-runs steps that passed in an earlier Attempt, and runs steps outside the block once', async () => {
+      const text = `name: flow\ndescription: test\nsteps:\n  - id: pre\n    run: echo pre\n  - attempts:\n      max: 2\n      steps:\n        - id: build\n          run: echo build\n        - id: check\n          run: "test -f ${counter()} || { touch ${counter()}; exit 1; }"\n  - id: post\n    run: echo post\n`;
+      const { task, run } = await startTask(text);
+      await engine().run(task, run);
+      expect((await stepRows(task.id)).map((r) => [r.stepId, r.attempt, r.outcome])).toEqual([
+        ['pre', null, 'pass'],
+        ['build', 1, 'pass'],
+        ['check', 1, 'fail'],
+        ['build', 2, 'pass'],
+        ['check', 2, 'pass'],
+        ['post', null, 'pass'],
+      ]);
+      expect(completions).toBe(1);
+    });
+
+    it('escalates a fail outside the block without retrying', async () => {
+      const text = `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: ok\n    run: echo ok\n')}  - id: post\n    run: exit 1\n`;
+      const { task, run } = await startTask(text);
+      await engine().run(task, run);
+      expect(escalations).toHaveLength(1);
+      expect(escalations[0]).toContain('workflow step post fail');
+      expect(completions).toBe(0);
+    });
+
+    it('resolves max from a var', async () => {
+      const text = `name: flow\ndescription: test\nvars:\n  tries: 3\nsteps:\n  - attempts:\n      max: \${{ vars.tries }}\n      steps:\n        - id: try\n          run: exit 1\n`;
+      const { task, run } = await startTask(text);
+      await engine().run(task, run);
+      expect(await stepRows(task.id)).toHaveLength(3);
+    });
+  });
+
   describe('post-merge actions', () => {
     const workflow = (extra = ''): string =>
-      `name: flow\ndescription: test\nsteps:\n  - id: check\n    uses: post-merge-check\n    with:\n      run: "git rev-parse HEAD > ../seen && test -f feat.txt"\n${extra}`;
+      `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: check\n    uses: post-merge-check\n    with:\n      run: "git rev-parse HEAD > ../seen && test -f feat.txt"\n')}${extra}`;
 
     it('post-merge-check runs on the merged base in an isolated worktree and leaves the main checkout clean', async () => {
       git(repo, 'checkout', '-q', '-b', 'feat');
@@ -453,7 +516,7 @@ describe('WorkflowEngine', () => {
     it('cleanup removes the Ticket worktree directory and its branch', async () => {
       const wt = join(dir, 'ticket-wt');
       git(repo, 'worktree', 'add', '-q', '-b', 'harmonic/task-9', wt);
-      const { task, run } = await startTask(`name: flow\ndescription: test\nsteps:\n  - id: ok\n    run: "true"\ncleanup:\n  - id: tidy\n    uses: cleanup\n`);
+      const { task, run } = await startTask(`name: flow\ndescription: test\nsteps:\n${inBlock('  - id: ok\n    run: "true"\n')}cleanup:\n  - id: tidy\n    uses: cleanup\n`);
       const withTree = engine({ cwdFor: () => wt });
       expect(existsSync(wt)).toBe(true);
       await withTree.run(task, { ...run, branch: 'harmonic/task-9', baseBranch: 'main' });
@@ -465,7 +528,7 @@ describe('WorkflowEngine', () => {
     it('close-ticket and comment call the tracker with interpolated text', async () => {
       const calls: string[] = [];
       const { task, run } = await startTask(
-        `name: flow\ndescription: test\nsteps:\n  - id: say\n    uses: comment\n    with:\n      body: "title=\${{ ticket.title }} ref=\${{ ticket.ref }}"\n  - id: shut\n    uses: close-ticket\n    with:\n      body: "done \${{ steps.say.outcome }}"\n`,
+        `name: flow\ndescription: test\nsteps:\n${inBlock('  - id: say\n    uses: comment\n    with:\n      body: "title=${{ ticket.title }} ref=${{ ticket.ref }}"\n  - id: shut\n    uses: close-ticket\n    with:\n      body: "done ${{ steps.say.outcome }}"\n')}`,
       );
       const ticketTask = { ...task, trackerRef: '7' } as TaskRow;
       await engine({
