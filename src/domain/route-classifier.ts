@@ -168,11 +168,10 @@ export function createHarnessClassifierBackend(deps: {
 export function createOpenAiCompatibleClassifierBackend(deps: {
   reveal: (workspaceId: number, name: string) => Promise<string | null>;
   fetch?: typeof fetch;
-  instructions?: () => string;
 }): ClassifierBackend {
   const doFetch = deps.fetch ?? fetch;
   return {
-    async classify(input, { timeoutMs, workspace }) {
+    async classify(input, { timeoutMs, workspace, prompt }) {
       const endpoint = parseClassifierEndpoint(workspace.classifierEndpoint);
       if (!endpoint) throw new Error('no OpenAI-compatible endpoint is configured for this Workspace');
       const apiKey = await deps.reveal(workspace.id, endpoint.apiKeySecret);
@@ -183,7 +182,7 @@ export function createOpenAiCompatibleClassifierBackend(deps: {
         signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           model: endpoint.model,
-          messages: [{ role: 'user', content: buildClassifierPrompt(input, deps.instructions?.()) }],
+          messages: [{ role: 'user', content: prompt }],
           response_format: {
             type: 'json_schema',
             json_schema: {

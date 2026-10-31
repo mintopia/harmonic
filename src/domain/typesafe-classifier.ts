@@ -5,12 +5,6 @@ import type { AttemptUsage } from './usage.js';
 
 export const OPENROUTER_DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 
-const INSTRUCTIONS = [
-  'Choose the single option that best fits this software ticket.',
-  'Prefer the cheapest option that can plausibly finish it.',
-  'If attemptNumber is above 1, use previousVerdict and previousFailureReason to decide whether a stronger option is needed.',
-].join(' ');
-
 const responseSchema = z.object({
   answers: z.object({
     route: z.object({ choice: z.string(), confidence: z.number().optional() }),
@@ -25,7 +19,7 @@ export function createTypesafeClassifierBackend(deps: {
   url?: string;
 }): ClassifierBackend {
   return {
-    async classify(input, { timeoutMs, workspace }) {
+    async classify(input, { timeoutMs, workspace, prompt }) {
       const settings = resolveClassifierSettings(workspace);
       if (!settings.typesafeSecret) throw new Error('no Secret is configured for the TypeSafe backend');
       const key = await deps.reveal(workspace.id, settings.typesafeSecret);
@@ -37,7 +31,7 @@ export function createTypesafeClassifierBackend(deps: {
         questions: {
           route: {
             type: 'choice',
-            instructions: INSTRUCTIONS,
+            instructions: prompt,
             criteria: Object.fromEntries(options.map((o) => [o.id, o.description])),
           },
         },

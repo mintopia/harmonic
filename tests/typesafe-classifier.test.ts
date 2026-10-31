@@ -52,6 +52,7 @@ describe('TypeSafe classifier backend', () => {
     createTypesafeClassifierBackend({ url, reveal: async () => secret });
   const ctx = (timeoutMs = 2000) => ({
     timeoutMs,
+    prompt: 'EDITED ROUTE PROMPT',
     workspace: { id: 7, classifierTypesafeModel: 'typesafe/jev-1.13', classifierTypesafeSecret: 'OR_KEY' } as never,
   });
 
@@ -63,7 +64,7 @@ describe('TypeSafe classifier backend', () => {
       type: 'choice',
       criteria: { 'cheap-fix': 'cheap, small fixes', 'deep-work': 'hard, cross-cutting work' },
     });
-    expect(typeof seen!.body.questions.route.instructions).toBe('string');
+    expect(seen!.body.questions.route.instructions).toBe('EDITED ROUTE PROMPT');
     expect(seen!.body.state).toMatchObject({ title: 'Fix typo', labels: ['docs'], attemptNumber: 2, previousFailureReason: 'tests failed' });
     expect(result.output).toMatchObject({ optionId: 'deep-work' });
     expect(result.usage?.totals).toMatchObject({ inputTokens: 400, outputTokens: 50 });
