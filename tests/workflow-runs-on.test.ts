@@ -113,4 +113,54 @@ describe('assignment and save through the API', () => {
     const worktree = await server.api('POST', '/api/tasks', { prompt: 'p', workflow: 'remote', isolationMode: 'worktree' });
     expect(worktree.status).toBe(201);
   });
+
+  describe('every path that could put a Kubernetes workflow on a direct Ticket', () => {
+    const remoteRefusal = (who: string) =>
+      expect.stringContaining(`Workflow 'remote' runs on Kubernetes Execution Target 'k8s-prod', which is not available to ${who}`);
+
+    it('refuses PATCH /tasks/:id switching a Ticket with a Kubernetes workflow to direct', async () => {
+      const created = await server.api('POST', '/api/tasks', { prompt: 'p', workflow: 'remote', isolationMode: 'worktree', state: 'draft' });
+      expect(created.status).toBe(201);
+      const res = await server.api('PATCH', `/api/tasks/${created.body.id}`, { isolationMode: 'direct' });
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toEqual(remoteRefusal('a Ticket'));
+      expect((await server.api('PATCH', `/api/tasks/${created.body.id}`, { isolationMode: 'worktree' })).status).toBe(200);
+    });
+
+    it('refuses a Workspace default workflow, switch to direct, and Workflow Label that would mix a direct Workspace with Kubernetes', async () => {
+      const ws = (await server.api('GET', '/api/workspaces')).body.workspaces[0];
+      const patch = (body: Record<string, unknown>) => server.api('PATCH', `/api/workspaces/${ws.id}`, body);
+
+      const direct = await patch({ isolationMode: 'direct' });
+      expect(direct.status).toBe(200);
+      const byDefault = await patch({ workflow: 'remote' });
+      expect(byDefault.status).toBe(400);
+      expect(byDefault.body.error.message).toEqual(remoteRefusal(`Workspace '${ws.name}'`));
+      const byLabel = await patch({ workflowLabels: [{ kind: 'local', workflowLabel: { label: 'infra', workflow: 'remote' } }] });
+      expect(byLabel.status).toBe(400);
+
+      expect((await patch({ isolationMode: 'worktree' })).status).toBe(200);
+      expect((await patch({ workflow: 'remote' })).status).toBe(200);
+      const back = await patch({ isolationMode: 'direct' });
+      expect(back.status).toBe(400);
+      expect(back.body.error.message).toEqual(remoteRefusal(`Workspace '${ws.name}'`));
+      expect((await patch({ workflow: null, isolationMode: 'direct' })).status).toBe(200);
+      await patch({ isolationMode: null });
+    });
+
+    it('refuses a global default workflow that a direct Workspace would run, and a Ticket falling back to it', async () => {
+      const ws = (await server.api('GET', '/api/workspaces')).body.workspaces[0];
+      await server.api('PATCH', `/api/workspaces/${ws.id}`, { isolationMode: 'direct' });
+      const global = await server.api('PATCH', '/api/config', { defaults: { workflow: 'remote' } });
+      expect(global.status).toBe(400);
+      expect(global.body.error.message).toEqual(remoteRefusal(`Workspace '${ws.name}'`));
+      await server.api('PATCH', `/api/workspaces/${ws.id}`, { isolationMode: 'worktree' });
+      expect((await server.api('PATCH', '/api/config', { defaults: { workflow: 'remote' } })).status).toBe(200);
+      const fallback = await server.api('POST', '/api/tasks', { prompt: 'p', isolationMode: 'direct' });
+      expect(fallback.status).toBe(400);
+      expect(fallback.body.error.message).toEqual(remoteRefusal('a Ticket'));
+      await server.api('PATCH', '/api/config', { defaults: { workflow: null } });
+      await server.api('PATCH', `/api/workspaces/${ws.id}`, { isolationMode: null });
+    });
+  });
 });

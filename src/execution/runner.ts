@@ -28,6 +28,7 @@ import { resolveModelOption } from '../domain/model-options.js';
 import type { ClassifierOutcome, WorkflowClassifierOutcome } from '../domain/route-classifier.js';
 import { NO_CLASSIFIER, type WorkflowClassifierRecord } from '../domain/tasks.js';
 import { DomainError, GitError } from '../domain/errors.js';
+import { kubernetesWorkflowRefusal } from './workspace-execution-targets.js';
 import { AttemptStore, type AttemptGuardrailSnapshot } from '../domain/attempts.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import { AttemptSettleCoordinator, type SettleProjection, type DispositionKind } from '../domain/attempt-settle.js';
@@ -577,6 +578,8 @@ export class Runner {
     }
     classifier = this.withEarlierSpend(task, classifier);
     const assignment = resolveTaskWorkflow(task, workspace, config, exists, classified);
+    const refusal = kubernetesWorkflowRefusal(library, assignment.name, task.isolationMode as 'direct' | 'worktree');
+    if (refusal) throw new DomainError('validation', refusal);
     const version = library.get(assignment.name).version;
     const defaults = parseWorkflow((await library.getVersion(assignment.name, version)).text).vars;
     const vars = resolveVars(defaults, workspaceVarsFor(workspace, assignment.name), task.workflowVarOverrides);

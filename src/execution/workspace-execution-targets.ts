@@ -2,6 +2,7 @@ import type { WorkspaceRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 import type { UpdateWorkspaceInput } from '../domain/workspaces.js';
 import type { AppConfig } from '../config.js';
+import { workflowRunsOn } from '../domain/workflow.js';
 import { resolveWorkflowLabels } from '../domain/workflow-labels.js';
 import { resolveCodeRepository } from '../repository/resolve.js';
 import { LOCAL_TARGET, type ExecutionTargetService } from './execution-targets.js';
@@ -99,21 +100,44 @@ export async function describeWorkspaceTargets(
   return { restricted: list !== null, codeRepository: state.codeRepository, isolationMode: state.isolationMode, targets: items };
 }
 
+type WorkflowUse = Pick<WorkspaceRow, 'workflow' | 'workflowLabels'>;
+type IsolationUse = Pick<WorkspaceRow, 'isolationMode'>;
+type GuardConfig = Pick<AppConfig, 'defaults'> & { workflowLabels: readonly AppConfig['workflowLabels'][number][] };
+
+/** The workflows a Workspace runs by default or through a Workflow Label. */
+export function workspaceWorkflowNames(ws: WorkflowUse, config: GuardConfig): string[] {
+  const names = [ws.workflow ?? config.defaults.workflow, ...resolveWorkflowLabels(ws, { workflowLabels: [...config.workflowLabels] }).map((entry) => entry.workflow)];
+  return [...new Set(names.filter((name): name is string => name != null))];
+}
+
 /** Names of `direct`-mode Workspaces that would run workflow `name` as their default or through a Workflow Label. */
-export function directWorkspacesUsing(
-  name: string,
-  workspaces: readonly Pick<WorkspaceRow, 'name' | 'isolationMode' | 'workflow' | 'workflowLabels'>[],
-  config: Pick<AppConfig, 'defaults' | 'workflowLabels'>,
-): string[] {
+export function directWorkspacesUsing(name: string, workspaces: readonly (WorkflowUse & IsolationUse & Pick<WorkspaceRow, 'name'>)[], config: GuardConfig): string[] {
   return workspaces
-    .filter((ws) => (ws.isolationMode ?? config.defaults.isolationMode) === 'direct')
-    .filter((ws) => (ws.workflow ?? config.defaults.workflow) === name || resolveWorkflowLabels(ws, config).some((entry) => entry.workflow === name))
+    .filter((ws) => (ws.isolationMode ?? config.defaults.isolationMode) === 'direct' && workspaceWorkflowNames(ws, config).includes(name))
     .map((ws) => ws.name);
 }
 
-/** The refusal for assigning a Kubernetes workflow to a Ticket that runs in `direct` mode; null when allowed. */
-export function kubernetesWorkflowRefusal(workflow: string, runsOn: readonly string[], isolationMode: 'direct' | 'worktree'): string | null {
-  const target = runsOn.find((name) => name !== LOCAL_TARGET);
-  if (isolationMode !== 'direct' || target === undefined) return null;
+export type WorkflowTexts = { list(): readonly { name: string; text: string }[] };
+
+/** The first non-`local` target a workflow's `runs_on:` names; undefined when it runs only locally or is unknown. */
+export function kubernetesTargetOf(library: WorkflowTexts, workflow: string): string | undefined {
+  const entry = library.list().find((e) => e.name === workflow);
+  return entry === undefined ? undefined : workflowRunsOn(entry.text).find((name) => name !== LOCAL_TARGET);
+}
+
+/** The refusal for running a Kubernetes workflow in `direct` mode; null when allowed. */
+export function kubernetesWorkflowRefusal(library: WorkflowTexts, workflow: string, isolationMode: 'direct' | 'worktree'): string | null {
+  const target = isolationMode === 'direct' ? kubernetesTargetOf(library, workflow) : undefined;
+  if (target === undefined) return null;
   return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to a Ticket in direct mode. Switch the Isolation Mode to worktree first.`;
+}
+
+/** The refusal for a Workspace in `direct` mode whose default or Workflow Label workflow runs on Kubernetes; null when allowed. */
+export function directWorkspaceRefusal(library: WorkflowTexts, ws: WorkflowUse & IsolationUse & Pick<WorkspaceRow, 'name'>, config: GuardConfig): string | null {
+  if ((ws.isolationMode ?? config.defaults.isolationMode) !== 'direct') return null;
+  for (const workflow of workspaceWorkflowNames(ws, config)) {
+    const target = kubernetesTargetOf(library, workflow);
+    if (target !== undefined) return `Workflow '${workflow}' runs on Kubernetes Execution Target '${target}', which is not available to Workspace '${ws.name}' in direct mode: it is the Workspace's default workflow or a Workflow Label's. Switch the Isolation Mode to worktree first.`;
+  }
+  return null;
 }
