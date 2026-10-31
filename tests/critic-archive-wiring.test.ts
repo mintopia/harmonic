@@ -1,23 +1,19 @@
-import { NO_PROMPT_FRAGMENT_OVERRIDES } from '../src/domain/prompt-fragments.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TaskArchive } from '../src/archive/task-archive.js';
-import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.js';
+import { type AppConfig, baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { workspaces as workspacesTable } from '../src/db/schema.js';
 import { AttemptStore } from '../src/domain/attempts.js';
-import { SessionStore } from '../src/domain/sessions.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import type { EpicWorktreePool } from '../src/execution/epic-worktree-pool.js';
-import { TranscriptCapture } from '../src/execution/transcript-capture.js';
 import { EpicVerificationRunner } from '../src/tracker/epic-verification-runner.js';
 import type { CriticDriveRequest, CriticHarnessDrive } from '../src/verification/critic.js';
-import { createPostMergeCheck } from '../src/verification/post-merge-check.js';
-import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace, startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
+import { executionPlumbing, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -72,14 +68,6 @@ function expectStepTrio(stepDir: string, marker: string): void {
   expect(readFileSync(join(stepDir, 'native', `session-${marker}.jsonl`), 'utf8')).toBe(`native-${marker}\n`);
 }
 
-function findDir(root: string, prefix: string): string {
-  for (const slug of readdirSync(root)) {
-    const match = readdirSync(join(root, slug)).find((name) => name.startsWith(prefix));
-    if (match) return join(root, slug, match);
-  }
-  throw new Error(`no archive dir starting with ${prefix}`);
-}
-
 function criticConfig(logDir: string): AppConfig {
   const config = baselineConfig();
   return { ...config, harnesses: { ...config.harnesses, claude: { ...config.harnesses.claude, sessionLogDir: logDir } } };
@@ -99,57 +87,7 @@ describe('Critic Step archive wiring (#730)', () => {
     rmSync(logDir, { recursive: true, force: true });
   });
 
-  describe('Task pre-merge critics', () => {
-    let server: TestServer;
-    let repoDir: string;
-    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-archive-data-'));
-
-    beforeAll(async () => {
-      repoDir = makeRepo();
-      const base = stubHarness() as { harnesses: { claude: Record<string, unknown> } };
-      const config = { ...base, harnesses: { claude: { ...base.harnesses.claude, sessionLogDir: logDir } } } as DeepPartial<AppConfig>;
-      server = await startServer(config, { criticDrive: drive, dataDir });
-      const ws = (await server.app.ctx.workspaces.list())[0]!;
-      await server.app.ctx.workspaces.update(ws.id, {
-        workingDir: repoDir,
-        isolationMode: 'worktree',
-        taskPreMergeCritics: twoCritics,
-      });
-    });
-
-    afterAll(async () => {
-      await server?.close();
-      rmSync(repoDir, { recursive: true, force: true });
-      rmSync(dataDir, { recursive: true, force: true });
-    });
-
-    it('gives each parallel critic its own Step directory with prompt, ACP updates and native transcript', async () => {
-      const created = await server.api('POST', '/api/tasks', {
-        prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'work\n' } }),
-        workingDir: repoDir,
-        isolationMode: 'worktree',
-      });
-      expect(created.status).toBe(201);
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      expect(started.status).toBe(201);
-      await waitFor(async () => ((await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done' ? true : undefined));
-
-      const preMerge = join(findDir(join(dataDir, 'archive'), `${created.body.id}-`), 'attempts', '1', 'verification', 'pre-merge');
-      const stepDirs = readdirSync(preMerge);
-      expect(stepDirs).toHaveLength(2);
-      const byMarker = new Map(
-        stepDirs.map((name) => {
-          const prompt = readFileSync(join(preMerge, name, 'prompt.md'), 'utf8');
-          return [prompt.includes('review-alpha') ? 'alpha' : 'beta', join(preMerge, name)] as const;
-        }),
-      );
-      expect([...byMarker.keys()].sort()).toEqual(['alpha', 'beta']);
-      expectStepTrio(byMarker.get('alpha')!, 'alpha');
-      expectStepTrio(byMarker.get('beta')!, 'beta');
-    });
-  });
-
-  describe('crash-recovery post-merge critics and Epic pre-merge critics', () => {
+  describe('Epic pre-merge critics', () => {
     let dir: string;
     let repoDir: string;
     let asyncDb: AsyncDbHandle;
@@ -165,96 +103,6 @@ describe('Critic Step archive wiring (#730)', () => {
       await asyncDb.close();
       rmSync(dir, { recursive: true, force: true });
       rmSync(repoDir, { recursive: true, force: true });
-    });
-
-    it('runs a post-merge critic on its own Harness, not the Task routed one', async () => {
-      const settingsStore = await makeSettingsStore(dir);
-      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
-      const attempts = new AttemptStore(asyncDb);
-      const task = await tasks.create({ prompt: 'routed', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
-      const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.slice(0, 1)), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
-      const verificationAttempts = new VerificationAttemptStore(asyncDb);
-      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
-      const harnessIds: string[] = [];
-      const check = createPostMergeCheck({
-        ...executionPlumbing(),
-        getWorkspace: async () => ws,
-        getConfig: () => criticConfig(logDir),
-        verificationAttempts,
-        attempts,
-        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
-        transcripts,
-      });
-
-      await check({ task: { ...task, harness: 'codex' }, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
-
-      expect(harnessIds).toEqual(['claude']);
-      transcripts.close();
-    });
-
-    it('rejects a post-merge critic whose Harness is not configured, naming it', async () => {
-      const settingsStore = await makeSettingsStore(dir);
-      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
-      const attempts = new AttemptStore(asyncDb);
-      const task = await tasks.create({ prompt: 'unconfigured', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
-      const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.slice(0, 1)), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
-      const verificationAttempts = new VerificationAttemptStore(asyncDb);
-      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
-      const harnessIds: string[] = [];
-      const check = createPostMergeCheck({
-        ...executionPlumbing(),
-        getWorkspace: async () => ws,
-        getConfig: () => withoutClaude(criticConfig(logDir)),
-        verificationAttempts,
-        attempts,
-        criticDrive: { run: (request) => { harnessIds.push(request.harnessId); return drive.run(request); } },
-        transcripts,
-      });
-
-      await expect(check({ task, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir })).rejects.toThrow("critic harness 'claude' is not configured");
-      expect(harnessIds).toEqual([]);
-      transcripts.close();
-    });
-
-    it('writes post-merge critic Steps as critic-<n> under verification/post-merge', async () => {
-      const settingsStore = await makeSettingsStore(dir);
-      const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
-      const attempts = new AttemptStore(asyncDb);
-      const archive = new TaskArchive({ dataDir: dir, ensureArchiveId: (id) => tasks.ensureArchiveId(id), workspaceName: async () => 'ws' });
-      const task = await tasks.create({ prompt: 'post-merge', state: 'ready', workingDir: repoDir, isolationMode: 'direct' });
-      const run = await attempts.create(task.id);
-      const ws = { taskPostMergeCommands: null, taskPostMergeCritics: JSON.stringify(twoCritics.map((entry) => ({ ...entry, critic: { ...entry.critic, timeoutSeconds: 17 } }))), taskPreMergeCommands: null, taskPreMergeCritics: null, epicPreMergeCommands: null, epicPreMergeCritics: null, ...NO_PROMPT_FRAGMENT_OVERRIDES };
-      const verificationAttempts = new VerificationAttemptStore(asyncDb);
-      const transcripts = new TranscriptCapture(new SessionStore(asyncDb), verificationAttempts, () => criticConfig(logDir));
-      const captureUsage = vi.spyOn(transcripts, 'captureCriticUsage');
-      const timeouts: number[] = [];
-      const check = createPostMergeCheck({
-        ...executionPlumbing(),
-        getWorkspace: async () => ws,
-        getConfig: () => criticConfig(logDir),
-        verificationAttempts,
-        attempts,
-        criticDrive: { run: (request) => { timeouts.push(request.timeoutMs); return drive.run(request); } },
-        archive,
-        transcripts,
-      });
-
-      const result = await check({ task, run, mergeOid: git(repoDir, 'rev-parse', 'HEAD'), baseDir: repoDir });
-
-      expect(result.pass).toBe(true);
-      expect(timeouts).toEqual([17_000, 17_000]);
-      expect(captureUsage).toHaveBeenCalledTimes(2);
-      transcripts.close();
-      const postMerge = join(findDir(join(dir, 'archive'), `${task.id}-`), 'attempts', String(run.number), 'verification', 'post-merge');
-      expect(readdirSync(postMerge).sort()).toEqual(['critic-1', 'critic-2']);
-      expectStepTrio(join(postMerge, 'critic-1'), 'alpha');
-      expectStepTrio(join(postMerge, 'critic-2'), 'beta');
-      const owner = (await tasks.get(task.id))!;
-      const rows = await verificationAttempts.list(run.id);
-      expect(rows.map((row) => row.promptKey).sort()).toEqual(['verification/post-merge/critic-1/prompt.md', 'verification/post-merge/critic-2/prompt.md']);
-      for (const row of rows) expect(await archive.readArchivedPrompt(owner, run.number, row.promptKey!)).toContain('review-');
     });
 
     it('writes Epic critic Steps keyed by the review Step id under epic-<ref>/attempts/<n>/verification/pre-merge', async () => {

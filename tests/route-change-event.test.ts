@@ -142,7 +142,7 @@ describe('route-changed Activity event (ADR-0049)', () => {
     await tasks.pause(mirrored.id);
     await mirrorScan(tasks, [ticket(['ready-for-agent', 'other'])], wsId);
     const driven: { harness: string; model: string }[] = [];
-    (runner as unknown as { turnDriver: { drive: (t: TaskRow) => Promise<void> } }).turnDriver.drive = async (t) => {
+    (runner as unknown as { workflowEngine: { run: (t: TaskRow) => Promise<void> } }).workflowEngine.run = async (t) => {
       driven.push({ harness: t.harness, model: t.model });
     };
     const resumed = await tasks.resume(mirrored.id);

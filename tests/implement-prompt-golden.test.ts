@@ -17,16 +17,10 @@ import { appendFeedback, driveFields } from '../src/execution/prompt-template.js
 import { WorkflowEngine } from '../src/execution/workflow-engine.js';
 import { createChildProcessSpawn } from '../src/verification/command-verifier.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace, testSpawnProcessGroup } from './helpers.js';
-import { buildOldImplementPrompts, FEEDBACK, HEAL, NATIVE_TASK, TICKET_TASK, TICKET_URL } from './helpers/implement-golden-fixtures.js';
+import { FEEDBACK, HEAL, NATIVE_TASK, TICKET_TASK, TICKET_URL } from './helpers/implement-golden-fixtures.js';
 
 const golden = JSON.parse(readFileSync(new URL('./fixtures/implement-prompt-golden.json', import.meta.url), 'utf8')) as Record<string, string>;
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
-
-describe('implement prompt golden (today path)', () => {
-  it('assembles byte-for-byte the recorded prompts from the existing prompt functions', () => {
-    expect(buildOldImplementPrompts()).toEqual(golden);
-  });
-});
 
 describe('implement prompt golden (bundled Library entries)', () => {
   const library = new PromptLibrary(null);
@@ -146,13 +140,16 @@ describe('bundled implement workflow through the engine', () => {
   it.each([
     ['native', 'nativeHeal', { prompt: NATIVE_TASK.prompt, origin: 'native' as const }],
     ['mirrored', 'ticketHeal', { prompt: TICKET_TASK.prompt, origin: 'mirrored' as const, trackerRef: String(TICKET_TASK.trackerRef) as TaskRow['trackerRef'] }],
-  ])('sends the %s self-heal prompt on the second attempt byte for byte against the old assembly', async (_kind, key, over) => {
+  ])('sends the %s self-heal prompt on the second attempt byte for byte against the bundled Library entry', async (_kind, key, over) => {
     verifyFails = 1;
     turns[2] = (cwd) => commitFile(cwd, 'b.txt');
     const { rows } = await run({ ...over, feedback: null });
     expect(driven).toHaveLength(3);
     const failed = rows.find((r) => r.stepId === 'verify' && r.outcome === 'fail')!;
-    const expected = buildOldImplementPrompts({ attempt: 1, reason: `workflow step verify fail: ${failed.summary}`, output: 'O\n' })[key];
+    const native = { prompt: NATIVE_TASK.prompt, id: NATIVE_TASK.id, workingDir: NATIVE_TASK.workingDir, harness: NATIVE_TASK.harness, model: NATIVE_TASK.model, feedback: '' };
+    const fields = key === 'nativeHeal' ? native : { ...native, ...driveFields(TICKET_TASK as never, () => TICKET_URL) };
+    const healFields = { attempt: 1, reason: `workflow step verify fail: ${failed.summary}`, output: 'O\n' };
+    const expected = renderAgentPrompt(await new PromptLibrary(null).resolve(key === 'nativeHeal' ? 'implement-native-heal' : 'implement-ticket-heal'), { ...fields, ...healFields });
     expect(driven[2]).toBe(expected);
     expect(driven[2]!.startsWith(golden[key === 'nativeHeal' ? 'nativeFirst' : 'ticketFirst']!)).toBe(true);
   });

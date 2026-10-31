@@ -99,15 +99,15 @@ describe('a finish_task that changed nothing', () => {
     criticResult = { verdict: 'inconclusive', summary: 'the ticket has no actionable spec to judge against' };
     const { taskId } = await runNoChangeFinish();
     const task = await waitState(taskId, 'escalated');
-    expect(task.escalationReason).toMatch(/verification escalate: .*inconclusive/);
+    expect(task.escalationReason).toMatch(/workflow attempts exhausted after 2: .*inconclusive/);
     expect((await attemptsOf(taskId)).map((a) => a.state)).toEqual(['escalated']);
   }, 30_000);
 
-  it('escalates when no critic is configured — nothing can judge a no-op', async () => {
+  it('completes with a no-op merge when no critic is configured (ADR-0053)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { taskPreMergeCritics: [], taskPreMergeCommands: null });
     const { taskId } = await runNoChangeFinish();
-    const task = await waitState(taskId, 'escalated');
-    expect(task.escalationReason).toMatch(/finished without changing any files and no critic is configured/);
-    expect((await attemptsOf(taskId)).map((a) => a.state)).toEqual(['escalated']);
+    const task = await waitState(taskId, 'done');
+    expect(task.state).toBe('done');
+    expect((await attemptsOf(taskId)).map((a) => a.state)).toEqual(['passed']);
   }, 30_000);
 });

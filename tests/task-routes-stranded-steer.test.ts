@@ -11,6 +11,7 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
   beforeAll(async () => {
     const scenarioPrompt = scenario({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
+      mcpEscalate: { reason: 'need a human' },
       stopReason: 'end_turn',
     });
     const overrides = stubHarness() as DeepPartial<AppConfig>;
@@ -78,7 +79,6 @@ describe('steering/resuming a Task whose Session is incompatible or stranded (is
     });
     // Same Attempt continued — the counter only advances on a failed verdict.
     expect(latest.id).toBe(attemptBefore.id);
-    expect(latest.prompt).toContain('## Prior session (condensed)');
     expect(latest.prompt).toContain('## Operator message');
     expect(latest.prompt).toContain('pick up despite the upgrade');
 

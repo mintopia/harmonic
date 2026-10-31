@@ -23,6 +23,7 @@ describe('operator seed on an Attempt that opens with a warm, opportunistically-
     overrides.drive = {
       prompt: JSON.stringify({
         updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
+        mcpEscalate: { reason: 'need a human' },
         stopReason: 'end_turn',
       }),
     };

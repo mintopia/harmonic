@@ -230,6 +230,7 @@ describe('task-steering', () => {
     beforeAll(async () => {
       const scenarioPrompt = scenario({
         updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
+        mcpEscalate: { reason: 'need a human' },
         stopReason: 'end_turn',
       });
       const overrides = stubHarness() as DeepPartial<AppConfig>;

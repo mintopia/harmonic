@@ -11,9 +11,8 @@ import {
   resolveTaskPrompt,
   resolveVerifiers,
 } from '../src/domain/setting-override.js';
-import { AutoDrive } from '../src/execution/auto-drive.js';
-import { buildCriticPrompt, renderConflictPrompt } from '../src/execution/prompt-assembly.js';
-import { promptForTask } from '../src/execution/prompt-template.js';
+import { buildCriticPrompt, composeContinuePrompt, composeDriveOpening, renderConflictPrompt } from '../src/execution/prompt-assembly.js';
+import { driveFields, promptForTask } from '../src/execution/prompt-template.js';
 import type { TaskRow } from '../src/db/schema.js';
 
 const FRAGMENT = 'conflictResolution';
@@ -114,7 +113,7 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
   const ws = wsOverrides as never;
 
   const task = { id: 7, prompt: 'Title\n\nBody', workingDir: '/w', harness: 'claude', model: 'm', workspaceId: 1, origin: 'mirrored', trackerRef: '5', mapRef: null, feedback: null, wayfinderType: null } as unknown as TaskRow;
-  const drive = (scope: 'G' | 'W') => new AutoDrive(() => globalConfig, () => null, undefined, async () => (scope === 'W' ? (ws as never) : undefined));
+  const drive = (scope: 'G' | 'W') => resolveDrive(scope === 'W' ? (ws as never) : undefined, globalConfig);
   const critic = (scope: 'G' | 'W', pick: (c: ReturnType<typeof resolveVerifiers>['task']['preMerge']['critics'][number]) => string, stage: 'task.preMerge' | 'task.postMerge' = 'task.preMerge') => {
     const resolved = resolveVerifiers(scope === 'W' ? (ws as never) : { taskPreMergeCritics: null, taskPostMergeCritics: null, epicPreMergeCritics: null, taskPreMergeCommands: null, taskPostMergeCommands: null, epicPreMergeCommands: null }, globalConfig);
     const critics = stage === 'task.preMerge' ? resolved.task.preMerge.critics : resolved.task.postMerge.critics;
@@ -128,9 +127,9 @@ describe('runtime expansion of every fragment-expanding template, with Workspace
 
   const runtime: Record<string, (scope: 'G' | 'W') => Promise<string> | string> = {
     taskPrompt: (s) => promptForTask(task as never, resolveTaskPrompt(s === 'W' ? (ws as never) : undefined, globalConfig)),
-    'drive.prompt': (s) => drive(s).prompt(task),
-    'drive.unattendedReminder': (s) => drive(s).prompt(task),
-    'drive.continuePrompt': (s) => drive(s).continuePrompt(task),
+    'drive.prompt': (s) => composeDriveOpening(drive(s), driveFields(task, () => null), task.feedback),
+    'drive.unattendedReminder': (s) => composeDriveOpening(drive(s), driveFields(task, () => null), task.feedback),
+    'drive.continuePrompt': (s) => composeContinuePrompt(drive(s), task.id),
     'drive.commitNudge': (s) => resolveCommitNudge(s === 'W' ? (ws as never) : undefined, globalConfig),
     pauseMessage: (s) => resolvePauseMessage(s === 'W' ? (ws as never) : undefined, globalConfig),
     'merge.conflictPrompt': (s) => {

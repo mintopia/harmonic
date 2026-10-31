@@ -6,9 +6,8 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { DomainError } from '../src/domain/errors.js';
 import { EscalationService } from '../src/domain/escalation.js';
-import { type MergeEffectExec, ticketCloseEffect } from '../src/domain/merge.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
 import { type Verdict } from '../src/verification/critic-schema.js';
 import { type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
@@ -75,7 +74,7 @@ describe('escalation', () => {
       const taskId = await runToEscalated();
       const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
       expect(task.state).toBe('escalated');
-      expect(task.escalationReason).toMatch(/^escalated to human: attempt 1 of 1 failed/);
+      expect(task.escalationReason).toMatch(/^escalated to human: workflow attempts exhausted after 1/);
 
       const attempts = await timeline(taskId);
       expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
@@ -110,8 +109,8 @@ describe('escalation', () => {
           ? body
           : undefined;
       });
-      // Budget reset: the new Attempt re-escalates as "attempt 1 of 1".
-      expect(again.escalationReason).toMatch(/attempt 1 of 1 failed/);
+      // Budget reset: the new Attempt re-escalates after 1 attempt.
+      expect(again.escalationReason).toMatch(/workflow attempts exhausted after 1/);
       const attemptsAfter = await timeline(taskId);
       expect(attemptsAfter.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
         { number: 1, state: 'escalated' },
@@ -214,7 +213,7 @@ describe('escalation-service', () => {
     let settle: AttemptSettleCoordinator;
     let resumed: Array<{ taskId: number; guidance: string; startNow: boolean; reuseSession: boolean; harness: string; model: string }>;
     let cleaned: Array<{ taskId: number; attemptId: number | undefined }>;
-    let effects: MergeEffectExec[];
+    let acceptedWorkflow: Array<{ taskId: number; runId: number }>;
     let candidateHeadValue: string | null;
     let candidateHeadCalls: Array<{ taskId: number; runId: number }>;
     let service: EscalationService;
@@ -229,10 +228,10 @@ describe('escalation-service', () => {
       settle = new AttemptSettleCoordinator(tasks, attempts);
       resumed = [];
       cleaned = [];
-      effects = [];
+      acceptedWorkflow = [];
       candidateHeadValue = 'cand-oid';
       candidateHeadCalls = [];
-      service = new EscalationService(attempts, tasks, settle, () => effects, {
+      service = new EscalationService(attempts, tasks, {
         resume: async (task, guidance, { startNow, reuseSession }) => {
           resumed.push({ taskId: task.id, guidance, startNow, reuseSession, harness: task.harness, model: task.model });
         },
@@ -243,8 +242,9 @@ describe('escalation-service', () => {
           candidateHeadCalls.push({ taskId: task.id, runId: run.id });
           return candidateHeadValue;
         },
-        acceptWorkflow: async () => {},
-        advance: async () => {},
+        acceptWorkflow: async (task, run) => {
+          acceptedWorkflow.push({ taskId: task.id, runId: run.id });
+        },
       });
     });
     afterEach(async () => {
@@ -283,35 +283,14 @@ describe('escalation-service', () => {
     });
 
     describe('accept', () => {
-      it('merges the candidate as-is under the operator-accept disposition and moves the ticket to done — no verification', async () => {
+      it('hands an escalated ticket with a candidate to its workflow, never resuming the loop', async () => {
         const { task, run } = await escalated();
         expect(task.state).toBe('escalated');
-        expect(run).toMatchObject({ state: 'escalated' });
-        let applied = 0;
-        effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { applied++; return { ok: true, observed: {} }; } }];
-
-        const accepted = await service.accept(task.id);
-
-        expect(candidateHeadCalls).toEqual([{ taskId: task.id, runId: run.id }]);
-        expect(applied).toBe(1);
-        expect(accepted).toMatchObject({ state: 'done', escalationReason: null });
-        expect(await attempts.get(run.id)).toMatchObject({ state: 'passed', reason: 'operator-accept', verifiedHeadOid: 'cand-oid' });
-        expect(resumed).toEqual([]);
-      });
-
-      it('marks the ticket merging, then applies the merge — never resumes the loop', async () => {
-        const { task } = await escalated();
-        const statuses: (string | null)[] = [];
-        const original = tasks.setMergeStatus.bind(tasks);
-        tasks.setMergeStatus = async (id: number, status) => {
-          statuses.push(status);
-          return original(id, status);
-        };
-        effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => ({ ok: true, observed: {} }) }];
 
         await service.accept(task.id);
 
-        expect(statuses).toEqual(['merging']);
+        expect(candidateHeadCalls).toEqual([{ taskId: task.id, runId: run.id }]);
+        expect(acceptedWorkflow).toEqual([{ taskId: task.id, runId: run.id }]);
         expect(resumed).toEqual([]);
       });
 
@@ -325,38 +304,8 @@ describe('escalation-service', () => {
         expect((err as DomainError).code).toBe('conflict');
         expect((err as DomainError).message).toContain('no candidate to accept');
         expect((await tasks.get(task.id)).state).toBe('escalated');
+        expect(acceptedWorkflow).toEqual([]);
         expect(resumed).toEqual([]);
-      });
-
-      it('a failed ticket close after a successful merge still settles the ticket done (ADR-0048)', async () => {
-        const { task } = await escalated();
-        let merged = false;
-        effects = [
-          { effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => { merged = true; return { ok: true, observed: {} }; } },
-          ticketCloseEffect('1', async () => false, async () => { await tasks.setTicketClosePending(task.id, true); }),
-        ];
-
-        const accepted = await service.accept(task.id);
-
-        expect(merged).toBe(true);
-        expect(accepted).toMatchObject({ state: 'done', ticketClosePending: true });
-      });
-
-      it('a successful ticket close leaves ticketClosePending false', async () => {
-        const { task } = await escalated();
-        effects = [ticketCloseEffect('1', async () => true, async () => { await tasks.setTicketClosePending(task.id, true); })];
-
-        expect(await service.accept(task.id)).toMatchObject({ state: 'done', ticketClosePending: false });
-      });
-
-      it('a failed merging effect surfaces its detail and leaves the ticket escalated with nothing further applied', async () => {
-        const { task, run } = await escalated();
-        effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => ({ ok: false, detail: 'merge conflict in src/a.ts' }) }];
-
-        await expect(service.accept(task.id)).rejects.toThrow('merge conflict in src/a.ts');
-
-        expect((await tasks.get(task.id)).state).toBe('escalated');
-        expect(await attempts.get(run.id)).toMatchObject({ state: 'escalated' });
       });
     });
 
@@ -511,7 +460,7 @@ describe('escalation-routes', () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
+      expect(task.escalationReason).toMatch(/workflow attempts exhausted after 2/);
       expect((await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body).toMatchObject({ state: 'failed' });
       return { taskId, attemptId, file };
     }
@@ -531,96 +480,84 @@ describe('escalation-routes', () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalationReason).toMatch(/attempt 2 of 2 failed/);
+      expect(task.escalationReason).toMatch(/workflow attempts exhausted after 2/);
       return { taskId, attemptId, file };
     }
 
     const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
-    const verificationAttempts = async (taskId: number) => {
-      const store = new VerificationAttemptStore(server.app.ctx.asyncDb);
-      const taskAttemptRows = await ticketAttempts(taskId);
-      return (await Promise.all(taskAttemptRows.map((a) => store.list(a.id)))).flat();
-    };
+    const stepRuns = (taskId: number) => new WorkflowStepRunStore(server.app.ctx.asyncDb).listForTask(taskId);
+    const waitForState = (taskId: number, state: string) =>
+      waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.state === state ? body : undefined;
+      });
 
     it('escalates with the exhausted Attempt marked escalated, its verified head retained, and the branch kept as evidence', async () => {
       const { taskId } = await escalateViaCriticFail();
-      expect(await verificationAttempts(taskId)).toHaveLength(2);
       const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
       expect(run.verifiedHeadOid).toMatch(/^[0-9a-f]{40}$/);
       expect(git(repoDir, 'rev-parse', '--verify', run.branch)).toBe(run.verifiedHeadOid);
       const attempts = await ticketAttempts(taskId);
-      expect(attempts.map((a) => a.state)).toEqual(['failed', 'escalated']);
+      expect(attempts.map((a) => a.state)).toEqual(['escalated']);
       expect((await server.api('GET', `/api/tasks/${taskId}`)).body.verifiedRef).not.toBeNull();
     });
 
     describe('POST /tasks/:id/accept', () => {
-      it('merges the candidate as-is, overriding a still-failing critic — the operator judgement is the gate, no verification runs', async () => {
+      it('overrides the failed critic step and merges the candidate — the operator judgement is the gate', async () => {
         const baseOidBefore = git(repoDir, 'rev-parse', 'main');
         const { taskId, file } = await escalateViaCriticFail();
 
         const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
         expect(accepted.status).toBe(200);
-        expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+        await waitForState(taskId, 'done');
 
-        const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-        expect(run).toMatchObject({ state: 'completed' });
-
-        const attempts = await ticketAttempts(taskId);
-        expect(attempts.at(-1)).toMatchObject({ state: 'passed', reason: 'operator-accept' });
+        const rows = await stepRuns(taskId);
+        expect(rows.filter((row) => row.stepId === 'critic-1').at(-1)).toMatchObject({ outcome: 'pass' });
+        expect(rows.filter((row) => row.stepId === 'critic-1').at(-1)!.summary).toContain('accepted by the operator');
+        expect(rows.filter((row) => row.stepId === 'merge').at(-1)).toMatchObject({ outcome: 'pass' });
+        expect(await ticketAttempts(taskId)).toHaveLength(1);
 
         expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);
         expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
-
-        // No second verification attempt was recorded by the accept — the two on
-        // record are the ones from the exhausted attempt loop, not a re-verify.
-        expect(await verificationAttempts(taskId)).toHaveLength(2);
       });
 
-      it('verification-fail: Accept overrides the failed Step and runs review only, merging on a passing critic (ADR-0038)', async () => {
+      it('verification-fail: Accept overrides the failed command step and resumes after it, merging on the rest passing (ADR-0038)', async () => {
         const baseOidBefore = git(repoDir, 'rev-parse', 'main');
         const { taskId, file } = await escalateViaCommandFail();
-
-        const before = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
-        expect(before.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'failed' });
-        expect(before.steps.some((s: { type: string }) => s.type === 'review')).toBe(false);
-
-        // Reconfigure with a passing critic before Accept — the overridden verification
-        // Step is not re-run, but the review Step Accept advances to must pass to merge.
-        criticResult = { verdict: 'pass', summary: 'looks correct' };
-        await server.app.ctx.workspaces.update(workspaceId, { ...critic() });
+        expect((await stepRuns(taskId)).filter((row) => row.stepId === 'verify-1').at(-1)).toMatchObject({ outcome: 'fail' });
 
         const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
         expect(accepted.status).toBe(200);
-        expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
+        await waitForState(taskId, 'done');
 
-        const run = (await server.api('GET', `/api/tasks/${taskId}/attempts/current`)).body;
-        expect(run).toMatchObject({ state: 'completed' });
-        // Same Attempt throughout — Accept advances in place, it does not spawn a new one.
-        expect(await ticketAttempts(taskId)).toHaveLength(2);
-
-        const after = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
-        expect(after.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'passed', verdict: 'pass' });
-        expect(after.steps.filter((s: { type: string }) => s.type === 'review').at(-1)).toMatchObject({ state: 'passed' });
+        const rows = await stepRuns(taskId);
+        expect(rows.filter((row) => row.stepId === 'verify-1').at(-1)).toMatchObject({ outcome: 'pass' });
+        expect(rows.filter((row) => row.stepId === 'merge').at(-1)).toMatchObject({ outcome: 'pass' });
+        expect(await ticketAttempts(taskId)).toHaveLength(1);
 
         expect(git(repoDir, 'rev-parse', 'main')).not.toBe(baseOidBefore);
         expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
       });
 
-      it('verification-fail: Accept escalates again immediately when the advanced-to review Step still fails', async () => {
-        const { taskId } = await escalateViaCommandFail();
-        criticResult = { verdict: 'fail', summary: 'still not good enough' };
-        await server.app.ctx.workspaces.update(workspaceId, { ...critic() });
+      it('verification-fail: Accept escalates again when the step after the overridden one fails', async () => {
+        await server.app.ctx.workspaces.update(workspaceId, {
+          taskPreMergeCommands: [
+            { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+            { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail-2', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+          ],
+          taskPreMergeCritics: null,
+        });
+        const { taskId } = await createAndRun();
+        await waitForState(taskId, 'escalated');
 
         const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
         expect(accepted.status).toBe(200);
-        expect(accepted.body.state).toBe('escalated');
+        await waitFor(async () => ((await stepRuns(taskId)).filter((row) => row.stepId === 'verify-2' && row.outcome === 'fail').length >= 1 ? true : undefined));
+        const again = await waitForState(taskId, 'escalated');
 
-        const after = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body.attempts.at(-1);
-        expect(after.state).toBe('escalated');
-        expect(after.steps.filter((s: { type: string }) => s.type === 'verification').at(-1)).toMatchObject({ state: 'passed' });
-        expect(after.steps.filter((s: { type: string }) => s.type === 'review').at(-1)).toMatchObject({ state: 'failed' });
-        // Still the same Attempt — the escalate-again is not a new Attempt.
-        expect(await ticketAttempts(taskId)).toHaveLength(2);
+        expect(again.escalationReason).toMatch(/workflow attempts exhausted/);
+        expect((await stepRuns(taskId)).filter((row) => row.stepId === 'verify-1').at(-1)).toMatchObject({ outcome: 'pass' });
+        expect(await ticketAttempts(taskId)).toHaveLength(1);
       });
 
       it('409s invalid_state when the ticket is not escalated (a passing critic merges on its own)', async () => {
@@ -634,28 +571,27 @@ describe('escalation-routes', () => {
       });
 
       it('409s conflict when the escalated ticket has no candidate to accept (the branch has no commits ahead of its base)', async () => {
-        await server.app.ctx.workspaces.update(workspaceId, { isolationMode: 'direct' });
-        writeFileSync(join(repoDir, 'uncommitted-escalation.txt'), 'dirty\n');
-        try {
-          const created = await server.api('POST', '/api/tasks', {
-            prompt: JSON.stringify({ stopReason: 'end_turn' }),
-          });
-          expect(created.status).toBe(201);
-          const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-          expect(started.status).toBe(201);
-          const task = await waitFor(async () => {
-            const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
-            return body.state === 'escalated' ? body : undefined;
-          });
-          expect(task.verifiedRef).toBeNull();
+        await server.app.ctx.workspaces.update(workspaceId, {
+          isolationMode: 'worktree',
+          taskPreMergeCommands: [
+            { kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-fail', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }) },
+          ],
+          taskPreMergeCritics: null,
+        });
+        const created = await server.api('POST', '/api/tasks', {
+          prompt: JSON.stringify({ stopReason: 'end_turn' }),
+          workingDir: repoDir,
+          isolationMode: 'worktree',
+        });
+        expect(created.status).toBe(201);
+        expect((await server.api('POST', `/api/tasks/${created.body.id}/run`)).status).toBe(201);
+        const task = await waitForState(created.body.id, 'escalated');
+        expect(task.verifiedRef).toBeNull();
 
-          const res = await server.api('POST', `/api/tasks/${created.body.id}/accept`);
-          expect(res.status).toBe(409);
-          expect(res.body.error.code).toBe('conflict');
-          expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(200);
-        } finally {
-          rmSync(join(repoDir, 'uncommitted-escalation.txt'), { force: true });
-        }
+        const res = await server.api('POST', `/api/tasks/${created.body.id}/accept`);
+        expect(res.status).toBe(409);
+        expect(res.body.error.code).toBe('conflict');
+        expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(200);
       });
     });
 
@@ -678,20 +614,19 @@ describe('escalation-routes', () => {
         });
         expect(done.state).toBe('done');
         const attempts = await ticketAttempts(taskId);
-        // ADR-0038: Reject spawns a NEW Attempt 3 on the same branch, keeping the
-        // escalated Attempt 2 as its own timeline entry rather than reusing it.
+        // ADR-0038: Reject spawns a NEW Attempt on the same branch, keeping the
+        // escalated Attempt as its own timeline entry rather than reusing it.
         expect(attempts.map((a) => ({ number: a.number, state: a.state }))).toEqual([
-          { number: 1, state: 'failed' },
-          { number: 2, state: 'escalated' },
-          { number: 3, state: 'passed' },
+          { number: 1, state: 'escalated' },
+          { number: 2, state: 'passed' },
         ]);
 
         const runs = (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts;
-        expect(runs).toHaveLength(3);
-        expect(runs[2].number).toBe(3);
-        expect((await withArchivedPrompt(server, runs[2], 'The timeout is intentional')).prompt).toContain('The timeout is intentional');
+        expect(runs).toHaveLength(2);
+        expect(runs[1].number).toBe(2);
+        expect((await withArchivedPrompt(server, runs[1], 'The timeout is intentional')).prompt).toContain('The timeout is intentional');
         expect(branch).toBe(`harmonic/task-${taskId}`);
-        expect(runs[2].branch).toBe(branch);
+        expect(runs[1].branch).toBe(branch);
         expect(runs[0].branch).toBe(branch);
       });
 

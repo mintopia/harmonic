@@ -13,7 +13,9 @@ import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 import type { DistributionMode } from '../src/distribution-mode.js';
 import { SettingsStore } from '../src/server/settings-store.js';
-import { SETTINGS_MIGRATION_MARKER } from '../src/domain/settings-workflow-migration.js';
+import { planSettingsMigration } from '../src/domain/settings-workflow-migration.js';
+import { PromptLibrary } from '../src/domain/prompt-library-store.js';
+import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { BackgroundWork } from '../src/error-handling.js';
 import { spawn } from 'node:child_process';
@@ -324,9 +326,6 @@ async function migratedDbTemplate(): Promise<string> {
     const handle = await openAsyncDb(dir);
     await handle.close();
     dbTemplatePath = join(dir, 'harmonic.db');
-    const raw = new DatabaseSync(dbTemplatePath);
-    raw.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(SETTINGS_MIGRATION_MARKER, 'done');
-    raw.close();
   }
   return dbTemplatePath;
 }
@@ -338,6 +337,70 @@ function testPasswordSettingsValue(): string {
     cachedAuthValue = JSON.stringify({ salt, hash: scryptSync(TEST_PASSWORD, salt, 64).toString('hex') });
   }
   return cachedAuthValue;
+}
+
+const VERIFIER_OVERLAY_KEY = /^(task|epic)(Pre|Post)Merge(Commands|Critics)$/;
+
+/** A workflow step times out after the default; the migration refuses other timeouts, so tests plan with the defaults. */
+function withDefaultTimeouts<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withDefaultTimeouts) as T;
+  if (value === null || typeof value !== 'object') return value;
+  const copy: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'timeoutSeconds' && typeof entry === 'number') copy[key] = 'command' in value ? 600 : 300;
+    else if (VERIFIER_OVERLAY_KEY.test(key) && typeof entry === 'string') copy[key] = JSON.stringify(withDefaultTimeouts(JSON.parse(entry)));
+    else copy[key] = withDefaultTimeouts(entry);
+  }
+  return copy as T;
+}
+
+/** Settings changed after boot re-plan the migrated workflows, as the first-boot migration would have planned them. */
+function replanWorkflowsOnSettingsChange(app: App): void {
+  const store = app.ctx.settingsStore;
+  const prompts = (app.ctx.runner as unknown as { promptLibrary: PromptLibrary }).promptLibrary;
+  const updateGlobal = store.updateGlobal.bind(store);
+  const setOverrides = store.setOverrides.bind(store);
+  const replan = async (): Promise<void> => {
+    const rows = await app.ctx.workspaces.list();
+    const plan = await planSettingsMigration({ config: withDefaultTimeouts(store.getGlobal()), workspaces: withDefaultTimeouts(rows), promptText: (code) => prompts.operatorText(code) });
+    for (const entry of plan.prompts) {
+      if (prompts.operatorText(entry.code) === entry.text) continue;
+      if (prompts.hasOperatorEntry(entry.code)) await prompts.update(entry.code, entry.description, entry.text);
+      else await prompts.create(entry.code, entry.description, entry.text);
+    }
+    for (const workflow of plan.workflows) {
+      const existing = app.ctx.workflows.list().find((entry) => entry.name === workflow.name && !entry.bundled);
+      if (existing?.text !== workflow.text) await app.ctx.workflows.save(workflow.name, workflow.text);
+    }
+    const planned = new Map(plan.workspaceWorkflows.map((entry) => [entry.workspaceId, entry.workflow]));
+    for (const row of rows) {
+      const current = store.getOverrides(row.id).workflow;
+      const wanted = planned.get(row.id) ?? null;
+      if (wanted !== null ? current !== wanted : current?.startsWith('migrated-')) await setOverrides(row.id, { workflow: wanted });
+    }
+  };
+  store.updateGlobal = async (patch) => {
+    const config = await updateGlobal(patch);
+    await replan();
+    return config;
+  };
+  store.setOverrides = async (workspaceId, patch) => {
+    await setOverrides(workspaceId, patch);
+    await replan();
+  };
+}
+
+/** Runner options carrying the workflows the first-boot migration would write for `config`, so a directly-built Runner runs the pipeline those settings describe. */
+export async function migratedWorkflowOptions(config: AppConfig, dir: string): Promise<{ config: AppConfig; promptLibrary: PromptLibrary; workflows: { library: WorkflowLibrary } }> {
+  const promptLibrary = new PromptLibrary(dir);
+  await promptLibrary.load();
+  const library = new WorkflowLibrary(dir);
+  await library.load();
+  promptLibrary.attachWorkflows(library);
+  const plan = await planSettingsMigration({ config: withDefaultTimeouts(config), workspaces: [], promptText: (code) => promptLibrary.operatorText(code) });
+  for (const entry of plan.prompts) await promptLibrary.create(entry.code, entry.description, entry.text);
+  for (const workflow of plan.workflows) await library.save(workflow.name, workflow.text);
+  return { config: { ...config, defaults: { ...config.defaults, workflow: plan.globalWorkflow } }, promptLibrary, workflows: { library } };
 }
 
 export async function startServer(
@@ -395,6 +458,7 @@ export async function startServer(
   await app.ctx.asyncDb.write((d) =>
     d.insert(workspaces).values({ name: 'Default', workingDir: workspaceDir, createdAt: now, updatedAt: now }).run(),
   );
+  replanWorkflowsOnSettingsChange(app);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;

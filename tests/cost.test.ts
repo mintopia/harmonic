@@ -232,18 +232,18 @@ describe('cost surfaces (API)', () => {
     );
 
     // A legal 2-attempt Task (issue #459 / ADR-0020: `done` is terminal, so
-    // this can no longer be faked with a `done -> ready` setState). A
-    // verifier configured with no committed head makes attempt 1's verdict
-    // "inconclusive", which escalates immediately — with its usage/cost
-    // already persisted — rather than looping. The one legal reopen edge is
+    // this can no longer be faked with a `done -> ready` setState). A failing
+    // verifier with a one-attempt budget escalates attempt 1 with its usage/cost
+    // already persisted. The one legal reopen edge is
     // `escalated -> ready` (`tasks.requeue`); clearing the verifier before
     // attempt 2 lets it complete normally to `done`.
     const ws = (await server.app.ctx.workspaces.list())[0]!;
+    await server.app.ctx.settingsStore.updateGlobal({ maxAttempts: 1 });
     await server.app.ctx.workspaces.update(ws.id, {
       taskPreMergeCommands: [{
         kind: 'local',
         enabled: true,
-        command: verificationCommandSchema.parse({ id: 'cmd-exit-0', command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+        command: verificationCommandSchema.parse({ id: 'cmd-exit-1', command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
       }],
     });
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir: workDir });
@@ -252,7 +252,7 @@ describe('cost surfaces (API)', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
 
     await server.app.ctx.workspaces.update(ws.id, { taskPreMergeCommands: null });
-    await server.app.ctx.tasks.requeue(taskId);
+    expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: '' })).status).toBe(200);
     await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);

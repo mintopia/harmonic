@@ -400,6 +400,7 @@ export class WorkflowEngine {
 
   private async rebase(task: TaskRow, mask: (text: string) => string): Promise<StepResult> {
     const cwd = this.deps.cwdFor(task);
+    if (cwd === task.workingDir) return { outcome: 'pass', summary: 'the Ticket works in place', stdout: '', exitCode: null, output: '' };
     const baseOid = await Git.revParse(task.workingDir, await this.deps.baseBranchFor(task));
     const rebased = await Git.rebaseOnto(cwd, baseOid);
     if (rebased.ok) return { outcome: 'pass', summary: `rebased onto ${baseOid}`, stdout: '', exitCode: 0, output: '', outputs: { baseSha: baseOid, conflictedFiles: [] } };
@@ -498,7 +499,7 @@ export class WorkflowEngine {
         if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
         if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
         output += result.output;
-        if (!(await Git.isDirty(cwd))) break;
+        if (!(await Git.isDirty(cwd).catch(() => false))) break;
         if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
         text = options.continuePrompt === undefined ? DEFAULT_CONTINUE_PROMPT : await this.renderPrompt(options.continuePrompt, fields, context);
       }

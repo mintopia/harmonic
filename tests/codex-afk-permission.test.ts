@@ -83,7 +83,7 @@ describe('Codex afk permission model', () => {
       const t = await server.app.ctx.tasks.get(task.id);
       return t.state === 'escalated' ? t : undefined;
     });
-    expect(settled.escalationReason).toMatch(/attempt 1 of 1 failed: permission request declined/);
+    expect(settled.escalationReason).toMatch(/workflow attempts exhausted after 1: .*permission request declined/);
     expect(settled.escalationReason).toContain('Write hello.txt');
   });
 });

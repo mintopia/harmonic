@@ -55,8 +55,8 @@ export interface RunnerOptions {
   /** Held Agent Messages injected at Attempt start. */
   agentMessages?: AgentMessageStore;
   archive?: TaskArchive;
-  /** Runs a Ticket's chosen Task Execution Workflow; absent → starting such a Ticket throws invalid_state. */
-  workflows?: { library: WorkflowLibrary; secrets: SecretService; workspaceName: (workspaceId: number) => Promise<string> };
+  /** Where Tickets find their Task Execution Workflow; absent → only the bundled workflows, with no secrets. */
+  workflows?: { library: WorkflowLibrary; secrets?: SecretService; workspaceName?: (workspaceId: number) => Promise<string> };
   /** Source of the Epic fix prompt text; absent → bundled prompts only. */
   promptLibrary?: PromptLibrary;
   isGloballyPaused?: () => boolean;

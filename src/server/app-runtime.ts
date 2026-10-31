@@ -3,7 +3,6 @@ import type { AsyncDbHandle } from '../db/async.js';
 import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
-import { type MergeEffectExec, ticketCloseEffect } from '../domain/merge.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
@@ -36,7 +35,6 @@ import { operationRegistry, startOperation } from '../telemetry/operations.js';
 import { EventBus } from './bus.js';
 import { SettingsUpdateAvailabilityStore } from '../upgrade/update-check.js';
 import { UpgradeCoordinator, type UpgradeCancellation, type UpgradeIdleHandoffOutcome } from '../upgrade/upgrade-coordinator.js';
-import { AttemptSettleCoordinator } from '../domain/attempt-settle.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { EscalationService } from '../domain/escalation.js';
 import type { AppOptions } from './app-context.js';
@@ -274,17 +272,6 @@ export async function createRuntime(deps: {
     fireAndForget(() => notifier.notify('task.failed', task, { reason }), { op: 'notifier.taskFailed', level: 'warn', context: { taskId: task.id } });
   const onTaskMerged = (task: TaskRow): void =>
     fireAndForget(() => notifier.recordMerged(task), { op: 'notifier.taskMerged', level: 'warn', context: { taskId: task.id } });
-  const operatorSettle = new AttemptSettleCoordinator(
-    tasks,
-    attempts,
-    (run) => {
-      fireAndForget(() => runnerRef?.finishRunOperation(run.id), { op: 'runner.finishRunOperation', level: 'warn', context: { attemptId: run.id } });
-      bus.emit('attempt_changed', run);
-    },
-    sessionRetirement,
-    branchRetirement,
-    { onFailedAttemptRequeued, onTaskMerged },
-  );
   const archive = new TaskArchive({
     dataDir: opts.dataDir,
     ensureArchiveId: (taskId) => tasks.ensureArchiveId(taskId),
@@ -313,7 +300,6 @@ export async function createRuntime(deps: {
     }
   };
   const autoDrive = new AutoDrive(
-    () => settingsStore.getGlobal(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     resolveTracker,
     getWorkspaceRow,
@@ -345,30 +331,6 @@ export async function createRuntime(deps: {
     resolveRepository,
     (run, url) => attempts.update(run.id, { pullRequestUrl: url }).then(() => undefined),
   );
-  const mergeEffectsFor = (task: TaskRow, run: AttemptRow): MergeEffectExec[] => {
-    const effects: MergeEffectExec[] = [];
-    const trackerRef = task.trackerRef;
-    if (trackerRef != null) {
-      effects.push(ticketCloseEffect(trackerRef, () => autoDrive.closeCompleted(task), () => tasks.setTicketClosePending(task.id, true)));
-    }
-    if (task.isolationMode !== 'worktree') return effects;
-    if (!run.branch || !run.baseBranch || !run.verifiedHeadOid) return effects;
-    const baseBranch = run.baseBranch;
-    const branch = run.branch;
-    return [
-      {
-        effect: 'target-ref',
-        idempotencyKey: `${baseBranch}<-${branch}`,
-        expected: { baseBranch, branch },
-        apply: async () => {
-          const outcome = await runnerRef!.mergeAcceptedBranch(task, run);
-          if (outcome.kind === 'escalated') return { ok: false, detail: outcome.message, observed: { reason: outcome.reason } };
-          return { ok: true, observed: { baseBranch, branch, oid: outcome.mergeOid } };
-        },
-      },
-      ...effects,
-    ];
-  };
   const epicOperations = new EpicOperations();
   const gitBreaker = new GitCircuitBreaker();
   await convertEditedEpicFixPrompts(deps.promptLibrary, settingsStore.getGlobal());
@@ -425,11 +387,10 @@ export async function createRuntime(deps: {
   touchStartupProgress(opts.dataDir);
   await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
-  const escalation = new EscalationService(attempts, tasks, operatorSettle, mergeEffectsFor, {
+  const escalation = new EscalationService(attempts, tasks, {
     resume: (task, guidance, options) => runner.resumeWithGuidance(task, guidance, options),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
     candidateHead: (task, run) => runner.candidateHead(task, run),
-    advance: (task, run, failedStep) => runner.advanceAccepted(task, run, failedStep),
     acceptWorkflow: (task, run) => runner.acceptWorkflowStep(task, run),
   });
   touchStartupProgress(opts.dataDir);

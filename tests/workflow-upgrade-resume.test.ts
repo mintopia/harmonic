@@ -84,7 +84,7 @@ describe('a Ticket that was mid-pipeline when the workflow upgrade shipped', () 
     const rows = await rowsOf(server, taskId);
     const rebase = rows.find((row) => row.action === 'rebase');
     const build = rows.find((row) => row.action === 'agent');
-    const verify = rows.find((row) => row.action === 'verify');
+    const verify = rows.find((row) => row.stepId === 'verify-1');
     const merge = rows.find((row) => row.action === 'merge');
     expect(rebase).toMatchObject({ outcome: 'pass' });
     expect(rebase!.summary).toContain('carried over from pre-workflow Attempt 1');

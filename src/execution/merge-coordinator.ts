@@ -3,15 +3,12 @@ import type { RoutingService } from '../domain/routing.js';
 import { Git } from './git.js';
 import { reportFailure } from '../error-handling.js';
 import type { AppConfig } from '../config.js';
-import { harnessConfig } from '../domain/route.js';
 import type { TaskRow, AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { EpicMergeEventStore, EpicTimelineStep } from '../domain/epic-merge-events.js';
 import { runTimedCriticDrive } from '../verification/critic.js';
-import type { createPostMergeCheck } from '../verification/post-merge-check.js';
 import { integrationBranchName } from './epic-coordinator.js';
 import { logger } from '../logger.js';
-import { startOperation } from '../telemetry/operations.js';
 import { runMergePolicy, type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult } from './merge-policy.js';
 import type { RunnerOptions } from './runner.js';
 import type { RunnerEvents } from './runner-options.js';
@@ -64,16 +61,9 @@ export interface MergeCoordinatorDeps {
   archive?: TaskArchive | undefined;
   onAttemptEvent?: RunnerEvents['onAttemptEvent'];
   getWorkspace?: RunnerOptions['getWorkspace'];
-  postMergeCheck: ReturnType<typeof createPostMergeCheck>;
   postMerge: RunnerOptions['postMerge'];
-  urlFor: (task: TaskRow) => string | null;
   listWorkingTasks: () => Promise<TaskRow[]>;
   routing: Pick<RoutingService, 'epicRoute'>;
-  latestAttemptFor: (task: Pick<TaskRow, 'id'>) => Promise<AttemptRow>;
-  updateStep: (taskId: number, id: number, patch: Parameters<AttemptStore['updateStep']>[1]) => Promise<Awaited<ReturnType<AttemptStore['updateStep']>>>;
-  criticUpdateRelay: (attemptId: number) => (update: { sessionUpdate: string; [key: string]: unknown }) => void;
-  recordRunEvent: (task: TaskRow, run: AttemptRow, type: 'lifecycle', payload: unknown) => void;
-  settleEscalated: (task: TaskRow, run: AttemptRow, reason: string, patch: Partial<AttemptRow>) => Promise<void>;
   onEpicMergeStep: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
 }
 
@@ -114,72 +104,6 @@ export class MergeCoordinator {
       `base repo ${task.workingDir} is on a detached HEAD with no current branch, and the Task has no explicit base branch; ` +
         'reattach the base repo to a branch (e.g. `git checkout <branch>`) or set an explicit base branch on the Task, then retry',
     );
-  }
-
-  async runRebaseTask(
-    task: TaskRow,
-    attemptNumber: number,
-    attemptStartedAt: number,
-    worktreePath: string,
-    baseBranch: string,
-  ): Promise<{ ok: true; tip: string } | { ok: false; conflict: boolean; detail: string }> {
-    const attempt = await this.deps.attempts.ensureForRun(task.id, attemptNumber, attemptStartedAt);
-    const row = await this.deps.attempts.createStep(attempt.id, { type: 'rebase', logLocator: `git:rebase:${baseBranch}` });
-    await this.deps.updateStep(task.id, row.id, { state: 'running', startedAt: Date.now() });
-    const baseOid = await Git.revParse(task.workingDir, baseBranch);
-    const rebased = await Git.rebaseOnto(worktreePath, baseOid);
-    if (!rebased.ok) {
-      await this.deps.updateStep(task.id, row.id, {
-        state: 'failed',
-        verdict: rebased.conflict ? 'fail' : 'inconclusive',
-        endedAt: Date.now(),
-        logLocator: `git:rebase:${baseBranch}@${baseOid}\n${rebased.detail}`,
-      });
-      return { ok: false, conflict: rebased.conflict, detail: rebased.detail };
-    }
-    await this.deps.updateStep(task.id, row.id, {
-      state: 'passed',
-      verdict: 'pass',
-      endedAt: Date.now(),
-      logLocator: `git:rebase:${baseBranch}@${baseOid}`,
-    });
-    return { ok: true, tip: rebased.rebasedTip };
-  }
-
-  /**
-   * Operator Accept runs the identical one merge policy the automated path
-   * does. The escalated Attempt is already terminal, so escalation is returned to
-   * the caller rather than settled here.
-   */
-  async mergeAcceptedBranch(task: TaskRow, run: AttemptRow): Promise<MergePolicyOutcome> {
-    const record = (type: 'lifecycle', payload: unknown) => this.deps.recordRunEvent(task, run, type, payload);
-    const deps: MergePolicyDeps = {
-      ...this.mergePolicyDeps(task, run, record, new AbortController().signal, {}),
-      escalate: async () => {},
-    };
-    const operation = startOperation({ type: 'attempt', attributes: { 'task.id': task.id, 'attempt.id': run.id } });
-    const outcome = await operation
-      .run(async () =>
-        runMergePolicy(
-          {
-            baseDir: task.workingDir,
-            baseBranch: run.baseBranch!,
-            taskBranch: run.branch!,
-            conflictResolveTurns: task.conflictResolveTurns,
-            postMergeCheck: this.deps.getConfig().merge.postMergeCheck,
-            spanAttributes: { 'task.id': task.id, 'attempt.id': run.id },
-          },
-          deps,
-        ),
-      )
-      .finally(() => operation.end());
-    if (outcome.kind === 'merged') {
-      record('lifecycle', { event: 'merged', oid: outcome.mergeOid, baseBranch: run.baseBranch });
-      await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch: run.baseBranch! });
-    } else {
-      record('lifecycle', { event: 'escalated', reason: outcome.message, gate: outcome.reason });
-    }
-    return outcome;
   }
 
   /**
@@ -277,67 +201,5 @@ export class MergeCoordinator {
     } catch (err) {
       logger.warn('epic attempt event failed', { attemptId, error: err instanceof Error ? err.message : String(err) });
     }
-  }
-
-  mergePolicyDeps(
-    task: TaskRow,
-    run: AttemptRow,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    signal: AbortSignal,
-    patch: Partial<AttemptRow>,
-  ): MergePolicyDeps {
-    return {
-      onStep: (event) => record('lifecycle', { event: 'merge-step', step: event }),
-      resolveConflictTurn: async (ctx) => {
-        try {
-          const config = this.deps.getConfig();
-          const harnessId = task.harness;
-          const harness = harnessConfig(config, harnessId);
-          if (!harness) return;
-          const drive = this.deps.criticDrive;
-          const merge = resolveMergePrompts(await this.deps.getWorkspace?.(task.workspaceId), config);
-          const prompt = renderConflictPrompt(merge.conflictPrompt, merge.fragments, ctx);
-          const archived = await this.deps.archive?.appendResolutionPrompt(task, run.number, 'task-conflict', ctx.turn, prompt);
-          record('lifecycle', { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived });
-          await runTimedCriticDrive(drive, {
-            harness,
-            harnessId,
-            model: task.model,
-            cwd: ctx.baseDir,
-            prompt,
-            timeoutMs: RESOLVE_TURN_TIMEOUT_MS,
-          }, (ms) => this.deps.attempts.addAgentDuration(run.id, ms));
-        } catch (err) {
-          reportFailure(err, {
-            op: 'runner.mergeDeps.resolveConflictTurn',
-            level: 'warn',
-            context: {
-              taskId: task.id,
-              attemptId: run.id,
-              turn: ctx.turn,
-              baseBranch: ctx.baseBranch,
-              taskBranch: ctx.taskBranch,
-              unmergedPaths: ctx.unmergedPaths.length,
-              harness: task.harness,
-              model: task.model,
-            },
-          });
-        }
-      },
-      runPostMergeCheck: async (mergeOid, baseDir) => this.deps.postMergeCheck({
-        task,
-        run,
-        mergeOid,
-        baseDir,
-        verificationAttempt: await this.deps.latestAttemptFor(task),
-        signal,
-        record,
-        urlFor: this.deps.urlFor,
-        onUpdate: this.deps.criticUpdateRelay(run.id),
-      }),
-      escalate: async (reason) => {
-        await this.deps.settleEscalated(task, run, reason, patch);
-      },
-    };
   }
 }

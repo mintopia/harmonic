@@ -1,37 +1,23 @@
 import type { TrackerRef } from '../tracker/adapter.js';
-import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, AttemptRow, WorkspaceRow, StoredEpicKind } from '../db/schema.js';
 import { formatWorkspaceTrackerRef, resolveTrackerAdapter, workspaceTrackerSettings, type TrackerAdapter, type TicketRef, type WorkspaceTrackerSettings } from '../tracker/adapter.js';
 import type { FeatureIndex } from '../tracker/local-markdown.js';
 import { resolveRepositoryWithoutSecrets, type RepositoryResolver } from '../repository/resolve.js';
-import { resolveDrive, type ResolvedDrive } from '../domain/setting-override.js';
 import { driveFields, splitTitleBody, type DriveFields } from './prompt-template.js';
-import { composeContinuePrompt, composeDriveOpening } from './prompt-assembly.js';
 import { Git } from './git.js';
 import { withBaseCheckoutLock } from './repo-lock.js';
 import { logger } from '../logger.js';
 import { errorMessage } from '../error-handling.js';
 
-type DriveWorkspace = Pick<
-  WorkspaceRow,
-  'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'driveMergeFate' | 'driveContinueAttempts'
-> &
-  Partial<Pick<WorkspaceRow, 'configuredTracker' | 'codeRepository'>>;
+type DriveWorkspace = Partial<Pick<WorkspaceRow, 'configuredTracker' | 'codeRepository'>>;
 
-/**
- * The auto-drive half of afk mirrored-Task execution: the Drive Prompt the
- * Runner injects, and what becomes of a clean completion (Merge Fate +
- * fallback-close). Absent on a native-only server.
- */
 const completionComment = (task: TaskRow): string => `Completed and merged by Harmonic (task ${task.id}).`;
 
+/** The tracker side of a mirrored Task's workflow: prompt fields, opening a PR, closing and commenting on the ticket. Absent on a native-only server. */
 export class AutoDrive {
   constructor(
-    private readonly getConfig: () => AppConfig,
     private readonly urlFor: (task: TaskRow) => string | null,
     private readonly resolveAdapter: (repoRoot: string, featureIndex?: FeatureIndex, workspace?: WorkspaceTrackerSettings) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    /** Resolves a Task's Workspace so `drive.*` inherits its per-Workspace
-     * overrides; absent → every field resolves the global default. */
     private readonly getWorkspace?: (workspaceId: number | null) => Promise<DriveWorkspace | undefined>,
     /** Resolves the stored `kind` of a Task's parent Epic (its `mapRef`); a Map
      * child drives `/wayfinder {mapRef}`. Absent → every child keeps its own drive. */
@@ -51,85 +37,13 @@ export class AutoDrive {
     return task.origin === 'mirrored';
   }
 
-  private async resolvedDrive(task: TaskRow): Promise<ResolvedDrive> {
-    const ws = await this.getWorkspace?.(task.workspaceId);
-    return resolveDrive(ws, this.getConfig());
-  }
-
   private async epicKindFor(task: TaskRow): Promise<StoredEpicKind | null> {
     if (task.mapRef == null || task.workspaceId == null || !this.getEpicKind) return null;
     return this.getEpicKind(task.workspaceId, task.mapRef);
   }
 
-  /** The Drive Prompt for a mirrored Task — the resolved template filled from it. */
-  async prompt(task: TaskRow): Promise<string> {
-    const drive = await this.resolvedDrive(task);
-    const epicKind = await this.epicKindFor(task);
-    return composeDriveOpening(drive, driveFields({ ...task, epicKind }, this.urlFor), task.feedback);
-  }
-
   async promptFields(task: TaskRow): Promise<DriveFields> {
     return driveFields({ ...task, epicKind: await this.epicKindFor(task) }, this.urlFor);
-  }
-
-  /**
-   * Re-prompt for an Attempt that ended its turn without finishing or escalating.
-   * Nudges the agent to resume rather than idle-wait, and re-states the
-   * unattended reminder (working memory is short across turns).
-   */
-  async continuePrompt(task: TaskRow): Promise<string> {
-    return composeContinuePrompt(await this.resolvedDrive(task), task.id);
-  }
-
-  /** How many times to re-prompt an unfinished Attempt before treating it as unresolved. */
-  async continueAttempts(task: TaskRow): Promise<number> {
-    return (await this.resolvedDrive(task)).continueAttempts;
-  }
-
-  private async mergeFate(task: TaskRow): Promise<MergeFate> {
-    return task.wayfinderType === 'research' ? 'artifact' : (await this.resolvedDrive(task)).mergeFate;
-  }
-
-  /** The Merge Fate for a Task — the same fate {@link onCompleted} applies. */
-  async mergeFateFor(task: TaskRow): Promise<MergeFate> {
-    return this.mergeFate(task);
-  }
-
-  /**
-   * Merge a passing afk Attempt's work per its Merge Fate. Harmonic owns the close,
-   * only after verify + merge:
-   *
-   * - **auto-merge** — the Runner has already merged the verified branch, so
-   *   Harmonic closes the ticket. A close that fails still completes (the merge
-   *   succeeded) and is retried each poll — `'completed-close-pending'`.
-   * - **open-PR** — open a PR and leave the ticket **open**; the PR's own merge
-   *   closes the issue later. A PR that can't be created Escalates. A repo
-   *   with no Code Repository adapter degrades to artifact.
-   * - **artifact** (incl. research) — leave the branch and the ticket untouched.
-   *
-   * Returns `'completed'` once the fate has merged, or `'escalate'` when it
-   * could not be applied.
-   */
-  async onCompleted(task: TaskRow, run: AttemptRow): Promise<'completed' | 'completed-close-pending' | 'escalate'> {
-    const worktree = task.isolationMode === 'worktree';
-    const fate = await this.mergeFate(task);
-
-    if (fate === 'open-PR') {
-      if (worktree) {
-        try {
-          await this.openPullRequest(task, run);
-        } catch {
-          return 'escalate';
-        }
-      }
-      return 'completed';
-    }
-
-    if (fate === 'auto-merge') {
-      return (await this.closeTicket(task)) ? 'completed' : 'completed-close-pending';
-    }
-
-    return 'completed';
   }
 
   /** Opens a PR for the Attempt's branch and records its URL; null when the repo has no Code Repository adapter or the kind opens none. Throws when the forge call fails. */
@@ -150,14 +64,6 @@ export class AutoDrive {
       });
     }
     return pullRequestUrl;
-  }
-
-  /**
-   * The auto-merge close step, for a path that already merged the branch
-   * elsewhere. Returns whether the close was issued.
-   */
-  async closeCompleted(task: TaskRow): Promise<boolean> {
-    return this.closeTicket(task);
   }
 
   /**
