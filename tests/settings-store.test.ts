@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { SettingsStore } from '../src/server/settings-store.js';
-import { appConfigSchema, baselineConfig, loadBaselineConfig, mergeConfig, verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { appConfigSchema, baselineConfig, loadBaselineConfig, mergeConfig, budgetGuardrailSchema } from '../src/config.js';
 
 describe('SettingsStore (issue #391)', () => {
   let dir: string;
@@ -261,32 +261,23 @@ describe('SettingsStore (issue #391)', () => {
     expect(raw2.workspaces).toEqual({});
   });
 
-  it('epicPreMergeCommands/guardrailBudget persist as native YAML (not JSON strings) and round-trip through getOverrides', async () => {
+  it('guardrailBudget persists as native YAML (not a JSON string) and round-trips through getOverrides', async () => {
     const store = await SettingsStore.create(dir);
     const wsId = 2;
-    const command = [{
-      kind: 'local' as const,
-      enabled: true,
-      command: verificationCommandSchema.parse({ id: 'cmd-npm-test', command: 'npm', args: ['test'] }),
-    }];
     const budget = budgetGuardrailSchema.parse({ wallClockMinutes: 120 });
 
-    await store.setOverrides(wsId, { epicPreMergeCommands: command, guardrailBudget: budget });
+    await store.setOverrides(wsId, { guardrailBudget: budget });
 
     const raw = readFileSync(join(dir, 'settings.yaml'), 'utf8');
     const parsed = parse(raw);
     const stored = parsed.workspaces[String(wsId)];
-    expect(Array.isArray(stored.epicPreMergeCommands)).toBe(true);
-    expect(typeof stored.epicPreMergeCommands).not.toBe('string');
     expect(typeof stored.guardrailBudget).toBe('object');
     expect(typeof stored.guardrailBudget).not.toBe('string');
 
     const overrides = store.getOverrides(wsId);
-    expect(overrides.epicPreMergeCommands).toMatchObject(command);
     expect(overrides.guardrailBudget).toMatchObject(budget);
 
     const reopened = await SettingsStore.create(dir);
-    expect(reopened.getOverrides(wsId).epicPreMergeCommands).toMatchObject(command);
     expect(reopened.getOverrides(wsId).guardrailBudget).toMatchObject(budget);
   });
 
@@ -465,15 +456,14 @@ describe('SettingsStore (issue #391)', () => {
       }));
 
       const store = await SettingsStore.create(dir);
-      const [entry] = store.getOverrides(1).epicPreMergeCommands!;
+      const [entry] = store.getLegacySettings().workspaces.get(1)!.epicPreMergeCommands!;
       expect(entry).toMatchObject({ kind: 'local', enabled: true, command: { command: 'npm', args: ['test'] } });
       expect((entry as { command: { id: string } }).command.id).toBeTruthy();
 
-      const persisted = parse(readFileSync(path, 'utf8'));
-      expect(persisted.workspaces['1'].epicPreMergeCommands[0].kind).toBe('local');
+      expect(parse(readFileSync(path, 'utf8')).workspaces['1'].epicPreMergeCommands).toEqual([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
     });
 
-    it('is a no-op on data already migrated: same ids and shape after a second load', async () => {
+    it('leaves the stored Workspace epic overlay untouched across loads', async () => {
       const path = join(dir, 'settings.yaml');
       writeFileSync(path, stringify({
         global: { verify: { epic: { preMerge: { commands: [{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }], critics: [] } } } },
@@ -484,12 +474,12 @@ describe('SettingsStore (issue #391)', () => {
 
       const first = await SettingsStore.create(dir);
       const globalCommandId = first.getGlobal().verify.epic.preMerge.commands[0]!.id;
-      const overlayCommandId = (first.getOverrides(1).epicPreMergeCommands![0] as { command: { id: string } }).command.id;
+      const stored = parse(readFileSync(path, 'utf8')).workspaces['1'];
 
       const second = await SettingsStore.create(dir);
       expect(second.getGlobal().verify.epic.preMerge.commands[0]!.id).toBe(globalCommandId);
-      expect((second.getOverrides(1).epicPreMergeCommands![0] as { command: { id: string } }).command.id).toBe(overlayCommandId);
-      expect(second.getOverrides(1).epicPreMergeCommands).toEqual(first.getOverrides(1).epicPreMergeCommands);
+      expect(second.getLegacySettings().workspaces.get(1)!.epicPreMergeCommands).toMatchObject([{ kind: 'local', enabled: true, command: { command: 'npm' } }]);
+      expect(parse(readFileSync(path, 'utf8')).workspaces['1']).toEqual(stored);
     });
   });
 });

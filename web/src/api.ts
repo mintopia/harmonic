@@ -38,8 +38,6 @@ import type {
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
-  CommandOverlayEntry,
-  EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
   ModelOptionOverlayEntry,
@@ -357,8 +355,6 @@ export const api = {
       agentMessagesEnabled?: boolean | null;
       agentMessagesSendCap?: number | null;
       contextReuseTokenLimit?: number | null;
-      epicPreMergeCommands?: CommandOverlayEntry[] | null;
-      epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
       executionTargets?: string[] | null;
       workflow?: string | null;

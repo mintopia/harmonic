@@ -88,8 +88,6 @@ export interface RunnerOptions {
         | 'guardrailBudget'
         | 'guardrailProgress'
         | 'toolTimeoutMinutes'
-        | 'epicPreMergeCommands'
-        | 'epicPreMergeCritics'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
         | 'taskPrompt'

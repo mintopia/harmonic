@@ -90,8 +90,6 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     effectiveAgentMessagesEnabled: false,
     maxAttempts: null,
     contextReuseTokenLimit: null,
-    epicPreMergeCommands: null,
-    epicPreMergeCritics: null,
     routingLabels: null,
     workflow: null,
     workflowLabels: null,

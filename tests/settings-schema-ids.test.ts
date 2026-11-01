@@ -66,8 +66,6 @@ function makeWorkspace(): Workspace {
     effectiveAgentMessagesEnabled: false,
     maxAttempts: null,
     contextReuseTokenLimit: null,
-    epicPreMergeCommands: null,
-    epicPreMergeCritics: null,
     routingLabels: null,
     workflow: null,
     epicWorkflow: null,

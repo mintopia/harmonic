@@ -152,63 +152,6 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
-  it('round-trips per-Workspace staged verifier lists through PATCH and GET', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-verify-'));
-    const created = await server.api('POST', '/api/workspaces', { name: 'Verified', workingDir: dir });
-    expect(created.status).toBe(201);
-    expect(created.body.epicPreMergeCommands).toBeNull();
-    expect(created.body.epicPreMergeCritics).toBeNull();
-
-    const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: { id: 'cmd-test', command: 'npm', args: ['test'] } }],
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'review the epic diff', harness: 'claude', model: 'claude-opus-5' } }],
-    });
-    expect(set.status).toBe(200);
-    expect(set.body.epicPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 } }]);
-    expect(set.body.epicPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review the epic diff', harness: 'claude', model: 'claude-opus-5' } }]);
-
-    const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
-    expect(fetched.body.epicPreMergeCommands).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
-
-    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, { epicPreMergeCritics: [] });
-    expect(disabled.status).toBe(200);
-    expect(disabled.body.epicPreMergeCritics).toEqual([]);
-
-    const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      epicPreMergeCommands: null,
-    });
-    expect(cleared.status).toBe(200);
-    expect(cleared.body.epicPreMergeCommands).toBeNull();
-    expect(cleared.body.epicPreMergeCritics).toEqual([]);
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('rejects an invalid staged critic override', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-review-unrunnable-'));
-    const created = await server.api('POST', '/api/workspaces', { name: 'Invalid critic', workingDir: dir });
-    expect(created.status).toBe(201);
-
-    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', harness: 'claude', model: 'claude-opus-5' } }],
-    });
-    expect(rejected.status).toBe(400);
-    expect(rejected.body.error.message).toContain('prompt');
-
-    const mismatched = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'a', harness: 'claude', model: 'gpt-6-sol' } }],
-    });
-    expect(mismatched.status).toBe(400);
-    expect(mismatched.body.error.message).toMatch(/gpt-6-sol.*claude/);
-    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.epicPreMergeCritics).toBeNull();
-
-    const accepted = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: { id: 'critic-test', name: 'Test critic', prompt: 'review the epic', harness: 'claude', model: 'claude-opus-5' } }],
-    });
-    expect(accepted.status).toBe(200);
-    expect(accepted.body.epicPreMergeCritics).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review the epic', harness: 'claude', model: 'claude-opus-5' } }]);
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it('round-trips per-Workspace guardrail overrides and rejects an unmeasurable cost cap (issue #166)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-guardrail-'));
     const created = await server.api('POST', '/api/workspaces', { name: 'Guarded', workingDir: dir });

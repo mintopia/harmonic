@@ -40,7 +40,7 @@ export interface ScalarDescriptor {
 }
 
 /** Registry keys whose control a {@link ConfigField} can render — i.e. the
- * scalar controls, excluding the `json`/`verifier` composites that keep bespoke
+ * scalar controls, excluding the `json` composites that keep bespoke
  * editors. Restricting {@link registryField} to these makes passing a composite
  * key a compile error instead of a silently-wrong text input. */
 export type ScalarSettingKey = {

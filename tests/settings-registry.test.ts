@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   settingsRegistry,
   isOverridable,
@@ -11,7 +13,8 @@ import {
   type SettingScope,
   type SettingTab,
 } from '../src/domain/settings-registry.js';
-import { resolveScoped, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
+import { PROMPT_TEMPLATES } from '../src/domain/prompt-templates.js';
+import { resolveScoped, resolveCap, resolveGuardrails } from '../src/domain/setting-override.js';
 
 function withScope(key: SettingKey, scope: SettingScope, fn: () => void): void {
   const mutable = settingsRegistry as unknown as Record<SettingKey, { scope: SettingScope }>;
@@ -38,8 +41,6 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'agentMessagesSendCap',
     'maxAttempts',
     'contextReuseTokenLimit',
-    'epicPreMergeCommands',
-    'epicPreMergeCritics',
     'guardrailBudget',
     'guardrailProgress',
     'toolTimeoutMinutes',
@@ -235,24 +236,6 @@ describe('scope changes control live resolution (registry is the single authorit
     });
   });
 
-  it('resolveVerifiers: a Workspace overlay is additive (local + globals); global-only ignores it (ADR-0037)', () => {
-    const globalCommand = { id: 'g1', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-    const localCommand = { id: 'l1', command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
-    const config = { verify: { epic: { preMerge: { commands: [globalCommand], critics: [] }, resolvePrompt: 'Resolve it.', resolveSuffix: 'Branch {branch}.' } } } as never;
-    const ws = {
-      // Overlay: one local verifier added; the global is unnamed, so it is appended enabled.
-      epicPreMergeCommands: JSON.stringify([{ kind: 'local', enabled: true, command: localCommand }]),
-      epicPreMergeCritics: null,
-    };
-
-    // Additive: the local runs, and the untouched global still runs after it.
-    expect(resolveVerifiers(ws, config).epic.preMerge.commands).toEqual([localCommand, globalCommand]);
-    // global-only reclassification ignores the Workspace overlay entirely — just the globals.
-    withScope('epicPreMergeCommands', 'global-only', () => {
-      expect(resolveVerifiers(ws, config).epic.preMerge.commands).toEqual([globalCommand]);
-    });
-  });
-
   it('hasWorkspaceOverride: flipping to global-only makes a set column stop counting as an override', () => {
     expect(hasWorkspaceOverride('guardrailBudget', '{"wallClockMinutes":30}')).toBe(true);
     withScope('guardrailBudget', 'global-only', () => {
@@ -262,8 +245,36 @@ describe('scope changes control live resolution (registry is the single authorit
   });
 
   it('hasWorkspaceOverride: an explicit boolean false counts as an override (not truthiness)', () => {
-    expect(hasWorkspaceOverride('epicPreMergeCommands', '[]')).toBe(true);
-    expect(hasWorkspaceOverride('epicPreMergeCommands', null)).toBe(false);
+    expect(hasWorkspaceOverride('guardrailBudget', '[]')).toBe(true);
     expect(hasWorkspaceOverride('guardrailProgress', false)).toBe(true);
+  });
+});
+
+describe('every registry key has a UI surface', () => {
+  const webSrc = join(__dirname, '..', 'web', 'src');
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? walk(path) : [path];
+  });
+  const uiSources = walk(webSrc)
+    .filter((path) => /\.tsx?$/.test(path) && !/[\\/](api|types)\.ts$/.test(path) && !/[\\/]story[\\/]/.test(path))
+    .map((path) => readFileSync(path, 'utf8'));
+  const keys = Object.keys(settingsRegistry) as SettingKey[];
+  const promptKeys = new Set(Object.values(PROMPT_TEMPLATES).flatMap((spec) => (spec.workspace ? [spec.workspace] : [])));
+  const renderedControls = ['select', 'toggle', 'number', 'text', 'json', 'routing-labels', 'workflow-labels'];
+
+  it('declares only controls the Settings UI can render', () => {
+    for (const key of keys) expect(renderedControls, key).toContain(settingsRegistry[key].control);
+  });
+
+  it('serves every Prompt tab key from the Prompt library, and no other key', () => {
+    const promptTabKeys = settingsForTab('prompts');
+    expect(promptTabKeys.filter((key) => !promptKeys.has(key)), 'prompts-tab keys missing from PROMPT_TEMPLATES').toEqual([]);
+    expect([...promptKeys].filter((key) => settingSpec(key).tab !== 'prompts'), 'Prompt library keys outside the prompts tab').toEqual([]);
+  });
+
+  it('references every non-prompt key from a Settings UI source', () => {
+    const unreferenced = keys.filter((key) => !promptKeys.has(key) && !uiSources.some((text) => new RegExp(`['"]${key}['"]|\\b${key}\\s*[:,}]|\\.${key}\\b`).test(text)));
+    expect(unreferenced).toEqual([]);
   });
 });

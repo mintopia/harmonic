@@ -24,10 +24,8 @@ import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { workspaceWorkflowVarsSchema } from './workflow-vars.js';
 import {
-  verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
   workflowLabelOverrideSchema,
-  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
 } from '../config.js';
 import { configuredTrackerSchema } from '../tracker/configured.js';
@@ -78,8 +76,6 @@ export const workspaceOverridesSchema = z.object({
   agentMessagesSendCap: z.number().int().min(1).nullable().optional().meta({ example: 10 }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
-  epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   /** `local` is always available; null inherits every enabled target. */
@@ -175,8 +171,6 @@ export const OVERRIDE_KEYS = [
   'agentMessagesSendCap',
   'maxAttempts',
   'contextReuseTokenLimit',
-  'epicPreMergeCommands',
-  'epicPreMergeCritics',
   'routingLabels',
   'workflow',
   'epicWorkflow',
@@ -281,8 +275,6 @@ export class WorkspaceService {
       agentMessagesSendCap: o.agentMessagesSendCap,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
-      epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
-      epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       workflow: o.workflow,
       epicWorkflow: o.epicWorkflow,

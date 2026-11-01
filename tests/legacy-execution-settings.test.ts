@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLegacyGlobal, parseLegacyWorkspace, pickLegacyGlobal, pickLegacyWorkspace, resolveLegacyExecution, withLegacyGlobal } from '../src/domain/legacy-execution-settings.js';
+import { parseLegacyGlobal, parseLegacyWorkspace, pickLegacyGlobal, pickLegacyWorkspace, resolveLegacyEpicPreMerge, resolveLegacyExecution, withLegacyGlobal } from '../src/domain/legacy-execution-settings.js';
 
 const command = { id: 'cmd-test', command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
 const critic = { id: 'critic-a', name: 'A', harness: 'claude' as const, model: 'claude-sonnet-5-5', issuePrompt: 'i', noIssuePrompt: 'n', timeoutSeconds: 300 };
@@ -60,5 +60,20 @@ describe('pre-workflow execution settings', () => {
       verify: { epic: {}, task: { preMerge: { commands: [] } } },
     });
     expect(pickLegacyWorkspace({ priority: 'high', driveContinueAttempts: 0, taskPostMergeCritics: null })).toEqual({ driveContinueAttempts: 0, taskPostMergeCritics: null });
+  });
+
+  it('resolves the legacy Epic pre-merge overlays: null inherits, disable removes, local adds before unnamed globals', () => {
+    const epicCritic = { id: 'critic-epic', name: 'Epic', prompt: 'Review.', harness: 'claude' as const, model: 'claude-opus-5', timeoutSeconds: 300 };
+    const stage = { commands: [command], critics: [epicCritic] };
+    const local = { ...command, id: 'cmd-lint', args: ['run', 'lint'] };
+
+    expect(resolveLegacyEpicPreMerge(stage, null)).toEqual(stage);
+    expect(resolveLegacyEpicPreMerge(stage, parseLegacyWorkspace({ epicPreMergeCommands: [{ kind: 'global', ref: command.id, enabled: false }] }))).toEqual({ commands: [], critics: [epicCritic] });
+    expect(resolveLegacyEpicPreMerge(stage, parseLegacyWorkspace({ epicPreMergeCommands: [{ kind: 'local', enabled: true, command: local }] })).commands.map((c) => c.id)).toEqual(['cmd-lint', 'cmd-test']);
+    expect(resolveLegacyEpicPreMerge(stage, parseLegacyWorkspace({ epicPreMergeCritics: [{ kind: 'global', ref: epicCritic.id, enabled: false }] })).critics).toEqual([]);
+  });
+
+  it('picks the Epic overlay keys as legacy Workspace keys', () => {
+    expect(pickLegacyWorkspace({ priority: 'high', epicPreMergeCommands: null, epicPreMergeCritics: [] })).toEqual({ epicPreMergeCommands: null, epicPreMergeCritics: [] });
   });
 });
