@@ -552,9 +552,10 @@ function limitRow(
   description: PerSurface<string>,
   nodes: FieldNode[],
   trailing?: ReactNode,
+  wideControl = false,
 ): ReactNode {
   return (
-    <SettingRow key={title} title={title} description={pick(description, ctx.surface)}>
+    <SettingRow key={title} title={title} description={pick(description, ctx.surface)} wideControl={wideControl}>
       {nodes.map((node) => renderField(node, ctx, true))}
       {trailing}
     </SettingRow>
@@ -1225,6 +1226,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           'Lets agents message each other over MCP, up to the cap per Attempt.',
           [agentMessagesEnabled, agentMessagesSendCap],
           <span className="text-small text-muted">per Attempt</span>,
+          true,
         )}
       </SettingGroup>
     ),
