@@ -28,3 +28,10 @@ describe('WorkspaceSettingsPage prompts tab', () => {
     expect(apiMocks.prompts).toHaveBeenCalled();
   });
 });
+
+describe('Workspace prompts steps', () => {
+  it('offers the three library steps on the workspace surface', async () => {
+    const { stepsForSurface } = await import('../web/src/components/settings-schema.js');
+    expect(stepsForSurface('workspace', 'prompts').map((s) => s.id)).toEqual(['find', 'edit', 'impact']);
+  });
+});

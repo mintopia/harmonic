@@ -1259,7 +1259,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'prompts',
     step: 'find',
-    surfaces: ['global'],
+    surfaces: ['global', 'workspace'],
     bare: true,
     wide: true,
     title: 'Find a prompt',
@@ -1269,7 +1269,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'prompts',
     step: 'edit',
-    surfaces: ['global'],
+    surfaces: ['global', 'workspace'],
     bare: true,
     wide: true,
     title: 'Edit a prompt',
@@ -1279,7 +1279,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'prompts',
     step: 'impact',
-    surfaces: ['global'],
+    surfaces: ['global', 'workspace'],
     bare: true,
     wide: true,
     title: 'Prompt impact',
