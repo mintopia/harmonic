@@ -93,6 +93,10 @@ describe('Workflows page', () => {
     const saveButton = () => button(host, 'Save')!;
     expect(saveButton().disabled).toBe(true);
 
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flush();
+    });
     const view = editorView(host);
     await act(async () => {
       view.dispatch({ changes: { from: view.state.doc.length, insert: '# tweak\n' } });
@@ -121,8 +125,41 @@ describe('Workflows page', () => {
     const host = await mountComponent(createElement(WorkflowsPage));
     await click(host.querySelectorAll('tbody tr')[0]!.querySelector('td button'));
     expect(host.textContent).toContain('Read-only.');
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flush();
+    });
     expect(host.querySelector('.cm-content')!.getAttribute('contenteditable')).toBe('false');
     expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
     expect((button(host, 'Delete') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('Workflow editor tabs', () => {
+  it('shares one YAML across Blocks, YAML and Variables and keeps the diagram beside them', async () => {
+    const host = await mountComponent(createElement(WorkflowsPage));
+    await click(host.querySelectorAll('tbody tr')[2]!.querySelector('td button'));
+    const tab = (label: string) => [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.startsWith(label));
+    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Blocks', 'YAML', 'Variables · 0']);
+    expect(host.querySelector('[aria-label="Workflow builder"]')).not.toBeNull();
+
+    await click(tab('Variables'));
+    const nameInput = host.querySelector('[aria-label="New variable name"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(nameInput, 'fresh_var');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+    });
+    await click([...host.querySelectorAll('button')].find((b) => b.textContent === '+ Add variable'));
+    expect(host.querySelector('[aria-label="Default for fresh_var"]')).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Edited');
+
+    await click(tab('YAML'));
+    expect(editorView(host).state.doc.toString()).toContain('fresh_var');
+    expect(host.querySelector('[aria-label="Workflow step diagram"]')).not.toBeNull();
+    expect(host.textContent).toContain('Runs on');
+    expect(host.textContent).toContain('until their next Retry');
+    expect(host.textContent).toContain('Blocks and YAML in sync · 1 unsaved change');
+    expect(host.textContent).toContain('Assigned as');
   });
 });
