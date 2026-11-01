@@ -80,6 +80,10 @@ describe('Workflows page: import, edit, save, export through the real routes and
     expect(row).toBeDefined();
 
     await click(row!.querySelector('td button'));
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flush();
+    });
     const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
     expect(view.state.doc.toString()).toBe(FLOW);
 

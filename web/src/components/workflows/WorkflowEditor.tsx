@@ -11,9 +11,18 @@ import { downloadText } from './download';
 import { YamlEditor } from './YamlEditor';
 import { WorkflowBuilder } from './WorkflowBuilder';
 import { WorkflowDiagram } from '../WorkflowDiagram';
+import { WorkflowVariablesPanel } from './WorkflowVariablesPanel';
+import { readRunsOn } from '../../workflow-yaml-vars-model';
 import { messageParts, toEditorIssues, validateWorkflowText } from '../../workflow-editor-model';
 import type { WorkflowDiagramModel } from '../../../../src/domain/workflow-diagram.js';
-import { deleteBlock, editorReducer, editorStatus, initialEditor, issuesOf, type EditorStatusKind } from './workflows-model';
+import { assignedChips, deleteBlock, editorReducer, editorStatus, initialEditor, inUseText, issuesOf, type EditorStatusKind } from './workflows-model';
+
+type EditorTab = 'blocks' | 'yaml' | 'variables';
+const TABS: readonly { id: EditorTab; label: string }[] = [
+  { id: 'blocks', label: 'Blocks' },
+  { id: 'yaml', label: 'YAML' },
+  { id: 'variables', label: 'Variables' },
+];
 
 const PILL_STYLES: Record<EditorStatusKind, string> = {
   saved: 'bg-merged-tint text-merged',
@@ -64,6 +73,7 @@ function EditorBody({
   const config = useAsyncResource(() => api.config(), []);
   const modelOptions = useMemo(() => (config.data?.modelOptions ?? []).filter((o) => !o.disabled), [config.data]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [tab, setTab] = useState<EditorTab>('blocks');
   const [lastGood, setLastGood] = useState<WorkflowDiagramModel | null>(null);
   const parsed = useMemo(() => validateWorkflowText(state.text), [state.text]);
   if (parsed.diagram !== null && parsed.diagram !== lastGood) setLastGood(parsed.diagram);
@@ -113,7 +123,7 @@ function EditorBody({
   };
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4">
+    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
     <section className="min-w-0 rounded-lg bg-surface pb-3 shadow-card" aria-label={`Workflow ${doc.name}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
         <h2 className={sectionTitle}>{doc.name}</h2>
@@ -138,6 +148,20 @@ function EditorBody({
         <button type="button" className={`${btnPrimary} disabled:border disabled:border-hairline disabled:bg-raised disabled:bg-none disabled:text-faint disabled:opacity-100 disabled:shadow-none disabled:hover:bg-raised`} disabled={saveDisabled} onClick={save}>
           {readOnly ? 'Save' : status.saveLabel}
         </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3.5 pb-2 text-small text-muted">
+        <span>
+          runs_on <span className="font-data text-ink">{readRunsOn(state.text) ?? 'default'}</span>
+        </span>
+        <span className="flex flex-wrap items-center gap-1.5">
+          Assigned as
+          {assignedChips(entry).map((chip) => (
+            <span key={chip.text} className="rounded-sm bg-raised px-2 py-0.5 text-label font-semibold text-ink">
+              {chip.text}
+            </span>
+          ))}
+        </span>
+        <span>{inUseText(entry.inUse)}</span>
       </div>
       {readOnly && (
         <div className="px-3.5 pb-2">
@@ -169,9 +193,30 @@ function EditorBody({
           </ul>
         </div>
       )}
-      <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} />
-      <div className="px-3.5">
-        <YamlEditor text={state.text} readOnly={readOnly} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
+      <div role="tablist" aria-label="Editor view" className="flex gap-1 border-b border-hairline px-3.5">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`editor-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="editor-tabpanel"
+            onClick={() => setTab(t.id)}
+            className={`min-h-11 border-b-2 px-3 text-small font-semibold ${tab === t.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id="editor-tabpanel" aria-labelledby={`editor-tab-${tab}`} className="pt-3">
+        {tab === 'blocks' && <WorkflowBuilder text={state.text} issues={issues} dirty={state.text !== state.saved} readOnly={readOnly} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} />}
+        {tab === 'yaml' && (
+          <div className="px-3.5">
+            <YamlEditor text={state.text} readOnly={readOnly} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
+          </div>
+        )}
+        {tab === 'variables' && <WorkflowVariablesPanel name={doc.name} text={state.text} readOnly={readOnly} onChange={(text) => dispatch({ type: 'edit', text })} />}
       </div>
       <p className="px-3.5 pt-2 text-small text-faint">Edits apply from the Ticket&apos;s next Retry; in-flight Tickets finish on the version they snapshotted.</p>
       {confirmingDelete && (
@@ -180,7 +225,9 @@ function EditorBody({
         </ConfirmDialog>
       )}
     </section>
-    <WorkflowDiagram model={live.diagram} stale={live.stale} errorCount={issues.length} />
+    <div className="min-w-0 xl:sticky xl:top-4">
+      <WorkflowDiagram model={live.diagram} stale={live.stale} errorCount={issues.length} />
+    </div>
     </div>
   );
 }
