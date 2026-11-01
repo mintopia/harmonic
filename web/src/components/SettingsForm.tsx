@@ -72,14 +72,14 @@ export function SettingsForm({
   const steps = stepsForSurface(ctx.surface, tab);
   const flow = useOptionalPromptsFlow();
   const promptsRail = tab === 'prompts' ? promptsRailState(flow) : null;
-  const off = promptsRail?.disabled;
-  const current = resolveStep(steps, step && off?.has(step) ? null : step);
+  const disabledSet = promptsRail?.disabled;
+  const current = resolveStep(steps, step && disabledSet?.has(step) ? null : step);
   const sections = sectionsForStep(ctx.surface, tab, current);
   const strip = stepStrip({ ...ctx, deliveries }, tab, current);
   const index = steps.findIndex((s) => s.id === current);
   const currentStep = steps[index];
   const previous = steps[index - 1];
-  const next = steps.slice(index + 1).find((s) => !off?.has(s.id));
+  const next = steps.slice(index + 1).find((s) => !disabledSet?.has(s.id));
   const tabLabel = tabs.find((t) => t.id === tab)?.label ?? '';
   const promptCrumbs = tab === 'prompts' && flow && current !== 'find' ? ['All prompts', flow.isNew ? 'New prompt' : (flow.selected ?? '')] : [];
   const crumbs = ['Settings', tabLabel, ...(BREADCRUMB_INCLUDES_STEP.has(tab) && currentStep ? [currentStep.title] : []), ...promptCrumbs].join(' › ');
@@ -111,7 +111,7 @@ export function SettingsForm({
         <StepRail steps={steps} current={current} onSelect={jump} label={railLabel}
           values={values}
           summaries={promptsRail?.summaries}
-          disabled={off}
+          disabled={disabledSet}
           monoValueSteps={promptsRail ? MONO_VALUE_STEPS : undefined}
         />
 

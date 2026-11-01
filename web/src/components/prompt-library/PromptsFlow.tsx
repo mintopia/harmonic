@@ -96,13 +96,10 @@ export function PromptsFlowProvider({
       ? unsavedChanges(current, draft)
       : 0;
 
-  const setDraft = useCallback(
-    (patch: Partial<PromptDraft>) => {
-      if (selected === null) return;
-      setDrafts((all) => ({ ...all, [selected]: { ...(all[selected] ?? base), ...patch } }));
-    },
-    [selected, current?.code, current?.description, current?.text],
-  );
+  const setDraft = (patch: Partial<PromptDraft>) => {
+    if (selected === null) return;
+    setDrafts((all) => ({ ...all, [selected]: { ...(all[selected] ?? base), ...patch } }));
+  };
 
   const forget = useCallback((key: string) => setDrafts(({ [key]: _gone, ...rest }) => rest), []);
 

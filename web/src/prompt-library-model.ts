@@ -21,15 +21,16 @@ export const PROMPT_FILTERS: readonly { id: PromptFilter; label: string }[] = [
 ];
 
 const isUnused = (p: Prompt): boolean => p.usedBy.length === 0 && p.usedBySteps.length === 0;
+const isYours = (p: Prompt): boolean => !p.bundled;
 
 export function filterByView(prompts: readonly Prompt[], filter: PromptFilter): Prompt[] {
-  if (filter === 'yours') return prompts.filter((p) => !p.bundled);
+  if (filter === 'yours') return prompts.filter(isYours);
   if (filter === 'unused') return prompts.filter(isUnused);
   return [...prompts];
 }
 
 export function filterCounts(prompts: readonly Prompt[]): Record<PromptFilter, number> {
-  return { all: prompts.length, yours: prompts.filter((p) => !p.bundled).length, unused: prompts.filter(isUnused).length };
+  return { all: prompts.length, yours: prompts.filter(isYours).length, unused: prompts.filter(isUnused).length };
 }
 
 export function runningNow(prompt: Pick<Prompt, 'usedBySteps'>, workflows: readonly WorkflowLibraryEntry[]): number {
@@ -46,8 +47,8 @@ export function unsavedChanges(saved: Pick<Prompt, 'description' | 'text'>, draf
 }
 
 export function savedLabel(iso: string | null): string | null {
-  const edited = editedLabel(iso);
-  return edited && `saved ${edited.slice('Edited '.length).replace(' · ', ' ')}`;
+  const at = stamp(iso);
+  return at && `saved ${at.replace(' · ', ' ')}`;
 }
 
 export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): string {
@@ -61,12 +62,17 @@ export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): str
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function editedLabel(iso: string | null): string | null {
+function stamp(iso: string | null): string | null {
   if (iso === null) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const two = (n: number) => String(n).padStart(2, '0');
-  return `Edited ${MONTHS[d.getMonth()]} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+export function editedLabel(iso: string | null): string | null {
+  const at = stamp(iso);
+  return at && `Edited ${at}`;
 }
 
 export type UsedByRow =

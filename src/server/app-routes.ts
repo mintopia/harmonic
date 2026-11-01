@@ -61,10 +61,11 @@ async function workflowUsage(asyncDb: AppContext['asyncDb']): Promise<Map<string
   const running = new Map<string, number>();
   const spaces = new Map<string, Set<number | null>>();
   for (const row of rows) {
+    const effective = row.ref?.split('@')[0] ?? row.requested;
+    if (row.state === 'working' && effective) running.set(effective, (running.get(effective) ?? 0) + 1);
     const names = new Set([row.requested, row.ref?.split('@')[0]].filter((n): n is string => !!n));
     for (const name of names) {
       tickets.set(name, (tickets.get(name) ?? 0) + 1);
-      if (row.state === 'working') running.set(name, (running.get(name) ?? 0) + 1);
       spaces.set(name, (spaces.get(name) ?? new Set()).add(row.workspaceId));
     }
   }

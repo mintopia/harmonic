@@ -31,7 +31,6 @@ describe('prompt library model', () => {
     expect(filterPrompts(LIB, 'zzz')).toEqual([]);
   });
 
-
   it('labels used-by with steps and prompts', () => {
     const step = { workflow: 'w', workflowBundled: false, stepId: 's' };
     expect(usedByLabel({ usedBy: [], usedBySteps: [] })).toBe('Unused');
