@@ -103,10 +103,10 @@ export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
     },
   ],
   archive: [
-    { id: 'keep', title: 'Keep', summary: 'How long Archives last', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
-    { id: 'export', title: 'Export', summary: 'What leaves the machine', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
-    { id: 'redact', title: 'Redact', summary: 'Patterns to hide', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
-    { id: 'deliver', title: 'Deliver', summary: 'Where Exports go', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'keep', title: 'Keep', summary: 'Local Archive', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'export', title: 'Export', summary: 'When to bundle', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'redact', title: 'Redact', summary: 'What to strip', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'deliver', title: 'Deliver', summary: 'Destinations', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
   ],
 };
 

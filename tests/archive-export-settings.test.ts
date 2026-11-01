@@ -111,13 +111,13 @@ describe('Archive & Export tab', () => {
     expect(workspaceTabs().map((t) => t.id)).toContain('archive');
     const host = await mountComponent(createElement(WorkspaceHarness, { config: makeConfig(), initial: makeWorkspace() }));
     expect(host.textContent).toContain('Archive & Export');
-    expect(host.textContent).toContain('Archive retention');
+    expect(host.textContent).toContain('Keep the raw Archive');
     expect(host.textContent).toContain('Forever');
     expect(host.textContent).toContain('Inherited from global default');
     const sw = host.querySelector<HTMLButtonElement>('[aria-label="Override Keep for (days)"]');
     expect(sw?.disabled).toBe(false);
     await goto(host, 'Deliver');
-    expect(host.textContent).toContain('Export Destinations');
+    expect(host.textContent).toContain('Deliver');
   });
 
   it('overrides retention and dispositions per Workspace', async () => {
@@ -130,11 +130,11 @@ describe('Archive & Export tab', () => {
     await click(host.querySelector('[aria-label="Override Max total size (MB)"]'));
     expect(latest?.archiveRetentionMaxTotalMB).toBe(1024);
     await goto(host, 'Export');
-    await click(host.querySelector('[aria-label="Override Dispositions to export"]'));
+    await click(host.querySelector('[aria-label="Override For Tasks that end"]'));
     expect(latest?.exportIncludeStates).toEqual(['done', 'cancelled', 'deleted']);
     await click([...host.querySelectorAll('[aria-label="Dispositions to export"] button')].find((b) => b.textContent?.trim() === 'deleted'));
     expect(latest?.exportIncludeStates).toEqual(['done', 'cancelled']);
-    await click(host.querySelector('[aria-label="Override Dispositions to export"]'));
+    await click(host.querySelector('[aria-label="Override For Tasks that end"]'));
     expect(latest?.exportIncludeStates).toBeNull();
   });
 
@@ -143,7 +143,7 @@ describe('Archive & Export tab', () => {
     config.export.enabled = true;
     const host = await mountComponent(createElement(WorkspaceHarness, { config, initial: makeWorkspace() }));
     await goto(host, 'Export');
-    const sw = host.querySelector('[aria-label="Override Export on terminal disposition"]');
+    const sw = host.querySelector('[aria-label="Override Export finished Tasks"]');
     expect(sw?.getAttribute('aria-checked')).toBe('false');
     const field = sw!.closest('div')!.parentElement!;
     expect(field.textContent).toContain('On');
@@ -180,13 +180,13 @@ describe('Archive & Export tab', () => {
 
   it('renders retention, export, destinations and redaction cards globally', async () => {
     const host = await mountComponent(createElement(GlobalHarness, { initial: makeConfig() }));
-    expect(host.textContent).toContain('Archive retention');
+    expect(host.textContent).toContain('Keep the raw Archive');
     await goto(host, 'Export');
-    expect(host.querySelector('#settings-section-export')).not.toBeNull();
+    expect(host.querySelector('#settings-section-build-an-export')).not.toBeNull();
     await goto(host, 'Redact');
     expect(host.querySelectorAll('[aria-label="Baseline redaction patterns"] li')).toHaveLength(6);
     await goto(host, 'Deliver');
-    expect(host.textContent).toContain('Export Destinations');
+    expect(host.textContent).toContain('Deliver');
   });
 
   it('marks a changed retention field Modified and reverts it', async () => {
@@ -347,5 +347,64 @@ describe('archive-export-model', () => {
     const w = normalizeWorkspaceExport(makeWorkspace({ exportS3Bucket: '', exportRedactPatterns: [] }));
     expect(w.exportS3Bucket).toBeNull();
     expect(w.exportRedactPatterns).toBeNull();
+  });
+});
+
+describe('Archive lifecycle strip and Deliver table', () => {
+  const failing = {
+    s3: { status: 'failed' as const, at: new Date(Date.now() - 60_000).toISOString(), error: 'AccessDenied: 403', retry: 1, nextRetryAt: new Date(Date.now() + 24 * 60_000 + 5_000).toISOString() },
+    directory: { status: 'succeeded' as const, at: new Date(Date.now() - 4 * 60_000).toISOString(), error: null, retry: 0, nextRetryAt: null },
+  };
+  const strip = (host: HTMLElement) => host.querySelector('ol[aria-label="Archive lifecycle"]');
+
+  it('stays above every step and each card jumps to its step', async () => {
+    vi.spyOn(api, 'exportDestinations').mockResolvedValue({});
+    const host = await mountComponent(createElement(GlobalHarness, { initial: s3Config() }));
+    for (const step of ['Keep', 'Export', 'Redact', 'Deliver']) {
+      await goto(host, step);
+      expect(strip(host)?.querySelectorAll('li')).toHaveLength(4);
+    }
+    await goto(host, 'Keep');
+    await click([...strip(host)!.querySelectorAll('button')].find((b) => b.textContent === 'Redact'));
+    expect(host.querySelector('nav[aria-label="After a Task ends"] [aria-current="step"]')?.textContent).toContain('Redact');
+  });
+
+  it('summarises Keep, Export and Redact state from the effective settings', async () => {
+    vi.spyOn(api, 'exportDestinations').mockResolvedValue({});
+    const base = s3Config();
+    const config = { ...base, archive: { retain: { days: 90, maxTotalMB: 5120 } }, export: { ...base.export, enabled: true, includeStates: ['done', 'cancelled'] as AppConfig['export']['includeStates'] } };
+    const host = await mountComponent(createElement(GlobalHarness, { initial: config }));
+    const text = strip(host)!.textContent!;
+    expect(text).toContain('90 days · 5 GB cap');
+    expect(text).toContain('On · done and cancelled');
+    expect(text).toContain('2 Destinations');
+  });
+
+  it('shows a failing Destination in rose on the strip and with retry state in the table', async () => {
+    vi.spyOn(api, 'exportDestinations').mockResolvedValue(failing);
+    const host = await mountComponent(createElement(GlobalHarness, { initial: s3Config() }));
+    const deliverNote = [...strip(host)!.querySelectorAll('li')].at(-1)!.querySelector('span:last-child')!;
+    expect(deliverNote.textContent).toBe('2 Destinations · 1 failing');
+    expect(deliverNote.className).toContain('text-fail');
+    await goto(host, 'Deliver');
+    const rows = [...host.querySelectorAll('table[aria-label="Export Destinations"] tbody tr')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('Delivered');
+    expect(rows[1]!.textContent).toContain('Failed');
+    expect(rows[1]!.textContent).toContain('AccessDenied · retry 2 of 3 in 24 min');
+    expect(rows[1]!.querySelector('button')?.textContent).toBe('Fix');
+  });
+
+  it('adds a Destination from the section action and offers it on the Workspace surface too', async () => {
+    vi.spyOn(api, 'exportDestinations').mockResolvedValue({});
+    let latest: AppConfig | undefined;
+    const host = await mountComponent(createElement(GlobalHarness, { initial: makeConfig(), onCtx: (c) => (latest = c) }));
+    await goto(host, 'Deliver');
+    expect(host.textContent).toContain('No Destination is configured');
+    await click(button(host, '+ Add Destination'));
+    expect(latest?.export.directory.path).toBe('');
+    const ws = await mountComponent(createElement(WorkspaceHarness, { config: makeConfig(), initial: makeWorkspace() }));
+    await goto(ws, 'Deliver');
+    expect(button(ws, '+ Add Destination')).toBeDefined();
   });
 });

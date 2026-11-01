@@ -408,6 +408,11 @@ export const api: typeof RealApi = {
   resumeGlobal: () => ok({ paused: false }),
   configLayers: () => (storyName === 'settings-error' ? Promise.reject(new Error('GET /api/config/layers failed: 503')) : ok(configLayers)),
   updateConfig: (_patch: object) => ok(f.config),
+  exportDestinations: () =>
+    ok({
+      directory: { status: 'succeeded' as const, at: new Date(Date.now() - 12 * 60_000).toISOString(), error: null, retry: 0, nextRetryAt: null },
+      s3: { status: 'failed' as const, at: new Date(Date.now() - 6 * 60_000).toISOString(), error: 'AccessDenied: 403', retry: 2, nextRetryAt: new Date(Date.now() + 24 * 60_000).toISOString() },
+    }),
   testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
   revertConfig: () => ok(f.config),

@@ -27389,6 +27389,142 @@
         }
       }
     },
+    "/api/export/destinations": {
+      "get": {
+        "tags": [
+          "Export"
+        ],
+        "description": "The last delivery outcome of each Export Destination across all Tasks, with retry state. A Destination that has never delivered is absent. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last delivery per Destination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "succeeded",
+                            "failed"
+                          ],
+                          "example": "failed"
+                        },
+                        "at": {
+                          "type": "string",
+                          "example": "2026-09-30T12:00:00.000Z"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "AccessDenied: 403"
+                        },
+                        "retry": {
+                          "type": "number",
+                          "example": 2
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "2026-09-30T12:30:00.000Z"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at",
+                        "error",
+                        "retry",
+                        "nextRetryAt"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The most recent delivery outcome; nextRetryAt is null once retries are exhausted."
+                    },
+                    "s3": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "succeeded",
+                            "failed"
+                          ],
+                          "example": "failed"
+                        },
+                        "at": {
+                          "type": "string",
+                          "example": "2026-09-30T12:00:00.000Z"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "AccessDenied: 403"
+                        },
+                        "retry": {
+                          "type": "number",
+                          "example": 2
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "2026-09-30T12:30:00.000Z"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at",
+                        "error",
+                        "retry",
+                        "nextRetryAt"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The most recent delivery outcome; nextRetryAt is null once retries are exhausted."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Last delivery per Destination."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/export": {
       "get": {
         "tags": [

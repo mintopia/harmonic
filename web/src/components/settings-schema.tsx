@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { AppConfig, Channel, ConfigLayers, Workspace } from '../types';
+import type { AppConfig, Channel, ConfigLayers, ExportDeliveryState, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
 import { Icon } from './Icon';
 import { FieldError, fieldLabel } from './SettingsSection';
@@ -20,7 +20,7 @@ import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
-import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
+import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection, AddDestinationButton, archiveStripRules } from './ArchiveExportSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 import { visibleSteps, type StepDef } from '../settings-steps-model';
 import type { ResolutionRule } from './ResolutionStrip';
@@ -42,6 +42,7 @@ export interface GlobalRenderCtx {
   harnessPermissionModes: ConfigLayers['harnessPermissionModes'];
   /** Unsaved edits exist; a Destination test runs against saved settings. */
   dirty?: boolean;
+  deliveries?: ExportDeliveryState;
   onTab?: (tab: SettingTab) => void;
   channels: {
     list: Channel[];
@@ -64,6 +65,7 @@ export interface WorkspaceRenderCtx {
   blockedByRunningTask: boolean;
   onRequestDelete: () => void;
   dirty?: boolean;
+  deliveries?: ExportDeliveryState;
   saving?: boolean;
   onSave?: () => void;
   onTab?: (tab: SettingTab) => void;
@@ -1157,43 +1159,39 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'archive',
     step: 'keep',
     surfaces: BOTH,
-    title: 'Archive retention',
-    description:
-      'Every Task keeps a raw file Archive. Leave both limits blank to keep Archives forever. Archives are never pruned while an Export is pending or failed.',
+    title: 'Keep the raw Archive',
+    description: '',
     body: (ctx) => <ArchiveRetentionSection ctx={ctx} />,
   },
   {
     tab: 'archive',
     step: 'export',
     surfaces: BOTH,
-    title: 'Export',
-    description: {
-      global: 'Build a redacted .tar.gz of the Archive when a Task reaches a terminal disposition and deliver it to every enabled Destination.',
-      workspace: 'Whether this Workspace exports Task Archives on a terminal disposition. Inherits the global setting until overridden.',
-    },
+    title: 'Build an Export',
+    description: '',
     body: (ctx) => <ExportSection ctx={ctx} />,
   },
   {
     tab: 'archive',
     step: 'deliver',
     surfaces: BOTH,
-    title: 'Export Destinations',
+    title: 'Deliver',
     wide: true,
     description: {
-      global:
-        'Each Destination receives every Export independently — one failing never blocks the other. A failed Destination is retried 3 times (5 min, 30 min, 2 h), then left for a manual Export again on the Ticket.',
+      global: 'Each Destination gets every Export independently. A failure retries at 5 min, 30 min and 2 h, then waits for a manual Export on the Ticket.',
       workspace:
-        'Each field inherits the global Destination until overridden. A failed Destination is retried 3 times (5 min, 30 min, 2 h), then left for a manual Export again on the Ticket.',
+        'Each field inherits the global Destination until overridden. A failure retries at 5 min, 30 min and 2 h, then waits for a manual Export on the Ticket.',
     },
+    action: (ctx) => <AddDestinationButton ctx={ctx} />,
     body: (ctx) => <DestinationsSection ctx={ctx} />,
   },
   {
     tab: 'archive',
     step: 'redact',
     surfaces: BOTH,
-    title: 'Redaction patterns',
+    title: 'Redact',
     wide: true,
-    description: 'Applied at Export time only. Matches are replaced with [REDACTED:<pattern-id>]. The local Archive stays raw.',
+    description: 'Applied to the Export only; matches become [REDACTED:id]. The local Archive stays raw.',
     body: (ctx) => <RedactionSection ctx={ctx} />,
   },
 ];
@@ -1242,6 +1240,7 @@ export function stepValue(ctx: RenderCtx, tab: SettingTab, step: string): string
 }
 
 export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { label: string; rules: ResolutionRule[] } | null {
+  if (tab === 'archive') return { label: 'Archive lifecycle', rules: archiveStripRules(ctx) };
   if (tab !== 'execution' || step !== 'workflow') return null;
   const labelCount =
     ctx.surface === 'global' ? ctx.config.workflowLabels.length : (ctx.workspace.workflowLabels ?? ctx.config.workflowLabels).length;

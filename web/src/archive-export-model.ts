@@ -1,4 +1,4 @@
-import type { AppConfig, Workspace } from './types';
+import type { AppConfig, ExportDelivery, Workspace } from './types';
 
 export interface RedactPatternRow {
   id: string;
@@ -74,4 +74,26 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+}
+
+export interface DeliveryView {
+  tone: 'ok' | 'fail' | 'none';
+  chip: string;
+  detail: string;
+}
+
+function untilTime(iso: string, now: number): string {
+  const minutes = Math.max(1, Math.round((Date.parse(iso) - now) / 60_000));
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
+}
+
+export function describeDelivery(delivery: ExportDelivery | undefined, max: number, now: number = Date.now()): DeliveryView {
+  if (!delivery) return { tone: 'none', chip: 'Not yet', detail: 'No Export delivered' };
+  if (delivery.status === 'succeeded') return { tone: 'ok', chip: 'Delivered', detail: relativeTime(delivery.at, now) };
+  const error = delivery.error?.split(':')[0] ?? 'Failed';
+  const retry =
+    delivery.nextRetryAt === null
+      ? 'retries exhausted, export again from the Ticket'
+      : `retry ${Math.min(delivery.retry + 1, max)} of ${max} in ${untilTime(delivery.nextRetryAt, now)}`;
+  return { tone: 'fail', chip: 'Failed', detail: `${error} · ${retry}` };
 }
