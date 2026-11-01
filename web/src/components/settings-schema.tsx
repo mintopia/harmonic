@@ -308,7 +308,8 @@ const contextReuseTokenLimit = scalar(
     errorKey: 'contextReuseTokenLimit',
     min: 0,
     step: 10_000,
-    widthClass: 'w-36',
+    unit: 'tokens',
+    widthClass: 'w-48',
     get: (c) => c.contextReuseTokenLimit,
     set: (c, raw) => ({ ...c, contextReuseTokenLimit: Number(raw) }),
   }),
@@ -321,6 +322,7 @@ const contextReuseTokenLimit = scalar(
     inherited: (c) => c.contextReuseTokenLimit,
     min: 0,
     step: 10_000,
+    unit: 'tokens',
   },
 );
 
@@ -385,6 +387,7 @@ const guardrailScalarFields: OverridableDescriptor[] = [
     set: (w, v) => ({ ...w, toolTimeoutMinutes: v as number | null }),
     inherited: (c) => c.guardrails.toolTimeoutMinutes,
     min: 1,
+    unit: 'min',
   },
 ];
 
@@ -401,51 +404,55 @@ function BudgetFields({
   onChange: (budget: AppConfig['guardrails']['budget']) => void;
   errors: Record<string, string>;
 }) {
+  const unitInput = 'pointer-events-none absolute inset-y-0 flex items-center text-small text-muted';
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-wrap items-start gap-2">
       <div>
-        <label className={fieldLabel} htmlFor={`${idPrefix}-wallclock`}>
-          Wall-clock (minutes)
-        </label>
-        <input
-          id={`${idPrefix}-wallclock`}
-          type="number"
-          min={1}
-          className={`${field} w-40 tabular-nums`}
-          value={value.wallClockMinutes}
-          onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
-        />
+        <div className="relative w-32">
+          <input
+            id={`${idPrefix}-wallclock`}
+            aria-label="Wall-clock minutes"
+            type="number"
+            min={1}
+            className={`${field} w-full pr-12 tabular-nums`}
+            value={value.wallClockMinutes}
+            onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
+          />
+          <span className={`${unitInput} right-3`}>min</span>
+        </div>
         <FieldError message={errors[`${errorPrefix}.wallClockMinutes`]} />
       </div>
       <div>
-        <label className={fieldLabel} htmlFor={`${idPrefix}-tokens`}>
-          Token cap <span className="normal-case text-muted">(blank = no cap)</span>
-        </label>
-        <input
-          id={`${idPrefix}-tokens`}
-          type="number"
-          min={1}
-          placeholder="No cap"
-          className={`${field} w-40 tabular-nums`}
-          value={value.tokens ?? ''}
-          onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
-        />
+        <div className="relative w-36">
+          <input
+            id={`${idPrefix}-tokens`}
+            aria-label="Token cap"
+            type="number"
+            min={1}
+            placeholder="Token cap"
+            className={`${field} w-full ${value.tokens === null ? '' : 'pr-16'} tabular-nums`}
+            value={value.tokens ?? ''}
+            onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
+          />
+          {value.tokens !== null && <span className={`${unitInput} right-3`}>tokens</span>}
+        </div>
         <FieldError message={errors[`${errorPrefix}.tokens`]} />
       </div>
       <div>
-        <label className={fieldLabel} htmlFor={`${idPrefix}-cost`}>
-          Cost cap (USD) <span className="normal-case text-muted">(blank = no cap)</span>
-        </label>
-        <input
-          id={`${idPrefix}-cost`}
-          type="number"
-          min={0}
-          step="0.01"
-          placeholder="No cap"
-          className={`${field} w-40 tabular-nums`}
-          value={value.costUsd ?? ''}
-          onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
-        />
+        <div className="relative w-32">
+          <span className={`${unitInput} left-3`}>$</span>
+          <input
+            id={`${idPrefix}-cost`}
+            aria-label="Cost cap in US dollars"
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Cost cap"
+            className={`${field} w-full pl-7 tabular-nums`}
+            value={value.costUsd ?? ''}
+            onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
+          />
+        </div>
         <FieldError message={errors[`${errorPrefix}.costUsd`]} />
       </div>
     </div>
@@ -468,7 +475,8 @@ const toolTimeout = scalar(
     id: 'settings-tool-timeout',
     errorKey: 'guardrails.toolTimeoutMinutes',
     min: 1,
-    widthClass: 'w-28',
+    unit: 'min',
+    widthClass: 'w-32',
     get: (c) => c.guardrails.toolTimeoutMinutes,
     set: (c, raw) => ({ ...c, guardrails: { ...c.guardrails, toolTimeoutMinutes: Number(raw) } }),
   }),
@@ -1184,6 +1192,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       <SettingGroup title="Bounding an Attempt" footer={WORKFLOW_VARS_NOTE}>
         <SettingRow
           title="Budget guardrail"
+          wideControl
           description="Escalates when an Attempt’s cost passes this."
         >
           <BudgetControl ctx={ctx} />

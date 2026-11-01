@@ -11,9 +11,9 @@ export function SettingGroup({ id, title, children, footer }: { id?: string; tit
   );
 }
 
-export function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+export function SettingRow({ title, description, children, wideControl = false }: { title: string; description: string; children: ReactNode; wideControl?: boolean }) {
   return (
-    <div className="grid grid-cols-1 items-center gap-x-6 gap-y-2 border-t border-hairline py-3.5 sm:grid-cols-[minmax(0,1fr)_220px]">
+    <div className={`grid grid-cols-1 items-center gap-x-6 gap-y-2 border-t border-hairline py-3.5 ${wideControl ? 'sm:grid-cols-[minmax(0,1fr)_420px]' : 'sm:grid-cols-[minmax(0,1fr)_220px]'}`}>
       <div>
         <div className="font-semibold text-ink">{title}</div>
         <p className="mt-0.5 text-small text-muted">{description}</p>

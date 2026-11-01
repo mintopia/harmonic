@@ -41,6 +41,7 @@ export interface OverridableDescriptor {
   label?: string;
   format?: (v: Scalar) => string;
   switchLabel?: string;
+  unit?: string;
   /** Replace the default {@link ScalarControl} — e.g. a model combobox. */
   renderControl?: (
     input: { id?: string; value: Scalar; onChange: (value: Scalar) => void },
@@ -92,7 +93,8 @@ export function OverrideField({
               max={typeof d.max === 'function' ? d.max(config) : d.max}
               step={d.step}
               switchLabel={d.switchLabel}
-              widthClass={control === 'number' ? 'w-28' : undefined}
+              widthClass={control === 'number' ? (d.unit ? 'w-40' : 'w-28') : undefined}
+              unit={d.unit}
             />
           )
         }

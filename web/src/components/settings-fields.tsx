@@ -35,6 +35,8 @@ export interface ScalarDescriptor {
   switchLabel?: string;
   /** Width utility for the input (number) or the wrapper (text). */
   widthClass?: string;
+  /** Unit shown inside a number input's trailing edge. */
+  unit?: string;
 }
 
 /** Registry keys whose control a {@link ConfigField} can render — i.e. the
@@ -98,6 +100,7 @@ export function ScalarControl({
   placeholder,
   switchLabel,
   widthClass,
+  unit,
 }: {
   id?: string;
   control: ScalarControlKind;
@@ -111,11 +114,12 @@ export function ScalarControl({
   placeholder?: string;
   switchLabel?: string;
   widthClass?: string;
+  unit?: string;
 }) {
   if (control === 'toggle') {
     return (
       <Switch checked={Boolean(value)} onChange={(v) => onChange(v)} disabled={disabled}>
-        {switchLabel}
+        {switchLabel && !value ? 'Off' : switchLabel}
       </Switch>
     );
   }
@@ -139,7 +143,7 @@ export function ScalarControl({
   }
 
   if (control === 'number') {
-    return (
+    const input = (
       <input
         id={id}
         type="number"
@@ -147,10 +151,18 @@ export function ScalarControl({
         max={max}
         step={step}
         disabled={disabled}
-        className={`${fieldClass} ${widthClass ?? 'w-28'} tabular-nums`}
+        className={`${fieldClass} ${unit ? 'w-full pr-14' : (widthClass ?? 'w-28')} tabular-nums`}
         value={Number(value)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+    );
+    return unit ? (
+      <div className={`relative ${widthClass ?? 'w-28'}`}>
+        {input}
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-small text-muted">{unit}</span>
+      </div>
+    ) : (
+      input
     );
   }
 
@@ -205,6 +217,7 @@ export function ConfigField({
       placeholder={d.placeholder}
       switchLabel={d.switchLabel}
       widthClass={d.control === 'number' ? d.widthClass : undefined}
+      unit={d.unit}
     />
   );
 
