@@ -9,6 +9,11 @@ import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 import { unconfiguredHarnessReason } from './domain/route.js';
 import { routingLabelIssueMessage, routingLabelIssues, workflowLabelIssues } from './domain/setting-override.js';
 
+export const excludedDirectorySchema = z.string().min(1).refine(
+  (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
+  'excluded directory must be a canonical relative path within the workspace',
+);
+
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
@@ -326,7 +331,7 @@ export const appConfigSchema = z.object({
     model: z.string().meta({ example: 'claude-sonnet-5' }),
   }),
   /** Folders hidden from the Files browser and directory pickers; seeds each new Workspace's own list. */
-  excludedDirectories: z.array(z.string().min(1)).meta({ example: ['.git', 'node_modules', 'dist'] }),
+  excludedDirectories: z.array(excludedDirectorySchema).meta({ example: ['.git', 'node_modules', 'dist'] }),
   /** `enabled` is the fleet-wide master switch gating every Workspace; `maxConcurrentAttempts` is the Host Ceiling a per-Workspace cap can never exceed. */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
