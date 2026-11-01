@@ -39,6 +39,15 @@ parallel risks killing the server running the tests.
 Run the full suite only when work is completed. If tests fail, fix the issue
 and re-run just those tests.
 
+### Stopping servers you started
+
+A live Harmonic instance on this host runs your Task, so any server you start
+shares a process table with it. Stop a server only by the PID you captured when
+you started it (`node dist/cli.js serve … & echo $! > "$D/pid"`, then
+`kill "$(cat "$D/pid")"`). Never use `pkill -f`, `killall`, or a
+`pgrep -f "cli.js serve"` loop: those patterns match the live instance and
+kill every running Attempt.
+
 ### Branching and rebasing
 
 Work only on the branch you start on. The integration line is `develop` and the
