@@ -13,6 +13,8 @@ import { BREADCRUMB_INCLUDES_STEP, TAB_RAIL_TITLES, resolveStep } from '../setti
 import { renderSection, sectionAnchor, sectionsForStep, stepStrip, stepValue, stepsForSurface, type RenderCtx } from './settings-schema';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 
+const MONO_VALUE_STEPS: ReadonlySet<string> = new Set(['find']);
+
 /**
  * The single settings renderer. The global and per-Workspace
  * surfaces are the *same* engine over the *same* {@link SETTINGS_SCHEMA}: this
@@ -22,8 +24,6 @@ import type { SettingTab } from '../../../src/domain/settings-registry.js';
  * layer), and its dirty/save plumbing — the transport differs (whole-config PUT
  * vs field PATCH) but the interaction is identical.
  */
-const MONO_VALUE_STEPS: ReadonlySet<string> = new Set(['find']);
-
 export function SettingsForm({
   title,
   intro,

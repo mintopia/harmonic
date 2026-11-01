@@ -15,7 +15,7 @@ export function PromptImpact() {
 
   const library = workflows.data?.workflows ?? [];
   const rows = usedByRows(prompt, flow.prompts);
-  const running = runningNow(prompt, library);
+  const running = runningNow(prompt, flow.prompts, library);
   const detail = (workflow: string, bundled: boolean) => {
     const entry = library.find((w) => w.name === workflow);
     return `${bundled ? 'Bundled' : 'Your'} workflow${entry ? ` · ${ticketsLabel(entry.inUse.tickets)}` : ''}`;
@@ -33,7 +33,7 @@ export function PromptImpact() {
             <p className="mt-1 text-body text-muted">Saving changes the next execution of each of these. Prompts already sent stay as archived.</p>
           </div>
           {workflows.data && (
-            <span data-testid="running-now" className="shrink-0 rounded-full bg-await-tint px-2.5 py-0.5 text-small font-semibold text-await">
+            <span data-testid="running-now" className="shrink-0 rounded-full bg-running-tint px-2.5 py-0.5 text-small font-semibold text-running">
               {ticketsLabel(running)} running now
             </span>
           )}

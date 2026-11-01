@@ -289,6 +289,14 @@ describe('Prompt Library page', () => {
     expect(host.textContent).toContain('Nothing uses this prompt yet.');
   });
 
+  it('counts running Tickets reached through an include chain', async () => {
+    const lib = LIB.map((p) => (p.code === 'security-checklist' ? { ...p, usedBy: ['team-style'] } : p));
+    const host = await mountLibrary(lib);
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
+    await click(button(host, 'To impact'));
+    expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('3 Tickets running now');
+  });
+
   it('updates the include preview as you type', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="release-notes"] button'));

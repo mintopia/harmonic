@@ -33,8 +33,19 @@ export function filterCounts(prompts: readonly Prompt[]): Record<PromptFilter, n
   return { all: prompts.length, yours: prompts.filter(isYours).length, unused: prompts.filter(isUnused).length };
 }
 
-export function runningNow(prompt: Pick<Prompt, 'usedBySteps'>, workflows: readonly WorkflowLibraryEntry[]): number {
+export function runningNow(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[], workflows: readonly WorkflowLibraryEntry[]): number {
   const names = new Set(prompt.usedBySteps.map((u) => u.workflow));
+  const byCode = new Map(prompts.map((p) => [p.code, p]));
+  const seen = new Set([prompt.code]);
+  const queue = [...prompt.usedBy];
+  for (let code = queue.shift(); code !== undefined; code = queue.shift()) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const includer = byCode.get(code);
+    if (!includer) continue;
+    for (const u of includer.usedBySteps) names.add(u.workflow);
+    queue.push(...includer.usedBy);
+  }
   return workflows.filter((w) => names.has(w.name)).reduce((sum, w) => sum + w.inUse.running, 0);
 }
 
