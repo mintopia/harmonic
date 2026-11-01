@@ -743,11 +743,8 @@ interface SectionNode {
   surfaces: Surface[];
   title: PerSurface<string>;
   description: PerSurface<string>;
-  /** Step number shown before the title, matching the resolution strip. */
   ordinal?: string;
-  /** Put the title-row control before the title. */
   leading?: boolean;
-  /** A labelled rule drawn above the card. */
   divider?: string;
   body: (ctx: RenderCtx) => ReactNode;
   /** Control at the right of the card's title row. */
@@ -1296,7 +1293,7 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 export function renderSection(
   section: SectionNode,
   ctx: RenderCtx,
-): { title: string; description: string; body: ReactNode; action: ReactNode} {
+): { title: string; description: string; body: ReactNode; action: ReactNode } {
   return {
     title: pick(section.title, ctx.surface),
     description: pick(section.description, ctx.surface),
