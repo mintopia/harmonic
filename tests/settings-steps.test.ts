@@ -22,10 +22,7 @@ const TAB_IDS = SETTING_TABS.map((t) => t.id);
 describe('settings tabs and steps', () => {
   it('lists the five tabs in the mockup order, with Security folded into General', () => {
     expect(SETTING_TABS.map((t) => t.label)).toEqual(['General', 'Running Tickets', 'Prompts', 'Integrations', 'Archive & Export']);
-    expect(SETTINGS_SCHEMA.filter((s) => s.tab === 'general' && s.step === 'access').map((s) => s.title)).toEqual([
-      'Permission rules',
-      'Security',
-    ]);
+    expect(SETTINGS_SCHEMA.filter((s) => s.tab === 'general' && s.step === 'access').map((s) => s.title)).toEqual(['Access']);
   });
 
   it('gives every schema section a step declared for its tab', () => {

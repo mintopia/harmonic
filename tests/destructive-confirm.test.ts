@@ -37,7 +37,7 @@ async function click(el: HTMLElement) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  permissionRules.mockResolvedValue({ rules: [{ id: 3, kind: 'bash', workingDir: '/w' }], total: 1 });
+  permissionRules.mockResolvedValue({ rules: [{ id: 3, kind: 'bash', workingDir: '/w', createdAt: Date.UTC(2026, 9, 12) }], total: 1 });
 });
 afterEach(cleanup);
 
@@ -93,5 +93,18 @@ describe('permission rule revoke', () => {
     await click(document.querySelector('dialog button:last-child') as HTMLElement);
     expect(deletePermissionRule).toHaveBeenCalledWith(3);
     expect(toastError).toHaveBeenCalledWith(err);
+  });
+});
+
+describe('permission rule table (Settings > General > Access)', () => {
+  it('lists kind, directory and date, and revokes after confirming', async () => {
+    deletePermissionRule.mockResolvedValue({});
+    const host = await mountComponent(createElement(PermissionRules, { table: true }));
+    expect([...host.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Tool kind', 'Working directory', 'Saved', 'Actions']);
+    expect([...host.querySelectorAll('tbody td')].slice(0, 3).map((td) => td.textContent)).toEqual(['bash', '/w', '12 Oct']);
+    await click(button(host, 'Revoke'));
+    expect(deletePermissionRule).not.toHaveBeenCalled();
+    await click(document.querySelector('dialog button:last-child') as HTMLElement);
+    expect(deletePermissionRule).toHaveBeenCalledWith(3);
   });
 });

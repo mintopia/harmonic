@@ -19,10 +19,10 @@ const ARCHIVE_INTRO =
 
 export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
   general: [
-    { id: 'identity', title: 'Identity', summary: 'Name this instance', heading: 'This instance', intro: INSTANCE_INTRO },
+    { id: 'identity', title: 'Identity', summary: 'Name and project', heading: 'This instance', intro: INSTANCE_INTRO },
     { id: 'access', title: 'Access', summary: 'Password and permissions', heading: 'This instance', intro: INSTANCE_INTRO },
     { id: 'chats', title: 'Chats', summary: 'Conversation defaults', heading: 'This instance', intro: INSTANCE_INTRO },
-    { id: 'files', title: 'Files', summary: 'Folders to leave out', heading: 'This instance', intro: INSTANCE_INTRO },
+    { id: 'files', title: 'Files', summary: 'Excluded folders', heading: 'This instance', intro: INSTANCE_INTRO },
   ],
   execution: [
     {

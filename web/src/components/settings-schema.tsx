@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { api } from '../api';
 import type { AppConfig, Channel, ConfigLayers, ExportDeliveryState, Workspace } from '../types';
 import { btnGhost, field } from '../ui';
-import { Icon } from './Icon';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
@@ -126,20 +126,6 @@ function renderField(node: FieldNode, ctx: RenderCtx, hideLabel = false): ReactN
 function grid(className: string, nodes: FieldNode[], ctx: RenderCtx): ReactNode {
   return <div className={className}>{nodes.map((node) => renderField(node, ctx))}</div>;
 }
-
-const instanceName = scalar(
-  {
-    id: 'settings-instance-name',
-    control: 'text',
-    label: 'Name',
-    errorKey: 'name',
-    placeholder: 'Harmonic',
-    widthClass: 'max-w-sm',
-    get: (c) => c.name,
-    set: (c, raw) => ({ ...c, name: String(raw) }),
-  },
-  null,
-);
 
 const chatHarness = scalar(
   registryField('chatHarness', {
@@ -571,6 +557,67 @@ const WORKFLOW_VARS_NOTE = (
     Attempt count is a workflow variable now (<code className="font-data">maxAttempts</code>) — set it in step 1.
   </>
 );
+function InstanceIdentity({ ctx }: { ctx: GlobalRenderCtx }) {
+  const { config, errors } = ctx;
+  const [firstWorkspaceId, setFirstWorkspaceId] = useState<number | null>(null);
+  useEffect(() => {
+    api.workspaces()
+      .then(({ workspaces }) => setFirstWorkspaceId(workspaces[0]?.id ?? null))
+      .catch((e) => console.warn('failed to load workspaces', e));
+  }, []);
+  return (
+    <div className="flex flex-col">
+      <div className="grid items-center gap-x-6 gap-y-2 border-t border-hairline py-3.5 sm:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
+          <label htmlFor="settings-instance-name" className="font-bold">Instance name</label>
+          <div className="mt-0.5 text-small text-muted">
+            Shows in the sidebar and tab title as “Harmonic - name - workspace”. Blank shows “Harmonic”.
+          </div>
+        </div>
+        <div>
+          <input
+            id="settings-instance-name"
+            className={field}
+            placeholder="e.g. studio"
+            value={config.name}
+            onChange={(e) => ctx.setConfig({ ...config, name: e.target.value })}
+          />
+          <FieldError message={errors['name']} />
+        </div>
+      </div>
+      <div className="grid items-center gap-x-6 gap-y-2 border-t border-hairline py-3.5 sm:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
+          <div className="font-bold">Workspaces</div>
+          <div className="mt-0.5 text-small text-muted">
+            Each Workspace’s name, project directory and deletion live in its own settings.
+          </div>
+        </div>
+        {firstWorkspaceId !== null && (
+          <a className="font-semibold text-accent hover:underline" href={`/workspace/${firstWorkspaceId}/settings?tab=general&step=identity`}>
+            Manage Workspaces →
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AccessSection() {
+  return (
+    <div className="flex flex-col gap-3.5">
+      <SecuritySection />
+      <div className="flex flex-col gap-2 border-t border-hairline pt-3.5">
+        <div>
+          <div className="font-bold">Always-allow rules</div>
+          <div className="mt-0.5 text-small text-muted">
+            Saved from Conversation permission prompts. Each auto-approves a tool kind in a directory. Revoke to be asked again.
+          </div>
+        </div>
+        <PermissionRules table />
+      </div>
+    </div>
+  );
+}
 
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
@@ -705,36 +752,33 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
 
 function WorkspaceExcludedFolders({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace } = ctx;
-  const [value, setValue] = useState('');
-  const list = workspace.excludedDirectories;
-  const setList = (next: string[]) => ctx.setWorkspace({ ...workspace, excludedDirectories: next });
-  const add = () => {
-    const path = value.trim().replace(/^\/+|\/+$/g, '');
-    setValue('');
-    if (path && !list.includes(path)) setList([...list, path]);
-  };
+  const [text, setText] = useState(() => workspace.excludedDirectories.join('\n'));
+  const [seen, setSeen] = useState(workspace.excludedDirectories);
+  if (seen !== workspace.excludedDirectories) {
+    setSeen(workspace.excludedDirectories);
+    if (parseFolders(text).join('\n') !== workspace.excludedDirectories.join('\n')) setText(workspace.excludedDirectories.join('\n'));
+  }
   return (
-    <div>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); add(); }}>
-        <input className={`${field} flex-1`} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Relative folder (e.g. dist)" aria-label="Folder to exclude" />
-        <button type="submit" className={`${btnGhost} shrink-0`}>Add</button>
-      </form>
-      {list.length > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Excluded folders">
-          {list.map((path) => (
-            <li key={path}>
-              <button type="button" aria-label={`Remove ${path}`} className="inline-flex items-center gap-1 rounded bg-raised px-2 py-1 font-data text-small text-muted hover:text-ink" onClick={() => setList(list.filter((entry) => entry !== path))}>
-                {path}
-                <Icon name="close" className="size-3" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-small text-muted">No folders excluded.</p>
-      )}
-    </div>
+    <textarea
+      className={`${field} max-w-xl resize-y font-data`}
+      aria-label="Excluded folders"
+      rows={4}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        ctx.setWorkspace({ ...workspace, excludedDirectories: parseFolders(e.target.value) });
+      }}
+    />
   );
+}
+
+function parseFolders(text: string): string[] {
+  const seen = new Set<string>();
+  for (const line of text.split('\n')) {
+    const path = line.trim().replace(/^\/+|\/+$/g, '');
+    if (path) seen.add(path);
+  }
+  return [...seen];
 }
 
 function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
@@ -811,10 +855,9 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'general',
     step: 'identity',
     surfaces: ['global'],
-    title: 'Instance',
-    description:
-      'A display name for this Harmonic instance. Shows in the sidebar and the browser title as “Harmonic - {name} - {workspace}”. Leave blank to just show “Harmonic”.',
-    body: (ctx) => grid('', [instanceName], ctx),
+    title: 'Identity',
+    description: '',
+    body: (ctx) => (ctx.surface === 'global' ? <InstanceIdentity ctx={ctx} /> : null),
   },
   {
     tab: 'general',
@@ -829,8 +872,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     step: 'files',
     surfaces: ['workspace'],
     title: 'Excluded folders',
-    description:
-      "Folders shown greyed in the Files view and skipped by the live watcher — seeded with the usual build and dependency directories. Right-click a folder in the Files tree to toggle it, or manage the list here.",
+    description: 'Hidden from the Files browser and directory pickers. One folder per line.',
     body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceExcludedFolders ctx={ctx} /> : null),
   },
   {
@@ -840,9 +882,9 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Chat defaults',
     description: {
       global:
-        'The Harness and model a new Conversation starts with — separate from the task defaults, so you can chat with a different agent than the one that runs the board. Each Workspace can override these, and every new chat can still change them before its first turn.',
+        'The agent a new Conversation starts with. Separate from the Ticket agent; each chat can still change it before its first turn.',
       workspace:
-        'The Harness and model new Conversations in this Workspace start with. Each inherits the global chat default until overridden; every chat can still change them before its first turn.',
+        'The agent a new Conversation in this Workspace starts with. Each inherits the global chat default until overridden; each chat can still change it before its first turn.',
     },
     body: (ctx) => grid(twoColGrid(ctx.surface), [chatHarness, chatModel], ctx),
   },
@@ -1260,18 +1302,9 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'general',
     step: 'access',
     surfaces: ['global'],
-    title: 'Permission rules',
-    description:
-      "Persistent 'Always allow' choices from Conversation permission prompts — each auto-approves a tool kind in a Working Directory across Conversations. Revoking one makes matching requests prompt again.",
-    body: () => <PermissionRules />,
-  },
-  {
-    tab: 'general',
-    step: 'access',
-    surfaces: ['global'],
-    title: 'Security',
-    description: 'The operator password for this console.',
-    body: () => <SecuritySection />,
+    title: 'Access',
+    description: '',
+    body: () => <AccessSection />,
   },
 
   {
