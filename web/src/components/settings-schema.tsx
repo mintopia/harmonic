@@ -744,9 +744,7 @@ interface SectionNode {
   body: (ctx: RenderCtx) => ReactNode;
   /** Control at the right of the card's title row. */
   action?: (ctx: RenderCtx) => ReactNode;
-  /** Put the action before the title instead of at the right. */
   leadingAction?: boolean;
-  /** Step-local ordinal shown before the title. */
   number?: string;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
