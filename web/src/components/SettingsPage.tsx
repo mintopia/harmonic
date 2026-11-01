@@ -30,7 +30,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [tab, setTab] = useState<SettingTab>('general');
+  const [tab, setTab] = useState<SettingTab>(() => SETTING_TABS.find((t) => t.id === window.location.hash.slice(1))?.id ?? 'general');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [confirmingRevert, setConfirmingRevert] = useState(false);
