@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { AppConfig, Channel, ConfigLayers, ExportDeliveryState, Workspace } from '../types';
-import { btnGhost, field } from '../ui';
+import { btnGhost, card, field } from '../ui';
 import { Icon } from './Icon';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
@@ -1214,9 +1214,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'integrations',
     step: 'code',
     surfaces: ['workspace'],
+    bare: true,
     title: 'Code Repository',
     description: '',
-    body: (ctx) => (ctx.surface === 'workspace' ? <CodeRepositorySection ctx={ctx} /> : null),
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <div className={`${card} p-5`}>
+          <CodeRepositorySection ctx={ctx} />
+        </div>
+      ) : null,
   },
   {
     tab: 'integrations',
@@ -1230,29 +1236,34 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'integrations',
     step: 'agents',
     surfaces: ['global'],
+    bare: true,
     title: 'Harnesses',
-    description: 'The agent CLIs Harmonic drives over ACP — command, environment, and models.',
+    description: '',
     wide: true,
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} permissionModes={ctx.harnessPermissionModes} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
+        <div className={`${card} p-5`}>
+          <HarnessesSection config={ctx.config} baseline={ctx.baseline} fieldErrors={ctx.errors} permissionModes={ctx.harnessPermissionModes} onChange={(harnesses) => ctx.setConfig({ ...ctx.config, harnesses })} />
+        </div>
       ) : null,
   },
   {
     tab: 'integrations',
     step: 'updates',
     surfaces: ['global'],
+    bare: true,
     title: 'Notifications',
-    description:
-      'Channels that receive task and queue events. Event subscriptions save with the bar; adding or removing a channel applies immediately.',
+    description: '',
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <ChannelsSection
-          channels={ctx.channels.list}
-          onToggleEvent={ctx.channels.onToggleEvent}
-          onCreated={ctx.channels.onCreated}
-          onDeleted={ctx.channels.onDeleted}
-        />
+        <div className={`${card} p-5`}>
+          <ChannelsSection
+            channels={ctx.channels.list}
+            onToggleEvent={ctx.channels.onToggleEvent}
+            onCreated={ctx.channels.onCreated}
+            onDeleted={ctx.channels.onDeleted}
+          />
+        </div>
       ) : null,
   },
 
