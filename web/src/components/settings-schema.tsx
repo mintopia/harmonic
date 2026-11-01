@@ -129,6 +129,43 @@ function grid(className: string, nodes: FieldNode[], ctx: RenderCtx): ReactNode 
   return <div className={className}>{nodes.map((node) => renderField(node, ctx))}</div>;
 }
 
+type PromptColumn =
+  | 'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'taskPrompt' | 'pauseMessage'
+  | 'driveCommitNudge' | 'mergeConflictPrompt' | 'mergeEpicConflictPrompt' | 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix';
+
+function promptOverride(key: PromptColumn, inherited: (c: AppConfig) => string): OverridableDescriptor {
+  return {
+    key,
+    id: `workspace-prompt-${key}`,
+    errorKey: key,
+    get: (w) => w[key],
+    set: (w, v) => ({ ...w, [key]: v === null ? null : String(v) }),
+    inherited,
+    renderControl: ({ id, value, onChange }) => (
+      <textarea
+        id={id}
+        className={`${field} resize-y font-data`}
+        rows={5}
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    ),
+  };
+}
+
+export const PROMPT_OVERRIDES: OverridableDescriptor[] = [
+  promptOverride('drivePrompt', (c) => c.drive.prompt),
+  promptOverride('driveUnattendedReminder', (c) => c.drive.unattendedReminder),
+  promptOverride('driveContinuePrompt', (c) => c.drive.continuePrompt),
+  promptOverride('taskPrompt', (c) => c.taskPrompt),
+  promptOverride('pauseMessage', (c) => c.pauseMessage),
+  promptOverride('driveCommitNudge', (c) => c.drive.commitNudge),
+  promptOverride('mergeConflictPrompt', (c) => c.merge.conflictPrompt),
+  promptOverride('mergeEpicConflictPrompt', (c) => c.merge.epicConflictPrompt),
+  promptOverride('mergeEpicRefreshPrompt', (c) => c.merge.epicRefreshPrompt),
+  promptOverride('verifyEpicResolveSuffix', (c) => c.verify.epic.resolveSuffix),
+];
+
 const chatHarness = scalar(
   registryField('chatHarness', {
     id: 'settings-chat-harness',
@@ -1285,6 +1322,30 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Prompt impact',
     description: '',
     body: () => <PromptImpact />,
+  },
+
+  {
+    tab: 'prompts',
+    step: 'overrides',
+    surfaces: ['workspace'],
+    wide: true,
+    title: 'Workspace prompt text',
+    description: 'Each field inherits the global text until you override it here.',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <div className="flex flex-col gap-5">
+          {PROMPT_OVERRIDES.map((descriptor) => (
+            <OverrideField
+              key={descriptor.id}
+              descriptor={descriptor}
+              config={ctx.config}
+              workspace={ctx.workspace}
+              errors={ctx.errors}
+              onWorkspace={ctx.setWorkspace}
+            />
+          ))}
+        </div>
+      ) : null,
   },
 
   {
