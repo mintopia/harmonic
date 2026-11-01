@@ -9,8 +9,8 @@ import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-
 afterEach(cleanup);
 
 describe('settings prompts layout', () => {
-  it('renders the Prompts settings as the Prompt Library alone', () => {
-    expect(sectionsForTab('global', 'prompts').map((s) => s.title)).toEqual(['Prompt Library']);
+  it('renders the Prompts settings as the Find, Edit and Check impact steps', () => {
+    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
     expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
   });
 });

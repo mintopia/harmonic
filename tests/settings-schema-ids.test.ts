@@ -186,10 +186,11 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the prompts settings as the global Prompt Library alone, as a bare full-width section', () => {
+  it('declares the prompts settings as three global bare full-width steps', () => {
     const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts');
-    expect(sections.map((s) => s.title)).toEqual(['Prompt Library']);
-    expect(sections[0]).toMatchObject({ bare: true, wide: true, surfaces: ['global'] });
+    expect(sections.map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
+    for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true, surfaces: ['global'] });
     expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
   });
+
 });

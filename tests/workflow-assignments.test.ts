@@ -21,7 +21,7 @@ describe('workflowAssignments', () => {
 
 describe('deleteBlock', () => {
   const entry = (assignedAs: WorkflowLibraryEntry['assignedAs']): WorkflowLibraryEntry =>
-    ({ name: 'x', bundled: false, inUse: { tickets: 0, workspaces: 0 }, assignedAs }) as WorkflowLibraryEntry;
+    ({ name: 'x', bundled: false, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs }) as WorkflowLibraryEntry;
   it('names labels and defaults separately and allows unused workflows', () => {
     expect(deleteBlock(entry([]))).toBeNull();
     expect(deleteBlock(entry([{ kind: 'label', label: 'docs' }, { kind: 'global-default' }]))).toBe('In use by 1 Workflow Label and 1 default.');

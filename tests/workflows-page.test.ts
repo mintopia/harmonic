@@ -15,7 +15,7 @@ const entry = (over: Partial<WorkflowLibraryEntry>): WorkflowLibraryEntry => ({
   subject: 'ticket',
   bundled: false,
   version: 2,
-  inUse: { tickets: 0, workspaces: 0 },
+  inUse: { tickets: 0, running: 0, workspaces: 0 },
   assignedAs: [],
   ...over,
 });
@@ -31,7 +31,7 @@ beforeEach(() => {
     total: 3,
     workflows: [
       entry({ name: 'Default', bundled: true, version: 5 }),
-      entry({ name: 'security', inUse: { tickets: 2, workspaces: 1 }, assignedAs: [{ kind: 'label', label: 'security' }] }),
+      entry({ name: 'security', inUse: { tickets: 2, running: 0, workspaces: 1 }, assignedAs: [{ kind: 'label', label: 'security' }] }),
       entry({ name: 'docs-only' }),
     ],
   });

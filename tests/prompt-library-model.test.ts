@@ -4,7 +4,6 @@ import {
   badSpans,
   copyCode,
   editedLabel,
-  countsLabel,
   filterPrompts,
   highlightLine,
   localIssues,
@@ -30,11 +29,6 @@ describe('prompt library model', () => {
     expect(filterPrompts(LIB, 'correctness').map((p) => p.code)).toEqual(['critic']);
     expect(filterPrompts(LIB, '  ')).toHaveLength(3);
     expect(filterPrompts(LIB, 'zzz')).toEqual([]);
-  });
-
-  it('words the counts header', () => {
-    expect(countsLabel(LIB)).toBe('3 prompts · 2 Bundled · 1 yours');
-    expect(countsLabel([prompt('a')])).toBe('1 prompt · 0 Bundled · 1 yours');
   });
 
   it('labels used-by with steps and prompts', () => {

@@ -17,7 +17,7 @@ beforeEach(() => {
   }
   vi.spyOn(api, 'workflows').mockResolvedValue({
     total: 1,
-    workflows: [{ name: 'w', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] }],
+    workflows: [{ name: 'w', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }],
   });
   vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'w', description: '', bundled: false, version: 1, text: good });
 });

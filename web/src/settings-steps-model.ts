@@ -7,7 +7,9 @@ export interface StepDef {
   heading: string;
   intro: string;
   nextTitle?: string;
+  backTitle?: string;
   note?: string;
+  ownHeader?: boolean;
 }
 
 const INSTANCE_INTRO = 'What this Harmonic is called, who can reach it, and what it ignores.';
@@ -59,17 +61,9 @@ export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
     },
   ],
   prompts: [
-    {
-      id: 'find',
-      title: 'Find',
-      summary: 'Browse the library',
-      heading: 'Which prompt do you want to change?',
-      intro:
-        'Workflow steps name a prompt by code. A prompt can include another with {{inc}}, so shared text lives in one place.',
-      note: 'Edits apply to the next execution.',
-    },
-    { id: 'edit', title: 'Edit', summary: 'Change a prompt', heading: 'Edit the prompt', intro: 'Change the text agents are told.' },
-    { id: 'impact', title: 'Check impact', summary: 'See what it affects', heading: 'Check impact', intro: 'See which workflows use this prompt.' },
+    { id: 'find', title: 'Find', summary: 'Pick a prompt', heading: 'Which prompt do you want to change?', intro: '', ownHeader: true },
+    { id: 'edit', title: 'Edit', summary: 'Pick a prompt first', heading: 'Edit the prompt', intro: '', backTitle: 'All prompts', ownHeader: true },
+    { id: 'impact', title: 'Check impact', summary: 'Pick a prompt first', heading: 'Check impact', intro: '', ownHeader: true },
   ],
   integrations: [
     {
