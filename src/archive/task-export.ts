@@ -15,6 +15,7 @@ import { exportOwnerKey, type ExportOwner } from './export-owner.js';
 import { hasExportDestination, type ResolvedExportSettings } from './export-settings.js';
 import { uploadToS3 } from './s3-destination.js';
 import { safeSegment, workspaceSlug, type ExportDestination, type ExportRecord, type TaskArchive } from './task-archive.js';
+import { DeliveryLedger, type DeliveryState } from './delivery-ledger.js';
 import { buildExportStatus, type ExportStatus, type PendingRetry } from './export-status.js';
 import { Redactor, type RedactionPattern } from './redact.js';
 import type { GitProvenance } from './git-provenance.js';
@@ -324,7 +325,15 @@ export class TaskExporter {
 
   private readonly startedAtMs = Date.now();
 
-  constructor(private readonly deps: TaskExporterDeps) {}
+  private readonly ledger: DeliveryLedger;
+
+  constructor(private readonly deps: TaskExporterDeps) {
+    this.ledger = DeliveryLedger.under(deps.dataDir);
+  }
+
+  deliveryState(): Promise<DeliveryState> {
+    return this.ledger.read();
+  }
 
   async sweepStaging(): Promise<void> {
     const stagingDir = join(this.deps.dataDir, 'archive', '.staging');
@@ -761,6 +770,17 @@ export class TaskExporter {
   private async record(owner: ExportOwner, disposition: ExportDisposition, outcome: ExportOutcome, at: Date, retry: number, meta: ExportMeta | undefined, nextRetryAt: string | null): Promise<void> {
     const entry: ExportRecord = { ...exportRecord(disposition, outcome, at, meta), ...(retry > 0 ? { retry } : {}) };
     const where = ownerContext(owner);
+    try {
+      await this.ledger.note(outcome.destination, {
+        status: outcome.status,
+        at: entry.at,
+        error: outcome.status === 'failed' ? outcome.error : null,
+        retry,
+        nextRetryAt: outcome.status === 'failed' ? nextRetryAt : null,
+      });
+    } catch (err) {
+      logger.warn('export: delivery ledger not updated', { ...where, error: message(err) });
+    }
     if (owner.kind === 'epic') {
       await this.recordEpicStep(
         owner,

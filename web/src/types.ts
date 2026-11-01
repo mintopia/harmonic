@@ -257,6 +257,17 @@ export interface ExportDestinationStatus {
   retry: { count: number; max: number; nextRetryAt: string | null; exhausted: boolean } | null;
 }
 
+export interface ExportDelivery {
+  status: 'succeeded' | 'failed';
+  at: string;
+  error: string | null;
+  retry: number;
+  nextRetryAt: string | null;
+}
+
+/** `GET /api/export/destinations`: the last delivery per Destination; absent when it never delivered. */
+export type ExportDeliveryState = Partial<Record<ExportDestinationKind, ExportDelivery>>;
+
 export interface ExportSummary {
   name: string | null;
   disposition: string;

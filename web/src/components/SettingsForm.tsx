@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { api } from '../api';
+import type { ExportDeliveryState } from '../types';
 import { PageHeader } from './PageHeader';
 import { Tabs, panelId, tabId } from './Tabs';
 import { SettingsSection } from './SettingsSection';
@@ -55,10 +57,19 @@ export function SettingsForm({
   children?: ReactNode;
   headerActions?: ReactNode;
 }) {
+  const [deliveries, setDeliveries] = useState<ExportDeliveryState | undefined>(undefined);
+  useEffect(() => {
+    if (tab !== 'archive') return;
+    let live = true;
+    api.exportDestinations().then((d) => live && setDeliveries(d), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [tab]);
   const steps = stepsForSurface(ctx.surface, tab);
   const current = resolveStep(steps, step);
   const sections = sectionsForStep(ctx.surface, tab, current);
-  const strip = stepStrip(ctx, tab, current);
+  const strip = stepStrip({ ...ctx, deliveries }, tab, current);
   const index = steps.findIndex((s) => s.id === current);
   const currentStep = steps[index];
   const previous = steps[index - 1];
@@ -99,9 +110,9 @@ export function SettingsForm({
               <p className="text-body text-muted">{currentStep.intro}</p>
             </div>
           )}
-          {strip && <ResolutionStrip label={strip.label} rules={strip.rules} />}
+          {strip && <ResolutionStrip label={strip.label} rules={strip.rules} onStep={jump} />}
           {sections.map((section) => {
-            const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab });
+            const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab, deliveries });
             const anchor = sectionAnchor(sectionTitle);
             if (section.bare) {
               return (

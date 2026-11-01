@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { AppConfig, ExportDestinationTestResult, ExportState, Workspace } from '../types';
 import { btnGhost, btnQuiet, field, labelType } from '../ui';
-import { patternIdError, patternRegexError, relativeTime, type RedactPatternRow } from '../archive-export-model';
+import { describeDelivery, patternIdError, patternRegexError, relativeTime, type RedactPatternRow } from '../archive-export-model';
+import type { ResolutionRule } from './ResolutionStrip';
 import { Icon } from './Icon';
 import { FieldError } from './SettingsSection';
 import { LayerField } from './LayerField';
@@ -305,7 +306,7 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
         ctx={ctx}
         label="Keep for (days)"
         htmlFor="archive-retain-days"
-        help="Oldest terminal Archives past this age are pruned. Blank = keep forever."
+        help="Blank keeps Archives forever."
         placeholder="Forever (blank)"
         get={(c) => c.archive.retain.days}
         set={(c, v) => ({ ...c, archive: { retain: { ...c.archive.retain, days: v } } })}
@@ -317,7 +318,7 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
         ctx={ctx}
         label="Max total size (MB)"
         htmlFor="archive-retain-mb"
-        help="When the Archive tree exceeds this, oldest terminal Archives go first. Blank = unlimited."
+        help="Oldest Archives go first. Never pruned while an Export is pending or failed."
         placeholder="Unlimited (blank)"
         get={(c) => c.archive.retain.maxTotalMB}
         set={(c, v) => ({ ...c, archive: { retain: { ...c.archive.retain, maxTotalMB: v } } })}
@@ -327,6 +328,46 @@ export function ArchiveRetentionSection({ ctx }: { ctx: RenderCtx }) {
       />
     </div>
   );
+}
+
+const effectiveStates = (ctx: RenderCtx): ExportState[] =>
+  ctx.surface === 'global' ? ctx.config.export.includeStates : (ctx.workspace.exportIncludeStates ?? ctx.config.export.includeStates);
+
+const configuredKinds = (ctx: RenderCtx): ('directory' | 's3')[] => [
+  ...(effectiveRaw(ctx, 'dirPath') ? (['directory'] as const) : []),
+  ...(effectiveRaw(ctx, 'bucket') ? (['s3'] as const) : []),
+];
+
+const KIND_TITLE = { directory: 'Directory', s3: 'S3' } as const;
+
+export function archiveStripRules(ctx: RenderCtx): ResolutionRule[] {
+  const own = ctx.surface === 'workspace' ? ctx.workspace : null;
+  const days = own?.archiveRetentionDays ?? ctx.config.archive.retain.days;
+  const mb = own?.archiveRetentionMaxTotalMB ?? ctx.config.archive.retain.maxTotalMB;
+  const exportOn = (own?.exportEnabled ?? ctx.config.export.enabled) === true;
+  const states = effectiveStates(ctx);
+  const added = ctx.config.export.redact.patterns.length + (own?.exportRedactPatterns?.length ?? 0);
+  const patterns = BASELINE_REDACT_PATTERNS.length + added;
+  const kinds = configuredKinds(ctx);
+  const failing = kinds.filter((k) => ctx.deliveries?.[k]?.status === 'failed').length;
+  const count = `${kinds.length} ${kinds.length === 1 ? 'Destination' : 'Destinations'}`;
+  return [
+    {
+      caption: 'Always',
+      name: 'Keep raw Archive',
+      step: 'keep',
+      note: `${days === null ? 'Forever' : `${days} days`} · ${mb === null ? 'no size cap' : mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB cap` : `${mb} MB cap`}`,
+    },
+    { caption: 'Then', name: 'Build an Export', step: 'export', note: exportOn ? `On · ${states.join(' and ') || 'no dispositions'}` : 'Off' },
+    { caption: 'Then', name: 'Redact', step: 'redact', note: `${patterns} ${patterns === 1 ? 'pattern' : 'patterns'}` },
+    {
+      caption: 'Then',
+      name: 'Deliver',
+      step: 'deliver',
+      note: failing > 0 ? `${count} · ${failing} failing` : count,
+      ...(failing > 0 ? { tone: 'fail' as const } : {}),
+    },
+  ];
 }
 
 const STATES: ExportState[] = ['done', 'cancelled', 'deleted'];
@@ -356,7 +397,7 @@ function StateChips({ value, onChange }: { value: ExportState[]; onChange: (next
 }
 
 function DispositionChips({ ctx }: { ctx: RenderCtx }) {
-  const help = 'Deleting a Task exports it first when it has at least one Attempt.';
+  const help = 'Which terminal dispositions export.';
   const key = (s: ExportState[]) => STATES.filter((x) => s.includes(x)).join(',');
   if (ctx.surface === 'workspace') {
     const own = ctx.workspace.exportIncludeStates;
@@ -366,7 +407,7 @@ function DispositionChips({ ctx }: { ctx: RenderCtx }) {
     return (
       <div>
         <WsShell
-          label="Dispositions to export"
+          label="For Tasks that end"
           help={help}
           overridden={own !== null}
           display={<span className="font-data text-[13px]">{key(shown) || 'none'}</span>}
@@ -385,7 +426,7 @@ function DispositionChips({ ctx }: { ctx: RenderCtx }) {
   return (
     <div>
       <LayerField<ExportState[]>
-        label="Dispositions to export"
+        label="For Tasks that end"
         value={value}
         inheritedValue={base}
         inherited={key(value) === key(base)}
@@ -408,7 +449,7 @@ function DispositionChips({ ctx }: { ctx: RenderCtx }) {
 export function ExportSection({ ctx }: { ctx: RenderCtx }) {
   return (
     <div className="flex flex-col gap-4.5">
-      <BoundField ctx={ctx} col="enabled" label="Export on terminal disposition" htmlFor="export-enabled" kind="toggle" help="An Export never blocks or reverts the disposition." />
+      <BoundField ctx={ctx} col="enabled" label="Export finished Tasks" htmlFor="export-enabled" kind="toggle" help="A redacted .tar.gz, built once per Task." />
       <DispositionChips ctx={ctx} />
     </div>
   );
@@ -457,7 +498,7 @@ function DestinationCard({
 
   const [detail, message] = result?.error?.split(/:\s(.*)/s) ?? [];
   return (
-    <div className="overflow-hidden rounded border border-hairline bg-surface" role="group" aria-label={`${title} Destination`}>
+    <div id={destinationAnchor(destination)} className="overflow-hidden rounded border border-hairline bg-surface" role="group" aria-label={`${title} Destination`}>
       <header className="flex items-center gap-2.5 border-b border-hairline px-3.5 py-3">
         <Icon name={icon} />
         <span className="font-semibold">{title}</span>
@@ -494,6 +535,72 @@ function DestinationCard({
   );
 }
 
+const destinationAnchor = (kind: 'directory' | 's3'): string => `destination-${kind}`;
+
+function DeliveryTable({ ctx }: { ctx: RenderCtx }) {
+  const kinds = configuredKinds(ctx);
+  if (kinds.length === 0) return <p className="text-small text-muted">No Destination is configured. Add one to deliver Exports.</p>;
+  return (
+    <table className="w-full border-collapse text-small" aria-label="Export Destinations">
+      <thead>
+        <tr className="text-micro font-bold uppercase tracking-wider text-muted">
+          <th className="border-b border-hairline p-2 text-left">Destination</th>
+          <th className="border-b border-hairline p-2 text-left">Last delivery</th>
+          <th className="border-b border-hairline p-2" />
+        </tr>
+      </thead>
+      <tbody>
+        {kinds.map((kind) => {
+          const view = describeDelivery(ctx.deliveries?.[kind], 3);
+          const location = kind === 'directory' ? effectiveRaw(ctx, 'dirPath') : `s3://${effectiveRaw(ctx, 'bucket')}${ctx.config.export.s3.prefix ? `/${ctx.config.export.s3.prefix.replace(/\/$/, '')}` : ''}`;
+          return (
+            <tr key={kind}>
+              <td className="border-b border-hairline p-2.5 align-middle">
+                <div className="font-bold">{KIND_TITLE[kind]}</div>
+                <div className="font-data text-small text-muted">{location}</div>
+              </td>
+              <td className="border-b border-hairline p-2.5 align-middle">
+                <span
+                  className={`inline-block rounded-full px-2 py-0.5 text-label font-bold ${
+                    view.tone === 'fail' ? 'bg-fail-tint text-fail' : view.tone === 'ok' ? 'bg-done text-on-done' : 'bg-raised text-muted'
+                  }`}
+                >
+                  {view.chip}
+                </span>{' '}
+                <span className="text-small text-muted">{view.detail}</span>
+              </td>
+              <td className="border-b border-hairline p-2.5 text-right align-middle">
+                <button
+                  type="button"
+                  className={btnQuiet}
+                  onClick={() => document.getElementById(destinationAnchor(kind))?.scrollIntoView({ block: 'center' })}
+                >
+                  {view.tone === 'fail' ? 'Fix' : 'Edit'}
+                </button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+export function AddDestinationButton({ ctx }: { ctx: RenderCtx }) {
+  const missing = (['directory', 's3'] as const).find((k) => !configuredKinds(ctx).includes(k));
+  if (!missing) return null;
+  const enable = () => {
+    if (ctx.surface === 'workspace') setWsColumn(ctx, missing === 'directory' ? 'dirPath' : 'bucket', '');
+    else ctx.setConfig(missing === 'directory' ? { ...ctx.config, export: { ...ctx.config.export, directory: { path: '' } } } : withS3(ctx.config, { bucket: '' }));
+    requestAnimationFrame(() => document.getElementById(destinationAnchor(missing))?.scrollIntoView({ block: 'center' }));
+  };
+  return (
+    <button type="button" className={btnQuiet} onClick={enable}>
+      + Add Destination
+    </button>
+  );
+}
+
 export function DestinationsSection({ ctx }: { ctx: RenderCtx }) {
   const toggle = (col: 'dirPath' | 'bucket') => (on: boolean) => {
     const next = on ? '' : null;
@@ -508,6 +615,8 @@ export function DestinationsSection({ ctx }: { ctx: RenderCtx }) {
     );
   };
   return (
+    <div className="flex flex-col gap-4">
+    <DeliveryTable ctx={ctx} />
     <div className="grid items-start gap-4 lg:grid-cols-2">
       <DestinationCard
         ctx={ctx}
@@ -544,6 +653,7 @@ export function DestinationsSection({ ctx }: { ctx: RenderCtx }) {
         </div>
         <p className="-mt-1.5 text-small text-muted">Leave both blank to use the AWS default credential chain. Keys are masked and never shown again after saving.</p>
       </DestinationCard>
+    </div>
     </div>
   );
 }

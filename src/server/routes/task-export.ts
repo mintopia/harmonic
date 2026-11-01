@@ -50,8 +50,33 @@ async function integratedEpic(ctx: AppContext, workspaceId: number, epicRef: Tra
   if (stored.state !== 'integrated') throw new DomainError('invalid_state', `Epic ${epicRef} is ${stored.state}; only an integrated Epic can be exported`);
 }
 
+const deliverySchema = z
+  .object({
+    status: z.enum(['succeeded', 'failed']).meta({ example: 'failed' }),
+    at: z.string().meta({ example: '2026-09-30T12:00:00.000Z' }),
+    error: z.string().nullable().meta({ example: 'AccessDenied: 403' }),
+    retry: z.number().meta({ example: 2 }),
+    nextRetryAt: z.string().nullable().meta({ example: '2026-09-30T12:30:00.000Z' }),
+  })
+  .describe('The most recent delivery outcome; nextRetryAt is null once retries are exhausted.');
+
+const deliveryStateSchema = z.object({ directory: deliverySchema.optional(), s3: deliverySchema.optional() });
+
 export async function taskExportRoutes(fastify: FastifyInstance, ctx: AppContext): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
+
+  app.get(
+    '/export/destinations',
+    {
+      schema: {
+        tags: ['Export'],
+        description: 'The last delivery outcome of each Export Destination across all Tasks, with retry state. A Destination that has never delivered is absent.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        response: { 200: deliveryStateSchema.describe('Last delivery per Destination.') },
+      },
+    },
+    async () => ctx.exporter.deliveryState(),
+  );
 
   app.get(
     '/tasks/:id/export',
