@@ -7,6 +7,7 @@ import { SettingsSection } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { StepRail, stepPanelId } from './StepRail';
 import { ResolutionStrip } from './ResolutionStrip';
+import { promptsRailState, useOptionalPromptsFlow } from './prompt-library/PromptsFlow';
 import { btnGhost } from '../ui';
 import { BREADCRUMB_INCLUDES_STEP, TAB_RAIL_TITLES, resolveStep } from '../settings-steps-model';
 import { renderSection, sectionAnchor, sectionsForStep, stepStrip, stepValue, stepsForSurface, type RenderCtx } from './settings-schema';
@@ -21,6 +22,8 @@ import type { SettingTab } from '../../../src/domain/settings-registry.js';
  * layer), and its dirty/save plumbing — the transport differs (whole-config PUT
  * vs field PATCH) but the interaction is identical.
  */
+const MONO_VALUE_STEPS: ReadonlySet<string> = new Set(['find']);
+
 export function SettingsForm({
   title,
   intro,
@@ -67,18 +70,22 @@ export function SettingsForm({
     };
   }, [tab]);
   const steps = stepsForSurface(ctx.surface, tab);
-  const current = resolveStep(steps, step);
+  const flow = useOptionalPromptsFlow();
+  const promptsRail = tab === 'prompts' ? promptsRailState(flow) : null;
+  const off = promptsRail?.disabled;
+  const current = resolveStep(steps, step && off?.has(step) ? null : step);
   const sections = sectionsForStep(ctx.surface, tab, current);
   const strip = stepStrip({ ...ctx, deliveries }, tab, current);
   const index = steps.findIndex((s) => s.id === current);
   const currentStep = steps[index];
   const previous = steps[index - 1];
-  const next = steps[index + 1];
+  const next = steps.slice(index + 1).find((s) => !off?.has(s.id));
   const tabLabel = tabs.find((t) => t.id === tab)?.label ?? '';
-  const crumbs = ['Settings', tabLabel, ...(BREADCRUMB_INCLUDES_STEP.has(tab) && currentStep ? [currentStep.title] : [])].join(' › ');
+  const promptCrumbs = tab === 'prompts' && flow && current !== 'find' ? ['All prompts', flow.isNew ? 'New prompt' : (flow.selected ?? '')] : [];
+  const crumbs = ['Settings', tabLabel, ...(BREADCRUMB_INCLUDES_STEP.has(tab) && currentStep ? [currentStep.title] : []), ...promptCrumbs].join(' › ');
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   const railLabel = TAB_RAIL_TITLES[tab];
-  const values = Object.fromEntries(steps.map((s) => [s.id, stepValue(ctx, tab, s.id)]));
+  const values = promptsRail?.values ?? Object.fromEntries(steps.map((s) => [s.id, stepValue(ctx, tab, s.id)]));
   const jump = (id: string) => onStep(id);
   return (
     <div>
@@ -101,10 +108,15 @@ export function SettingsForm({
         aria-labelledby={tabId(tab)}
         className="mt-5 flex min-w-0 flex-col gap-6 md:flex-row md:items-start"
       >
-        <StepRail steps={steps} current={current} onSelect={jump} label={railLabel} values={values} />
+        <StepRail steps={steps} current={current} onSelect={jump} label={railLabel}
+          values={values}
+          summaries={promptsRail?.summaries}
+          disabled={off}
+          monoValueSteps={promptsRail ? MONO_VALUE_STEPS : undefined}
+        />
 
         <div id={stepPanelId(current)} className="flex min-w-0 flex-1 flex-col gap-4">
-          {currentStep && (
+          {currentStep && !currentStep.ownHeader && (
             <div className="flex flex-col gap-1.5">
               <h2 className="text-display font-semibold">{currentStep.heading}</h2>
               <p className="text-body text-muted">{currentStep.intro}</p>
@@ -131,7 +143,7 @@ export function SettingsForm({
             <div className="flex flex-wrap items-center gap-3">
               {previous && (
                 <button type="button" className={btnGhost} onClick={() => jump(previous.id)}>
-                  ← {previous.title}
+                  ← {currentStep?.backTitle ?? previous.title}
                 </button>
               )}
               {currentStep?.note && <span className="text-small text-muted">{currentStep.note}</span>}

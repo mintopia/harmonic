@@ -1,5 +1,5 @@
 import { PROMPT_CODE_PATTERN } from '../../src/domain/prompt-library.js';
-import type { Prompt } from './types.js';
+import type { Prompt, WorkflowLibraryEntry } from './types.js';
 
 export function filterPrompts(prompts: readonly Prompt[], query: string): Prompt[] {
   const q = query.trim().toLowerCase();
@@ -12,9 +12,42 @@ export function libraryCounts(prompts: readonly Prompt[]): { total: number; bund
   return { total: prompts.length, bundled, yours: prompts.length - bundled };
 }
 
-export function countsLabel(prompts: readonly Prompt[]): string {
-  const { total, bundled, yours } = libraryCounts(prompts);
-  return `${total} ${total === 1 ? 'prompt' : 'prompts'} · ${bundled} Bundled · ${yours} yours`;
+export type PromptFilter = 'all' | 'yours' | 'unused';
+
+export const PROMPT_FILTERS: readonly { id: PromptFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'yours', label: 'Yours' },
+  { id: 'unused', label: 'Unused' },
+];
+
+const isUnused = (p: Prompt): boolean => p.usedBy.length === 0 && p.usedBySteps.length === 0;
+
+export function filterByView(prompts: readonly Prompt[], filter: PromptFilter): Prompt[] {
+  if (filter === 'yours') return prompts.filter((p) => !p.bundled);
+  if (filter === 'unused') return prompts.filter(isUnused);
+  return [...prompts];
+}
+
+export function filterCounts(prompts: readonly Prompt[]): Record<PromptFilter, number> {
+  return { all: prompts.length, yours: prompts.filter((p) => !p.bundled).length, unused: prompts.filter(isUnused).length };
+}
+
+export function runningNow(prompt: Pick<Prompt, 'usedBySteps'>, workflows: readonly WorkflowLibraryEntry[]): number {
+  const names = new Set(prompt.usedBySteps.map((u) => u.workflow));
+  return workflows.filter((w) => names.has(w.name)).reduce((sum, w) => sum + w.inUse.running, 0);
+}
+
+export function ticketsLabel(count: number): string {
+  return `${count} ${count === 1 ? 'Ticket' : 'Tickets'}`;
+}
+
+export function unsavedChanges(saved: Pick<Prompt, 'description' | 'text'>, draft: Pick<Prompt, 'description' | 'text'>): number {
+  return Number(draft.description !== saved.description) + Number(draft.text !== saved.text);
+}
+
+export function savedLabel(iso: string | null): string | null {
+  const edited = editedLabel(iso);
+  return edited && `saved ${edited.slice('Edited '.length).replace(' · ', ' ')}`;
 }
 
 export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): string {

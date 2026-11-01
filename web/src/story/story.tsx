@@ -36,7 +36,10 @@ import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { workflowStory, workflowTaskFields } from './api-stub';
-import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
+import { PromptEditStep } from '../components/prompt-library/PromptEdit';
+import { PromptFind } from '../components/prompt-library/PromptFind';
+import { PromptImpact } from '../components/prompt-library/PromptImpact';
+import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -84,9 +87,14 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
 }
 
 function PromptLibraryStory() {
+  const [step, setStep] = useState('find');
   return (
     <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1040, margin: '0 auto' }}>
-      <PromptLibrary />
+      <PromptsFlowProvider active onStep={setStep}>
+        {step === 'find' && <PromptFind />}
+        {step === 'edit' && <PromptEditStep />}
+        {step === 'impact' && <PromptImpact />}
+      </PromptsFlowProvider>
     </div>
   );
 }

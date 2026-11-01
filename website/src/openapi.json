@@ -11466,6 +11466,11 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
+              "running": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "workspaces": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -11474,9 +11479,10 @@
             },
             "required": [
               "tickets",
+              "running",
               "workspaces"
             ],
-            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+            "description": "Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to."
           },
           "assignedAs": {
             "type": "array",
@@ -23199,6 +23205,11 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
+              "running": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "workspaces": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -23207,10 +23218,11 @@
             },
             "required": [
               "tickets",
+              "running",
               "workspaces"
             ],
             "additionalProperties": false,
-            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+            "description": "Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to."
           },
           "assignedAs": {
             "type": "array",

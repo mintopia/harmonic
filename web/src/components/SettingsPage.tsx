@@ -14,6 +14,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import type { GlobalRenderCtx } from './settings-schema';
 import { SETTING_TABS } from '../../../src/domain/settings-registry.js';
 import { useSettingsLocation } from '../useSettingsLocation';
+import { PromptsFlowProvider } from './prompt-library/PromptsFlow';
 
 /**
  * The global settings surface: a thin data shell over the shared
@@ -154,6 +155,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   };
 
   return (
+    <PromptsFlowProvider active={tab === 'prompts'} onStep={setStep}>
     <SettingsForm
       title="Settings"
       intro=""
@@ -189,5 +191,6 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </ConfirmDialog>
       )}
     </SettingsForm>
+    </PromptsFlowProvider>
   );
 }

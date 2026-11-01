@@ -23,7 +23,7 @@ const workflowSchema = z
 
 const listEntrySchema = workflowSchema
   .extend({
-    inUse: z.object({ tickets: z.number().int(), workspaces: z.number().int() }).describe('Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to.'),
+    inUse: z.object({ tickets: z.number().int(), running: z.number().int(), workspaces: z.number().int() }).describe('Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to.'),
     assignedAs: z
       .array(z.object({ kind: z.enum(['global-default', 'workspace-default', 'label']), label: z.string().optional() }))
       .describe('Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted.'),
@@ -32,6 +32,7 @@ const listEntrySchema = workflowSchema
 
 export interface WorkflowUsage {
   tickets: number;
+  running: number;
   workspaces: number;
 }
 
@@ -53,7 +54,7 @@ export async function workflowRoutes(
     { schema: { tags, description: 'List the workflow library: bundled workflows first, then operator workflows.', security, response: { 200: listResponse('workflows', listEntrySchema).describe('Every workflow, bundled first.') } } },
     async () => {
       const [usage, assignments] = await Promise.all([ctx.usage(), ctx.assignments()]);
-      const workflows = ctx.workflows.list().map((w) => ({ ...w, inUse: usage.get(w.name) ?? { tickets: 0, workspaces: 0 }, assignedAs: assignments.get(w.name) ?? [] }));
+      const workflows = ctx.workflows.list().map((w) => ({ ...w, inUse: usage.get(w.name) ?? { tickets: 0, running: 0, workspaces: 0 }, assignedAs: assignments.get(w.name) ?? [] }));
       return { workflows, total: workflows.length };
     },
   );

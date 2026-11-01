@@ -59,7 +59,7 @@ export interface WorkflowLibraryEntry {
   subject: 'ticket' | 'epic';
   bundled: boolean;
   version: number;
-  inUse: { tickets: number; workspaces: number };
+  inUse: { tickets: number; running: number; workspaces: number };
   assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
 }
 

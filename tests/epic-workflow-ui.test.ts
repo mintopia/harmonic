@@ -8,7 +8,7 @@ import type { Epic } from '../web/src/epic-model.js';
 import { cleanup, flush, makeConfig, mountComponent } from './component-smoke-harness.js';
 
 const entry = (name: string, subject: 'ticket' | 'epic', version: number) => ({
-  name, description: '', subject, bundled: false, version, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [],
+  name, description: '', subject, bundled: false, version, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [],
 });
 const library = [entry('Plain ticket', 'ticket', 2), entry('epic', 'epic', 1), entry('Migrated Epic (global)', 'epic', 1)];
 

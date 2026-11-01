@@ -55,18 +55,20 @@ function isStaticAssetPath(path: string): boolean {
 
 async function workflowUsage(asyncDb: AppContext['asyncDb']): Promise<Map<string, WorkflowUsage>> {
   const rows = await asyncDb.read((db) =>
-    db.select({ ref: tasks.workflowRef, requested: tasks.workflowRequested, workspaceId: tasks.workspaceId }).from(tasks).where(or(isNotNull(tasks.workflowRef), isNotNull(tasks.workflowRequested))).all(),
+    db.select({ ref: tasks.workflowRef, requested: tasks.workflowRequested, workspaceId: tasks.workspaceId, state: tasks.state }).from(tasks).where(or(isNotNull(tasks.workflowRef), isNotNull(tasks.workflowRequested))).all(),
   );
   const tickets = new Map<string, number>();
+  const running = new Map<string, number>();
   const spaces = new Map<string, Set<number | null>>();
   for (const row of rows) {
     const names = new Set([row.requested, row.ref?.split('@')[0]].filter((n): n is string => !!n));
     for (const name of names) {
       tickets.set(name, (tickets.get(name) ?? 0) + 1);
+      if (row.state === 'working') running.set(name, (running.get(name) ?? 0) + 1);
       spaces.set(name, (spaces.get(name) ?? new Set()).add(row.workspaceId));
     }
   }
-  return new Map([...tickets].map(([name, count]) => [name, { tickets: count, workspaces: [...spaces.get(name)!].filter((w) => w !== null).length }]));
+  return new Map([...tickets].map(([name, count]) => [name, { tickets: count, running: running.get(name) ?? 0, workspaces: [...spaces.get(name)!].filter((w) => w !== null).length }]));
 }
 
 export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts, prompts: PromptLibrary): Promise<void> {

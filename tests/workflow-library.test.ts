@@ -100,7 +100,7 @@ describe('/api/workflows', () => {
   it('lists inUse and assignedAs for every workflow', async () => {
     const list = await server.api('GET', '/api/workflows');
     const implement = list.body.workflows.find((w: { name: string }) => w.name === 'implement');
-    expect(implement.inUse).toEqual({ tickets: 0, workspaces: 0 });
+    expect(implement.inUse).toEqual({ tickets: 0, running: 0, workspaces: 0 });
     expect(implement.assignedAs).toEqual([]);
   });
 
