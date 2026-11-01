@@ -503,6 +503,7 @@ export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo' | 'git';
 export interface TrackerDetection {
   detectedTracker: { name: string; kind: string | null } | null;
   detectedCodeRepository: CodeRepositoryKind | null;
+  repoDocTriageLabels: NonNullable<Workspace['triageLabels']>;
 }
 
 export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };

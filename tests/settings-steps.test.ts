@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../web/src/api.js';
 import { parseRoute, serializeRoute } from '../web/src/router-model.js';
 import { SETTING_TABS } from '../src/domain/settings-registry.js';
 import {
@@ -202,5 +203,54 @@ describe('ResolutionStrip', () => {
     expect(items[0]?.querySelector('a')).toBeNull();
     expect(items[1]?.querySelector('a')?.getAttribute('href')).toBe('#here');
     expect(items[2]?.className).toContain('border-accent');
+  });
+});
+
+describe('Integrations Work step', () => {
+  const mountWork = async (resolvedSource: 'configured' | 'detected' | 'code-repository') => {
+    vi.spyOn(api, 'trackerKinds').mockResolvedValue({ kinds: [] });
+    vi.spyOn(api, 'trackerDetection').mockResolvedValue({ detectedTracker: null, detectedCodeRepository: null, repoDocTriageLabels: {} });
+    const config = makeConfig();
+    const workspace = makeWorkspace({
+      trackerEnabled: true,
+      resolvedTracker: { ok: true, label: 'GitHub Issues', kind: 'github', source: resolvedSource, code: null, reason: null },
+    });
+    const ctx = {
+      surface: 'workspace' as const,
+      config,
+      workspace,
+      pristineWorkspace: workspace,
+      setWorkspace: () => {},
+      errors: {},
+      blockedByRunningTask: false,
+      onRequestDelete: () => {},
+    };
+    return mountComponent(
+      createElement(SettingsForm, {
+        title: 'Settings',
+        intro: 'x',
+        tabs: SETTING_TABS,
+        tab: 'integrations',
+        onTab: () => {},
+        step: 'work',
+        onStep: () => {},
+        ctx,
+        dirty: false,
+        saving: false,
+        error: null,
+        onSave: () => {},
+        onDiscard: () => {},
+      }),
+    );
+  };
+
+  it('highlights the tracker source that actually resolved', async () => {
+    const host = await mountWork('detected');
+    const items = [...host.querySelectorAll('ol[aria-label="Tracker resolution order"] li')];
+    expect(items.map((li) => li.querySelector('span')?.textContent)).toEqual(['1st', '2nd · in use', '3rd']);
+    expect(items[1]?.className).toContain('border-accent');
+    expect(items[0]?.className).toContain('border-dashed');
+    expect(host.querySelector('input[type=radio]')).not.toBeNull();
+    expect(host.textContent).toContain('Triage labels');
   });
 });

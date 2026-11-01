@@ -9,6 +9,7 @@ import { declaredTrackerName } from '../../tracker/adapter.js';
 import { normaliseKindId, trackerKindFor, TRACKER_KINDS } from '../../tracker/kinds.js';
 import { resolveCodeRepository } from '../../repository/resolve.js';
 import { safeErrorReason } from '../../tracker/rest-client.js';
+import { parseTriageLabelsDoc, triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 
 const verifyResponseSchema = z
   .union([z.object({ ok: z.literal(true), identity: z.string().meta({ example: 'octocat' }) }), z.object({ ok: z.literal(false), reason: z.string() })])
@@ -34,6 +35,7 @@ const detectionSchema = z
   .object({
     detectedTracker: z.object({ name: z.string(), kind: z.string().nullable() }).nullable(),
     detectedCodeRepository: z.enum(['github', 'gitlab', 'forgejo', 'git']).nullable(),
+    repoDocTriageLabels: triageLabelsOverrideSchema.describe("The roles the repo's docs/agents/triage-labels.md names; empty when absent."),
   })
   .meta({ id: 'TrackerDetection' });
 
@@ -80,9 +82,11 @@ export async function trackerSettingsRoutes(fastify: FastifyInstance, ctx: Pick<
       const doc = await readFile(join(ws.workingDir, 'docs/agents/issue-tracker.md'), 'utf8').catch(() => null);
       const name = doc ? declaredTrackerName(doc) : undefined;
       const kindId = name ? normaliseKindId(name) : null;
+      const triageDoc = await readFile(join(ws.workingDir, 'docs/agents/triage-labels.md'), 'utf8').catch(() => null);
       return {
         detectedTracker: name ? { name, kind: kindId && trackerKindFor(kindId) ? kindId : null } : null,
         detectedCodeRepository: await resolveCodeRepository(ws.workingDir),
+        repoDocTriageLabels: triageDoc ? parseTriageLabelsDoc(triageDoc) : {},
       };
     },
   );

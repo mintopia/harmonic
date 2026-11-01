@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
-import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
+import { btnGhost, btnQuiet, btnQuietDestructive, field, selectField, tableHead } from '../ui';
+import { OTHER_EVENTS, SUBSCRIPTION_COLUMNS, channelSubtitle, channelTypeLabel } from './channel-events-model';
 import { useConfirmedDelete } from './useConfirmedDelete';
 import { EmptyState } from './EmptyState';
-
-const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'task.failed', 'export.failed', 'queue.idle'] as const;
 
 /**
  * Event subscriptions buffer through the settings save bar: a
@@ -13,6 +12,8 @@ const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 't
  * Provisioning or removing a channel is an immediate side-effect action, so
  * create/delete still hit the REST resource directly and sync the parent lists.
  */
+const cell = 'border-b border-hairline px-2 py-2.5';
+
 export function ChannelsSection({
   channels,
   onToggleEvent,
@@ -65,39 +66,65 @@ export function ChannelsSection({
   return (
     <div>
       {deleteDialog}
+      <div className="flex justify-end">
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="font-semibold text-accent hover:underline">
+            + Add channel
+          </button>
+        )}
+      </div>
       {channels.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {channels.map((channel) => (
-            <li key={channel.id}>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{channel.name}</span>
-                <span className={`${chip} bg-raised text-muted`}>{channel.type}</span>
-                <span className="min-w-0 flex-1 truncate font-data text-data text-muted">
-                  {channel.type === 'email' ? channel.config.to : channel.config.url}
-                </span>
-                <button
-                  className={`${btnQuietDestructive} px-2 py-1.5`}
-                  onClick={() => askDelete(channel)}
-                >
-                  Delete
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-                {EVENTS.map((event) => (
-                  <label key={event} className="flex items-center gap-2 text-small text-muted">
+        <table className="mt-2 w-full border-collapse text-body">
+          <thead>
+            <tr className={`${tableHead} text-left`}>
+              <th className={cell}>Channel</th>
+              {SUBSCRIPTION_COLUMNS.map((column) => <th key={column.event} className={cell}>{column.label}</th>)}
+              <th className={cell}>Other events</th>
+              <th className={cell}><span className="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {channels.map((channel) => (
+              <tr key={channel.id}>
+                <td className={cell}>
+                  <div className="font-bold">{channel.name}</div>
+                  <div className="max-w-64 truncate text-small text-muted">{channelTypeLabel(channel.type)} · {channelSubtitle(channel)}</div>
+                </td>
+                {SUBSCRIPTION_COLUMNS.map((column) => (
+                  <td key={column.event} className={cell}>
                     <input
                       type="checkbox"
                       className="accent-accent"
-                      checked={channel.events.includes(event)}
-                      onChange={() => onToggleEvent(channel.id, event)}
+                      aria-label={`${channel.name} ${column.label}`}
+                      checked={channel.events.includes(column.event)}
+                      onChange={() => onToggleEvent(channel.id, column.event)}
                     />
-                    {event}
-                  </label>
+                  </td>
                 ))}
-              </div>
-            </li>
-          ))}
-        </ul>
+                <td className={cell}>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {OTHER_EVENTS.map((event) => (
+                      <label key={event} className="flex items-center gap-1.5 text-small text-muted">
+                        <input
+                          type="checkbox"
+                          className="accent-accent"
+                          checked={channel.events.includes(event)}
+                          onChange={() => onToggleEvent(channel.id, event)}
+                        />
+                        {event}
+                      </label>
+                    ))}
+                  </div>
+                </td>
+                <td className={`${cell} text-right`}>
+                  <button className={`${btnQuietDestructive} px-2 py-1.5`} onClick={() => askDelete(channel)}>
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
       {channels.length === 0 && !adding && (
@@ -148,11 +175,7 @@ export function ChannelsSection({
             </button>
           </div>
         </div>
-      ) : (
-        <button onClick={() => setAdding(true)} className={`${btnGhost} mt-3`}>
-          + Add channel
-        </button>
-      )}
+      ) : null}
     </div>
   );
 }

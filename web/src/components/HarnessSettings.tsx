@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { harnessRows } from './harness-table-model';
 import type { AppConfig, ConfigLayers, HarnessConfig, ModelCatalogEntry } from '../types';
-import { btnGhost, btnQuiet, field, selectField, tableHead, touchTarget, touchTargetInline } from '../ui';
+import { btnGhost, btnQuiet, chip, field, selectField, tableHead, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
 import { ListEditor } from './EntryList';
@@ -66,6 +67,7 @@ function HarnessCard({
   baseline,
   fieldErrors,
   permissionModes,
+  forceOpen,
   onChange,
 }: {
   id: string;
@@ -73,6 +75,7 @@ function HarnessCard({
   baseline: HarnessConfig;
   fieldErrors: Record<string, string>;
   permissionModes: ConfigLayers['harnessPermissionModes'];
+  forceOpen: boolean;
   onChange: (harness: HarnessConfig) => void;
 }) {
   const set = <K extends keyof HarnessConfig>(key: K, value: HarnessConfig[K]) => onChange({ ...harness, [key]: value });
@@ -81,7 +84,7 @@ function HarnessCard({
   const permissionMode = permissionModes[id];
 
   return (
-    <details className="group" open={hasErrors || undefined}>
+    <details id={`harness-editor-${id}`} className="group" open={hasErrors || forceOpen || undefined}>
       <summary className="flex cursor-pointer select-none items-center gap-2 rounded-md px-1.5 py-2.5 transition-colors duration-150 hover:bg-raised [list-style:none] [&::-webkit-details-marker]:hidden">
         <Icon
           className="-rotate-90 text-faint transition-transform duration-150 group-open:rotate-0 motion-reduce:transition-none"
@@ -194,19 +197,54 @@ export function HarnessesSection({
   permissionModes: ConfigLayers['harnessPermissionModes'];
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const edit = (id: string) => {
+    setEditing(id);
+    document.getElementById(`harness-editor-${id}`)?.scrollIntoView?.({ block: 'nearest' });
+  };
+  const cell = 'border-b border-hairline px-2 py-2.5';
   return (
-    <div className="flex flex-col gap-2">
-      {Object.entries(config.harnesses).map(([id, harness]) => (
-        <HarnessCard
-          key={id}
-          id={id}
-          harness={harness}
-          baseline={baseline.harnesses[id] ?? harness}
-          fieldErrors={fieldErrors}
-          permissionModes={permissionModes}
-          onChange={(next) => onChange({ ...config.harnesses, [id]: next })}
-        />
-      ))}
+    <div className="flex flex-col gap-4">
+      <table className="w-full border-collapse text-body">
+        <thead>
+          <tr className={`${tableHead} text-left`}>
+            <th className={cell}>Harness</th>
+            <th className={cell}>Command</th>
+            <th className={cell}>Status</th>
+            <th className={cell}>Models</th>
+            <th className={cell}><span className="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {harnessRows(config.harnesses).map((row) => (
+            <tr key={row.id}>
+              <td className={`${cell} font-bold`}>{row.id}</td>
+              <td className={`${cell} font-data text-data`}>{row.command}</td>
+              <td className={cell}>
+                <span className={`${chip} ${row.status === 'ready' ? 'bg-done-tint text-done' : 'bg-fail-tint text-fail'}`}>{row.statusLabel}</span>
+              </td>
+              <td className={cell}>{row.modelCount}</td>
+              <td className={`${cell} text-right`}>
+                <button type="button" className="font-semibold text-accent hover:underline" onClick={() => edit(row.id)}>Edit</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex flex-col gap-2">
+        {Object.entries(config.harnesses).map(([id, harness]) => (
+          <HarnessCard
+            key={id}
+            id={id}
+            harness={harness}
+            baseline={baseline.harnesses[id] ?? harness}
+            fieldErrors={fieldErrors}
+            permissionModes={permissionModes}
+            forceOpen={editing === id}
+            onChange={(next) => onChange({ ...config.harnesses, [id]: next })}
+          />
+        ))}
+      </div>
     </div>
   );
 }

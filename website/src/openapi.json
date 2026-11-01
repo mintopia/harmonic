@@ -22400,11 +22400,35 @@
                 "type": "null"
               }
             ]
+          },
+          "repoDocTriageLabels": {
+            "type": "object",
+            "properties": {
+              "readyForAgent": {
+                "type": "string",
+                "minLength": 1
+              },
+              "readyForHuman": {
+                "type": "string",
+                "minLength": 1
+              },
+              "epic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "wayfinderMap": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "description": "The roles the repo's docs/agents/triage-labels.md names; empty when absent."
           }
         },
         "required": [
           "detectedTracker",
-          "detectedCodeRepository"
+          "detectedCodeRepository",
+          "repoDocTriageLabels"
         ],
         "additionalProperties": false
       },

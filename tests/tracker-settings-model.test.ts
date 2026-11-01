@@ -6,6 +6,8 @@ import {
   applyTrackerSetting,
   applyTriageLabel,
   parseCodeRepositoryOverride,
+  triageLabelSource,
+  trackerStripRules,
 } from '../web/src/tracker-settings-model.js';
 
 describe('applyTrackerSetting', () => {
@@ -58,5 +60,34 @@ describe('code repository kinds', () => {
 describe('RESOLVE_FAILURE_LABEL', () => {
   it('covers every failure code with a Tracker-capitalised label', () => {
     expect(Object.keys(RESOLVE_FAILURE_LABEL).sort()).toEqual(['misconfigured', 'no-declaration', 'unsupported']);
+  });
+});
+
+describe('triageLabelSource', () => {
+  it('prefers the Configured label, then the repo doc, then the default', () => {
+    expect(triageLabelSource('epic', { epic: 'x' }, { epic: 'y' })).toBe('configured');
+    expect(triageLabelSource('epic', null, { epic: 'y' })).toBe('repo-doc');
+    expect(triageLabelSource('epic', { readyForAgent: 'x' }, {})).toBe('default');
+    expect(triageLabelSource('epic', null, undefined)).toBe('default');
+  });
+});
+
+describe('trackerStripRules', () => {
+  const resolved = (source: 'configured' | 'detected' | 'code-repository') =>
+    ({ ok: true, label: 'GitHub Issues', kind: 'github', source, code: null, reason: null }) as const;
+  const inUse = (source: 'configured' | 'detected' | 'code-repository') =>
+    trackerStripRules(resolved(source)).map((r) => (r.always ? r.caption : null));
+
+  it('marks only the rung that resolved', () => {
+    expect(inUse('configured')).toEqual(['1st · in use', null, null]);
+    expect(inUse('detected')).toEqual([null, '2nd · in use', null]);
+    expect(inUse('code-repository')).toEqual([null, null, '3rd · in use']);
+  });
+
+  it('names the resolved tracker on the used rung and marks none when unresolved', () => {
+    expect(trackerStripRules(resolved('detected'))[1]?.note).toBe('GitHub Issues');
+    expect(trackerStripRules(null).some((r) => r.always)).toBe(false);
+    const failed = { ok: false, label: null, kind: null, source: null, code: 'no-declaration', reason: 'x' } as const;
+    expect(trackerStripRules(failed).some((r) => r.always)).toBe(false);
   });
 });

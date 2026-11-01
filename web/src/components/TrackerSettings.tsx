@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { useAsyncResource } from '../useAsyncResource';
-import type { JSONSchemaProperty, TrackerDetection, TrackerKindInfo, TrackerSource, VerifyResult, Workspace } from '../types';
+import type { CodeRepositoryKind, JSONSchemaProperty, TrackerDetection, TrackerKindInfo, TrackerSource, VerifyResult, Workspace } from '../types';
 import {
   REPOSITORY_KINDS,
   REPOSITORY_LABEL,
   RESOLVE_FAILURE_LABEL,
   applyTrackerSetting,
   applyTriageLabel,
+  TRIAGE_SOURCE_LABEL,
   parseCodeRepositoryOverride,
+  triageLabelSource,
+  type TriageLabelSource,
 } from '../tracker-settings-model';
-import { btnGhost, field, selectField } from '../ui';
+import { btnGhost, field, selectField, tableHead } from '../ui';
 import { DEFAULT_TRIAGE_LABELS, type TriageLabels } from '../../../src/tracker/triage-defaults.js';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Switch } from './Switch';
@@ -60,6 +63,10 @@ function LoadFailure({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
+function Outcome({ tone, dot, children }: { tone: 'done' | 'fail'; dot?: boolean; children: ReactNode }) {
+  return dot ? <StatusDot tone={tone}>{children}</StatusDot> : <span className={tone === 'done' ? 'text-done' : 'text-fail'}>{children}</span>;
+}
+
 function VerifyControl({
   run,
   disabled,
@@ -67,6 +74,7 @@ function VerifyControl({
   label = 'Verify',
   okPrefix = 'Verified as',
   resetKey,
+  dot,
 }: {
   run: () => Promise<VerifyResult>;
   disabled?: boolean;
@@ -74,6 +82,7 @@ function VerifyControl({
   label?: string;
   okPrefix?: string;
   resetKey?: string;
+  dot?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyResult | null>(null);
@@ -107,12 +116,13 @@ function VerifyControl({
       </button>
       <div role="status" aria-live="polite" className="min-w-0 text-small">
         {result?.ok === true && !disabled && (
-          <span className="text-done">
+          <Outcome tone="done" dot={dot}>
             {okPrefix} <span className="font-medium">{result.identity}</span>
-          </span>
+          </Outcome>
         )}
-        {result?.ok === false && !disabled && <span className="text-fail">{result.reason}</span>}
+        {result?.ok === false && !disabled && <Outcome tone="fail" dot={dot}>{result.reason}</Outcome>}
         {disabled && disabledHint && <span className="text-muted">{disabledHint}</span>}
+        {dot && !disabled && !busy && !result && <StatusDot tone="muted">Not checked yet</StatusDot>}
       </div>
     </div>
   );
@@ -368,6 +378,41 @@ function KindSettings({ kind, ctx }: { kind: TrackerKindInfo; ctx: WorkspaceRend
   );
 }
 
+function TrackerChoice({ id, checked, onSelect, title, note }: { id: string; checked: boolean; onSelect: () => void; title: string; note: string }) {
+  return (
+    <label
+      htmlFor={id}
+      className={`flex min-w-48 flex-1 cursor-pointer items-start gap-2.5 rounded-md ${
+        checked ? 'border-2 border-accent bg-sunken p-[11px]' : 'border border-edge p-3'
+      }`}
+    >
+      <input
+        id={id}
+        type="radio"
+        name="workspace-tracker-kind"
+        className="mt-1 accent-accent"
+        checked={checked}
+        onChange={onSelect}
+      />
+      <span className="flex flex-col">
+        <span className="font-bold text-ink">{title}</span>
+        <span className="text-small text-muted">{note}</span>
+      </span>
+    </label>
+  );
+}
+
+function StatusDot({ tone, children }: { tone: 'done' | 'fail' | 'muted'; children: ReactNode }) {
+  const color = tone === 'done' ? 'text-done' : tone === 'fail' ? 'text-fail' : 'text-muted';
+  const dot = tone === 'done' ? 'bg-done-dot' : tone === 'fail' ? 'bg-fail-dot' : 'bg-faint';
+  return (
+    <div className={`flex items-center gap-2 text-small ${color}`}>
+      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${dot}`} />
+      <span className="min-w-0">{children}</span>
+    </div>
+  );
+}
+
 function SubHead({ children }: { children: ReactNode }) {
   return <p className="mt-1 text-small text-muted">{children}</p>;
 }
@@ -415,35 +460,46 @@ export function IssueTrackerSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 sm:max-w-xl">
-        <div>
-          <label className={fieldLabel} htmlFor="workspace-tracker-kind">Configured Tracker</label>
-          <select
-            id="workspace-tracker-kind"
-            className={`${selectField} w-full`}
-            value={configured?.kind ?? ''}
-            disabled={kinds.state.status !== 'ready'}
-            onChange={(e) => selectKind(e.target.value)}
-          >
-            <option value="">Inherit (automatic)</option>
-            {configured && !kind && <option value={configured.kind}>{configured.kind}</option>}
-            {kindList.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-          {kinds.state.status === 'loading' && <SubHead>Loading tracker kinds…</SubHead>}
-          {kinds.state.status === 'error' && <LoadFailure message={kinds.state.message} onRetry={kinds.reload} />}
-          {!configured && (
-            <SubHead>
-              {detected
-                ? `Inherited: the repo declares ${detected.name}${detected.kind ? '' : ' (not a kind Harmonic supports)'}.`
-                : 'Inherited: uses the repo’s docs/agents/issue-tracker.md, then the Code Repository.'}
-            </SubHead>
+      <div className="flex flex-col gap-4">
+        <fieldset className="m-0 flex flex-wrap gap-2.5 border-0 p-0" disabled={kinds.state.status !== 'ready'}>
+          <legend className={`${fieldLabel} mb-2.5`}>Tracker</legend>
+          <TrackerChoice
+            id="workspace-tracker-kind-inherit"
+            checked={!configured}
+            onSelect={() => selectKind('')}
+            title="Inherit (automatic)"
+            note="Repo doc, then the Code Repository"
+          />
+          {configured && !kind && (
+            <TrackerChoice
+              id={`workspace-tracker-kind-${configured.kind}`}
+              checked
+              onSelect={() => selectKind(configured.kind)}
+              title={configured.kind}
+              note="Not a registered kind"
+            />
           )}
-          <FieldError message={errors['configuredTracker']} />
-        </div>
+          {kindList.map((k) => (
+            <TrackerChoice
+              key={k.id}
+              id={`workspace-tracker-kind-${k.id}`}
+              checked={configured?.kind === k.id}
+              onSelect={() => selectKind(k.id)}
+              title={k.label}
+              note={k.secretNames.length > 0 ? `Secret ${k.secretNames.join(', ')}` : 'No Secret needed'}
+            />
+          ))}
+        </fieldset>
+        {kinds.state.status === 'loading' && <SubHead>Loading tracker kinds…</SubHead>}
+        {kinds.state.status === 'error' && <LoadFailure message={kinds.state.message} onRetry={kinds.reload} />}
+        {!configured && (
+          <SubHead>
+            {detected
+              ? `Inherited: the repo declares ${detected.name}${detected.kind ? '' : ' (not a kind Harmonic supports)'}.`
+              : 'Inherited: uses the repo’s docs/agents/issue-tracker.md, then the Code Repository.'}
+          </SubHead>
+        )}
+        <FieldError message={errors['configuredTracker']} />
 
         {kind && <KindSettings kind={kind} ctx={ctx} />}
 
@@ -478,36 +534,47 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const detected = detection.state.status === 'ready' ? detection.state.value.detectedCodeRepository : null;
   const [secretVersion, setSecretVersion] = useState(0);
   const needsForgejoToken = (pristineWorkspace.codeRepository ?? detected) === 'forgejo' && pristineWorkspace.configuredTracker?.kind !== 'forgejo';
+  const effective = pristineWorkspace.codeRepository ?? detected;
   return (
-    <div className="flex flex-col gap-4 sm:max-w-xl">
-      <div>
-        <span className={fieldLabel}>Detected</span>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2.5">
         {detection.state.status === 'loading' && <p className="text-small text-muted">Detecting…</p>}
         {detection.state.status === 'error' && <LoadFailure message={detection.state.message} onRetry={detection.reload} />}
         {detection.state.status === 'ready' && (
-          <p className={detected ? 'font-medium text-ink' : 'text-muted'}>
-            {detected ? REPOSITORY_LABEL[detected] : 'None detected from the origin remote'}
-          </p>
+          <>
+            <span className={detected ? 'font-bold text-ink' : 'text-muted'}>
+              {detected ? REPOSITORY_LABEL[detected] : 'None detected from the origin remote'}
+            </span>
+            {detected && <span className="rounded-full bg-done-tint px-2 py-0.5 text-micro font-bold text-done">Detected</span>}
+          </>
         )}
       </div>
-      <div>
-        <label className={fieldLabel} htmlFor="workspace-code-repository">Override</label>
-        <select
-          id="workspace-code-repository"
-          className={`${selectField} w-full`}
-          value={workspace.codeRepository ?? ''}
-          onChange={(e) =>
-            ctx.setWorkspace({ ...workspace, codeRepository: parseCodeRepositoryOverride(e.target.value) })
-          }
-        >
-          <option value="">Automatic</option>
-          {REPOSITORY_KINDS.map((k) => (
-            <option key={k} value={k}>
-              {REPOSITORY_LABEL[k]}
-            </option>
-          ))}
-        </select>
-        <FieldError message={errors['codeRepository']} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className={fieldLabel} htmlFor="workspace-code-repository">Forge</label>
+          <select
+            id="workspace-code-repository"
+            className={`${selectField} w-full`}
+            value={workspace.codeRepository ?? ''}
+            onChange={(e) =>
+              ctx.setWorkspace({ ...workspace, codeRepository: parseCodeRepositoryOverride(e.target.value) })
+            }
+          >
+            <option value="">Detected from origin</option>
+            {REPOSITORY_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {REPOSITORY_LABEL[k]}
+              </option>
+            ))}
+          </select>
+          <FieldError message={errors['codeRepository']} />
+        </div>
+        <div>
+          <label className={fieldLabel} htmlFor="workspace-code-token">Token</label>
+          <select id="workspace-code-token" className={`${selectField} w-full`} value="source" disabled>
+            <option value="source">{tokenSource(effective)}</option>
+          </select>
+        </div>
       </div>
       {needsForgejoToken && (
         <div className="flex flex-col gap-3">
@@ -522,41 +589,82 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
         label="Verify repository"
         okPrefix="Reachable on"
         resetKey={`${secretVersion}:${String(pristineWorkspace.codeRepository)}`}
+        dot
       />
     </div>
   );
 }
 
+function tokenSource(kind: CodeRepositoryKind | null): string {
+  if (kind === 'forgejo') return `Secret · ${FORGEJO_TOKEN_SECRET}`;
+  if (kind === 'github') return 'Ambient · gh credentials';
+  if (kind === 'gitlab') return 'Ambient · glab credentials';
+  return kind === 'git' ? 'None · plain git' : 'Resolved once a forge is detected';
+}
+
 const TRIAGE_ROLES: { key: keyof TriageLabels; label: string }[] = [
-  { key: 'readyForAgent', label: 'Ready for agent' },
-  { key: 'readyForHuman', label: 'Ready for human' },
+  { key: 'readyForAgent', label: 'Pick up for an agent' },
+  { key: 'readyForHuman', label: 'Needs a human' },
   { key: 'epic', label: 'Epic' },
   { key: 'wayfinderMap', label: 'Wayfinder map' },
 ];
 
+const SOURCE_CHIP: Record<TriageLabelSource, string> = {
+  configured: 'bg-ready-tint text-ready',
+  'repo-doc': 'bg-accent-tint text-accent',
+  default: 'bg-blocked-tint text-blocked',
+};
+
 export function TriageLabelsSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
+  const detection = useDetection(workspace.id);
+  const repoDoc = detection.state.status === 'ready' ? detection.state.value.repoDocTriageLabels : null;
   const labels = workspace.triageLabels ?? {};
   const setLabel = (role: (typeof TRIAGE_ROLES)[number]['key'], raw: string) =>
     ctx.setWorkspace({ ...workspace, triageLabels: applyTriageLabel(workspace.triageLabels, role, raw) });
   return (
-    <div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {TRIAGE_ROLES.map(({ key, label }) => (
-          <div key={key}>
-            <label className={fieldLabel} htmlFor={`workspace-triage-${key}`}>{label}</label>
-            <input
-              id={`workspace-triage-${key}`}
-              className={`${field} font-data`}
-              placeholder={DEFAULT_TRIAGE_LABELS[key]}
-              value={labels[key] ?? ''}
-              onChange={(e) => setLabel(key, e.target.value)}
-            />
-          </div>
-        ))}
-      </div>
-      <p className="mt-2 text-small text-muted">Leave a label empty to inherit it.</p>
+    <div className="flex flex-col gap-3">
+      <table className="w-full border-collapse text-small">
+        <thead>
+          <tr className={`${tableHead} text-left`}>
+            <th className="border-b border-hairline p-2 font-semibold">Role</th>
+            <th className="border-b border-hairline p-2 font-semibold">Label</th>
+            <th className="border-b border-hairline p-2 font-semibold">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {TRIAGE_ROLES.map(({ key, label }) => {
+            const source = triageLabelSource(key, workspace.triageLabels, repoDoc);
+            return (
+              <tr key={key}>
+                <td className="border-b border-hairline p-2.5 align-middle">
+                  <label htmlFor={`workspace-triage-${key}`}>{label}</label>
+                </td>
+                <td className="border-b border-hairline p-2.5 align-middle">
+                  <input
+                    id={`workspace-triage-${key}`}
+                    className={`${field} w-60 max-w-full font-data`}
+                    placeholder={repoDoc?.[key] ?? DEFAULT_TRIAGE_LABELS[key]}
+                    value={labels[key] ?? ''}
+                    onChange={(e) => setLabel(key, e.target.value)}
+                  />
+                </td>
+                <td className="border-b border-hairline p-2.5 align-middle">
+                  <span className={`rounded-full px-2 py-0.5 text-micro font-bold ${SOURCE_CHIP[source]}`}>{TRIAGE_SOURCE_LABEL[source]}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
       <FieldError message={errors['triageLabels']} />
+      <p className="text-small text-muted">
+        Labels that pick a workflow or agent live in{' '}
+        <button type="button" className="font-semibold text-accent hover:underline" onClick={() => ctx.onTab?.('execution')}>
+          Running Tickets
+        </button>
+        .
+      </p>
     </div>
   );
 }

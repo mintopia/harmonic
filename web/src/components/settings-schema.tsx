@@ -9,6 +9,7 @@ import { OverrideField, type OverridableDescriptor } from './settings-override-f
 import { InheritField } from './InheritField';
 import { Switch } from './Switch';
 import { ChoiceCards, SettingGroup, SettingRow } from './SettingRows';
+import { REPOSITORY_LABEL, trackerStripRules } from '../tracker-settings-model';
 import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from './TrackerSettings';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
@@ -1205,9 +1206,8 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'integrations',
     step: 'work',
     surfaces: ['workspace'],
-    title: 'Issue Tracker',
-    description:
-      'Mirror this Workspace’s issue tracker onto the board as Tasks. The Configured Tracker wins over the repo’s docs/agents/issue-tracker.md, which wins over the Code Repository.',
+    title: 'Issue tracker',
+    description: '',
     body: (ctx) => (ctx.surface === 'workspace' ? <IssueTrackerSection ctx={ctx} /> : null),
   },
   {
@@ -1215,15 +1215,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     step: 'code',
     surfaces: ['workspace'],
     title: 'Code Repository',
-    description: 'The forge that hosts this Workspace’s branches, PRs/MRs and Merges. Detected from the origin remote unless overridden.',
+    description: '',
     body: (ctx) => (ctx.surface === 'workspace' ? <CodeRepositorySection ctx={ctx} /> : null),
   },
   {
     tab: 'integrations',
     step: 'work',
     surfaces: ['workspace'],
-    title: 'Triage Labels',
-    description: 'The label names the tracker uses for each role Harmonic acts on. Empty roles use the repo’s docs/agents/triage-labels.md, then the defaults.',
+    title: 'Triage labels',
+    description: 'The tracker’s label for each role Harmonic acts on. Blank uses the repo doc, then the default.',
     body: (ctx) => (ctx.surface === 'workspace' ? <TriageLabelsSection ctx={ctx} /> : null),
   },
   {
@@ -1351,6 +1351,13 @@ export function stepValue(ctx: RenderCtx, tab: SettingTab, step: string): string
   if (key === 'general:identity') return ctx.surface === 'global' ? ctx.config.name || undefined : ctx.workspace.name;
   if (key === 'execution:agent') return (ctx.surface === 'global' ? ctx.config.defaults.harness : ctx.workspace.harness) ?? ctx.config.defaults.harness;
   if (key === 'execution:where') return ctx.surface === 'global' ? ctx.config.defaults.isolationMode : (ctx.workspace.isolationMode ?? ctx.config.defaults.isolationMode);
+  if (key === 'integrations:code' && ctx.surface === 'workspace') {
+    return ctx.workspace.codeRepository ? REPOSITORY_LABEL[ctx.workspace.codeRepository] : undefined;
+  }
+  if (key === 'integrations:work' && ctx.surface === 'workspace') {
+    const resolved = ctx.pristineWorkspace.resolvedTracker;
+    return resolved?.ok ? resolved.label : undefined;
+  }
   if (key === 'archive:keep') {
     const days = ctx.surface === 'global' ? ctx.config.archive.retain.days : (ctx.workspace.archiveRetentionDays ?? ctx.config.archive.retain.days);
     return days == null ? 'Forever' : `${days} days`;
@@ -1386,6 +1393,11 @@ function agentStripRules(ctx: RenderCtx): ResolutionRule[] {
 export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { label: string; rules: ResolutionRule[] } | null {
   if (tab === 'archive') return { label: 'Archive lifecycle', rules: archiveStripRules(ctx) };
   if (tab === 'execution' && step === 'agent') return { label: 'Agent resolution order', rules: agentStripRules(ctx) };
+  if (tab === 'integrations' && step === 'work') {
+    return ctx.surface === 'workspace'
+      ? { label: 'Tracker resolution order', rules: trackerStripRules(ctx.pristineWorkspace.resolvedTracker) }
+      : null;
+  }
   if (tab !== 'execution' || step !== 'workflow') return null;
   const labelCount =
     ctx.surface === 'global' ? ctx.config.workflowLabels.length : (ctx.workspace.workflowLabels ?? ctx.config.workflowLabels).length;
