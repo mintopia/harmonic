@@ -5,7 +5,6 @@ import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { deriveLeafEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts, type EpicMeta, type EpicTimelineEvent } from '../domain/epic-view.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
-import { resolveVerifiers } from '../domain/setting-override.js';
 import { GitError } from '../domain/errors.js';
 import { orFallback, type FireAndForget } from '../error-handling.js';
 import { resolveRepositoryDefaultBranch } from '../execution/branch-merge.js';
@@ -392,14 +391,13 @@ export class TrackerEpicService implements EpicService {
     const lastStartedIndex = timelineEvents.map((event) => event.step.step).lastIndexOf('started');
     const currentIntegration = lastStartedIndex === -1 ? timelineEvents : timelineEvents.slice(lastStartedIndex);
     const mergeSteps = currentIntegration.map((event) => event.step).filter(isMergeStep);
-    const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
-    const verifiers = workspace && this.integration !== 'lifecycle-only' ? resolveVerifiers(workspace, this.integration.getConfig()).epic.preMerge : { commands: [], critics: [] };
+    const verifiers = this.integration !== 'lifecycle-only' ? this.integration.getConfig().verify.epic.preMerge : { commands: [], critics: [] };
     const status = integrate?.verificationStatus(epicRef) ?? null;
     const labels = [...verifiers.commands.map((command) => [command.command, ...command.args].join(' ')), ...verifiers.critics.map((_, index) => `Critic ${index + 1}`)];
     return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
-  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && resolveVerifiers(workspace, this.integration.getConfig()).epic.preMerge.commands.length > 0; }
+  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && this.integration.getConfig().verify.epic.preMerge.commands.length > 0; }
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {

@@ -9,9 +9,9 @@ import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-
 afterEach(cleanup);
 
 describe('settings prompts layout', () => {
-  it('renders the Prompts settings as the Prompt Library alone', () => {
-    expect(sectionsForTab('global', 'prompts').map((s) => s.title)).toEqual(['Prompt Library']);
-    expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
+  it('renders the Prompts settings as the Find, Edit and Check impact steps', () => {
+    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
+    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact', 'overrides']);
   });
 });
 
@@ -46,7 +46,7 @@ describe('settings tab keyboard navigation', () => {
 
 describe('settings Execution tab without Ticket-side execution controls (ADR-0055)', () => {
   const channels = { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} };
-  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution') => {
+  const mountTab = async (surface: 'global' | 'workspace', tab: 'execution', step: string | null = null) => {
     const config = makeConfig();
     const workspace = makeWorkspace();
     const ctx =
@@ -69,6 +69,8 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
         tabs: [{ id: tab, label: tab }],
         tab,
         onTab: () => {},
+        step,
+        onStep: () => {},
         ctx,
         dirty: false,
         saving: false,
@@ -80,8 +82,15 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
   };
 
   it.each(['global', 'workspace'] as const)('renders none of the removed controls on the %s Execution tab', async (surface) => {
-    const host = await mountTab(surface, 'execution');
-    const text = host.textContent ?? '';
+    let text = '';
+    const hosts: HTMLElement[] = [];
+    for (const step of ['workflow', 'agent', 'where', 'limits']) {
+      const stepHost = await mountTab(surface, 'execution', step);
+      text += stepHost.textContent ?? '';
+      hosts.push(stepHost);
+      await cleanup();
+    }
+    const host = { querySelector: (selector: string) => hosts.map((h) => h.querySelector(selector)).find(Boolean) ?? null };
     for (const label of ['Attempt limit', 'Merge fate', 'Continue attempts', 'Unattended drive']) expect(text).not.toContain(label);
     for (const id of ['settings-max-attempts', 'workspace-max-attempts', 'settings-merge-fate', 'workspace-merge-fate', 'settings-continue-attempts', 'workspace-continue-attempts']) {
       expect(host.querySelector(`#${id}`), id).toBeNull();
@@ -89,5 +98,26 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
     expect(text).toContain('Session reuse');
     expect(text).not.toContain('before the epic merges');
     expect(text).not.toContain('+ Add critic');
+  });
+
+  it.each(['global', 'workspace'] as const)('homes every Execution setting across Where and Limits on the %s surface', async (surface) => {
+    const where = await mountTab(surface, 'execution', 'where');
+    expect(where.textContent).toContain('Checkout isolation');
+    expect(where.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    await cleanup();
+    const limits = await mountTab(surface, 'execution', 'limits');
+    const text = limits.textContent ?? '';
+    for (const heading of ['Starting work', 'Bounding an Attempt', 'Agent sessions']) expect(text).toContain(heading);
+    for (const row of ['Auto-runner', 'Budget guardrail', 'Progress guardrail', 'Tool timeout', 'Merge-conflict turns', 'Session reuse', 'Agent Messages', 'maxAttempts']) {
+      expect(text, row).toContain(row);
+    }
+    expect(text).toContain(surface === 'global' ? 'Host ceiling' : 'Concurrency cap');
+    expect(text).toContain('set it in step 1.');
+    expect(text).toContain('per Attempt');
+    expect(text).not.toContain('Armed');
+    await cleanup();
+    const agent = await mountTab(surface, 'execution', 'agent');
+    expect(agent.textContent).not.toContain('Isolation mode');
+    expect(agent.textContent).not.toContain('Agent Messages');
   });
 });

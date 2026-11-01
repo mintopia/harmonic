@@ -75,8 +75,6 @@ const workspace = {
   effectiveAgentMessagesEnabled: false,
   maxAttempts: null,
   contextReuseTokenLimit: null,
-  epicPreMergeCommands: null,
-  epicPreMergeCritics: null,
   routingLabels: null,
   workflow: null,
   epicWorkflow: null,
@@ -282,6 +280,12 @@ export const verificationAttempts = [
 
 export const config: AppConfig = {
   ...parse(baselineYaml),
+  export: {
+    ...parse(baselineYaml).export,
+    enabled: true,
+    directory: { path: '/srv/harmonic-exports' },
+    s3: { endpoint: null, region: 'eu-west-2', bucket: 'acme-audit', prefix: 'harmonic/', forcePathStyle: false, accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secret' },
+  },
   modelOptions: [
     { id: 'cheap-fix', harness: 'claude', model: 'claude-sonnet-5', description: 'Small, well-scoped fixes' },
     { id: 'opus-deep', harness: 'claude', model: 'claude-opus-5-5', description: 'Hard, cross-module work' },

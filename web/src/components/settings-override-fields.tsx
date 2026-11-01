@@ -41,6 +41,7 @@ export interface OverridableDescriptor {
   label?: string;
   format?: (v: Scalar) => string;
   switchLabel?: string;
+  unit?: string;
   /** Replace the default {@link ScalarControl} — e.g. a model combobox. */
   renderControl?: (
     input: { id?: string; value: Scalar; onChange: (value: Scalar) => void },
@@ -54,7 +55,9 @@ export function OverrideField({
   workspace,
   errors,
   onWorkspace,
+  hideLabel,
 }: {
+  hideLabel?: boolean;
   descriptor: OverridableDescriptor;
   config: AppConfig;
   workspace: Workspace;
@@ -69,6 +72,7 @@ export function OverrideField({
       <LayerField<Scalar>
         label={d.label ?? spec.label}
         htmlFor={control === 'toggle' ? undefined : d.id}
+        hideLabel={hideLabel ?? false}
         value={d.get(workspace) ?? d.inherited(config, workspace)}
         inheritedValue={d.inherited(config, workspace)}
         inherited={d.get(workspace) === null || d.get(workspace) === undefined}
@@ -89,7 +93,8 @@ export function OverrideField({
               max={typeof d.max === 'function' ? d.max(config) : d.max}
               step={d.step}
               switchLabel={d.switchLabel}
-              widthClass={control === 'number' ? 'w-28' : undefined}
+              widthClass={control === 'number' ? (d.unit ? 'w-40' : 'w-28') : undefined}
+              unit={d.unit}
             />
           )
         }

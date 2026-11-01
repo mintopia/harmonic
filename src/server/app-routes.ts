@@ -37,6 +37,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { updateRoutes } from './routes/update.js';
 import { promptRoutes } from './routes/prompts.js';
 import { workflowRoutes, type WorkflowUsage } from './routes/workflows.js';
+import { workflowAssignments } from '../domain/workflow-assignments.js';
 import { isNotNull, or } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
@@ -54,18 +55,21 @@ function isStaticAssetPath(path: string): boolean {
 
 async function workflowUsage(asyncDb: AppContext['asyncDb']): Promise<Map<string, WorkflowUsage>> {
   const rows = await asyncDb.read((db) =>
-    db.select({ ref: tasks.workflowRef, requested: tasks.workflowRequested, workspaceId: tasks.workspaceId }).from(tasks).where(or(isNotNull(tasks.workflowRef), isNotNull(tasks.workflowRequested))).all(),
+    db.select({ ref: tasks.workflowRef, requested: tasks.workflowRequested, workspaceId: tasks.workspaceId, state: tasks.state }).from(tasks).where(or(isNotNull(tasks.workflowRef), isNotNull(tasks.workflowRequested))).all(),
   );
   const tickets = new Map<string, number>();
+  const running = new Map<string, number>();
   const spaces = new Map<string, Set<number | null>>();
   for (const row of rows) {
+    const effective = row.ref?.split('@')[0] ?? row.requested;
+    if (row.state === 'working' && effective) running.set(effective, (running.get(effective) ?? 0) + 1);
     const names = new Set([row.requested, row.ref?.split('@')[0]].filter((n): n is string => !!n));
     for (const name of names) {
       tickets.set(name, (tickets.get(name) ?? 0) + 1);
       spaces.set(name, (spaces.get(name) ?? new Set()).add(row.workspaceId));
     }
   }
-  return new Map([...tickets].map(([name, count]) => [name, { tickets: count, workspaces: [...spaces.get(name)!].filter((w) => w !== null).length }]));
+  return new Map([...tickets].map(([name, count]) => [name, { tickets: count, running: running.get(name) ?? 0, workspaces: [...spaces.get(name)!].filter((w) => w !== null).length }]));
 }
 
 export async function registerRoutes(app: App, ctx: AppContext, contexts: AppContexts, prompts: PromptLibrary): Promise<void> {
@@ -76,7 +80,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => promptRoutes(fastify, { prompts }), { prefix: '/api' });
-  await app.register((fastify) => workflowRoutes(fastify, { workflows: ctx.workflows, usage: () => workflowUsage(ctx.asyncDb) }), { prefix: '/api' });
+  await app.register((fastify) => workflowRoutes(fastify, { workflows: ctx.workflows, usage: () => workflowUsage(ctx.asyncDb), assignments: async () => workflowAssignments(ctx.settingsStore.getGlobal(), await ctx.workspaces.list()) }), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, { ...contexts.execution, prompts, workflows: ctx.workflows, workspaces: ctx.workspaces }), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });

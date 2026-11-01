@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { eq } from 'drizzle-orm';
 import { stringify } from 'yaml';
-import type { AppConfig } from '../config.js';
+import type { AppConfig, EpicVerificationStage } from '../config.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings, type WorkspaceRow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
@@ -10,7 +10,8 @@ import { DomainError } from './errors.js';
 import { convertEditedEpicFixPrompts, epicFixTexts } from './epic-fix-prompt.js';
 import type { PromptLibrary } from './prompt-library-store.js';
 import { translateRetiredText } from './retired-settings.js';
-import { resolveEpicResolverPrompts, resolveScoped, resolveVerifiers } from './setting-override.js';
+import { resolveLegacyEpicPreMerge, type LegacyWorkspace } from './legacy-execution-settings.js';
+import { resolveEpicResolverPrompts, resolveScoped } from './setting-override.js';
 import {
   commandRunLine,
   DEFAULT_CRITIC_TIMEOUT_SECONDS,
@@ -31,7 +32,7 @@ export const MIGRATED_EPIC_GLOBAL = 'migrated-epic-global';
 
 interface EpicScope {
   maxAttempts: number;
-  preMerge: ReturnType<typeof resolveVerifiers>['epic']['preMerge'];
+  preMerge: EpicVerificationStage;
   resolvePrompt: string;
   postMergeCheck: boolean;
 }
@@ -46,6 +47,7 @@ export interface EpicMigrationPlan {
 export interface EpicPlanInput {
   config: AppConfig;
   workspaces: readonly WorkspaceRow[];
+  legacyWorkspaces?: ReadonlyMap<number, LegacyWorkspace>;
   library: { resolvePrompt: string; resolveSuffix: string; failingVerification?: string };
 }
 
@@ -55,7 +57,7 @@ function scopeOf(ws: WorkspaceRow | null, input: EpicPlanInput): EpicScope {
   const resolveSuffix = suffix === config.verify.epic.resolveSuffix ? library.resolveSuffix : suffix;
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
-    preMerge: ws ? resolveVerifiers(ws, config).epic.preMerge : config.verify.epic.preMerge,
+    preMerge: resolveLegacyEpicPreMerge(config.verify.epic.preMerge, ws ? input.legacyWorkspaces?.get(ws.id) ?? null : null),
     resolvePrompt: `${library.resolvePrompt}\n\n${library.failingVerification ?? BUNDLED_PROMPTS.epicFailingVerification.text}\n\n${resolveSuffix}`,
     postMergeCheck: config.merge.postMergeCheck,
   };
@@ -142,6 +144,7 @@ export async function migrateEpicSettingsToWorkflows(deps: EpicSettingsMigration
   const plan = await planEpicSettingsMigration({
     config: deps.settings.getGlobal(),
     workspaces: await deps.workspaces.list(),
+    legacyWorkspaces: deps.settings.getLegacySettings().workspaces,
     library: await epicFixTexts(deps.prompts),
   });
   await forEachYielding(plan.prompts, (entry) => writePrompt(deps.prompts, entry));

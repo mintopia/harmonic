@@ -3,7 +3,6 @@ import { describeRoutingLabelIssue, routingLabelOverlayIssues, routingLabelRef, 
 import type { AppConfig, RoutingLabelOverlayEntry } from '../types';
 import { chip, codeChip } from '../ui';
 import {
-  Precedence,
   RemoveButton,
   RouteCells,
   RoutingListFrame,
@@ -48,7 +47,6 @@ export function RoutingLabelOverlayEditor({
 
   return (
     <div>
-      <Precedence />
       <RoutingListFrame
         count={rows.length}
         onMove={(from, to) => onChange(arrayMove(rows, from, to))}

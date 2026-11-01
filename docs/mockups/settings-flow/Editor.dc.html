@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workflow editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-pri{background:#077067;border-color:#077067;color:#fff}
+.btn-quiet{background:#ededea;border-color:#ededea;color:#656b73}
+.btn-link{border:0;background:none;color:#656b73;padding:2px 4px;font-size:12px;font-weight:500;cursor:pointer}
+.field{font:inherit;font-size:13px;padding:8px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box;width:100%}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.seg{border:0;padding:6px 14px;background:transparent;color:#3d424a;font:inherit;font-size:13px;font-weight:600;border-radius:4px;cursor:pointer}
+.seg.on{background:#fff;color:#1b1e24;box-shadow:0 1px 2px rgb(27 30 36/.12)}
+.pal{display:inline-flex;gap:6px;align-items:baseline;font-size:12px;padding:5px 9px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;cursor:grab;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-weight:700}
+.pal i{font-style:normal;font-weight:400;font-size:11px;color:#656b73;font-family:ui-sans-serif,system-ui,sans-serif}
+.blk{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border:1px solid #e0e0db;border-radius:4px}
+.blk .g{color:#858983;letter-spacing:-2px}
+.blk .id{font-weight:700;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:13px}
+.blk .s{font-size:12px;color:#656b73;flex:1;min-width:0}
+.tag{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;padding:2px 6px;border-radius:3px;background:#b6ece4;color:#075f58}
+.tag.c{background:#cee3fa;color:#1160ae}.tag.m{background:#c2f2cd;color:#0d7734}
+.grp{border:1px dashed #077067;border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:6px;background:#f6fbfa}
+.lbl{display:flex;flex-direction:column;gap:6px}
+.code{display:grid;grid-template-columns:40px minmax(0,1fr);border:1px solid #d0d0ca;border-radius:4px;overflow:hidden;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:20px}
+.code pre{margin:0;padding:6px 10px;font:inherit;white-space:pre}
+.gut{background:#f5f5f3;color:#858983;text-align:right;border-right:1px solid #e0e0db}
+.k{color:#077067}.v{color:#4740c6;font-weight:700}.str{color:#46662c}.cm{color:#656b73;font-style:italic}.n{color:#9e760c}
+.dn{border:1px solid #c3c3bc;border-radius:4px;background:#fff;padding:6px 10px;text-align:center;width:200px;box-sizing:border-box;margin:0 auto}
+.dn b{display:block;font-size:12px}.dn small{display:block;font-size:10px;color:#656b73;font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.edge{font-size:10px;font-weight:700;color:#0d7734;text-align:center;line-height:12px;position:relative;height:22px;display:flex;align-items:center;justify-content:center;gap:6px}
+.edge::before{content:'';position:absolute;left:50%;top:0;bottom:0;border-left:1.5px solid #858983}
+.edge span{background:#fff;position:relative;padding:0 3px;margin-left:44px}
+.side{font-size:10px;font-weight:700;white-space:nowrap}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1240px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html" style="background: #b6ece4; color: #075f58; font-weight: 700">Workflows</a><a href="#">API</a>
+      <a href="Main.dc.html">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 20px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">
+      <a href="Library.dc.html" style="color: #656b73; font-weight: 500; font-size: 13px">← Workflows</a>
+
+      <header class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+          <div style="display: flex; align-items: baseline; gap: 10px">
+            <h1 style="margin: 0; font-size: 18px">Security review on label</h1>
+            <span style="color: #656b73; font-size: 13px">v4</span>
+            <span class="chip" style="background: #ededea; color: #5b616a">Edited</span>
+          </div>
+          <div style="display: flex; gap: 8px">
+            <button class="btn" type="button">Export</button>
+            <button class="btn" type="button">Duplicate</button>
+            <button class="btn btn-quiet" type="button" disabled>Delete</button>
+            <button class="btn btn-pri" type="button">Save as v5</button>
+          </div>
+        </div>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #656b73; border-top: 1px solid #e0e0db; padding-top: 10px">
+          <span>Runs on <span class="mono" style="color: #1b1e24">local</span></span>
+          <span>Assigned as <span class="chip" style="background: #b6ece4; color: #075f58; border-radius: 999px">Workflow Label · security</span></span>
+          <span>In use by 2 Tickets — they keep v4 until their next Retry</span>
+        </div>
+      </header>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start">
+        <section style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+            <div role="tablist" aria-label="Editor view" style="display: flex; gap: 2px; background: #e0e0db; border-radius: 6px; padding: 3px">
+              <button role="tab" type="button" class="{{blocksCls}}" aria-selected="{{isBlocks}}" onClick="{{showBlocks}}">Blocks</button>
+              <button role="tab" type="button" class="{{yamlCls}}" aria-selected="{{isYaml}}" onClick="{{showYaml}}">YAML</button>
+              <button role="tab" type="button" class="{{varsCls}}" aria-selected="{{isVars}}" onClick="{{showVars}}">Variables · 3</button>
+            </div>
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #656b73"><span style="width: 8px; height: 8px; border-radius: 50%; background: #14a049"></span>Blocks and YAML in sync · 1 unsaved change</span>
+          </div>
+
+          <sc-if value="{{isBlocks}}" hint-placeholder-val="{{ true }}">
+            <div class="card" style="padding: 12px; display: flex; flex-direction: column; gap: 6px">
+              <div style="display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 10px; border-bottom: 1px solid #e0e0db; margin-bottom: 4px" aria-label="Drag a Workflow Action onto the steps">
+                <span class="pal">agent <i>prompt</i></span><span class="pal">command <i>shell</i></span><span class="pal">critic <i>verdict</i></span><span class="pal">rebase <i>git</i></span><span class="pal">merge <i>Merge</i></span><span class="pal">open-pr <i>PR</i></span><span class="pal">artifact <i>file</i></span><span class="pal">post-merge-check</span><span class="pal">close-ticket</span><span class="pal">comment</span><span class="pal">cleanup</span><span class="pal" style="border-style: dashed">attempts <i>bounded</i></span><span class="pal" style="border-style: dashed">parallel <i>group</i></span><span class="pal">run: <i>shell</i></span>
+              </div>
+              <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">rebase</span><span class="id">rebase</span><span class="s"></span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+              <div class="grp">
+                <div style="display: flex; align-items: center; gap: 10px"><span aria-hidden="true" style="color: #858983; letter-spacing: -2px">⋮⋮</span><span class="cap" style="color: #077067">Attempts</span><span style="flex: 1"></span><span style="font-size: 12px; color: #656b73">max</span><input class="field mono" aria-label="max attempts" value="{{x.max}}" style="width: 180px; padding: 4px 8px; font-size: 12px"></div>
+                <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">agent</span><span class="id">implement</span><span class="s">prompt implement</span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+                <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">command</span><span class="id">verify</span><span class="s">npm test</span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+                <div style="border: 1px solid #d0d0ca; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: #f5f5f3">
+                  <span class="cap">Parallel</span>
+                  <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag c">critic</span><span class="id">correctness</span><span class="s">claude · opus-5-5</span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+                  <div style="border: 2px solid #077067; border-radius: 4px; background: #fff; display: flex; flex-direction: column">
+                    <div class="blk" style="border: 0"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag c">critic</span><span class="id">security</span><span class="s">if: contains(ticket.labels, 'security')</span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+                    <div style="border-top: 1px solid #e0e0db; padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+                      <label class="lbl"><span class="cap">Step ID</span><input class="field mono" value="security"></label>
+                      <label class="lbl"><span class="cap">Action</span><select class="field"><option>critic</option></select></label>
+                      <label class="lbl"><span class="cap">Harness</span><select class="field"><option>Codex</option></select></label>
+                      <label class="lbl"><span class="cap">Model</span><select class="field"><option>gpt-5-codex</option></select></label>
+                      <label class="lbl"><span class="cap">Prompt (Prompt Library)</span><select class="field"><option>critic-security</option></select></label>
+                      <label class="lbl"><span class="cap">Run only if</span><input class="field mono" value="contains(ticket.labels, 'security')" style="border-color: #077067"></label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag m">merge</span><span class="id">merge</span><span class="s">merge-commit policy</span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+              <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">post-merge-check</span><span class="id">post-merge</span><span class="s"></span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+              <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">close-ticket</span><span class="id">close</span><span class="s"></span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+              <span class="cap" style="margin-top: 6px">Cleanup · runs on done and on Close</span>
+              <div class="blk"><span class="g" aria-hidden="true">⋮⋮</span><span class="tag">cleanup</span><span class="id">cleanup</span><span class="s"></span><button class="btn-link" type="button">↑↓</button><button class="btn-link" type="button">Remove</button></div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isYaml}}" hint-placeholder-val="{{ false }}">
+            <div class="card" style="padding: 12px">
+              <div class="code" style="background: #fff">
+<pre class="gut">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40</pre>
+<pre><span class="k">name</span>: Security review on label
+<span class="k">runs_on</span>: local
+<span class="k">vars</span>:
+  <span class="k">maxAttempts</span>: <span class="n">3</span>
+  <span class="k">continueAttempts</span>: true
+  <span class="k">testCommand</span>: npm test
+<span class="k">steps</span>:
+  - <span class="k">id</span>: rebase
+    <span class="k">uses</span>: <span class="v">rebase</span>
+  - <span class="k">attempts</span>:
+      <span class="k">max</span>: <span class="str">{{x.max}}</span>
+      <span class="k">steps</span>:
+        - <span class="k">id</span>: implement
+          <span class="k">uses</span>: <span class="v">agent</span>
+          <span class="k">with</span>: { <span class="k">prompt</span>: implement }   <span class="cm"># Prompt Library code</span>
+        - <span class="k">id</span>: verify
+          <span class="k">uses</span>: <span class="v">command</span>
+          <span class="k">with</span>: { <span class="k">command</span>: <span class="str">{{x.test}}</span> }
+        - <span class="k">parallel</span>:
+            - <span class="k">id</span>: correctness
+              <span class="k">uses</span>: <span class="v">critic</span>
+              <span class="k">with</span>:
+                <span class="k">harness</span>: claude
+                <span class="k">model</span>: opus-5-5
+                <span class="k">prompt</span>: critic-correctness
+            - <span class="k">id</span>: security
+              <span class="k">if</span>: <span class="str">{{x.sec}}</span>
+              <span class="k">uses</span>: <span class="v">critic</span>
+              <span class="k">with</span>:
+                <span class="k">harness</span>: codex
+                <span class="k">model</span>: gpt-5-codex
+                <span class="k">prompt</span>: critic-security
+  - <span class="k">id</span>: merge
+    <span class="k">uses</span>: <span class="v">merge</span>
+  - <span class="k">id</span>: post-merge
+    <span class="k">uses</span>: <span class="v">post-merge-check</span>
+  - <span class="k">id</span>: close
+    <span class="k">uses</span>: <span class="v">close-ticket</span>
+<span class="k">cleanup</span>:
+  - <span class="k">uses</span>: <span class="v">cleanup</span></pre>
+              </div>
+              <p style="margin: 8px 0 0; font-size: 12px; color: #656b73">Completion offers Workflow Actions after <span class="mono">uses:</span> and step keys on a new line. Errors show inline with line and column; Save stays disabled until they’re fixed.</p>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isVars}}" hint-placeholder-val="{{ false }}">
+            <div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 10px">
+              <p style="margin: 0; font-size: 13px; color: #656b73">Declared in <span class="mono">vars:</span>. Settings and Tickets can override these values; the type comes from the default.</p>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+                <thead><tr class="cap"><th style="text-align: left; padding: 8px; border-bottom: 1px solid #e0e0db">Variable</th><th style="text-align: left; padding: 8px; border-bottom: 1px solid #e0e0db">Type</th><th style="text-align: left; padding: 8px; border-bottom: 1px solid #e0e0db">Default</th><th style="text-align: left; padding: 8px; border-bottom: 1px solid #e0e0db">Overridden in</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono" style="padding: 10px 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">maxAttempts</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db">number</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><input class="field mono" value="3" style="width: 120px"></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db; color: #656b73">Global · 1 Ticket</td></tr>
+                  <tr><td class="mono" style="padding: 10px 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">continueAttempts</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db">boolean</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><select class="field" style="width: 120px"><option>true</option></select></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db; color: #656b73">—</td></tr>
+                  <tr><td class="mono" style="padding: 10px 8px; font-weight: 700">testCommand</td><td style="padding: 10px 8px">string</td><td style="padding: 10px 8px"><input class="field mono" value="npm test" style="width: 200px"></td><td style="padding: 10px 8px; color: #656b73">Global · harmonic</td></tr>
+                </tbody>
+              </table>
+              <button class="btn" type="button" style="align-self: flex-start">+ Add variable</button>
+            </div>
+          </sc-if>
+        </section>
+
+        <section class="card" aria-label="Live diagram" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <div style="display: flex; gap: 8px; align-items: center"><h2 style="margin: 0; font-size: 15px">Live diagram</h2><span class="chip" style="background: #b6ece4; color: #075f58; border-radius: 999px">Matches the editor</span></div>
+            <span style="font-size: 12px; color: #656b73">read-only</span>
+          </div>
+          <div style="position: relative; padding: 4px 120px 4px 0">
+            <div class="dn"><b>rebase</b><small>rebase</small></div>
+            <div class="edge"></div>
+            <div style="border: 1.5px dashed #077067; border-radius: 6px; padding: 8px 10px 12px; position: relative">
+              <div class="cap" style="color: #077067; font-size: 10px; margin-bottom: 6px">Attempts · max {{x.max}}</div>
+              <div class="dn" style="border-color: #077067"><b>implement</b><small>agent · prompt implement</small></div>
+              <div class="edge"></div>
+              <div class="dn"><b>verify</b><small>command · npm test</small></div>
+              <div class="edge"><span>pass</span></div>
+              <div style="border: 1px dashed #c3c3bc; border-radius: 6px; padding: 6px 8px 8px">
+                <div class="cap" style="font-size: 10px; margin-bottom: 6px">Parallel</div>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+                  <div class="dn" style="width: auto; border-color: #1160ae; text-align: left"><b>correctness</b><small>critic · claude opus-5-5</small></div>
+                  <div class="dn" style="width: auto; border-color: #1160ae; text-align: left"><b>security</b><small>critic · codex gpt-5-codex</small><small style="color: #1160ae">◇ if: security label</small></div>
+                </div>
+              </div>
+              <div style="position: absolute; right: -112px; top: 64px; width: 104px; display: flex; flex-direction: column; gap: 4px">
+                <span class="side" style="color: #b3253f">↺ fail · inconclusive</span>
+                <span style="font-size: 10px; color: #656b73">next Attempt</span>
+              </div>
+            </div>
+            <div class="edge"><span>pass</span></div>
+            <div class="dn" style="background: #c2f2cd; border-color: #14a049"><b>merge</b><small>merge-commit policy</small></div>
+            <div class="edge"><span>pass</span></div>
+            <div class="dn"><b>post-merge</b><small>post-merge-check</small></div>
+            <div class="edge"><span>pass</span></div>
+            <div class="dn"><b>close</b><small>close-ticket</small></div>
+            <div class="edge" style="color: #656b73"><span style="color: #656b73">done</span></div>
+            <div class="dn" style="border-style: dashed; background: #f5f5f3; text-align: left"><b class="cap" style="font-size: 10px">Cleanup</b><small>uses: cleanup · on done and on Close</small></div>
+            <div style="position: absolute; right: 0; top: 330px; width: 112px; display: flex; flex-direction: column; gap: 8px">
+              <div style="border: 1px solid #4740c6; background: #d6d2fc; border-radius: 4px; padding: 6px 8px; text-align: center"><b style="display: block; font-size: 12px; color: #4740c6">Escalation</b><small style="font-size: 10px; color: #4740c6">Retry · Accept · Close</small></div>
+              <span class="side" style="color: #4740c6">← max reached</span>
+              <span class="side" style="color: #4740c6">← merge conflict</span>
+              <span class="side" style="color: #4740c6">← post-merge fail</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: #656b73; border-top: 1px solid #e0e0db; padding-top: 8px">
+            <span>— outcome edge</span><span style="color: #b3253f">↺ back to next Attempt</span><span style="color: #4740c6">← to Escalation</span><span>┄ bounded loop</span>
+          </div>
+          <p style="margin: 0; font-size: 12px; color: #656b73">With errors, the diagram keeps the last valid parse and shows a <b>Stale</b> chip.</p>
+        </section>
+      </div>
+      <p style="margin: 0; font-size: 12px; color: #656b73">Edits apply from the Ticket’s next Retry; in-flight Tickets finish on the version they snapshotted.</p>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 'blocks' }; }
+  renderVals() {
+    const t = this.state.tab;
+    const cls = (k) => 'seg' + (t === k ? ' on' : '');
+    const o = '$' + '{{ ', c = ' }}';
+    return {
+      x: { max: o + 'vars.maxAttempts' + c, test: o + 'vars.testCommand' + c, sec: o + "contains(ticket.labels, 'security')" + c },
+      isBlocks: t === 'blocks', isYaml: t === 'yaml', isVars: t === 'vars',
+      blocksCls: cls('blocks'), yamlCls: cls('yaml'), varsCls: cls('vars'),
+      showBlocks: () => this.setState({ tab: 'blocks' }),
+      showYaml: () => this.setState({ tab: 'yaml' }),
+      showVars: () => this.setState({ tab: 'vars' })
+    };
+  }
+}
+</script>
+</body>
+</html>

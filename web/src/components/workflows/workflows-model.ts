@@ -33,11 +33,13 @@ export function assignedChips(entry: WorkflowLibraryEntry): AssignedChip[] {
 
 export function deleteBlock(entry: WorkflowLibraryEntry): string | null {
   if (entry.bundled) return BUNDLED_READ_ONLY;
-  const labels = entry.assignedAs.length;
+  const labels = entry.assignedAs.filter((a) => a.kind === 'label').length;
+  const defaults = entry.assignedAs.length - labels;
   const parts = [
     entry.inUse.tickets > 0 ? plural(entry.inUse.tickets, 'Ticket', 'Tickets') : null,
     entry.inUse.workspaces > 0 ? plural(entry.inUse.workspaces, 'Workspace', 'Workspaces') : null,
     labels > 0 ? plural(labels, 'Workflow Label', 'Workflow Labels') : null,
+    defaults > 0 ? plural(defaults, 'default', 'defaults') : null,
   ].filter((p): p is string => p !== null);
   return parts.length === 0 ? null : `In use by ${parts.join(' and ')}.`;
 }

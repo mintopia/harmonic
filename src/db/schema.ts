@@ -56,7 +56,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   conflictResolveTurns: number | null; maxConcurrentAttempts: number | null; autoRunnerEnabled: boolean | null;
   agentMessagesEnabled: boolean | null; agentMessagesSendCap: number | null;
   maxAttempts: number | null; contextReuseTokenLimit: number | null;
-  epicPreMergeCommands: string | null; epicPreMergeCritics: string | null; routingLabels: string | null;
+  routingLabels: string | null;
   workflow: string | null; epicWorkflow: string | null; workflowLabels: string | null; workflowVars: string | null; workflowClassifierEnabled: boolean | null;
   modelOptions: string | null; executionTargets: string[] | null; classifierEnabled: boolean | null; classifierBackend: 'typesafe' | 'openai-compatible' | 'harness' | null; classifierTimeoutSeconds: number | null;
   classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;

@@ -9,6 +9,11 @@ import { isModelPriced, pricesForHarness } from './domain/pricing.js';
 import { unconfiguredHarnessReason } from './domain/route.js';
 import { routingLabelIssueMessage, routingLabelIssues, workflowLabelIssues } from './domain/setting-override.js';
 
+export const excludedDirectorySchema = z.string().min(1).refine(
+  (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
+  'excluded directory must be a canonical relative path within the workspace',
+);
+
 export const HARNESS_IDS = ['claude', 'codex', 'copilot', 'opencode'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
@@ -325,6 +330,8 @@ export const appConfigSchema = z.object({
     harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
     model: z.string().meta({ example: 'claude-sonnet-5' }),
   }),
+  /** Folders hidden from the Files browser and directory pickers; seeds each new Workspace's own list. */
+  excludedDirectories: z.array(excludedDirectorySchema).meta({ example: ['.git', 'node_modules', 'dist'] }),
   /** `enabled` is the fleet-wide master switch gating every Workspace; `maxConcurrentAttempts` is the Host Ceiling a per-Workspace cap can never exceed. */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
@@ -334,6 +341,17 @@ export const appConfigSchema = z.object({
   agentMessages: z.object({
     enabled: z.boolean().meta({ example: false }),
     sendCap: z.number().int().min(1).meta({ example: 10 }),
+  }),
+  /** Global defaults for the workflow classifier and the Route Classifier; a Workspace stores `null` to inherit any of them. */
+  classifier: z.object({
+    workflowEnabled: z.boolean().meta({ example: false }),
+    enabled: z.boolean().meta({ example: false }),
+    backend: z.enum(CLASSIFIER_BACKENDS).meta({ example: 'harness' }),
+    timeoutSeconds: z.number().int().min(1).meta({ example: 30 }),
+    typesafeModel: z.string().min(1).meta({ example: DEFAULT_TYPESAFE_MODEL }),
+    typesafeSecret: z.string().min(1).nullable().meta({ example: null }),
+    harness: z.string().min(1).nullable().meta({ example: null }),
+    model: z.string().min(1).nullable().meta({ example: null }),
   }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).meta({ example: 2 }),

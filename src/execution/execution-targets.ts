@@ -447,7 +447,7 @@ export class ExecutionTargetService {
     await this.secrets.clear(signingKeySecretName(name));
     for (const harness of HARNESS_IDS) await this.secrets.clear(credentialSecretName(name, harness));
     await this.rewriteWorkspaceLists(name, null);
-    const fix = 'Change `runs_on` in the workflow, or add the target back in Settings > Execution.';
+    const fix = 'Change `runs_on` in the workflow, or add the target back in Settings > Running Tickets.';
     await forEachYielding(running, (id) => this.tickets?.escalate(id, `Execution Target '${name}' was deleted. Its running Attempt was stopped. ${fix}`));
     await forEachYielding(waiting, (id) => this.tickets?.escalate(id, `Execution Target '${name}' was deleted. No Attempt was started. ${fix}`));
     return { running: running.length, waiting: waiting.length, total: running.length + waiting.length };

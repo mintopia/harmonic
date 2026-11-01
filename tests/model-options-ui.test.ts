@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type ClassifierTestResult } from '../web/src/api.js';
 import { ModelOptionsEditor } from '../web/src/components/ModelOptionsEditor.js';
 import { RouteClassifierSettings } from '../web/src/components/RouteClassifierSettings.js';
+import { GlobalClassifierSettings } from '../web/src/components/GlobalClassifierSettings.js';
 import { SETTINGS_SCHEMA, type RenderCtx } from '../web/src/components/settings-schema.js';
 import { firstGlobalModelOptionError, firstModelOptionError } from '../web/src/components/model-option-model.js';
 
@@ -92,9 +93,9 @@ afterEach(async () => {
 });
 
 describe('ModelOptionsEditor (global)', () => {
-  it('shows the Route Classifier precedence step, the add link and the empty state', async () => {
+  it('shows the add link and the empty state', async () => {
     const host = await mount([]);
-    expect(host.textContent).toContain('Operator setting on the Ticket→Routing Label→Route Classifier→Workspace default→Global default');
+    expect(host.textContent).not.toContain('Precedence');
     expect(host.textContent).toContain('+ Add Model Option');
     expect(host.textContent).toContain('No Model Options yet');
     expect(host.textContent).toContain('Epics are not classified, and Critics are never classified');
@@ -289,7 +290,7 @@ describe('RouteClassifierSettings', () => {
       setWs(next);
     };
     const section = SETTINGS_SCHEMA.find((s) => s.title === 'Route Classifier')!;
-    const action = section.action!({ surface: 'workspace', workspace: ws, setWorkspace: onChange } as unknown as RenderCtx);
+    const action = section.action!({ surface: 'workspace', workspace: ws, config, setWorkspace: onChange } as unknown as RenderCtx);
     return createElement(
       'div',
       null,
@@ -363,6 +364,46 @@ describe('RouteClassifierSettings', () => {
     expect(latestWs.classifierTimeoutSeconds).toBe(45);
     await type(byId<HTMLInputElement>(host, 'classifier-timeout'), '');
     expect(latestWs.classifierTimeoutSeconds).toBeNull();
+  });
+
+  it('shows the global classifier as the inherited value until the Workspace sets its own', async () => {
+    const inheriting = { ...config, classifier: { ...config.classifier, enabled: true, backend: 'typesafe' as const, timeoutSeconds: 12, typesafeSecret: 'OPENROUTER_API_KEY' } };
+    const host = await mountComponent(createElement(RouteClassifierSettings, { workspace: makeWorkspace(), config: inheriting, optionCount: 1, errors: {}, onChange: captureWs }));
+    expect(host.textContent).toContain('On.');
+    expect(radio(host, 'TypeSafe decision model').getAttribute('aria-checked')).toBe('true');
+    expect(byId<HTMLInputElement>(host, 'classifier-timeout').placeholder).toBe('12');
+    expect(byId<HTMLSelectElement>(host, 'classifier-secret').value).toBe('OPENROUTER_API_KEY');
+    await cleanup();
+    const overridden = await mountComponent(createElement(RouteClassifierSettings, { workspace: makeWorkspace({ classifierEnabled: false, classifierBackend: 'harness' }), config: inheriting, optionCount: 1, errors: {}, onChange: captureWs }));
+    expect(overridden.textContent).toContain('Off.');
+    expect(radio(overridden, 'Harness').getAttribute('aria-checked')).toBe('true');
+  });
+
+  let latest = config;
+  const captureConfig = (next: typeof config) => {
+    latest = next;
+  };
+  it('edits the global classifier from the Global settings card', async () => {
+    function Global() {
+      const [cfg, setCfg] = useState(config);
+      const onChange = (next: typeof config) => {
+        captureConfig(next);
+        setCfg(next);
+      };
+      const section = SETTINGS_SCHEMA.find((s) => s.title === 'Route Classifier')!;
+      const ctx = { surface: 'global', config: cfg, errors: {}, setConfig: onChange } as unknown as RenderCtx;
+      return createElement('div', null, section.action!(ctx), createElement(GlobalClassifierSettings, { config: cfg, errors: {}, onChange }));
+    }
+    const host = await mountComponent(createElement(Global));
+    expect(byId<HTMLSelectElement>(host, 'classifier-backend').matches(':disabled')).toBe(true);
+    await click(byLabel(host, 'Route Classifier'));
+    expect(latest.classifier.enabled).toBe(true);
+    await type(byId<HTMLSelectElement>(host, 'classifier-backend'), 'typesafe');
+    expect(latest.classifier.backend).toBe('typesafe');
+    await type(byId<HTMLInputElement>(host, 'classifier-secret-name'), 'OPENROUTER_API_KEY');
+    expect(latest.classifier.typesafeSecret).toBe('OPENROUTER_API_KEY');
+    await type(byId<HTMLInputElement>(host, 'classifier-timeout'), '45');
+    expect(latest.classifier.timeoutSeconds).toBe(45);
   });
 
   it('warns when the classifier is on with no Model Options', async () => {

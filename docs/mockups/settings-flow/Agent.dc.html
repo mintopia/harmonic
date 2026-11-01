@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings: which agent and model</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-link{border:0;background:none;color:#077067;padding:4px 6px}
+.field{font:inherit;font-size:13px;padding:7px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.sw{width:34px;height:20px;border-radius:999px;background:#858983;position:relative;flex:none;border:0;padding:0}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff}
+.sw.on{background:#077067}.sw.on::after{left:17px}
+.th{padding:8px;border-bottom:1px solid #e0e0db;text-align:left}
+.td{padding:10px 8px;border-bottom:1px solid #e0e0db;vertical-align:top}
+.step{display:flex;gap:12px;padding:10px 12px;border-radius:6px;color:#1b1e24}
+.num{width:24px;height:24px;border-radius:50%;border:1px solid #c3c3bc;color:#3d424a;display:grid;place-items:center;font-size:12px;flex:none;box-sizing:border-box}
+.num.done{background:#c2f2cd;border-color:#c2f2cd;color:#0d7734}
+.num.cur{background:#077067;border-color:#077067;color:#fff}
+.rung{background:#fff;border:1px solid #d0d0ca;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.rung.ext{background:#f5f5f3;border-style:dashed;border-color:#c3c3bc}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1640px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html">Workflows</a><a href="#">API</a>
+      <a href="#" style="background: #b6ece4; color: #075f58; font-weight: 700">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <header style="display: flex; flex-direction: column; gap: 14px">
+        <h1 style="margin: 0; font-size: 22px">Settings</h1>
+        <nav style="display: flex; gap: 22px; border-bottom: 1px solid #d0d0ca; flex-wrap: wrap" aria-label="Settings sections">
+          <a href="General.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">General</a>
+          <a href="Main.dc.html" style="color: #1b1e24; padding-bottom: 10px; border-bottom: 2px solid #077067">Running Tickets</a>
+          <a href="Prompts.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Prompts</a>
+          <a href="Integrations.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Integrations</a>
+          <a href="Archive.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Archive &amp; Export</a>
+        </nav>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › Running Tickets › Agent</span></div>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+        <nav aria-label="How a Ticket runs" style="flex: 1 1 220px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
+          <div class="cap" style="padding: 0 12px 8px">How a Ticket runs</div>
+          <a href="Main.dc.html" class="step"><span class="num done">1</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Workflow</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Migrated (global) v2</span></span></a>
+          <a href="Agent.dc.html" class="step" style="background: #fff; box-shadow: 0 1px 2px rgb(27 30 36/.08)"><span class="num cur">2</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Agent</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Harness and model</span></span></a>
+          <a href="Where.dc.html" class="step"><span class="num">3</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Where</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Execution Target</span></span></a>
+          <a href="Limits.dc.html" class="step"><span class="num">4</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Limits</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Bounds and automation</span></span></a>
+        </nav>
+
+        <section style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <h2 style="margin: 0; font-size: 20px">Which agent and model?</h2>
+            <p style="margin: 0; color: #656b73; line-height: 1.5">Picks the Harness and model for the workflow’s <span class="mono">agent</span> steps. A step that names its own harness or model in YAML keeps it. First match wins.</p>
+          </div>
+
+          <ol aria-label="Agent resolution order" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+            <li class="rung ext"><span class="cap">1st</span><span style="font-weight: 700">Operator choice</span><span style="font-size: 12px; color: #656b73">Set on the Ticket page</span></li>
+            <li class="rung"><span class="cap">2nd</span><a href="#routing" style="color: #1b1e24">Routing Label</a><span style="font-size: 12px; color: #077067; font-weight: 600">3 labels</span></li>
+            <li class="rung"><span class="cap">3rd</span><a href="#classifier" style="color: #1b1e24">Route Classifier</a><span style="font-size: 12px; color: #077067; font-weight: 600">On · picks from 4 Model Options</span></li>
+            <li class="rung" style="border: 2px solid #077067; padding: 11px"><span class="cap" style="color: #077067">Always matches</span><a href="#default" style="color: #1b1e24">Default agent</a><span style="font-size: 12px; color: #077067; font-weight: 600">Claude · opus-5-5</span></li>
+          </ol>
+
+          <article id="routing" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px">
+              <div style="display: flex; flex-direction: column; gap: 4px">
+                <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">2 ·</span> Routing Labels</h3>
+                <p style="margin: 0; color: #656b73; font-size: 13px">Map a tracker label to a Model Option. The first matching label in this list wins.</p>
+              </div>
+              <button class="btn btn-link" type="button">+ Add Routing Label</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 16px minmax(0, 1.4fr) 64px; gap: 10px; align-items: center; border: 1px solid #e0e0db; border-radius: 4px; padding: 8px 10px"><span aria-hidden="true" style="color: #858983">⋮⋮</span><input class="field mono" aria-label="Label" value="hard"><span aria-hidden="true" style="color: #656b73">→</span><select class="field" aria-label="Model Option"><option>deep · Claude opus-5-5</option></select><button class="btn btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button></div>
+              <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 16px minmax(0, 1.4fr) 64px; gap: 10px; align-items: center; border: 1px solid #e0e0db; border-radius: 4px; padding: 8px 10px"><span aria-hidden="true" style="color: #858983">⋮⋮</span><input class="field mono" aria-label="Label" value="quick"><span aria-hidden="true" style="color: #656b73">→</span><select class="field" aria-label="Model Option"><option>fast · Claude haiku-5-5</option></select><button class="btn btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button></div>
+              <div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 16px minmax(0, 1.4fr) 64px; gap: 10px; align-items: center; border: 1px solid #e0e0db; border-radius: 4px; padding: 8px 10px"><span aria-hidden="true" style="color: #858983">⋮⋮</span><input class="field mono" aria-label="Label" value="codex"><span aria-hidden="true" style="color: #656b73">→</span><select class="field" aria-label="Model Option"><option>second-opinion · Codex gpt-5-codex</option></select><button class="btn btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button></div>
+            </div>
+          </article>
+
+          <article id="classifier" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; gap: 16px; align-items: flex-start">
+              <button class="sw on" type="button" role="switch" aria-checked="true" aria-label="Route Classifier"></button>
+              <div style="display: flex; flex-direction: column; gap: 4px">
+                <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">3 ·</span> Route Classifier</h3>
+                <p style="margin: 0; color: #656b73; font-size: 13px">Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. The Workflow classifier in step 1 uses this backend too.</p>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding-left: 50px">
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Backend</span><select class="field"><option>Harness</option></select></label>
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Harness · model</span><select class="field"><option>Claude · haiku-5-5</option></select></label>
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Timeout</span><input class="field" value="30 s"></label>
+            </div>
+            <div style="border-top: 1px solid #e0e0db; padding-top: 14px; display: flex; flex-direction: column; gap: 10px">
+              <div style="display: flex; justify-content: space-between; align-items: center"><span style="font-weight: 700">Model Options</span><button class="btn btn-link" type="button">+ Add Model Option</button></div>
+              <p style="margin: 0; color: #656b73; font-size: 13px">The closed list the classifier and Routing Labels pick from. Write each description as when it fits. Workflow YAML can reference a code.</p>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+                <thead><tr class="cap"><th class="th">Code</th><th class="th">Harness · model</th><th class="th">When it fits</th><th class="th"></th></tr></thead>
+                <tbody>
+                  <tr><td class="td mono" style="font-weight: 700">deep</td><td class="td">Claude · opus-5-5</td><td class="td" style="color: #3d424a">Cross-cutting changes, unclear specs, concurrency or schema work.</td><td class="td"><button class="btn btn-link" type="button">Edit</button></td></tr>
+                  <tr><td class="td mono" style="font-weight: 700">standard</td><td class="td">Claude · sonnet-5-5</td><td class="td" style="color: #3d424a">Most feature and bug work with a clear spec.</td><td class="td"><button class="btn btn-link" type="button">Edit</button></td></tr>
+                  <tr><td class="td mono" style="font-weight: 700">fast</td><td class="td">Claude · haiku-5-5</td><td class="td" style="color: #3d424a">Docs, copy, renames, dependency bumps.</td><td class="td"><button class="btn btn-link" type="button">Edit</button></td></tr>
+                  <tr><td class="td mono" style="font-weight: 700; border-bottom: 0">second-opinion</td><td class="td" style="border-bottom: 0">Codex · gpt-5-codex</td><td class="td" style="color: #3d424a; border-bottom: 0">A Retry after a Claude Attempt failed twice.</td><td class="td" style="border-bottom: 0"><button class="btn btn-link" type="button">Edit</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article id="default" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+            <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">4 ·</span> Default agent</h3>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Harness</span><select class="field"><option>Claude</option></select></label>
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Model</span><select class="field"><option>opus-5-5</option></select></label>
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Priority</span><select class="field"><option>Normal</option></select></label>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: #656b73">Used when no label matches and the classifier is off or abstains. Harness settings live in <a href="#">Integrations › Harnesses</a>.</p>
+          </article>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px">
+            <a href="Main.dc.html" class="btn">← Workflow</a>
+            <a href="Where.dc.html" class="btn">Next: Where it runs →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1640}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

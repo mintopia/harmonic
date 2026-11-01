@@ -11,6 +11,7 @@ import type {
   AgentMessageThread,
   AppConfig,
   ExportDestinationTestResult,
+  ExportDeliveryState,
   ConfigLayers,
   AttemptUsage,
   BudgetGuardrail,
@@ -37,8 +38,6 @@ import type {
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
-  CommandOverlayEntry,
-  EpicCriticOverlayEntry,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
   ModelOptionOverlayEntry,
@@ -205,6 +204,7 @@ export const api = {
   resumeGlobal: () => request<{ paused: boolean }>('DELETE', '/api/global-pause'),
   configLayers: () => request<ConfigLayers>('GET', '/api/config/layers'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
+  exportDestinations: () => request<ExportDeliveryState>('GET', '/api/export/destinations'),
   testExportDestination: (body: { workspaceId: number | null; destination: 'directory' | 's3' }) =>
     request<ExportDestinationTestResult>('POST', '/api/export/test-destination', body),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
@@ -355,8 +355,6 @@ export const api = {
       agentMessagesEnabled?: boolean | null;
       agentMessagesSendCap?: number | null;
       contextReuseTokenLimit?: number | null;
-      epicPreMergeCommands?: CommandOverlayEntry[] | null;
-      epicPreMergeCritics?: EpicCriticOverlayEntry[] | null;
       routingLabels?: RoutingLabelOverlayEntry[] | null;
       executionTargets?: string[] | null;
       workflow?: string | null;

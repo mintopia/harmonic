@@ -127,7 +127,7 @@ test('the builder matches the #929 mockup layout', async ({ page }, testInfo) =>
   await page.locator('[data-block="steps/0/attempts/steps/0"]').getByRole('button').first().click();
   const builder = page.getByRole('region', { name: 'Workflow builder' });
   await expect(builder.getByText('WORKFLOW ACTIONS', { exact: false })).toBeVisible();
-  await expect(builder.getByText('In sync with YAML')).toBeVisible();
+  await expect(page.getByText('Blocks and YAML in sync')).toBeVisible();
   await expect(builder.locator('[data-block]')).toHaveCount(4);
   await builder.screenshot({ path: process.env.HARMONIC_SHOT_PATH ?? testInfo.outputPath('929-impl.png') });
 });

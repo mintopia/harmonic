@@ -17,7 +17,7 @@ beforeEach(() => {
   }
   vi.spyOn(api, 'workflows').mockResolvedValue({
     total: 1,
-    workflows: [{ name: 'w', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] }],
+    workflows: [{ name: 'w', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }],
   });
   vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'w', description: '', bundled: false, version: 1, text: good });
 });
@@ -35,6 +35,10 @@ describe('Workflow editor live validation', () => {
       (host.querySelector('tbody tr td button') as HTMLElement).click();
       await flush();
     });
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flush();
+    });
     const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
     expect(host.querySelector('[data-testid="workflow-diagram"], [aria-label*="iagram"]')).not.toBeNull();
     await act(async () => {
@@ -50,6 +54,10 @@ describe('Workflow editor live validation', () => {
     const host = await mountComponent(createElement(WorkflowsPage));
     await act(async () => {
       (host.querySelector('tbody tr td button') as HTMLElement).click();
+      await flush();
+    });
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await flush();
     });
     return { host, view: EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)! };

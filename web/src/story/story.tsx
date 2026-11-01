@@ -32,11 +32,14 @@ import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { AppConfig, RoutingLabelOverlayEntry, WorkflowLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
-import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/WorkflowLabelsEditor';
+import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor, WorkspaceDefaultWorkflow } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { workflowStory, workflowTaskFields } from './api-stub';
-import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
+import { PromptEditStep } from '../components/prompt-library/PromptEdit';
+import { PromptFind } from '../components/prompt-library/PromptFind';
+import { PromptImpact } from '../components/prompt-library/PromptImpact';
+import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
@@ -84,9 +87,14 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
 }
 
 function PromptLibraryStory() {
+  const [step, setStep] = useState('find');
   return (
     <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1040, margin: '0 auto' }}>
-      <PromptLibrary />
+      <PromptsFlowProvider active onStep={setStep}>
+        {step === 'find' && <PromptFind />}
+        {step === 'edit' && <PromptEditStep />}
+        {step === 'impact' && <PromptImpact />}
+      </PromptsFlowProvider>
     </div>
   );
 }
@@ -452,7 +460,7 @@ function TicketStory() {
     : params.get('state') === 'ready'
     ? { ...withOverrides, state: 'ready' as const, targetWait: params.get('wait') ? { target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 2 } : null, skipReason: params.get('wait') ? 'waiting for k8s-prod' : null }
     : params.get('state') === 'escalated' && params.get('deleted') !== null
-      ? { ...withOverrides, state: 'escalated' as const, escalationReason: "escalated to human: Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Execution." }
+      ? { ...withOverrides, state: 'escalated' as const, escalationReason: "escalated to human: Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Running Tickets." }
     : params.get('state') === 'escalated'
       ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
       : withOverrides;
@@ -546,8 +554,14 @@ function WorkflowLabelsStory() {
         <SettingsSection title="Workflow Labels" description="Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.">
           <WorkflowLabelsEditor config={config} onChange={setConfig} />
         </SettingsSection>
+        <SettingsSection title="Global default workflow" ordinal="5" description="">
+          <GlobalDefaultWorkflow config={config} onChange={setConfig} />
+        </SettingsSection>
         <SettingsSection title="Workflow Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
-          <WorkflowLabelOverlayEditor overlay={overlay} workflow={workflow} config={config} onChange={setOverlay} onWorkflow={setWorkflow} />
+          <WorkflowLabelOverlayEditor overlay={overlay} config={config} onChange={setOverlay} />
+        </SettingsSection>
+        <SettingsSection title="Workspace default workflow" ordinal="4" description="">
+          <WorkspaceDefaultWorkflow workflow={workflow} config={config} onChange={setWorkflow} />
         </SettingsSection>
       </div>
     </StoryFrame>

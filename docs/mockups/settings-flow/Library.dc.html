@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workflows library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-pri{background:#077067;border-color:#077067;color:#fff}
+.btn-link{border:0;background:none;color:#077067;padding:2px 4px;font-size:13px}
+.btn-link[disabled]{color:#858983;text-decoration:line-through;cursor:not-allowed}
+.field{font:inherit;font-size:13px;padding:8px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.th{padding:10px 12px;border-bottom:1px solid #e0e0db;text-align:left}
+.td{padding:14px 12px;border-bottom:1px solid #e0e0db;vertical-align:top}
+.why{font-size:11px;color:#656b73;margin-top:4px}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1000px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html" style="background: #b6ece4; color: #075f58; font-weight: 700">Workflows</a><a href="#">API</a>
+      <a href="Main.dc.html">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+      <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+          <h1 style="margin: 0; font-size: 18px">Workflows</h1>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <input class="field" type="search" aria-label="Search workflows" placeholder="Search workflows" style="width: 240px">
+            <button class="btn" type="button">Import YAML…</button>
+            <button class="btn btn-pri" type="button">New workflow</button>
+          </div>
+        </div>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 860px">
+            <thead><tr class="cap"><th class="th">Name</th><th class="th">Version</th><th class="th">In use</th><th class="th">Assigned as</th><th class="th" style="text-align: right">Actions</th></tr></thead>
+            <tbody>
+              <tr><td class="td"><a href="Editor.dc.html" style="color: #1b1e24">Default</a> <span class="chip" style="background: #ecedea; color: #5b616a; border-radius: 3px; margin-left: 6px">BUNDLED</span></td><td class="td" style="color: #656b73">v5</td><td class="td">0 Tickets / 0 Workspaces</td><td class="td"><span class="chip" style="background: #ecedea; color: #5b616a">the process Harmonic runs today</span></td><td class="td" style="text-align: right"><button class="btn-link" type="button">Duplicate</button> <button class="btn-link" type="button">Export</button> <button class="btn-link" type="button" disabled>Delete</button><div class="why">Bundled workflows are read-only.</div></td></tr>
+              <tr><td class="td"><a href="Editor.dc.html" style="color: #1b1e24">Migrated (global)</a></td><td class="td" style="color: #656b73">v2</td><td class="td">41 Tickets / 5 Workspaces</td><td class="td"><span class="chip" style="background: #b6ece4; color: #075f58">Global default</span></td><td class="td" style="text-align: right"><button class="btn-link" type="button">Duplicate</button> <button class="btn-link" type="button">Export</button> <button class="btn-link" type="button" disabled>Delete</button><div class="why">In use by 41 Tickets and 5 Workspaces.</div></td></tr>
+              <tr><td class="td"><a href="Editor.dc.html" style="color: #1b1e24">Migrated (harmonic)</a></td><td class="td" style="color: #656b73">v1</td><td class="td">3 Tickets / 1 Workspace</td><td class="td"><span class="chip" style="background: #cee3fa; color: #1160ae">Workspace default · harmonic</span></td><td class="td" style="text-align: right"><button class="btn-link" type="button">Duplicate</button> <button class="btn-link" type="button">Export</button> <button class="btn-link" type="button" disabled>Delete</button><div class="why">In use by 3 Tickets and 1 Workspace.</div></td></tr>
+              <tr><td class="td"><a href="Editor.dc.html" style="color: #1b1e24">Security review on label</a></td><td class="td" style="color: #656b73">v4</td><td class="td">2 Tickets / 0 Workspaces</td><td class="td"><span class="chip" style="background: #b6ece4; color: #075f58">Workflow Label · security</span></td><td class="td" style="text-align: right"><button class="btn-link" type="button">Duplicate</button> <button class="btn-link" type="button">Export</button> <button class="btn-link" type="button" disabled>Delete</button><div class="why">In use by 2 Tickets and 1 Workflow Label.</div></td></tr>
+              <tr><td class="td" style="border-bottom: 0"><a href="Editor.dc.html" style="color: #1b1e24">Docs only</a></td><td class="td" style="color: #656b73; border-bottom: 0">v2</td><td class="td" style="border-bottom: 0">0 Tickets / 0 Workspaces</td><td class="td" style="border-bottom: 0"><span class="chip" style="background: #b6ece4; color: #075f58">Workflow Label · docs</span></td><td class="td" style="text-align: right; border-bottom: 0"><button class="btn-link" type="button">Duplicate</button> <button class="btn-link" type="button">Export</button> <button class="btn-link" type="button" style="color: #b3253f">Delete</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin: 0; font-size: 12px; color: #656b73">Each workflow is a YAML file in the data directory. Export downloads the saved YAML; Import creates a new workflow and refuses invalid YAML. Assign workflows in <a href="Main.dc.html">Settings › Running Tickets</a>.</p>
+      </article>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

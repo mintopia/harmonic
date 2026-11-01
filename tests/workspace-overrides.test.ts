@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, epicVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
-import { resolveVerifiers } from '../src/domain/setting-override.js';
+import { budgetGuardrailSchema, baselineConfig, mergeConfig } from '../src/config.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
 
@@ -40,8 +39,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.agentMessagesEnabled).toBeNull();
     expect(ws.agentMessagesSendCap).toBeNull();
-    expect(ws.epicPreMergeCommands).toBeNull();
-    expect(ws.epicPreMergeCritics).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
     expect(ws.drivePrompt).toBeNull();
@@ -68,10 +65,27 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
   });
 
+  it('seeds new Workspaces from the global excluded-directory list', async () => {
+    const seeded = new WorkspaceService(asyncDb, settingsStore, () => ['vendor']);
+    const workingDir = join(dataDir, 'third-workspace');
+    mkdirSync(workingDir);
+    const created = await seeded.create({ name: 'Third', workingDir });
+
+    expect(created.excludedDirectories).toEqual(['vendor']);
+    expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(['vendor']);
+  });
+
   it('rejects non-canonical excluded directory paths', () => {
     for (const excludedDirectories of [['src/'], ['./src'], ['src//generated'], ['src\\generated'], ['src/../build']]) {
       expect(workspaceOverridesSchema.safeParse({ excludedDirectories }).success).toBe(false);
     }
+  });
+
+  it('rejects non-canonical global excluded directory paths before they can seed a Workspace', () => {
+    for (const excludedDirectories of [['../x'], ['a//b'], ['./src'], ['src/'], ['src\\generated']]) {
+      expect(() => mergeConfig(baselineConfig(), { excludedDirectories })).toThrow(/canonical relative path/);
+    }
+    expect(mergeConfig(baselineConfig(), { excludedDirectories: ['vendor', 'src/generated'] }).excludedDirectories).toEqual(['vendor', 'src/generated']);
   });
 
   it('sets explicit overrides', async () => {
@@ -148,53 +162,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const cleared = await workspaces.update(ws.id, { agentMessagesEnabled: null, agentMessagesSendCap: null });
     expect(cleared.agentMessagesEnabled).toBeNull();
     expect(cleared.agentMessagesSendCap).toBeNull();
-  });
-
-  it('sets explicit staged verifier overlays as JSON lists', async () => {
-    const ws = (await workspaces.list())[0]!;
-    const updated = await workspaces.update(ws.id, {
-      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: epicVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' }) }],
-    });
-    expect(JSON.parse(updated.epicPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
-    expect(JSON.parse(updated.epicPreMergeCritics!)).toMatchObject([{ kind: 'local', critic: { name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' } }]);
-  });
-
-  it('clears staged verifier overlays back to inherit with null', async () => {
-    const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, {
-      epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }],
-      epicPreMergeCritics: [{ kind: 'local', enabled: true, critic: epicVerificationCriticSchema.parse({ id: 'critic-test', name: 'Test critic', prompt: 'review epic', harness: 'claude', model: 'claude-opus-5' }) }],
-    });
-    const cleared = await workspaces.update(ws.id, {
-      epicPreMergeCommands: null,
-      epicPreMergeCritics: null,
-      epicWorkflow: null,
-    });
-    expect(cleared.epicPreMergeCommands).toBeNull();
-    expect(cleared.epicPreMergeCritics).toBeNull();
-  });
-
-  it('disabling every named global in the overlay resolves that verifier list to off (ADR-0037: an empty overlay can no longer express this)', async () => {
-    const ws = (await workspaces.list())[0]!;
-    const updated = await workspaces.update(ws.id, {
-      epicPreMergeCritics: [{ kind: 'global', ref: 'critic-global', enabled: false }],
-    });
-    expect(JSON.parse(updated.epicPreMergeCritics!)).toEqual([{ kind: 'global', ref: 'critic-global', enabled: false }]);
-    const resolved = resolveVerifiers(updated, {
-      verify: {
-        epic: { preMerge: { commands: [], critics: [{ id: 'critic-global', name: 'Test critic', prompt: 'global epic review', harness: 'claude', model: 'claude-opus-5' }] }, resolvePrompt: 'Resolve failures.', resolveSuffix: 'Branch {branch}.' },
-      },
-    } as any);
-    expect(resolved.epic.preMerge.critics).toEqual([]);
-  });
-
-  it('leaves an omitted verifier override untouched (issue #132)', async () => {
-    const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { epicPreMergeCommands: [{ kind: 'local', enabled: true, command: verificationCommandSchema.parse({ id: 'cmd-test', command: 'npm', args: ['test'] }) }] });
-    const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
-    expect(renamed.name).toBe('Renamed');
-    expect(JSON.parse(renamed.epicPreMergeCommands!)).toMatchObject([{ kind: 'local', command: { command: 'npm', args: ['test'] } }]);
   });
 
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {
@@ -298,8 +265,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       agentMessagesSendCap: null,
       maxAttempts: null,
       contextReuseTokenLimit: null,
-      epicPreMergeCommands: null,
-      epicPreMergeCritics: null,
       epicWorkflow: null,
       routingLabels: null,
       workflow: null,

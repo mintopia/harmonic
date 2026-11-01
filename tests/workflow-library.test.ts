@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { tasks } from '../src/db/schema.js';
 import { WorkflowLibrary } from '../src/domain/workflow-library-store.js';
 import { parseWorkflow } from '../src/domain/workflow.js';
 import { inBlock, startServer, type TestServer } from './helpers.js';
@@ -100,7 +102,7 @@ describe('/api/workflows', () => {
   it('lists inUse and assignedAs for every workflow', async () => {
     const list = await server.api('GET', '/api/workflows');
     const implement = list.body.workflows.find((w: { name: string }) => w.name === 'implement');
-    expect(implement.inUse).toEqual({ tickets: 0, workspaces: 0 });
+    expect(implement.inUse).toEqual({ tickets: 0, running: 0, workspaces: 0 });
     expect(implement.assignedAs).toEqual([]);
   });
 
@@ -117,6 +119,17 @@ describe('/api/workflows', () => {
 
   it('refuses to delete a bundled workflow', async () => {
     expect((await server.api('DELETE', '/api/workflows/implement')).status).toBe(403);
+  });
+
+  it('counts a working ticket as running only under the workflow it is pinned to', async () => {
+    await server.api('PUT', '/api/workflows/asked', { text: flow('asked') });
+    await server.api('PUT', '/api/workflows/pinned', { text: flow('pinned') });
+    const created = await server.api('POST', '/api/tasks', { prompt: 'p', workflow: 'asked' });
+    await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ state: 'working', workflowRef: 'pinned@1' }).where(eq(tasks.id, created.body.id)).run());
+    const list = await server.api('GET', '/api/workflows');
+    const use = (name: string) => list.body.workflows.find((w: { name: string }) => w.name === name).inUse;
+    expect(use('pinned')).toMatchObject({ tickets: 1, running: 1 });
+    expect(use('asked')).toMatchObject({ tickets: 1, running: 0 });
   });
 
   it('refuses to delete a workflow a ticket references and counts the use', async () => {

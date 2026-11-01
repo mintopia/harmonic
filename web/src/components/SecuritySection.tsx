@@ -10,6 +10,7 @@ export function SecuritySection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -47,7 +48,7 @@ export function SecuritySection() {
 
   if (configured === null) return null;
 
-  return (
+  const form = (
     <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
       {configured && (
         <div>
@@ -102,5 +103,25 @@ export function SecuritySection() {
         {error && <p role="alert" className="text-fail">{error}</p>}
       </div>
     </form>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid items-center gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
+          <div className="font-bold">Operator password</div>
+          <div className="mt-0.5 text-small text-muted">The password for this console.</div>
+        </div>
+        <button
+          type="button"
+          className={`${btnGhost} justify-self-start`}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {configured ? 'Change password…' : 'Set password…'}
+        </button>
+      </div>
+      {open && form}
+    </div>
   );
 }

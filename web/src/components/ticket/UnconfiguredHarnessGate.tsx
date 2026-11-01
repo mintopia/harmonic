@@ -20,7 +20,7 @@ export function UnconfiguredHarnessMessage({ label, harness }: { label: string |
         </>
       )}{' '}
       No Attempt was started. Configure the Harness in Global settings › Integrations › Harnesses,{' '}
-      {label ? "change the label's route in Settings › Execution › Routing Labels, " : ''}or set a Harness on this Ticket.
+      {label ? "change the label's route in Settings › Running Tickets › Routing Labels, " : ''}or set a Harness on this Ticket.
     </>
   );
 }

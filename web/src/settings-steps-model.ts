@@ -1,0 +1,148 @@
+import type { SettingTab } from '../../src/domain/settings-registry.js';
+
+export interface StepDef {
+  id: string;
+  title: string;
+  summary: string;
+  heading: string;
+  intro: string;
+  nextTitle?: string;
+  backTitle?: string;
+  note?: string;
+  ownHeader?: boolean;
+}
+
+const INSTANCE_INTRO = 'What this Harmonic is called, who can reach it, and what it ignores.';
+const ARCHIVE_HEADING = 'What happens to a finished Task?';
+const ARCHIVE_INTRO =
+  'Every Task keeps a raw Archive. When it reaches done, closed or failed, Harmonic can bundle it, redact it and deliver it.';
+
+export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
+  general: [
+    { id: 'identity', title: 'Identity', summary: 'Name and project', heading: 'This instance', intro: INSTANCE_INTRO },
+    { id: 'access', title: 'Access', summary: 'Password and permissions', heading: 'This instance', intro: INSTANCE_INTRO },
+    { id: 'chats', title: 'Chats', summary: 'Conversation defaults', heading: 'This instance', intro: INSTANCE_INTRO },
+    { id: 'files', title: 'Files', summary: 'Excluded folders', heading: 'This instance', intro: INSTANCE_INTRO },
+  ],
+  execution: [
+    {
+      id: 'workflow',
+      title: 'Workflow',
+      summary: 'Which process runs',
+      heading: 'Which workflow runs?',
+      intro:
+        'Resolved once when a Ticket starts working, and again on Retry. Harmonic walks these rules in order; the first one that matches picks the workflow.',
+      note: 'Edits apply from each Ticket’s next Retry.',
+    },
+    {
+      id: 'agent',
+      title: 'Agent',
+      summary: 'Harness and model',
+      heading: 'Which agent and model?',
+      intro:
+        'Picks the Harness and model for the workflow’s agent steps. A step that names its own harness or model in YAML keeps it. First match wins.',
+      nextTitle: 'Which agent',
+    },
+    {
+      id: 'where',
+      title: 'Where',
+      summary: 'Execution Target',
+      heading: 'Where does it run?',
+      intro:
+        'The workflow’s runs_on: names an Execution Target; steps without one run here on the host. Then choose how the checkout is isolated.',
+      nextTitle: 'Where it runs',
+    },
+    {
+      id: 'limits',
+      title: 'Limits',
+      summary: 'Bounds and automation',
+      heading: 'Limits and automation',
+      intro: 'What starts work without you, and the bounds that escalate a Ticket instead of letting it run on.',
+      note: 'Saved settings apply from each Ticket’s next Retry.',
+    },
+  ],
+  prompts: [
+    { id: 'find', title: 'Find', summary: 'Pick a prompt', heading: 'Which prompt do you want to change?', intro: '', ownHeader: true },
+    { id: 'edit', title: 'Edit', summary: 'Pick a prompt first', heading: 'Edit the prompt', intro: '', backTitle: 'All prompts', ownHeader: true },
+    { id: 'impact', title: 'Check impact', summary: 'Pick a prompt first', heading: 'Check impact', intro: '', ownHeader: true },
+    { id: 'overrides', title: 'Workspace text', summary: 'Override engine prompts', heading: 'Workspace prompt text', intro: 'Override the engine prompts for this Workspace. Anything left on inherit follows the global text.' },
+  ],
+  integrations: [
+    {
+      id: 'code',
+      title: 'Code',
+      summary: 'Repository',
+      heading: 'Where does the code live?',
+      intro: 'The forge that hosts branches, PRs and Merges. Detected from the origin remote unless you override it.',
+    },
+    {
+      id: 'work',
+      title: 'Work',
+      summary: 'Tracker and labels',
+      heading: 'Where does work come from?',
+      intro: 'Harmonic mirrors a tracker’s issues onto the board as Tasks. It uses the first source it finds.',
+    },
+    {
+      id: 'agents',
+      title: 'Agents',
+      summary: 'Harnesses',
+      heading: 'Which agents can Harmonic drive?',
+      intro: 'Harness CLIs driven over ACP. Which one runs a Ticket is chosen in Running Tickets › Agent.',
+    },
+    {
+      id: 'updates',
+      title: 'Updates',
+      summary: 'Notifications',
+      heading: 'Who hears about it?',
+      intro:
+        'Channels that receive Task and queue events. Adding or removing a channel applies at once; subscriptions save with the bar.',
+    },
+  ],
+  archive: [
+    { id: 'keep', title: 'Keep', summary: 'Local Archive', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'export', title: 'Export', summary: 'When to bundle', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'redact', title: 'Redact', summary: 'What to strip', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+    { id: 'deliver', title: 'Deliver', summary: 'Destinations', heading: ARCHIVE_HEADING, intro: ARCHIVE_INTRO },
+  ],
+};
+
+export const BREADCRUMB_INCLUDES_STEP: ReadonlySet<SettingTab> = new Set<SettingTab>(['execution', 'integrations']);
+
+export const TAB_RAIL_TITLES: Record<SettingTab, string> = {
+  general: 'This instance',
+  execution: 'How a Ticket runs',
+  prompts: 'Changing what agents are told',
+  integrations: 'Connecting Harmonic',
+  archive: 'After a Task ends',
+};
+
+export function visibleSteps(tab: SettingTab, stepsWithContent: ReadonlySet<string>): StepDef[] {
+  return TAB_STEPS[tab].filter((step) => stepsWithContent.has(step.id));
+}
+
+export function resolveStep(steps: readonly StepDef[], requested: string | null): string {
+  if (requested && steps.some((step) => step.id === requested)) return requested;
+  return steps[0]?.id ?? '';
+}
+
+export interface SettingsLocation {
+  tab: SettingTab | null;
+  step: string | null;
+}
+
+export function parseSettingsLocation(search: string, tabs: readonly SettingTab[]): SettingsLocation {
+  const params = new URLSearchParams(search);
+  const tab = params.get('tab');
+  return {
+    tab: tab && (tabs as readonly string[]).includes(tab) ? (tab as SettingTab) : null,
+    step: params.get('step'),
+  };
+}
+
+export function formatSettingsLocation(search: string, tab: SettingTab, step: string): string {
+  const params = new URLSearchParams(search);
+  params.set('tab', tab);
+  if (step) params.set('step', step);
+  else params.delete('step');
+  return `?${params.toString()}`;
+}

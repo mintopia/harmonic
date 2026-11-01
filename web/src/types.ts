@@ -59,7 +59,7 @@ export interface WorkflowLibraryEntry {
   subject: 'ticket' | 'epic';
   bundled: boolean;
   version: number;
-  inUse: { tickets: number; workspaces: number };
+  inUse: { tickets: number; running: number; workspaces: number };
   assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
 }
 
@@ -256,6 +256,17 @@ export interface ExportDestinationStatus {
   error: string | null;
   retry: { count: number; max: number; nextRetryAt: string | null; exhausted: boolean } | null;
 }
+
+export interface ExportDelivery {
+  status: 'succeeded' | 'failed';
+  at: string;
+  error: string | null;
+  retry: number;
+  nextRetryAt: string | null;
+}
+
+/** `GET /api/export/destinations`: the last delivery per Destination; absent when it never delivered. */
+export type ExportDeliveryState = Partial<Record<ExportDestinationKind, ExportDelivery>>;
 
 export interface ExportSummary {
   name: string | null;
@@ -492,6 +503,7 @@ export type CodeRepositoryKind = 'github' | 'gitlab' | 'forgejo' | 'git';
 export interface TrackerDetection {
   detectedTracker: { name: string; kind: string | null } | null;
   detectedCodeRepository: CodeRepositoryKind | null;
+  repoDocTriageLabels: NonNullable<Workspace['triageLabels']>;
 }
 
 export type VerifyResult = { ok: true; identity: string } | { ok: false; reason: string };
@@ -529,8 +541,6 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  epicPreMergeCommands: CommandOverlayEntry[] | null;
-  epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
   /** `local` is always available; null inherits every enabled target. */
@@ -621,19 +631,6 @@ export interface EpicVerificationStage {
   commands: VerificationCommand[];
   critics: EpicVerificationCritic[];
 }
-
-/**
- * A Workspace's additive command overlay entry (ADR-0037): a `global` entry
- * reorders/disables a global command by `ref` (its id) without editing it; a
- * `local` entry inlines a Workspace-owned command, fully editable.
- */
-export type CommandOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; command: VerificationCommand };
-
-export type EpicCriticOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
 
 /** A Workspace Routing Label overlay entry; a `global` entry's `ref` is the global label, lowercased. */
 export type RoutingLabelOverlayEntry =
@@ -1299,11 +1296,24 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
+  /** Folders hidden from the Files browser and directory pickers; seeds each new Workspace. */
+  excludedDirectories: string[];
   routingLabels: { label: string; harness: string; model: string }[];
   workflowLabels: { label: string; workflow: string }[];
   modelOptions: ModelOption[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
+  /** Global classifier defaults; a Workspace's own `classifier*` values win. */
+  classifier: {
+    workflowEnabled: boolean;
+    enabled: boolean;
+    backend: 'typesafe' | 'openai-compatible' | 'harness';
+    timeoutSeconds: number;
+    typesafeModel: string;
+    typesafeSecret: string | null;
+    harness: string | null;
+    model: string | null;
+  };
   /** Per-stage command and critic verifier lists. */
   verify: {
     epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };

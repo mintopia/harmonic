@@ -75,7 +75,7 @@ describe('Epic settings to workflows migration', () => {
     const harness = await boot({
       global: GLOBAL_EPIC,
       workspaces: [
-        { name: 'Alpha App', overrides: { epicPreMergeCommands: [{ kind: 'global', ref: 'ec-test', enabled: false }, { kind: 'local', enabled: true, command: command('ec-make', 'make', ['check']) }] } as never },
+        { name: 'Alpha App', overrides: { epicPreMergeCommands: [{ kind: 'global', ref: 'ec-test', enabled: false }, { kind: 'local', enabled: true, command: command('ec-make', 'make', ['check']) }] } },
         { name: 'Plain', overrides: { priority: 'high' } },
       ],
     });

@@ -7858,213 +7858,6 @@
             ],
             "example": null
           },
-          "epicPreMergeCommands": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "global"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "ref",
-                        "enabled"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "local"
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "command": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "default": "00000000-0000-0000-0000-000000000000",
-                              "example": "cmd-lint",
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "command": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "npm"
-                            },
-                            "args": {
-                              "default": [],
-                              "example": [
-                                "test"
-                              ],
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "cwd": {
-                              "example": "packages/api",
-                              "type": "string"
-                            },
-                            "env": {
-                              "default": {},
-                              "example": {
-                                "CI": "1"
-                              },
-                              "type": "object",
-                              "propertyNames": {
-                                "type": "string"
-                              },
-                              "additionalProperties": {
-                                "type": "string"
-                              }
-                            },
-                            "timeoutSeconds": {
-                              "default": 600,
-                              "example": 600,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
-                            }
-                          },
-                          "required": [
-                            "command"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "enabled",
-                        "command"
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "epicPreMergeCritics": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "global"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "ref",
-                        "enabled"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "local"
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "critic": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "default": "00000000-0000-0000-0000-000000000000",
-                              "example": "critic-correctness",
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "name": {
-                              "default": "",
-                              "example": "Correctness",
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "claude-opus-5"
-                            },
-                            "harness": {
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
-                              ],
-                              "example": "claude"
-                            },
-                            "timeoutSeconds": {
-                              "default": 300,
-                              "example": 300,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
-                            },
-                            "prompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                            }
-                          },
-                          "required": [
-                            "model",
-                            "harness",
-                            "prompt"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "enabled",
-                        "critic"
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "routingLabels": {
             "anyOf": [
               {
@@ -8957,8 +8750,6 @@
           "effectiveAgentMessagesEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
-          "epicPreMergeCommands",
-          "epicPreMergeCritics",
           "routingLabels",
           "executionTargets",
           "workflow",
@@ -9654,6 +9445,75 @@
                 "minimum": 1,
                 "maximum": 9007199254740991,
                 "example": 10
+              }
+            }
+          },
+          "classifier": {
+            "type": "object",
+            "properties": {
+              "workflowEnabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ],
+                "example": "harness"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 30
+              },
+              "typesafeModel": {
+                "type": "string",
+                "minLength": 1,
+                "example": "typesafe/jev-1.13"
+              },
+              "typesafeSecret": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             }
           },
@@ -10679,11 +10539,35 @@
                 "type": "null"
               }
             ]
+          },
+          "repoDocTriageLabels": {
+            "type": "object",
+            "properties": {
+              "readyForAgent": {
+                "type": "string",
+                "minLength": 1
+              },
+              "readyForHuman": {
+                "type": "string",
+                "minLength": 1
+              },
+              "epic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "wayfinderMap": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "description": "The roles the repo's docs/agents/triage-labels.md names; empty when absent."
           }
         },
         "required": [
           "detectedTracker",
-          "detectedCodeRepository"
+          "detectedCodeRepository",
+          "repoDocTriageLabels"
         ]
       },
       "SecretStatusInput": {
@@ -11466,6 +11350,11 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
+              "running": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "workspaces": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -11474,9 +11363,10 @@
             },
             "required": [
               "tickets",
+              "running",
               "workspaces"
             ],
-            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+            "description": "Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to."
           },
           "assignedAs": {
             "type": "array",
@@ -11499,7 +11389,7 @@
                 "kind"
               ]
             },
-            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+            "description": "Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted."
           }
         },
         "required": [
@@ -19492,226 +19382,6 @@
             ],
             "example": null
           },
-          "epicPreMergeCommands": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "global"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "ref",
-                        "enabled"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "local"
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "command": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "default": "00000000-0000-0000-0000-000000000000",
-                              "example": "cmd-lint",
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "command": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "npm"
-                            },
-                            "args": {
-                              "default": [],
-                              "example": [
-                                "test"
-                              ],
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "cwd": {
-                              "example": "packages/api",
-                              "type": "string"
-                            },
-                            "env": {
-                              "default": {},
-                              "example": {
-                                "CI": "1"
-                              },
-                              "type": "object",
-                              "propertyNames": {
-                                "type": "string"
-                              },
-                              "additionalProperties": {
-                                "type": "string"
-                              }
-                            },
-                            "timeoutSeconds": {
-                              "default": 600,
-                              "example": 600,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "command",
-                            "args",
-                            "env",
-                            "timeoutSeconds"
-                          ],
-                          "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "enabled",
-                        "command"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "epicPreMergeCritics": {
-            "anyOf": [
-              {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "global"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "ref",
-                        "enabled"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "local"
-                        },
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "critic": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "default": "00000000-0000-0000-0000-000000000000",
-                              "example": "critic-correctness",
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "name": {
-                              "default": "",
-                              "example": "Correctness",
-                              "type": "string"
-                            },
-                            "model": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "claude-opus-5"
-                            },
-                            "harness": {
-                              "type": "string",
-                              "enum": [
-                                "claude",
-                                "codex",
-                                "copilot",
-                                "opencode"
-                              ],
-                              "example": "claude"
-                            },
-                            "timeoutSeconds": {
-                              "default": 300,
-                              "example": 300,
-                              "type": "integer",
-                              "exclusiveMinimum": 0,
-                              "maximum": 9007199254740991
-                            },
-                            "prompt": {
-                              "type": "string",
-                              "minLength": 1,
-                              "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "name",
-                            "model",
-                            "harness",
-                            "timeoutSeconds",
-                            "prompt"
-                          ],
-                          "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "enabled",
-                        "critic"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "routingLabels": {
             "anyOf": [
               {
@@ -20621,8 +20291,6 @@
           "effectiveAgentMessagesEnabled",
           "maxAttempts",
           "contextReuseTokenLimit",
-          "epicPreMergeCommands",
-          "epicPreMergeCritics",
           "routingLabels",
           "executionTargets",
           "workflow",
@@ -21334,6 +21002,76 @@
                 "minimum": 1,
                 "maximum": 9007199254740991,
                 "example": 10
+              }
+            },
+            "additionalProperties": false
+          },
+          "classifier": {
+            "type": "object",
+            "properties": {
+              "workflowEnabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ],
+                "example": "harness"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 30
+              },
+              "typesafeModel": {
+                "type": "string",
+                "minLength": 1,
+                "example": "typesafe/jev-1.13"
+              },
+              "typesafeSecret": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
               }
             },
             "additionalProperties": false
@@ -22394,11 +22132,35 @@
                 "type": "null"
               }
             ]
+          },
+          "repoDocTriageLabels": {
+            "type": "object",
+            "properties": {
+              "readyForAgent": {
+                "type": "string",
+                "minLength": 1
+              },
+              "readyForHuman": {
+                "type": "string",
+                "minLength": 1
+              },
+              "epic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "wayfinderMap": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "description": "The roles the repo's docs/agents/triage-labels.md names; empty when absent."
           }
         },
         "required": [
           "detectedTracker",
-          "detectedCodeRepository"
+          "detectedCodeRepository",
+          "repoDocTriageLabels"
         ],
         "additionalProperties": false
       },
@@ -23199,6 +22961,11 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
+              "running": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
               "workspaces": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -23207,10 +22974,11 @@
             },
             "required": [
               "tickets",
+              "running",
               "workspaces"
             ],
             "additionalProperties": false,
-            "description": "Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to."
+            "description": "Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to."
           },
           "assignedAs": {
             "type": "array",
@@ -23234,7 +23002,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+            "description": "Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted."
           }
         },
         "required": [
@@ -27389,6 +27157,142 @@
         }
       }
     },
+    "/api/export/destinations": {
+      "get": {
+        "tags": [
+          "Export"
+        ],
+        "description": "The last delivery outcome of each Export Destination across all Tasks, with retry state. A Destination that has never delivered is absent. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last delivery per Destination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "succeeded",
+                            "failed"
+                          ],
+                          "example": "failed"
+                        },
+                        "at": {
+                          "type": "string",
+                          "example": "2026-09-30T12:00:00.000Z"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "AccessDenied: 403"
+                        },
+                        "retry": {
+                          "type": "number",
+                          "example": 2
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "2026-09-30T12:30:00.000Z"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at",
+                        "error",
+                        "retry",
+                        "nextRetryAt"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The most recent delivery outcome; nextRetryAt is null once retries are exhausted."
+                    },
+                    "s3": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "succeeded",
+                            "failed"
+                          ],
+                          "example": "failed"
+                        },
+                        "at": {
+                          "type": "string",
+                          "example": "2026-09-30T12:00:00.000Z"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "AccessDenied: 403"
+                        },
+                        "retry": {
+                          "type": "number",
+                          "example": 2
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": "2026-09-30T12:30:00.000Z"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "at",
+                        "error",
+                        "retry",
+                        "nextRetryAt"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The most recent delivery outcome; nextRetryAt is null once retries are exhausted."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Last delivery per Destination."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/export": {
       "get": {
         "tags": [
@@ -28334,219 +28238,6 @@
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "epicPreMergeCommands": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "oneOf": [
-                            {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
-                                  "type": "string",
-                                  "enum": [
-                                    "global"
-                                  ]
-                                },
-                                "ref": {
-                                  "type": "string",
-                                  "minLength": 1
-                                },
-                                "enabled": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "ref",
-                                "enabled"
-                              ]
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
-                                  "type": "string",
-                                  "enum": [
-                                    "local"
-                                  ]
-                                },
-                                "enabled": {
-                                  "type": "boolean"
-                                },
-                                "command": {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "default": "00000000-0000-0000-0000-000000000000",
-                                      "example": "cmd-lint",
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    "command": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "example": "npm"
-                                    },
-                                    "args": {
-                                      "default": [],
-                                      "example": [
-                                        "test"
-                                      ],
-                                      "type": "array",
-                                      "items": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "cwd": {
-                                      "example": "packages/api",
-                                      "type": "string"
-                                    },
-                                    "env": {
-                                      "default": {},
-                                      "example": {
-                                        "CI": "1"
-                                      },
-                                      "type": "object",
-                                      "propertyNames": {
-                                        "type": "string"
-                                      },
-                                      "additionalProperties": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "timeoutSeconds": {
-                                      "default": 600,
-                                      "example": 600,
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 9007199254740991
-                                    }
-                                  },
-                                  "required": [
-                                    "command"
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "enabled",
-                                "command"
-                              ]
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "epicPreMergeCritics": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "oneOf": [
-                            {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
-                                  "type": "string",
-                                  "enum": [
-                                    "global"
-                                  ]
-                                },
-                                "ref": {
-                                  "type": "string",
-                                  "minLength": 1
-                                },
-                                "enabled": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "ref",
-                                "enabled"
-                              ]
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "kind": {
-                                  "type": "string",
-                                  "enum": [
-                                    "local"
-                                  ]
-                                },
-                                "enabled": {
-                                  "type": "boolean"
-                                },
-                                "critic": {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "default": "00000000-0000-0000-0000-000000000000",
-                                      "example": "critic-correctness",
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    "name": {
-                                      "default": "",
-                                      "example": "Correctness",
-                                      "type": "string"
-                                    },
-                                    "model": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "example": "claude-opus-5"
-                                    },
-                                    "harness": {
-                                      "type": "string",
-                                      "enum": [
-                                        "claude",
-                                        "codex",
-                                        "copilot",
-                                        "opencode"
-                                      ],
-                                      "example": "claude"
-                                    },
-                                    "timeoutSeconds": {
-                                      "default": 300,
-                                      "example": 300,
-                                      "type": "integer",
-                                      "exclusiveMinimum": 0,
-                                      "maximum": 9007199254740991
-                                    },
-                                    "prompt": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                                    }
-                                  },
-                                  "required": [
-                                    "model",
-                                    "harness",
-                                    "prompt"
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "enabled",
-                                "critic"
-                              ]
-                            }
-                          ]
-                        }
                       },
                       {
                         "type": "null"
@@ -31636,7 +31327,7 @@
             }
           },
           "409": {
-            "description": "Tickets reference the workflow, so it is kept.",
+            "description": "Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.",
             "content": {
               "application/json": {
                 "schema": {
@@ -32439,6 +32130,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -32476,6 +32179,86 @@
                       "required": [
                         "enabled",
                         "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
                       ],
                       "additionalProperties": false
                     },
@@ -33033,8 +32816,10 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -33457,6 +33242,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -33494,6 +33291,86 @@
                       "required": [
                         "enabled",
                         "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
                       ],
                       "additionalProperties": false
                     },
@@ -34051,8 +33928,10 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -34448,6 +34327,18 @@
                       "model"
                     ]
                   },
+                  "excludedDirectories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "example": [
+                      ".git",
+                      "node_modules",
+                      "dist"
+                    ]
+                  },
                   "autoRunner": {
                     "type": "object",
                     "properties": {
@@ -34484,6 +34375,85 @@
                     "required": [
                       "enabled",
                       "sendCap"
+                    ]
+                  },
+                  "classifier": {
+                    "type": "object",
+                    "properties": {
+                      "workflowEnabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "backend": {
+                        "type": "string",
+                        "enum": [
+                          "typesafe",
+                          "openai-compatible",
+                          "harness"
+                        ],
+                        "example": "harness"
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991,
+                        "example": 30
+                      },
+                      "typesafeModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "typesafe/jev-1.13"
+                      },
+                      "typesafeSecret": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      },
+                      "harness": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      },
+                      "model": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      }
+                    },
+                    "required": [
+                      "workflowEnabled",
+                      "enabled",
+                      "backend",
+                      "timeoutSeconds",
+                      "typesafeModel",
+                      "typesafeSecret",
+                      "harness",
+                      "model"
                     ]
                   },
                   "maxAttempts": {
@@ -35011,8 +34981,10 @@
                   "workflowLabels",
                   "modelOptions",
                   "chat",
+                  "excludedDirectories",
                   "autoRunner",
                   "agentMessages",
+                  "classifier",
                   "maxAttempts",
                   "contextReuseTokenLimit",
                   "editor",
@@ -35416,6 +35388,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -35453,6 +35437,86 @@
                       "required": [
                         "enabled",
                         "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
                       ],
                       "additionalProperties": false
                     },
@@ -36010,8 +36074,10 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -36429,6 +36495,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "excludedDirectories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "example": [
+                            ".git",
+                            "node_modules",
+                            "dist"
+                          ]
+                        },
                         "autoRunner": {
                           "type": "object",
                           "properties": {
@@ -36466,6 +36544,86 @@
                           "required": [
                             "enabled",
                             "sendCap"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "classifier": {
+                          "type": "object",
+                          "properties": {
+                            "workflowEnabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "backend": {
+                              "type": "string",
+                              "enum": [
+                                "typesafe",
+                                "openai-compatible",
+                                "harness"
+                              ],
+                              "example": "harness"
+                            },
+                            "timeoutSeconds": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 30
+                            },
+                            "typesafeModel": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "typesafe/jev-1.13"
+                            },
+                            "typesafeSecret": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "harness": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "workflowEnabled",
+                            "enabled",
+                            "backend",
+                            "timeoutSeconds",
+                            "typesafeModel",
+                            "typesafeSecret",
+                            "harness",
+                            "model"
                           ],
                           "additionalProperties": false
                         },
@@ -37023,8 +37181,10 @@
                         "workflowLabels",
                         "modelOptions",
                         "chat",
+                        "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
+                        "classifier",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -37413,6 +37573,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "excludedDirectories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "example": [
+                            ".git",
+                            "node_modules",
+                            "dist"
+                          ]
+                        },
                         "autoRunner": {
                           "type": "object",
                           "properties": {
@@ -37450,6 +37622,86 @@
                           "required": [
                             "enabled",
                             "sendCap"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "classifier": {
+                          "type": "object",
+                          "properties": {
+                            "workflowEnabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "backend": {
+                              "type": "string",
+                              "enum": [
+                                "typesafe",
+                                "openai-compatible",
+                                "harness"
+                              ],
+                              "example": "harness"
+                            },
+                            "timeoutSeconds": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 30
+                            },
+                            "typesafeModel": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "typesafe/jev-1.13"
+                            },
+                            "typesafeSecret": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "harness": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "workflowEnabled",
+                            "enabled",
+                            "backend",
+                            "timeoutSeconds",
+                            "typesafeModel",
+                            "typesafeSecret",
+                            "harness",
+                            "model"
                           ],
                           "additionalProperties": false
                         },
@@ -38007,8 +38259,10 @@
                         "workflowLabels",
                         "modelOptions",
                         "chat",
+                        "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
+                        "classifier",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -38459,6 +38713,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -38496,6 +38762,86 @@
                       "required": [
                         "enabled",
                         "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
                       ],
                       "additionalProperties": false
                     },
@@ -39053,8 +39399,10 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",

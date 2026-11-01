@@ -3,26 +3,39 @@ import { card, field, labelType } from '../ui';
 import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
+  id,
   title,
+  titleChip,
+  ordinal,
+  leading = false,
   description,
   className,
   action,
   children,
 }: {
+  id?: string;
   title: string;
+  titleChip?: ReactNode;
+  ordinal?: string | undefined;
+  leading?: boolean;
   description: string;
   className?: string;
   action?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className={`${card} p-5${className ? ` ${className}` : ''}`}>
-      <div className="flex items-start justify-between gap-4">
+    <section id={id} className={`${card} p-5${className ? ` ${className}` : ''}`}>
+      <div className={`flex items-start gap-4 ${leading ? '' : 'justify-between'}`}>
+        {leading && action && <div className="mt-1 shrink-0">{action}</div>}
         <div>
-          <h2 className="text-title font-semibold">{title}</h2>
-          <p className="mb-4 mt-0.5 text-muted">{description}</p>
+          <h2 className="text-title font-semibold">
+            {ordinal && <span className="text-muted">{ordinal} · </span>}
+            {title}
+            {titleChip && <> {titleChip}</>}
+          </h2>
+          {description ? <p className="mb-4 mt-0.5 text-muted">{description}</p> : <div className="mb-2" />}
         </div>
-        {action && <div className="mt-1 shrink-0">{action}</div>}
+        {!leading && action && <div className="mt-1 shrink-0">{action}</div>}
       </div>
       {children}
     </section>

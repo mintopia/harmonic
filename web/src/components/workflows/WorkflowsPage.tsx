@@ -88,7 +88,7 @@ function Library({
 
   return (
     <div>
-      <PageHeader title="Workflows" description="Task Execution Workflows: one global library, each workflow its own YAML file in Harmonic's data directory." />
+      <PageHeader title="Workflows" description="Task Execution Workflows: one global library, each workflow its own YAML file in Harmonic's data directory." fill />
       <section className={`${card} p-5`}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2 className={sectionTitle}>Workflows</h2>
@@ -204,7 +204,8 @@ function Library({
           </div>
         )}
         <p className="mt-3 text-small text-faint">
-          Each workflow is a YAML file in the data directory. Export downloads the saved YAML; Import creates a new workflow and refuses invalid YAML.
+          Each workflow is a YAML file in the data directory. Export downloads the saved YAML; Import creates a new workflow and refuses invalid YAML.{' '}
+          <a href="/settings?tab=execution" className="font-semibold text-accent hover:text-accent-hot">Settings › Running Tickets</a> sets the default workflows and Workflow Labels.
         </p>
       </section>
       {deleting && (

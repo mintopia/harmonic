@@ -52,7 +52,7 @@ describe('unconfigured Harness escalation gate', () => {
     expect(button(host, 'Retry')).toBeDefined();
     expect(button(host, 'Close')).toBeDefined();
     expect(host.textContent).toContain(
-      "Routing Label bulk routes to Harness opencode, which is not configured. No Attempt was started. Configure the Harness in Global settings › Integrations › Harnesses, change the label's route in Settings › Execution › Routing Labels, or set a Harness on this Ticket.",
+      "Routing Label bulk routes to Harness opencode, which is not configured. No Attempt was started. Configure the Harness in Global settings › Integrations › Harnesses, change the label's route in Settings › Running Tickets › Routing Labels, or set a Harness on this Ticket.",
     );
   });
 

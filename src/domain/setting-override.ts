@@ -1,11 +1,6 @@
 import type { WorkspaceRow } from '../db/schema.js';
 import {
   type AppConfig,
-  type VerificationCommand,
-  type VerificationCommandOverlayEntry,
-  type EpicVerificationCritic,
-  type EpicVerificationCriticOverlayEntry,
-  type EpicVerificationStage,
   type BudgetGuardrail,
   type RoutingLabel,
 } from '../config.js';
@@ -37,25 +32,6 @@ export function resolveScoped<T>(key: SettingKey, workspaceVal: T | null | undef
  */
 export function resolveCap(workspaceCap: number | null | undefined, hostCeiling: number): number {
   return Math.min(resolveScoped('maxConcurrentAttempts', workspaceCap, hostCeiling), hostCeiling);
-}
-
-/** A Workspace's effective Verification verifiers, resolved at stage/list grain. */
-export type ResolvedVerifiers = {
-  epic: { preMerge: EpicVerificationStage };
-};
-
-/**
- * Resolve a Workspace's effective Verification verifiers. Every stage/list
- * resolves independently: `null` inherits, an array replaces, and `[]` turns
- * just that verifier list off. Nothing executes here.
- */
-export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'epicPreMergeCommands' | 'epicPreMergeCritics'>,
-  config: Pick<AppConfig, 'verify'>,
-): ResolvedVerifiers {
-  return {
-    epic: { preMerge: resolveEpicStage('epicPreMergeCommands', ws.epicPreMergeCommands, 'epicPreMergeCritics', ws.epicPreMergeCritics, config.verify.epic.preMerge) },
-  };
 }
 
 /**
@@ -93,19 +69,6 @@ export function mergeOverlay<TItem, TEntry extends { kind: 'global' | 'local'; e
   }
   for (const item of globals) if (!named.has(idOf(item))) result.push(item);
   return result;
-}
-
-/** {@link mergeOverlay}, but a `global-only` registry key ignores the Workspace overlay entirely. */
-function resolveOverlay<TItem extends { id: string }, TEntry extends { kind: 'global' | 'local'; enabled: boolean }>(
-  key: SettingKey,
-  stored: string | null,
-  globals: readonly TItem[],
-  ref: (entry: TEntry & { kind: 'global' }) => string,
-  local: (entry: TEntry & { kind: 'local' }) => TItem,
-): TItem[] {
-  if (!isOverridable(key)) return [...globals];
-  const overlay = stored == null ? null : (JSON.parse(stored) as TEntry[]);
-  return mergeOverlay(overlay, globals, (item) => item.id, ref, local);
 }
 
 /** Defined here, not in config.ts: the web bundle imports this module and config.ts pulls in node builtins. */
@@ -204,25 +167,6 @@ export function mergeLabelOverlay<T extends { label: string }, E extends { kind:
   const globalSet = new Set<T>(globals);
   const enabledGlobalRefs = new Set(merged.filter((item) => globalSet.has(item)).map(routingLabelRef));
   return merged.filter((item) => globalSet.has(item) || !enabledGlobalRefs.has(routingLabelRef(item)));
-}
-
-function resolveEpicStage(
-  commandsKey: SettingKey,
-  commandsStored: string | null,
-  criticsKey: SettingKey,
-  criticsStored: string | null,
-  globalDefault: EpicVerificationStage,
-): EpicVerificationStage {
-  return {
-    commands: resolveOverlay<VerificationCommand, VerificationCommandOverlayEntry>(
-      commandsKey, commandsStored, globalDefault.commands,
-      (e) => e.ref, (e) => e.command,
-    ),
-    critics: resolveOverlay<EpicVerificationCritic, EpicVerificationCriticOverlayEntry>(
-      criticsKey, criticsStored, globalDefault.critics,
-      (e) => e.ref, (e) => e.critic,
-    ),
-  };
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress toggle, and hard tool-timeout bound. */

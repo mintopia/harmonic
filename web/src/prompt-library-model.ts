@@ -1,5 +1,5 @@
 import { PROMPT_CODE_PATTERN } from '../../src/domain/prompt-library.js';
-import type { Prompt } from './types.js';
+import type { Prompt, WorkflowLibraryEntry } from './types.js';
 
 export function filterPrompts(prompts: readonly Prompt[], query: string): Prompt[] {
   const q = query.trim().toLowerCase();
@@ -12,9 +12,54 @@ export function libraryCounts(prompts: readonly Prompt[]): { total: number; bund
   return { total: prompts.length, bundled, yours: prompts.length - bundled };
 }
 
-export function countsLabel(prompts: readonly Prompt[]): string {
-  const { total, bundled, yours } = libraryCounts(prompts);
-  return `${total} ${total === 1 ? 'prompt' : 'prompts'} · ${bundled} Bundled · ${yours} yours`;
+export type PromptFilter = 'all' | 'yours' | 'unused';
+
+export const PROMPT_FILTERS: readonly { id: PromptFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'yours', label: 'Yours' },
+  { id: 'unused', label: 'Unused' },
+];
+
+const isUnused = (p: Prompt): boolean => p.usedBy.length === 0 && p.usedBySteps.length === 0;
+const isYours = (p: Prompt): boolean => !p.bundled;
+
+export function filterByView(prompts: readonly Prompt[], filter: PromptFilter): Prompt[] {
+  if (filter === 'yours') return prompts.filter(isYours);
+  if (filter === 'unused') return prompts.filter(isUnused);
+  return [...prompts];
+}
+
+export function filterCounts(prompts: readonly Prompt[]): Record<PromptFilter, number> {
+  return { all: prompts.length, yours: prompts.filter(isYours).length, unused: prompts.filter(isUnused).length };
+}
+
+export function runningNow(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[], workflows: readonly WorkflowLibraryEntry[]): number {
+  const names = new Set(prompt.usedBySteps.map((u) => u.workflow));
+  const byCode = new Map(prompts.map((p) => [p.code, p]));
+  const seen = new Set([prompt.code]);
+  const queue = [...prompt.usedBy];
+  for (let code = queue.shift(); code !== undefined; code = queue.shift()) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const includer = byCode.get(code);
+    if (!includer) continue;
+    for (const u of includer.usedBySteps) names.add(u.workflow);
+    queue.push(...includer.usedBy);
+  }
+  return workflows.filter((w) => names.has(w.name)).reduce((sum, w) => sum + w.inUse.running, 0);
+}
+
+export function ticketsLabel(count: number): string {
+  return `${count} ${count === 1 ? 'Ticket' : 'Tickets'}`;
+}
+
+export function unsavedChanges(saved: Pick<Prompt, 'description' | 'text'>, draft: Pick<Prompt, 'description' | 'text'>): number {
+  return Number(draft.description !== saved.description) + Number(draft.text !== saved.text);
+}
+
+export function savedLabel(iso: string | null): string | null {
+  const at = stamp(iso);
+  return at && `saved ${at.replace(' · ', ' ')}`;
 }
 
 export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): string {
@@ -28,12 +73,17 @@ export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): str
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function editedLabel(iso: string | null): string | null {
+function stamp(iso: string | null): string | null {
   if (iso === null) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const two = (n: number) => String(n).padStart(2, '0');
-  return `Edited ${MONTHS[d.getMonth()]} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+export function editedLabel(iso: string | null): string | null {
+  const at = stamp(iso);
+  return at && `Edited ${at}`;
 }
 
 export type UsedByRow =

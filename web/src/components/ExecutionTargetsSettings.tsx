@@ -92,15 +92,13 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
   return (
     <div className="flex flex-col gap-3">
       <section className={`${card} p-5`}>
-        <h2 className={sectionTitle}>Execution Targets</h2>
-        <p className="mb-4 mt-0.5 text-muted">
-          Where a Task Execution Workflow runs. A workflow or a Step picks one with <code className={codeInline}>runs_on</code>. Every Kubernetes target
-          needs a Code Repository on the Workspace, because the remote is the base branch&apos;s source of truth.
-        </p>
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-label font-semibold uppercase text-muted">Targets</span>
-          <button type="button" className="min-h-8 text-small font-semibold text-accent hover:text-accent-hot" onClick={() => setEditing('new')}>
-            + Add Kubernetes target
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className={sectionTitle}>Execution Targets</h2>
+            <p className="mt-0.5 text-muted">Each target runs up to its ceiling at once. Tickets past it wait in order.</p>
+          </div>
+          <button type="button" className="min-h-8 shrink-0 text-small font-semibold text-accent hover:text-accent-hot" onClick={() => setEditing('new')}>
+            + Add target
           </button>
         </div>
         <div role="table" aria-label="Execution Targets" className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-sunken p-1.5">
@@ -135,7 +133,7 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     />
                   )}
                 </div>
-                <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted`}>
+                <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted ${target.builtIn ? 'md:col-span-2' : ''}`}>
                   {target.builtIn ? (
                     <span>A local Ticket starts here even while a Kubernetes target is full: the two do not share capacity.</span>
                   ) : (
@@ -149,17 +147,15 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     </>
                   )}
                 </div>
-                <div role="cell" className="flex items-center justify-end gap-1.5">
-                  {!target.builtIn && (
-                    <>
-                      <button type="button" className={smallBtn} aria-label={`Edit ${target.name}`} onClick={() => setEditing(target)}>Edit</button>
-                      <button type="button" className={smallBtn} aria-label={`${view.toggleLabel} ${target.name}`} disabled={busy === target.name} onClick={() => toggle(target)}>
-                        {view.toggleLabel}
-                      </button>
-                      <button type="button" className={smallBtnFail} aria-label={`Delete ${target.name}`} disabled={busy === target.name} onClick={() => askDelete(target)}>Delete</button>
-                    </>
-                  )}
-                </div>
+                {!target.builtIn && (
+                  <div role="cell" className="flex items-center justify-end gap-1.5">
+                    <button type="button" className={smallBtn} aria-label={`Edit ${target.name}`} onClick={() => setEditing(target)}>Edit</button>
+                    <button type="button" className={smallBtn} aria-label={`${view.toggleLabel} ${target.name}`} disabled={busy === target.name} onClick={() => toggle(target)}>
+                      {view.toggleLabel}
+                    </button>
+                    <button type="button" className={smallBtnFail} aria-label={`Delete ${target.name}`} disabled={busy === target.name} onClick={() => askDelete(target)}>Delete</button>
+                  </div>
+                )}
               </div>
             );
           })}

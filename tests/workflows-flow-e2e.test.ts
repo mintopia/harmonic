@@ -34,7 +34,7 @@ describe('Workflows page: import, edit, save, export through the real routes and
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     registerErrorHandler(app as never);
-    await app.register(async (api) => workflowRoutes(api, { workflows, usage: async () => new Map() }), { prefix: '/api' });
+    await app.register(async (api) => workflowRoutes(api, { workflows, usage: async () => new Map(), assignments: async () => new Map() }), { prefix: '/api' });
     await app.ready();
     vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
       const res = await app.inject({ method: (init?.method ?? 'GET') as 'GET', url: input, headers: init?.headers as Record<string, string>, payload: init?.body as string });
@@ -80,6 +80,10 @@ describe('Workflows page: import, edit, save, export through the real routes and
     expect(row).toBeDefined();
 
     await click(row!.querySelector('td button'));
+    await act(async () => {
+      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flush();
+    });
     const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
     expect(view.state.doc.toString()).toBe(FLOW);
 

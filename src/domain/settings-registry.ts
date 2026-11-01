@@ -2,10 +2,10 @@
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as. */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
-export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'security' | 'archive';
+export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'archive';
 
 export interface SettingSpec {
   readonly scope: SettingScope;
@@ -134,20 +134,6 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Conflict resolve turns',
     help: 'How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates.',
-  },
-  epicPreMergeCommands: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'execution',
-    label: 'Epic pre-merge commands',
-    help: 'Command verifiers run before an Epic merges to its default branch.',
-  },
-  epicPreMergeCritics: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'execution',
-    label: 'Epic pre-merge critics',
-    help: 'Critics run after Epic pre-merge commands pass.',
   },
   routingLabels: {
     scope: 'overridable',
@@ -463,10 +449,9 @@ export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boo
 /** The Settings UI tab strip, in display order. */
 export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'execution', label: 'Execution' },
+  { id: 'execution', label: 'Running Tickets' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'security', label: 'Security' },
   { id: 'archive', label: 'Archive & Export' },
 ];
 

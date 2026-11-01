@@ -20,7 +20,7 @@ const typeInto = async (input: HTMLInputElement, value: string) => {
 
 describe('workflow variables UI', () => {
   beforeEach(() => {
-    vi.spyOn(api, 'workflows').mockResolvedValue({ workflows: [{ name: 'wf', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] }], total: 1 });
+    vi.spyOn(api, 'workflows').mockResolvedValue({ workflows: [{ name: 'wf', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }], total: 1 });
     vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'wf', description: '', bundled: false, version: 1, text: 'name: wf\ndescription: t\nvars:\n  maxAttempts: 3\nsteps:\n  - attempts:\n      max: ${{ vars.maxAttempts }}\n      steps:\n        - id: a\n          run: exit 1\n' });
   });
 
@@ -30,7 +30,7 @@ describe('workflow variables UI', () => {
     const host = await mountComponent(createElement(WorkspaceWorkflowVars, { workspace: makeWorkspace({ workflowVars: null }), onChange }));
     await flush();
     expect(host.textContent).toContain('Workspace');
-    expect(host.textContent).toContain('Settings › Execution');
+    expect(host.textContent).toContain('Workflow variables');
     const input = host.querySelector<HTMLInputElement>('input[aria-label="maxAttempts"]')!;
     await typeInto(input, 'three');
     expect(host.textContent).toContain('maxAttempts must be a number (the workflow default is 3).');

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
 import { DomainError } from '../../domain/errors.js';
 import { WORKFLOW_NAME_PATTERN } from '../../domain/workflow.js';
+import type { WorkflowAssignment } from '../../domain/workflow-assignments.js';
 import { errorResponse } from '../schemas.js';
 import { listResponse } from '../pagination.js';
 
@@ -22,15 +23,16 @@ const workflowSchema = z
 
 const listEntrySchema = workflowSchema
   .extend({
-    inUse: z.object({ tickets: z.number().int(), workspaces: z.number().int() }).describe('Tickets that request or are pinned to this workflow, and the distinct Workspaces those Tickets belong to.'),
+    inUse: z.object({ tickets: z.number().int(), running: z.number().int(), workspaces: z.number().int() }).describe('Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to.'),
     assignedAs: z
       .array(z.object({ kind: z.enum(['global-default', 'workspace-default', 'label']), label: z.string().optional() }))
-      .describe('Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet.'),
+      .describe('Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted.'),
   })
   .meta({ id: 'WorkflowListEntry' });
 
 export interface WorkflowUsage {
   tickets: number;
+  running: number;
   workspaces: number;
 }
 
@@ -38,7 +40,10 @@ const textBodySchema = z.object({ text: z.string().max(200_000).describe('The wo
 const nameParamsSchema = z.object({ name: nameSchema });
 const versionParamsSchema = z.object({ name: nameSchema, version: z.coerce.number().int().min(1) });
 
-export async function workflowRoutes(fastify: FastifyInstance, ctx: { workflows: WorkflowLibrary; usage: () => Promise<Map<string, WorkflowUsage>> }): Promise<void> {
+export async function workflowRoutes(
+  fastify: FastifyInstance,
+  ctx: { workflows: WorkflowLibrary; usage: () => Promise<Map<string, WorkflowUsage>>; assignments: () => Promise<Map<string, WorkflowAssignment[]>> },
+): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const security: Record<string, string[]>[] = [{ bearerAuth: [] }, { sessionCookie: [] }];
   const tags = ['Workflows'];
@@ -48,8 +53,8 @@ export async function workflowRoutes(fastify: FastifyInstance, ctx: { workflows:
     '/workflows',
     { schema: { tags, description: 'List the workflow library: bundled workflows first, then operator workflows.', security, response: { 200: listResponse('workflows', listEntrySchema).describe('Every workflow, bundled first.') } } },
     async () => {
-      const usage = await ctx.usage();
-      const workflows = ctx.workflows.list().map((w) => ({ ...w, inUse: usage.get(w.name) ?? { tickets: 0, workspaces: 0 }, assignedAs: [] }));
+      const [usage, assignments] = await Promise.all([ctx.usage(), ctx.assignments()]);
+      const workflows = ctx.workflows.list().map((w) => ({ ...w, inUse: usage.get(w.name) ?? { tickets: 0, running: 0, workspaces: 0 }, assignedAs: assignments.get(w.name) ?? [] }));
       return { workflows, total: workflows.length };
     },
   );
@@ -68,12 +73,15 @@ export async function workflowRoutes(fastify: FastifyInstance, ctx: { workflows:
         description: 'Delete an operator workflow with all its kept versions.',
         security,
         params: nameParamsSchema,
-        response: { 204: z.null().describe('Deleted.'), 403: errorResponse('The workflow is bundled.'), 404: errorResponse('No workflow has that name.'), 409: errorResponse('Tickets reference the workflow, so it is kept.') },
+        response: { 204: z.null().describe('Deleted.'), 403: errorResponse('The workflow is bundled.'), 404: errorResponse('No workflow has that name.'), 409: errorResponse('Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.') },
       },
     },
     async (req, reply) => {
       const entry = ctx.workflows.get(req.params.name);
-      if (!entry.bundled && ((await ctx.usage()).get(entry.name)?.tickets ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is in use by Tickets`);
+      if (!entry.bundled) {
+        if (((await ctx.usage()).get(entry.name)?.tickets ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is in use by Tickets`);
+        if (((await ctx.assignments()).get(entry.name)?.length ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is assigned as a default or Workflow Label`);
+      }
       await ctx.workflows.delete(entry.name);
       return reply.status(204).send(null);
     },

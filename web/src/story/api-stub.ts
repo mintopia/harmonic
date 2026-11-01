@@ -366,7 +366,7 @@ export const api: typeof RealApi = {
   scheduledJobs: () => ok({ jobs: [] }),
   operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),
-  trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const }),
+  trackerDetection: (_id: number) => ok({ detectedTracker: { name: 'GitHub', kind: 'github' }, detectedCodeRepository: 'github' as const, repoDocTriageLabels: {} }),
   verifyTracker: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
   verifyRepository: (_id: number) => ok({ ok: true as const, identity: 'octocat' }),
   secrets: (_id: number) => ok({ secrets: [{ name: 'OPENROUTER_API_KEY', set: true as const, updatedAt: 1 }], total: 1 }),
@@ -408,6 +408,11 @@ export const api: typeof RealApi = {
   resumeGlobal: () => ok({ paused: false }),
   configLayers: () => (storyName === 'settings-error' ? Promise.reject(new Error('GET /api/config/layers failed: 503')) : ok(configLayers)),
   updateConfig: (_patch: object) => ok(f.config),
+  exportDestinations: () =>
+    ok({
+      directory: { status: 'succeeded' as const, at: new Date(Date.now() - 12 * 60_000).toISOString(), error: null, retry: 0, nextRetryAt: null },
+      s3: { status: 'failed' as const, at: new Date(Date.now() - 6 * 60_000).toISOString(), error: 'AccessDenied: 403', retry: 2, nextRetryAt: new Date(Date.now() + 24 * 60_000).toISOString() },
+    }),
   testExportDestination: (body: { destination: 'directory' | 's3' }) => ok({ destination: body.destination, ok: true, testedAt: new Date().toISOString() }),
   replaceConfig: (_config: AppConfig) => ok(f.config),
   revertConfig: () => ok(f.config),
@@ -430,10 +435,10 @@ export const api: typeof RealApi = {
   workflows: () =>
     ok({
       workflows: [
-        { name: 'Migrated (global)', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Migrated (harmonic)', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Security review on label', description: '', subject: 'ticket', bundled: false, version: 4, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
-        { name: 'Docs only', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (global)', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Migrated (harmonic)', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Security review on label', description: '', subject: 'ticket', bundled: false, version: 4, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] },
+        { name: 'Docs only', description: '', subject: 'ticket', bundled: false, version: 2, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] },
       ],
       total: 4,
     }),

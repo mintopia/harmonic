@@ -3,12 +3,12 @@ import { act, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../web/src/api.js';
 import { EpicMeta, EpicWorkflowLine } from '../web/src/components/EpicPage.js';
-import { EpicWorkflowEditor, WorkflowLabelsEditor } from '../web/src/components/WorkflowLabelsEditor.js';
+import { EpicWorkflowEditor, GlobalDefaultWorkflow } from '../web/src/components/WorkflowLabelsEditor.js';
 import type { Epic } from '../web/src/epic-model.js';
 import { cleanup, flush, makeConfig, mountComponent } from './component-smoke-harness.js';
 
 const entry = (name: string, subject: 'ticket' | 'epic', version: number) => ({
-  name, description: '', subject, bundled: false, version, inUse: { tickets: 0, workspaces: 0 }, assignedAs: [],
+  name, description: '', subject, bundled: false, version, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [],
 });
 const library = [entry('Plain ticket', 'ticket', 2), entry('epic', 'epic', 1), entry('Migrated Epic (global)', 'epic', 1)];
 
@@ -48,7 +48,7 @@ describe('Epic workflow settings', () => {
   });
 
   it('ticket selectors exclude Epic workflows', async () => {
-    const host = await mountComponent(createElement(WorkflowLabelsEditor, { config: makeConfig(), onChange: () => {} }));
+    const host = await mountComponent(createElement(GlobalDefaultWorkflow, { config: makeConfig(), onChange: () => {} }));
     const names = optionTexts(host.querySelector('#settings-workflow')).join('|');
     expect(names).toContain('Plain ticket · v2');
     expect(names).not.toContain('Migrated Epic');

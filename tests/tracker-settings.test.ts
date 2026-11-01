@@ -39,6 +39,7 @@ function stubApi(opts: { secretSet?: boolean; verify?: VerifyResult } = {}) {
   vi.spyOn(api, 'trackerDetection').mockResolvedValue({
     detectedTracker: { name: 'GitHub', kind: 'github' },
     detectedCodeRepository: 'github',
+    repoDocTriageLabels: {},
   });
   vi.spyOn(api, 'secretStatus').mockResolvedValue({ name: 'forgejoToken', set: opts.secretSet ?? false });
   vi.spyOn(api, 'verifyTracker').mockResolvedValue(opts.verify ?? { ok: true, identity: 'octocat' });
@@ -95,9 +96,8 @@ describe('Issue tracker section', () => {
   it('inherit: no kind settings, shows the detected declaration', async () => {
     stubApi();
     const host = await mountComponent(createElement(Harness, { initial: makeWorkspace({ id: 3 }), Section: IssueTrackerSection }));
-    const select = host.querySelector<HTMLSelectElement>('#workspace-tracker-kind')!;
-    expect(select.value).toBe('');
-    expect(select.textContent).toContain('Inherit (automatic)');
+    expect(host.querySelector<HTMLInputElement>('#workspace-tracker-kind-inherit')!.checked).toBe(true);
+    expect(host.textContent).toContain('Inherit (automatic)');
     expect(host.textContent).toContain('Inherited: the repo declares GitHub');
     expect(host.querySelector('#workspace-tracker-setting-host')).toBeNull();
   });
@@ -124,11 +124,8 @@ describe('Issue tracker section', () => {
   it('selecting Inherit clears the Configured Tracker', async () => {
     stubApi();
     const host = await mountComponent(createElement(Harness, { initial: forgejo(), Section: IssueTrackerSection }));
-    const select = host.querySelector<HTMLSelectElement>('#workspace-tracker-kind')!;
-    await act(async () => {
-      select.value = '';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    expect(host.querySelector<HTMLInputElement>('#workspace-tracker-kind-forgejo')!.checked).toBe(true);
+    await click(host.querySelector<HTMLInputElement>('#workspace-tracker-kind-inherit')!);
     expect(seen.latest?.configuredTracker).toBeNull();
   });
 
@@ -181,17 +178,20 @@ describe('Code repository section', () => {
     expect(host.querySelector<HTMLSelectElement>('#workspace-code-repository')!.value).toBe('');
     await click(button(host, 'Verify repository'));
     expect(host.textContent).toContain('Reachable on octocat');
+    expect(host.textContent).toContain('Detected');
+    expect(host.querySelector('#workspace-code-token')!.textContent).toBe('Ambient · gh credentials');
     expect(host.textContent).not.toContain('FORGEJO_TOKEN');
   });
 
   it('offers the FORGEJO_TOKEN Secret when the Code Repository is Forgejo and no Forgejo tracker supplies one', async () => {
     stubApi();
     const host = await mountComponent(createElement(Harness, { initial: makeWorkspace({ id: 3, codeRepository: 'forgejo' }), Section: CodeRepositorySection }));
-    expect(host.textContent).toContain('FORGEJO_TOKEN');
+    expect(host.textContent).toContain('The Forgejo API token');
     const withTracker = await mountComponent(
       createElement(Harness, { initial: makeWorkspace({ id: 4, codeRepository: 'forgejo', configuredTracker: { kind: 'forgejo' } }), Section: CodeRepositorySection }),
     );
-    expect(withTracker.textContent).not.toContain('FORGEJO_TOKEN');
+    expect(withTracker.textContent).toContain('Secret · FORGEJO_TOKEN');
+    expect(withTracker.textContent).not.toContain('The Forgejo API token');
   });
 });
 
@@ -219,5 +219,34 @@ describe('Triage labels section', () => {
     expect(input.placeholder).toBe('wayfinder:map');
     expect(input.value).toBe('');
     expect(seen.latest?.triageLabels).toBeNull();
+  });
+
+  it('shows only Configured chips and a retry when detection fails', async () => {
+    stubApi();
+    vi.mocked(api.trackerDetection).mockRejectedValue(new Error('detection down'));
+    const initial = makeWorkspace({ id: 3, triageLabels: { readyForAgent: 'mine' } });
+    const host = await mountComponent(createElement(Harness, { initial, Section: TriageLabelsSection }));
+    const sources = [...host.querySelectorAll('tbody tr')].map((r) => r.querySelectorAll('td')[2]!.textContent);
+    expect(sources).toEqual(['Configured', '', '', '']);
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain('Retry');
+  });
+
+  it('shows each role with the Source that supplies its label', async () => {
+    stubApi();
+    vi.mocked(api.trackerDetection).mockResolvedValue({
+      detectedTracker: null,
+      detectedCodeRepository: null,
+      repoDocTriageLabels: { epic: 'big', readyForAgent: 'go' },
+    });
+    const initial = makeWorkspace({ id: 3, triageLabels: { readyForAgent: 'mine' } });
+    const host = await mountComponent(createElement(Harness, { initial, Section: TriageLabelsSection }));
+    const rows = [...host.querySelectorAll('tbody tr')].map((r) => [...r.querySelectorAll('td')].map((c) => c.querySelector('input')?.placeholder ?? c.textContent));
+    expect(rows).toEqual([
+      ['Pick up for an agent', 'go', 'Configured'],
+      ['Needs a human', 'ready-for-human', 'Default'],
+      ['Epic', 'big', 'Repo doc'],
+      ['Wayfinder map', 'wayfinder:map', 'Default'],
+    ]);
+    expect([...host.querySelectorAll('th')].map((h) => h.textContent)).toEqual(['Role', 'Label', 'Source']);
   });
 });

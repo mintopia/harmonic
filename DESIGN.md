@@ -342,6 +342,12 @@ Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono)
 - **Verification block:** a header verdict (proceed emerald / block·escalate rose) + one row per mechanism (Command, Critic·model) with a pass/fail icon, one-line summary, and verdict word. Fail-safe reads never render as a silent pass.
 - **Per-agent usage table:** one row per agent — role (+ `subagent` tag), model, a read/write/cached stacked bar with a legend, and cost. Flat rows, hairline-separated, never cards.
 
+### Step rail
+The left column of a Settings tab that has steps (ADR-0058). One row per step: number, title, and a one-line summary. The current step is teal (`accent`). Earlier steps are `done` green and show their chosen value. Later steps are outlined in `edge`. Selecting a step swaps the main content; it never scrolls. Back and Next sit at the foot of the content. The rail is sticky from `md` up and stacks above the content below it. A step with no content for the surface is not rendered.
+
+### Resolution strip
+The rules Harmonic checks in order, shown as a row of cards at the top of a step (first used on Running Tickets › Workflow). Each card carries a rule and the result it yields. Cards sit on `surface` with `shadow-card`. The always-matching rule has a 2px `accent` border. Rules set elsewhere have a dashed `edge-strong` border on `sunken`, and they are not links. The strip is read-only; controls live in the step below it.
+
 ### Buttons
 - **Primary:** teal fill, white / near-black text, weight 600. One per surface, plus the gate's Accept.
 - **Review / Go:** indigo (`btn-go`) — the review state's forward move (`Review →`), and Bold fills it solid indigo.

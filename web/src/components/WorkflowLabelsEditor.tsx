@@ -7,7 +7,6 @@ import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowLibraryEntry } from 
 import { chip, codeChip, field } from '../ui';
 import { useAsyncResource } from '../useAsyncResource';
 import {
-  Precedence,
   RemoveButton,
   RoutingListFrame,
   RoutingRowShell,
@@ -23,7 +22,6 @@ import { WORKFLOW_LABEL, newLocalWorkflowEntry, versionSuffix, workflowOptions, 
 
 type WorkflowLabel = AppConfig['workflowLabels'][number];
 
-const STEPS = ['Operator choice on the Ticket', WORKFLOW_LABEL, 'Workspace default', 'Global default'];
 const compactSelect = 'hm-select min-h-9 w-full rounded-md border border-edge bg-field px-2.5 py-1 text-ink focus:border-accent focus:outline-none';
 const compactField = `${field} min-h-9 py-1 font-data text-data`;
 const globalChip = `${chip} bg-raised text-muted`;
@@ -103,40 +101,82 @@ function ErrorText({ issue, label }: { issue: WorkflowLabelIssue; label: string 
 function DefaultWorkflow({
   id,
   label,
+  hideLabel = false,
   note,
   library,
   value,
   inheritLabel,
   subject = 'ticket',
-  bare = false,
+  editorLink = false,
   onChange,
 }: {
   id: string;
   label: string;
+  hideLabel?: boolean;
   note: ReactNode;
   library: readonly WorkflowLibraryEntry[];
   value: string | null;
   inheritLabel?: string;
   subject?: 'ticket' | 'epic';
-  bare?: boolean;
+  editorLink?: boolean;
   onChange: (workflow: string | null) => void;
 }) {
   return (
-    <div className={bare ? '' : 'mt-5 border-t border-hairline pt-4'}>
-      <label htmlFor={id} className={fieldLabel}>
+    <div>
+      <label htmlFor={id} className={hideLabel ? 'sr-only' : fieldLabel}>
         {label}
       </label>
-      <select id={id} className={`${compactSelect} ${bare ? 'sm:max-w-[360px]' : 'sm:max-w-sm'}`} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
-        <option value="">{inheritLabel ?? 'None · today’s path'}</option>
-        {workflowOptions(library, value ?? '', subject).map((name) => (
-          <option key={name} value={name}>
-            {name}
-            {versionSuffix(library, name)}
-          </option>
-        ))}
-      </select>
+      <div className="flex flex-wrap items-center gap-3">
+        <select id={id} className={`${compactSelect} sm:max-w-[360px]`} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}>
+          <option value="">{inheritLabel ?? 'None · today’s path'}</option>
+          {workflowOptions(library, value ?? '', subject).map((name) => (
+            <option key={name} value={name}>
+              {name}
+              {versionSuffix(library, name)}
+            </option>
+          ))}
+        </select>
+        {editorLink && (
+          <a href="/workflows" className="text-small font-semibold text-accent hover:text-accent-hot">
+            Open in editor
+          </a>
+        )}
+      </div>
       <p className="mt-2 text-small text-faint">{note}</p>
     </div>
+  );
+}
+
+export function GlobalDefaultWorkflow({ config, onChange }: { config: AppConfig; onChange: (config: AppConfig) => void }) {
+  const library = useWorkflowLibrary();
+  return (
+    <DefaultWorkflow
+      editorLink
+      hideLabel
+      id="settings-workflow"
+      label="Global default workflow"
+      note="Used when nothing above matches and the Workspace sets no default. Workspaces can override it."
+      library={library}
+      value={config.defaults.workflow}
+      onChange={(workflow) => onChange({ ...config, defaults: { ...config.defaults, workflow } })}
+    />
+  );
+}
+
+export function WorkspaceDefaultWorkflow({ workflow, config, onChange }: { workflow: string | null; config: AppConfig; onChange: (workflow: string | null) => void }) {
+  const library = useWorkflowLibrary();
+  return (
+    <DefaultWorkflow
+      editorLink
+      hideLabel
+      id="workspace-workflow"
+      label="Workspace default workflow"
+      note={CUTOVER}
+      library={library}
+      value={workflow}
+      inheritLabel={`Use global default · ${config.defaults.workflow ?? 'none'}`}
+      onChange={onChange}
+    />
   );
 }
 
@@ -155,7 +195,6 @@ export function EpicWorkflowEditor({
   const workspace = surface === 'workspace';
   return (
     <DefaultWorkflow
-      bare
       subject="epic"
       id={workspace ? 'workspace-epic-workflow' : 'settings-epic-workflow'}
       label="Epic workflow"
@@ -172,32 +211,27 @@ export function EpicWorkflowEditor({
   );
 }
 
-function RoutingCrossReference() {
-  const go = () => {
-    const heading = Array.from(document.querySelectorAll('h2')).find((h) => h.textContent === 'Routing Labels');
-    heading?.scrollIntoView({ block: 'start' });
-  };
+function RoutingCrossReference({ onStep }: { onStep?: ((step: string) => void) | undefined }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-dashed border-hairline bg-sunken px-3.5 py-2.5 text-small text-muted">
-      <span className="font-semibold text-ink">Routing Labels</span>
-      <span className="min-w-0 flex-1">A separate list further down this page. Routing Labels pick a Harness and Model; Workflow Labels pick a workflow. A Ticket can match one of each.</span>
-      <button type="button" className="font-semibold text-accent hover:text-accent-hot" onClick={go}>
-        Go to Routing Labels
+    <p className="mt-4 text-small text-muted">
+      Routing Labels pick the agent instead — see{' '}
+      <button type="button" className="font-semibold text-accent hover:text-accent-hot hover:underline" onClick={() => onStep?.('agent')}>
+        step 2
       </button>
-    </div>
+      . A Ticket can match one of each.
+    </p>
   );
 }
 
 const CUTOVER = 'Until the cutover from ADR-0055 a Ticket with no resolved workflow stays on today’s path.';
 
-export function WorkflowLabelsEditor({ config, onChange }: { config: AppConfig; onChange: (config: AppConfig) => void }) {
+export function WorkflowLabelsEditor({ config, onChange, onStep }: { config: AppConfig; onChange: (config: AppConfig) => void; onStep?: (step: string) => void }) {
   const library = useWorkflowLibrary();
   const items = config.workflowLabels;
   const issues = issuesByIndex(workflowLabelIssues(items));
   const set = (workflowLabels: WorkflowLabel[]) => onChange({ ...config, workflowLabels });
   return (
     <div>
-      <Precedence steps={STEPS} accent={WORKFLOW_LABEL} />
       <RoutingListFrame
         noun={WORKFLOW_LABEL}
         count={items.length}
@@ -218,31 +252,19 @@ export function WorkflowLabelsEditor({ config, onChange }: { config: AppConfig; 
           );
         }}
       />
-      <DefaultWorkflow
-        id="settings-workflow"
-        label="Global default workflow"
-        note="Used when no Workflow Label matches and the Workspace has no default."
-        library={library}
-        value={config.defaults.workflow}
-        onChange={(workflow) => onChange({ ...config, defaults: { ...config.defaults, workflow } })}
-      />
-      <RoutingCrossReference />
+      <RoutingCrossReference onStep={onStep} />
     </div>
   );
 }
 
 export function WorkflowLabelOverlayEditor({
   overlay,
-  workflow,
   config,
   onChange,
-  onWorkflow,
 }: {
   overlay: WorkflowLabelOverlayEntry[] | null;
-  workflow: string | null;
   config: AppConfig;
   onChange: (overlay: WorkflowLabelOverlayEntry[]) => void;
-  onWorkflow: (workflow: string | null) => void;
 }) {
   const library = useWorkflowLibrary();
   const globals = config.workflowLabels;
@@ -250,7 +272,6 @@ export function WorkflowLabelOverlayEditor({
   const rows = workflowOverlayRows(overlay, globals);
   const issues = issuesByIndex(workflowLabelOverlayIssues(rows, globals));
   const set = (index: number, next: WorkflowLabelOverlayEntry) => onChange(rows.map((row, i) => (i === index ? next : row)));
-  const globalDefault = config.defaults.workflow;
   return (
     <div>
       <RoutingListFrame
@@ -300,15 +321,6 @@ export function WorkflowLabelOverlayEditor({
             </RoutingRowShell>
           );
         }}
-      />
-      <DefaultWorkflow
-        id="workspace-workflow"
-        label="Workspace default workflow"
-        note={CUTOVER}
-        library={library}
-        value={workflow}
-        inheritLabel={`Use global default · ${globalDefault ?? 'none'}`}
-        onChange={onWorkflow}
       />
     </div>
   );

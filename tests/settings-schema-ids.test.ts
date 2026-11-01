@@ -17,8 +17,10 @@ function makeConfig(): AppConfig {
     },
     defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2, workflow: null, epicWorkflow: null },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
+    excludedDirectories: ['.git', 'node_modules'],
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
+    classifier: { workflowEnabled: false, enabled: false, backend: 'harness', timeoutSeconds: 30, typesafeModel: 'typesafe/jev-1.13', typesafeSecret: null, harness: null, model: null },
     verify: { epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '' },
@@ -65,8 +67,6 @@ function makeWorkspace(): Workspace {
     effectiveAgentMessagesEnabled: false,
     maxAttempts: null,
     contextReuseTokenLimit: null,
-    epicPreMergeCommands: null,
-    epicPreMergeCritics: null,
     routingLabels: null,
     workflow: null,
     epicWorkflow: null,
@@ -186,10 +186,11 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the prompts settings as the global Prompt Library alone, as a bare full-width section', () => {
-    const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts');
-    expect(sections.map((s) => s.title)).toEqual(['Prompt Library']);
-    expect(sections[0]).toMatchObject({ bare: true, wide: true, surfaces: ['global'] });
-    expect(sectionsForTab('workspace', 'prompts')).toEqual([]);
+  it('declares the prompts settings as three bare full-width steps on both surfaces', () => {
+    const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.step !== 'overrides');
+    expect(sections.map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
+    for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true, surfaces: ['global', 'workspace'] });
+    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact', 'overrides']);
   });
+
 });

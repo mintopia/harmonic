@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { parseWorkflow } from '../../../src/domain/workflow.js';
 import { api } from '../api';
 import type { TaskWorkflowVars, Workspace } from '../types';
@@ -37,7 +37,7 @@ async function declaredVars(): Promise<{ name: string; vars: Record<string, VarV
   return loaded.filter((entry) => Object.keys(entry.vars).length > 0);
 }
 
-function WorkspaceVarsCard({ workspace, name, vars, onChange }: { workspace: Workspace; name: string; vars: Record<string, VarValue>; onChange: (workflowVars: Workspace['workflowVars']) => void }) {
+function WorkspaceVarsCard({ workspace, name, vars, picker, onChange }: { workspace: Workspace; name: string; vars: Record<string, VarValue>; picker: ReactNode; onChange: (workflowVars: Workspace['workflowVars']) => void }) {
   const [draft, setDraft] = useState<VarRow[] | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -60,12 +60,15 @@ function WorkspaceVarsCard({ workspace, name, vars, onChange }: { workspace: Wor
   };
   return (
     <section aria-label={`Variables for ${name}`} className={`${card} p-5`}>
-      <div className="mb-2 flex items-center gap-2 text-small text-muted">
-        <span className="rounded-sm bg-running-tint px-2 py-0.5 font-semibold text-running">Workspace</span>
-        <span>{workspace.name} › Settings › Execution</span>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h3 className="text-title font-semibold">Workflow variables</h3>
+          <p className="mt-0.5 text-muted">
+            Override a workflow’s <code className="font-data">vars:</code> defaults. Ticket → Workspace → Global → workflow default; fixed when the Ticket snapshots.
+          </p>
+        </div>
+        {picker}
       </div>
-      <h3 className="text-title font-semibold">Variables for “{name}”</h3>
-      <p className="mb-4 mt-0.5 text-muted">Overrides apply to every Ticket in this Workspace that uses a workflow declaring the variable.</p>
       <VariablesTable
         level="workspace"
         rows={rows}
@@ -96,14 +99,24 @@ function WorkspaceVarsCard({ workspace, name, vars, onChange }: { workspace: Wor
 
 export function WorkspaceWorkflowVars({ workspace, onChange }: { workspace: Workspace; onChange: (workflowVars: Workspace['workflowVars']) => void }) {
   const declared = useAsyncResource(declaredVars, []).data ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
   if (declared.length === 0) return <p className="text-muted">No workflow in the Library declares variables.</p>;
-  return (
-    <div className="flex flex-col gap-5">
-      {declared.map(({ name, vars }) => (
-        <WorkspaceVarsCard key={name} workspace={workspace} name={name} vars={vars} onChange={onChange} />
+  const current = declared.find((entry) => entry.name === picked) ?? declared[0]!;
+  const picker = (
+    <select
+      aria-label="Workflow"
+      className="hm-select min-h-9 rounded-md border border-edge bg-field px-2.5 py-1 text-ink focus:border-accent focus:outline-none"
+      value={current.name}
+      onChange={(e) => setPicked(e.target.value)}
+    >
+      {declared.map(({ name }) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
       ))}
-    </div>
+    </select>
   );
+  return <WorkspaceVarsCard key={current.name} workspace={workspace} name={current.name} vars={current.vars} picker={picker} onChange={onChange} />;
 }
 
 export function TicketVariables({ taskId }: { taskId: number }) {

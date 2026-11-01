@@ -17,17 +17,15 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, excludedDirectorySchema, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
 import { deleteAttemptsAndChildrenAsync, deleteEpicAttemptsAndChildrenAsync } from './attempt-cascade.js';
 import { workspaceWorkflowVarsSchema } from './workflow-vars.js';
 import {
-  verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
   workflowLabelOverrideSchema,
-  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
 } from '../config.js';
 import { configuredTrackerSchema } from '../tracker/configured.js';
@@ -44,11 +42,6 @@ const workspaceColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must b
     .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
   return (luminance + 0.05) / 0.05 >= 4.5;
 }, 'color must provide AA contrast with the badge initial');
-
-const excludedDirectorySchema = z.string().min(1).refine(
-  (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
-  'excluded directory must be a canonical relative path within the workspace',
-);
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
@@ -83,8 +76,6 @@ export const workspaceOverridesSchema = z.object({
   agentMessagesSendCap: z.number().int().min(1).nullable().optional().meta({ example: 10 }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
-  epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
-  epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   /** Routing Label overlay; null inherits every global Routing Label in order. */
   routingLabels: routingLabelOverrideSchema.nullable().optional(),
   /** `local` is always available; null inherits every enabled target. */
@@ -180,8 +171,6 @@ export const OVERRIDE_KEYS = [
   'agentMessagesSendCap',
   'maxAttempts',
   'contextReuseTokenLimit',
-  'epicPreMergeCommands',
-  'epicPreMergeCritics',
   'routingLabels',
   'workflow',
   'epicWorkflow',
@@ -265,13 +254,14 @@ export class WorkspaceService {
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly settings: WorkspaceSettingsStore,
+    private readonly defaultExcludedDirectories: () => readonly string[] = () => DEFAULT_EXCLUDED_DIRECTORIES,
   ) {}
 
   private compose(row: WorkspaceIdentityRow): WorkspaceRow {
     const o = this.settings.getOverrides(row.id);
     return {
       ...row,
-      excludedDirectories: o.excludedDirectories ?? [...DEFAULT_EXCLUDED_DIRECTORIES],
+      excludedDirectories: o.excludedDirectories ?? [...this.defaultExcludedDirectories()],
       harness: o.harness,
       model: o.model,
       chatHarness: o.chatHarness,
@@ -285,8 +275,6 @@ export class WorkspaceService {
       agentMessagesSendCap: o.agentMessagesSendCap,
       maxAttempts: o.maxAttempts,
       contextReuseTokenLimit: o.contextReuseTokenLimit,
-      epicPreMergeCommands: o.epicPreMergeCommands != null ? JSON.stringify(o.epicPreMergeCommands) : null,
-      epicPreMergeCritics: o.epicPreMergeCritics != null ? JSON.stringify(o.epicPreMergeCritics) : null,
       routingLabels: o.routingLabels != null ? JSON.stringify(o.routingLabels) : null,
       workflow: o.workflow,
       epicWorkflow: o.epicWorkflow,
@@ -381,7 +369,7 @@ export class WorkspaceService {
         .returning()
         .get();
     });
-    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...DEFAULT_EXCLUDED_DIRECTORIES] });
+    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...this.defaultExcludedDirectories()] });
     return this.compose(inserted);
   }
 
