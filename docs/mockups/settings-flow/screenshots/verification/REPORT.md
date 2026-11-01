@@ -9,7 +9,7 @@ Notes: Global Integrations has only Agents and Updates (Code and Work are Worksp
 | Rail switches content, done/current, Back/Next, URL per step | match | all steps, both scopes (Workspace Prompts: defect #967) |
 | Rail sticky, stacks at 390px | match | `StepRail` md:sticky; 390 shots stack |
 | Resolution strips present, live | match | Workflow, Agent, Archive strips reflect settings |
-| Classifier cards at Global | defect | #968 |
+| Classifier cards at Global | match | #968: Workflow classifier and Route Classifier cards (switch, chip, title, Backend, Harness · model, Timeout, Model Options) re-taken in pair-Main and pair-Agent; only the artboard sample data differs |
 | Global Integrations steps (Agents, Updates only; Code and Work are Workspace-only) | match | #969: artboard amended, pair-Integrations re-taken |
 | Limits toggles/units/layout | defect | #970 |
 | Where Note wrapping | defect | #971 |

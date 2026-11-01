@@ -5,6 +5,7 @@ import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 export function SettingsSection({
   id,
   title,
+  titleChip,
   ordinal,
   leading = false,
   description,
@@ -14,6 +15,7 @@ export function SettingsSection({
 }: {
   id?: string;
   title: string;
+  titleChip?: ReactNode;
   ordinal?: string | undefined;
   leading?: boolean;
   description: string;
@@ -29,6 +31,7 @@ export function SettingsSection({
           <h2 className="text-title font-semibold">
             {ordinal && <span className="text-muted">{ordinal} · </span>}
             {title}
+            {titleChip && <> {titleChip}</>}
           </h2>
           {description ? <p className="mb-4 mt-0.5 text-muted">{description}</p> : <div className="mb-2" />}
         </div>

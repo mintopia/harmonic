@@ -124,7 +124,7 @@ export function SettingsForm({
           )}
           {strip && <ResolutionStrip label={strip.label} rules={strip.rules} onStep={jump} />}
           {sections.map((section, sectionIndex) => {
-            const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab, onStep: jump, deliveries });
+            const { title: sectionTitle, titleChip, description, body, action } = renderSection(section, { ...ctx, dirty, onTab, onStep: jump, deliveries });
             const anchor = sectionAnchor(sectionTitle);
             const divider = section.divider && !sections.slice(0, sectionIndex).some((earlier) => earlier.divider === section.divider) ? section.divider : null;
             const card = section.bare ? (
@@ -132,7 +132,7 @@ export function SettingsForm({
                 {body}
               </div>
             ) : (
-              <SettingsSection id={anchor} title={sectionTitle} ordinal={section.ordinal} leading={section.leading} description={description} action={action}>
+              <SettingsSection id={anchor} title={sectionTitle} titleChip={titleChip} ordinal={section.ordinal} leading={section.leading} description={description} action={action}>
                 {body}
               </SettingsSection>
             );

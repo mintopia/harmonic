@@ -19,8 +19,8 @@ export function createTypesafeClassifierBackend(deps: {
   url?: string;
 }): ClassifierBackend {
   return {
-    async classify(input, { timeoutMs, workspace, prompt }) {
-      const settings = resolveClassifierSettings(workspace);
+    async classify(input, { timeoutMs, workspace, config, prompt }) {
+      const settings = resolveClassifierSettings(workspace, config);
       if (!settings.typesafeSecret) throw new Error('no Secret is configured for the TypeSafe backend');
       const key = await deps.reveal(workspace.id, settings.typesafeSecret);
       if (!key) throw new Error(`Secret '${settings.typesafeSecret}' is not set`);

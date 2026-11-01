@@ -42,6 +42,7 @@ function makeConfig(): AppConfig {
     excludedDirectories: ['.git', 'node_modules'],
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
+    classifier: { workflowEnabled: false, enabled: false, backend: 'harness', timeoutSeconds: 30, typesafeModel: 'typesafe/jev-1.13', typesafeSecret: null, harness: null, model: null },
     verify: { epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },
     guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: false, toolTimeoutMinutes: 10 },
     drive: { prompt: '', unattendedReminder: '', continuePrompt: '', commitNudge: '' },

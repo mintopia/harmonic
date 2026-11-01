@@ -54,6 +54,7 @@ describe('TypeSafe classifier backend', () => {
   const ctx = (timeoutMs = 2000) => ({
     timeoutMs,
     prompt: 'EDITED ROUTE PROMPT',
+    config: baselineConfig(),
     workspace: { id: 7, classifierTypesafeModel: 'typesafe/jev-1.13', classifierTypesafeSecret: 'OR_KEY' } as never,
   });
 

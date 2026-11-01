@@ -848,7 +848,7 @@ export class TaskService {
       if (!claimed) return undefined;
       const scope = await this.routing.scopeFor(claimed.workspaceId);
       const { harness, model, ...defaults } = this.resolveDefaults(claimed, scope);
-      const classified = routeApplies(claimed) && resolveClassifierSettings(scope.workspace).enabled;
+      const classified = routeApplies(claimed) && resolveClassifierSettings(scope.workspace, this.getConfig()).enabled;
       const pinned = claimed.origin === 'mirrored' || classified ? defaults : { harness, model, ...defaults };
       const row = await this.db.write((db) =>
         db

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { AppConfig, Channel, ConfigLayers, ExportDeliveryState, Workspace } from '../types';
-import { btnGhost, card, field } from '../ui';
+import { btnGhost, card, chip, field } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, type ScalarDescriptor } from './settings-fields';
@@ -21,6 +21,7 @@ import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
+import { GlobalClassifierSettings } from './GlobalClassifierSettings';
 import { providerLabel } from './TaskIdentity';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection, AddDestinationButton, archiveStripRules } from './ArchiveExportSettings';
@@ -817,6 +818,8 @@ interface SectionNode {
   leading?: boolean;
   divider?: string;
   body: (ctx: RenderCtx) => ReactNode;
+  /** Status chip rendered inline after the card title. */
+  titleChip?: (ctx: RenderCtx) => ReactNode;
   /** Control at the right of the card's title row. */
   action?: (ctx: RenderCtx) => ReactNode;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
@@ -829,6 +832,18 @@ const BOTH: Surface[] = ['global', 'workspace'];
 
 function twoColGrid(surface: Surface): string {
   return surface === 'global' ? 'grid gap-3.5 sm:grid-cols-2' : 'grid gap-4 sm:grid-cols-2';
+}
+
+function workflowClassifierOn(ctx: RenderCtx): boolean {
+  return ctx.surface === 'global' ? ctx.config.classifier.workflowEnabled : (ctx.workspace.workflowClassifierEnabled ?? ctx.config.classifier.workflowEnabled);
+}
+
+function routeClassifierOn(ctx: RenderCtx): boolean {
+  return ctx.surface === 'global' ? ctx.config.classifier.enabled : (ctx.workspace.classifierEnabled ?? ctx.config.classifier.enabled);
+}
+
+function OnOffChip({ on }: { on: boolean }) {
+  return <span className={`${chip} ml-1.5 align-middle ${on ? 'bg-merged-tint text-merged' : 'bg-raised text-muted'}`}>{on ? 'On' : 'Off'}</span>;
 }
 
 function ModelOptionsBlock({ ctx }: { ctx: RenderCtx }) {
@@ -1010,21 +1025,25 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     step: 'workflow',
-    surfaces: ['workspace'],
+    surfaces: BOTH,
     title: 'Workflow classifier',
     ordinal: '3',
     leading: true,
     wide: true,
     description:
       'When no label matches, read the Ticket and pick a workflow from the library by name and description. Advisory: on error, timeout or bad output the default applies. Uses the classifier backend from step 2.',
-    action: (ctx) =>
-      ctx.surface === 'workspace' ? (
-        <Switch
-          checked={ctx.workspace.workflowClassifierEnabled ?? false}
-          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })}
-          label="Workflow classifier"
-        />
-      ) : null,
+    titleChip: (ctx) => (ctx.surface === 'global' ? <OnOffChip on={workflowClassifierOn(ctx)} /> : null),
+    action: (ctx) => (
+      <Switch
+        checked={workflowClassifierOn(ctx)}
+        onChange={(v) =>
+          ctx.surface === 'global'
+            ? ctx.setConfig({ ...ctx.config, classifier: { ...ctx.config.classifier, workflowEnabled: v } })
+            : ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })
+        }
+        label="Workflow classifier"
+      />
+    ),
     body: () => null,
   },
   {
@@ -1103,18 +1122,21 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     leading: true,
     description: {
       global:
-        'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. Each Workspace turns it on and chooses its backend.',
+        'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. The Workflow classifier in step 1 uses this backend too. A Workspace can override any of it.',
       workspace:
         'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway. The Workflow classifier uses this backend too.',
     },
-    action: (ctx) =>
-      ctx.surface === 'workspace' ? (
-        <Switch
-          checked={ctx.workspace.classifierEnabled ?? false}
-          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, classifierEnabled: v })}
-          label="Route Classifier"
-        />
-      ) : null,
+    action: (ctx) => (
+      <Switch
+        checked={routeClassifierOn(ctx)}
+        onChange={(v) =>
+          ctx.surface === 'global'
+            ? ctx.setConfig({ ...ctx.config, classifier: { ...ctx.config.classifier, enabled: v } })
+            : ctx.setWorkspace({ ...ctx.workspace, classifierEnabled: v })
+        }
+        label="Route Classifier"
+      />
+    ),
     body: (ctx) =>
       ctx.surface === 'workspace' ? (
         <RouteClassifierSettings
@@ -1129,7 +1151,9 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           <ModelOptionsBlock ctx={ctx} />
         </RouteClassifierSettings>
       ) : (
-        <ModelOptionsBlock ctx={ctx} />
+        <GlobalClassifierSettings config={ctx.config} errors={ctx.errors} onChange={ctx.setConfig}>
+          <ModelOptionsBlock ctx={ctx} />
+        </GlobalClassifierSettings>
       ),
   },
   {
@@ -1387,9 +1411,10 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 export function renderSection(
   section: SectionNode,
   ctx: RenderCtx,
-): { title: string; description: string; body: ReactNode; action: ReactNode } {
+): { title: string; titleChip: ReactNode; description: string; body: ReactNode; action: ReactNode } {
   return {
     title: pick(section.title, ctx.surface),
+    titleChip: section.titleChip?.(ctx) ?? null,
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
     action: section.action?.(ctx) ?? null,
@@ -1440,7 +1465,7 @@ function agentStripRules(ctx: RenderCtx): ResolutionRule[] {
     {
       caption: '3rd',
       name: 'Route Classifier',
-      note: ws ? (ws.classifierEnabled ? `On · picks from ${options} Model Options` : 'Off · skipped') : 'Set in each Workspace',
+      note: routeClassifierOn(ctx) ? `On · picks from ${options} Model Options` : 'Off · skipped',
       href: `#${sectionAnchor('Route Classifier')}`,
     },
     {
@@ -1464,7 +1489,6 @@ export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { labe
   if (tab !== 'execution' || step !== 'workflow') return null;
   const labelCount =
     ctx.surface === 'global' ? ctx.config.workflowLabels.length : (ctx.workspace.workflowLabels ?? ctx.config.workflowLabels).length;
-  const classifierOn = ctx.surface === 'workspace' && ctx.workspace.workflowClassifierEnabled === true;
   return {
     label: 'Workflow resolution order',
     rules: [
@@ -1475,14 +1499,12 @@ export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { labe
         note: `${labelCount} ${labelCount === 1 ? 'label' : 'labels'}`,
         href: `#${sectionAnchor('Workflow Labels')}`,
       },
-      ctx.surface === 'workspace'
-        ? {
-            caption: '3rd',
-            name: 'Workflow classifier',
-            note: classifierOn ? 'On' : 'Off · skipped',
-            href: `#${sectionAnchor('Workflow classifier')}`,
-          }
-        : { caption: '3rd', name: 'Workflow classifier', note: 'Set in each Workspace' },
+      {
+        caption: '3rd',
+        name: 'Workflow classifier',
+        note: workflowClassifierOn(ctx) ? 'On' : 'Off · skipped',
+        href: `#${sectionAnchor('Workflow classifier')}`,
+      },
       ctx.surface === 'workspace'
         ? {
             caption: '4th',

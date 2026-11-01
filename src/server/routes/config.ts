@@ -140,6 +140,7 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    classifier: appConfigSchema.shape.classifier.partial().optional(),
     /** Maximum implementation attempts before a ticket is escalated. */
     maxAttempts: z.number().int().min(1).meta({ example: 2 }),
     contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),

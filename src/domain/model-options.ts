@@ -1,5 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import { CLASSIFIER_BACKENDS, DEFAULT_CLASSIFIER_TIMEOUT_SECONDS, DEFAULT_TYPESAFE_MODEL, classifierEndpointSchema, modelOptionOverrideSchema, type AppConfig, type ClassifierEndpoint, type ModelOption, type ModelOptionOverlayEntry } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, modelOptionOverrideSchema, type AppConfig, type ClassifierEndpoint, type ModelOption, type ModelOptionOverlayEntry } from '../config.js';
 import { mergeOverlay } from './setting-override.js';
 
 export type ClassifierBackend = (typeof CLASSIFIER_BACKENDS)[number];
@@ -80,14 +80,19 @@ export function isModelOptionDefined(code: string, ws: ModelOptionWorkspace | nu
   return layered(ws, config).has(code);
 }
 
-export function resolveClassifierSettings(ws: ClassifierWorkspace | null | undefined): ClassifierSettings {
+export function resolveClassifierSettings(ws: ClassifierWorkspace | null | undefined, config: Pick<AppConfig, 'classifier'>): ClassifierSettings {
+  const global = config.classifier;
   return {
-    enabled: ws?.classifierEnabled ?? false,
-    backend: ws?.classifierBackend ?? 'harness',
-    timeoutSeconds: ws?.classifierTimeoutSeconds ?? DEFAULT_CLASSIFIER_TIMEOUT_SECONDS,
-    typesafeModel: ws?.classifierTypesafeModel ?? DEFAULT_TYPESAFE_MODEL,
-    typesafeSecret: ws?.classifierTypesafeSecret ?? null,
-    harness: ws?.classifierHarness ?? null,
-    model: ws?.classifierModel ?? null,
+    enabled: ws?.classifierEnabled ?? global.enabled,
+    backend: ws?.classifierBackend ?? global.backend,
+    timeoutSeconds: ws?.classifierTimeoutSeconds ?? global.timeoutSeconds,
+    typesafeModel: ws?.classifierTypesafeModel ?? global.typesafeModel,
+    typesafeSecret: ws?.classifierTypesafeSecret ?? global.typesafeSecret,
+    harness: ws?.classifierHarness ?? global.harness,
+    model: ws?.classifierModel ?? (ws?.classifierHarness ? null : global.model),
   };
+}
+
+export function resolveWorkflowClassifierEnabled(ws: Pick<WorkspaceRow, 'workflowClassifierEnabled'> | null | undefined, config: Pick<AppConfig, 'classifier'>): boolean {
+  return ws?.workflowClassifierEnabled ?? config.classifier.workflowEnabled;
 }

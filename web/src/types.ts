@@ -1318,6 +1318,17 @@ export interface AppConfig {
   modelOptions: ModelOption[];
   autoRunner: { enabled: boolean; maxConcurrentAttempts: number };
   agentMessages: { enabled: boolean; sendCap: number };
+  /** Global classifier defaults; a Workspace's own `classifier*` values win. */
+  classifier: {
+    workflowEnabled: boolean;
+    enabled: boolean;
+    backend: 'typesafe' | 'openai-compatible' | 'harness';
+    timeoutSeconds: number;
+    typesafeModel: string;
+    typesafeSecret: string | null;
+    harness: string | null;
+    model: string | null;
+  };
   /** Per-stage command and critic verifier lists. */
   verify: {
     epic: { preMerge: EpicVerificationStage; resolvePrompt: string; resolveSuffix: string };
