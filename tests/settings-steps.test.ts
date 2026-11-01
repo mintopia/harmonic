@@ -6,7 +6,6 @@ import { SETTING_TABS } from '../src/domain/settings-registry.js';
 import {
   TAB_STEPS,
   formatSettingsLocation,
-  neighbourStep,
   parseSettingsLocation,
   resolveStep,
   visibleSteps,
@@ -42,13 +41,10 @@ describe('settings tabs and steps', () => {
     expect(visibleSteps('prompts', new Set(['find'])).map((s) => s.id)).toEqual(['find']);
   });
 
-  it('resolves the step and its neighbours', () => {
+  it('resolves the requested step', () => {
     const steps = TAB_STEPS.execution;
     expect(resolveStep(steps, 'limits')).toBe('limits');
     expect(resolveStep(steps, 'nope')).toBe('workflow');
-    expect(neighbourStep(steps, 'workflow', -1)).toBeNull();
-    expect(neighbourStep(steps, 'workflow', 1)).toBe('agent');
-    expect(neighbourStep(steps, 'limits', 1)).toBeNull();
   });
 
   it('round-trips tab and step through the URL', () => {
@@ -129,8 +125,8 @@ describe('settings step rail and Back/Next', () => {
     const seen: string[] = [];
     const first = await mount('global', null, (s) => seen.push(s));
     const labels = () => [...first.querySelectorAll('button')].map((b) => b.textContent);
-    expect(labels()).not.toContain('Back');
-    const next = [...first.querySelectorAll('button')].find((b) => b.textContent === 'Next');
+    expect(labels().some((l) => l?.startsWith('←'))).toBe(false);
+    const next = [...first.querySelectorAll('button')].find((b) => b.textContent === 'Next: Which agent →');
     await act(async () => {
       next?.click();
     });
@@ -138,8 +134,16 @@ describe('settings step rail and Back/Next', () => {
     await cleanup();
     const last = await mount('global', 'limits', () => {});
     const lastLabels = [...last.querySelectorAll('button')].map((b) => b.textContent);
-    expect(lastLabels).toContain('Back');
-    expect(lastLabels).not.toContain('Next');
+    expect(lastLabels).toContain('← Where');
+    expect(lastLabels.some((l) => l?.startsWith('Next:'))).toBe(false);
+  });
+
+  it('shows the scope chip, breadcrumb, step question and footer note from the mockup', async () => {
+    const host = await mount('global', null, () => {});
+    expect(host.textContent).toContain('Global');
+    expect(host.textContent).toContain('Settings › Running Tickets › Workflow');
+    expect(host.querySelector('h2')?.textContent).toBe('Which workflow runs?');
+    expect(host.textContent).toContain('Edits apply from each Ticket’s next Retry.');
   });
 
   it('keeps global-only steps off the Workspace surface', async () => {

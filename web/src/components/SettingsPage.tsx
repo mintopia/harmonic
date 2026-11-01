@@ -156,7 +156,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   return (
     <SettingsForm
       title="Settings"
-      intro="Global defaults for harnesses, verification, and the runner"
+      intro=""
       tabs={SETTING_TABS}
       tab={tab}
       onTab={setTab}

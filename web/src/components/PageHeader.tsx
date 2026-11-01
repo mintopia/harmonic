@@ -24,7 +24,7 @@ export function PageHeader({
     <div className={`mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 ${className ?? ''}`}>
       <div className={`min-w-0${fill ? ' flex-1' : ''}`}>
         <h1 className={displayTitle}>{title}</h1>
-        <p className={`mt-1 text-small text-muted${fill ? '' : ' max-w-[68ch]'}`}>{description}</p>
+        {description && <p className={`mt-1 text-small text-muted${fill ? '' : ' max-w-[68ch]'}`}>{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 max-md:w-full max-md:shrink">{actions}</div>}
     </div>

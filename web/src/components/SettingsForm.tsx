@@ -5,8 +5,8 @@ import { SettingsSection } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { StepRail, stepPanelId } from './StepRail';
 import { ResolutionStrip } from './ResolutionStrip';
-import { btnGhost, btnPrimary } from '../ui';
-import { TAB_RAIL_TITLES, neighbourStep, resolveStep } from '../settings-steps-model';
+import { btnGhost } from '../ui';
+import { BREADCRUMB_INCLUDES_STEP, TAB_RAIL_TITLES, resolveStep } from '../settings-steps-model';
 import { renderSection, sectionAnchor, sectionsForStep, stepStrip, stepValue, stepsForSurface, type RenderCtx } from './settings-schema';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
 
@@ -59,8 +59,12 @@ export function SettingsForm({
   const current = resolveStep(steps, step);
   const sections = sectionsForStep(ctx.surface, tab, current);
   const strip = stepStrip(ctx, tab, current);
-  const previous = neighbourStep(steps, current, -1);
-  const next = neighbourStep(steps, current, 1);
+  const index = steps.findIndex((s) => s.id === current);
+  const currentStep = steps[index];
+  const previous = steps[index - 1];
+  const next = steps[index + 1];
+  const tabLabel = tabs.find((t) => t.id === tab)?.label ?? '';
+  const crumbs = ['Settings', tabLabel, ...(BREADCRUMB_INCLUDES_STEP.has(tab) && currentStep ? [currentStep.title] : [])].join(' › ');
   const label = ctx.surface === 'workspace' ? 'Workspace settings sections' : 'Settings sections';
   const railLabel = TAB_RAIL_TITLES[tab];
   const values = Object.fromEntries(steps.map((s) => [s.id, stepValue(ctx, tab, s.id)]));
@@ -73,6 +77,13 @@ export function SettingsForm({
         <Tabs tabs={tabs} active={tab} onChange={(id) => onTab(id as SettingTab)} label={label} />
       </div>
 
+      <div className="mt-3 flex items-center gap-2">
+        <span className="rounded-full bg-raised px-2 py-0.5 text-badge font-bold uppercase text-muted">
+          {ctx.surface === 'workspace' ? 'Workspace' : 'Global'}
+        </span>
+        <span className="text-small text-muted">{crumbs}</span>
+      </div>
+
       <div
         id={panelId(tab)}
         role="tabpanel"
@@ -82,6 +93,12 @@ export function SettingsForm({
         <StepRail steps={steps} current={current} onSelect={jump} label={railLabel} values={values} />
 
         <div id={stepPanelId(current)} className="flex min-w-0 flex-1 flex-col gap-4">
+          {currentStep && (
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-display font-semibold">{currentStep.heading}</h2>
+              <p className="text-body text-muted">{currentStep.intro}</p>
+            </div>
+          )}
           {strip && <ResolutionStrip label={strip.label} rules={strip.rules} />}
           {sections.map((section) => {
             const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab });
@@ -99,17 +116,18 @@ export function SettingsForm({
               </SettingsSection>
             );
           })}
-          <div className="flex items-center justify-between gap-3 pt-2">
-            {previous ? (
-              <button type="button" className={btnGhost} onClick={() => jump(previous)}>
-                Back
-              </button>
-            ) : (
-              <span />
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-3">
+              {previous && (
+                <button type="button" className={btnGhost} onClick={() => jump(previous.id)}>
+                  ← {previous.title}
+                </button>
+              )}
+              {currentStep?.note && <span className="text-small text-muted">{currentStep.note}</span>}
+            </div>
             {next && (
-              <button type="button" className={btnPrimary} onClick={() => jump(next)}>
-                Next
+              <button type="button" className={btnGhost} onClick={() => jump(next.id)}>
+                Next: {next.nextTitle ?? next.title} →
               </button>
             )}
           </div>
