@@ -8,7 +8,7 @@ import { runPostMergeCommands } from '../verification/post-merge-commands.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import type { TaskArchive } from '../archive/task-archive.js';
-import type { ResolvedVerifiers } from '../domain/setting-override.js';
+import type { VerificationCommand } from '../config.js';
 import type { MergeEpicIntegration } from './epic-service.js';
 
 export interface EpicIntegrationRunnerDeps {
@@ -20,7 +20,7 @@ export interface EpicIntegrationRunnerDeps {
   verificationAttemptStore?: Pick<VerificationAttemptStore, 'append'> | undefined;
   archive?: Pick<TaskArchive, 'epicVerificationOutputLog'> | undefined;
   commandSpawn: CommandSpawn;
-  resolvePostMergeCommands: () => Promise<ResolvedVerifiers['epic']['preMerge']['commands']>;
+  resolvePostMergeCommands: () => Promise<VerificationCommand[]>;
 }
 
 /** Merges an Epic's integration branch into the default branch under the one merge policy. */

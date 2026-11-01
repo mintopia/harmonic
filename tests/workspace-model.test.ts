@@ -39,8 +39,6 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   agentMessagesEnabled: null,
   agentMessagesSendCap: null,
   effectiveAgentMessagesEnabled: false,
-  epicPreMergeCommands: null,
-  epicPreMergeCritics: null,
   routingLabels: null,
   workflow: null,
   workflowLabels: null,

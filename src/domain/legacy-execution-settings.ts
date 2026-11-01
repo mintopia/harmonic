@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import {
+  epicVerificationCriticOverrideSchema,
   overlayEntrySchema,
   verificationCommandOverrideSchema,
   verificationCriticIdentitySchema,
   verificationStageSchema,
+  type EpicVerificationCritic,
+  type EpicVerificationStage,
   type VerificationCommand,
 } from '../config.js';
 import { mergeOverlay } from './setting-override.js';
@@ -32,6 +35,8 @@ const legacyWorkspaceSchema = z.object({
   taskPreMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
   taskPostMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
   taskPostMergeCritics: taskVerificationCriticOverrideSchema.nullable().optional(),
+  epicPreMergeCommands: verificationCommandOverrideSchema.nullable().optional(),
+  epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().optional(),
   driveMergeFate: z.enum(MERGE_FATES).nullable().optional(),
   driveContinueAttempts: z.number().int().min(0).nullable().optional(),
 });
@@ -134,5 +139,16 @@ export function resolveLegacyExecution(global: LegacyGlobal, workspace: LegacyWo
     mergeFate: own.driveMergeFate ?? global.mergeFate,
     preMerge: resolveStage(own.taskPreMergeCommands, own.taskPreMergeCritics, global.preMerge),
     postMerge: resolveStage(own.taskPostMergeCommands, own.taskPostMergeCritics, global.postMerge),
+  };
+}
+
+export function resolveLegacyEpicPreMerge(global: EpicVerificationStage, workspace: LegacyWorkspace | null): EpicVerificationStage {
+  return {
+    commands: mergeOverlay<VerificationCommand, NonNullable<LegacyWorkspace['epicPreMergeCommands']>[number]>(
+      workspace?.epicPreMergeCommands ?? null, global.commands, (item) => item.id, (entry) => entry.ref, (entry) => entry.command,
+    ),
+    critics: mergeOverlay<EpicVerificationCritic, NonNullable<LegacyWorkspace['epicPreMergeCritics']>[number]>(
+      workspace?.epicPreMergeCritics ?? null, global.critics, (item) => item.id, (entry) => entry.ref, (entry) => entry.critic,
+    ),
   };
 }

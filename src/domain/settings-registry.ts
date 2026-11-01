@@ -2,7 +2,7 @@
 export type SettingScope = 'global-only' | 'overridable';
 
 /** The UI control a setting renders as. */
-export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
+export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
 export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'archive';
@@ -134,20 +134,6 @@ export const settingsRegistry = {
     tab: 'execution',
     label: 'Conflict resolve turns',
     help: 'How many agentic turns may attempt to resolve a merge conflict before the Attempt escalates.',
-  },
-  epicPreMergeCommands: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'execution',
-    label: 'Epic pre-merge commands',
-    help: 'Command verifiers run before an Epic merges to its default branch.',
-  },
-  epicPreMergeCritics: {
-    scope: 'overridable',
-    control: 'verifier',
-    tab: 'execution',
-    label: 'Epic pre-merge critics',
-    help: 'Critics run after Epic pre-merge commands pass.',
   },
   routingLabels: {
     scope: 'overridable',

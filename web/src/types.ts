@@ -541,8 +541,6 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  epicPreMergeCommands: CommandOverlayEntry[] | null;
-  epicPreMergeCritics: EpicCriticOverlayEntry[] | null;
   /** Routing Label overlay; `null` inherits every global Routing Label in order. */
   routingLabels: RoutingLabelOverlayEntry[] | null;
   /** `local` is always available; null inherits every enabled target. */
@@ -633,19 +631,6 @@ export interface EpicVerificationStage {
   commands: VerificationCommand[];
   critics: EpicVerificationCritic[];
 }
-
-/**
- * A Workspace's additive command overlay entry (ADR-0037): a `global` entry
- * reorders/disables a global command by `ref` (its id) without editing it; a
- * `local` entry inlines a Workspace-owned command, fully editable.
- */
-export type CommandOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; command: VerificationCommand };
-
-export type EpicCriticOverlayEntry =
-  | { kind: 'global'; ref: string; enabled: boolean }
-  | { kind: 'local'; enabled: boolean; critic: EpicVerificationCritic };
 
 /** A Workspace Routing Label overlay entry; a `global` entry's `ref` is the global label, lowercased. */
 export type RoutingLabelOverlayEntry =

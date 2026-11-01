@@ -4,7 +4,10 @@ import {
   harnessChoices,
   withMissingGlobals,
 } from '../web/src/components/verification-override-model.js';
-import type { CommandOverlayEntry } from '../web/src/types.js';
+
+type CommandOverlayEntry =
+  | { kind: 'global'; ref: string; enabled: boolean }
+  | { kind: 'local'; enabled: boolean; command: { id: string; command: string; args: string[]; env: Record<string, string>; timeoutSeconds: number } };
 
 describe('withMissingGlobals (ADR-0037)', () => {
   it('renders every global, in order, as an enabled row when the overlay is null', () => {

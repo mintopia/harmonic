@@ -55,15 +55,16 @@ describe('Critic harness is required', () => {
 
     const store = await SettingsStore.create(dir);
     expect(store.getGlobal().verify.epic.preMerge.critics.map((c) => c.harness)).toEqual(['codex', defaultHarness, defaultHarness, 'claude']);
-    const overlay = store.getOverrides(1).epicPreMergeCritics?.[0];
-    expect(overlay?.kind === 'local' && overlay.critic.harness).toBe('codex');
     const legacy = store.getLegacySettings();
+    const overlay = legacy.workspaces.get(1)?.epicPreMergeCritics?.[0];
+    expect(overlay?.kind === 'local' && overlay.critic.harness).toBe('codex');
     expect(legacy.global.preMerge.critics.map((c) => c.harness)).toEqual(['codex', defaultHarness]);
     const legacyOverlay = legacy.workspaces.get(1)?.taskPreMergeCritics?.[0];
     expect(legacyOverlay?.kind === 'local' && legacyOverlay.critic.harness).toBe('codex');
 
     const first = readFileSync(path(), 'utf8');
     expect(parse(first).global.verify.task).toEqual(stored.global.verify.task);
+    expect(parse(first).workspaces['1'].epicPreMergeCritics).toEqual(stored.workspaces['1'].epicPreMergeCritics);
     expect(parse(first).workspaces['1'].taskPreMergeCritics).toEqual(stored.workspaces['1'].taskPreMergeCritics);
     await SettingsStore.create(dir);
     expect(readFileSync(path(), 'utf8')).toBe(first);

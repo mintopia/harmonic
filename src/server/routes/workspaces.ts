@@ -10,13 +10,10 @@ import { triageLabelsOverrideSchema } from '../../tracker/triage-labels.js';
 import type { ModelOptionOverlayEntry } from '../../config.js';
 import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionIssues, modelOptionOverrideSchema, redactPatternsSchema } from '../../config.js';
 import {
-  verificationCommandOverrideSchema,
   routingLabelOverrideSchema,
   workflowLabelOverrideSchema,
-  epicVerificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
-  criticModelMessage,
   costCapMessage,
 } from '../../config.js';
 import { forEachYielding } from '../../reliability/yield.js';
@@ -77,8 +74,6 @@ const workspaceSchema = z
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    epicPreMergeCommands: verificationCommandOverrideSchema.nullable().meta({ example: null }),
-    epicPreMergeCritics: epicVerificationCriticOverrideSchema.nullable().meta({ example: null }),
     /** Routing Label overlay; null inherits every global Routing Label in order. */
     routingLabels: routingLabelOverrideSchema.nullable().meta({ example: null }),
     /** `local` is always available; null inherits every enabled target. */
@@ -196,8 +191,6 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
   const serialize = (ws: WorkspaceRow) => ({
     ...maskWorkspaceSecrets(ws),
-    epicPreMergeCommands: ws.epicPreMergeCommands ? JSON.parse(ws.epicPreMergeCommands) : null,
-    epicPreMergeCritics: ws.epicPreMergeCritics ? JSON.parse(ws.epicPreMergeCritics) : null,
     routingLabels: parseRoutingLabelOverlay(ws.routingLabels),
     workflowLabels: parseWorkflowLabelOverlay(ws.workflowLabels),
     workflowVars: parseWorkspaceWorkflowVars(ws.workflowVars),
@@ -329,13 +322,6 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       if (req.body.modelOptions) {
         assertModelOptionOverlay(req.body.modelOptions);
       }
-      req.body.epicPreMergeCritics?.forEach((entry, index) => {
-        if (entry.kind !== 'local') return;
-        const models = harnesses[entry.critic.harness]?.models ?? [];
-        if (models.length > 0 && !models.some((m) => m.id === entry.critic.model)) {
-          throw new DomainError('validation', `epicPreMergeCritics.${index}.critic.model: ${criticModelMessage(entry.critic)}`);
-        }
-      });
       if (req.body.guardrailBudget) {
         const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
         if (unpriced.length > 0) {
