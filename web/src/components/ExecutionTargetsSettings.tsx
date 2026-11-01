@@ -92,13 +92,12 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
   return (
     <div className="flex flex-col gap-3">
       <section className={`${card} p-5`}>
-        <h2 className={sectionTitle}>Execution Targets</h2>
-        <p className="mb-4 mt-0.5 text-muted">
-          Each target runs up to its ceiling at once. Tickets past it wait in order.
-        </p>
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-label font-semibold uppercase text-muted">Targets</span>
-          <button type="button" className="min-h-8 text-small font-semibold text-accent hover:text-accent-hot" onClick={() => setEditing('new')}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className={sectionTitle}>Execution Targets</h2>
+            <p className="mt-0.5 text-muted">Each target runs up to its ceiling at once. Tickets past it wait in order.</p>
+          </div>
+          <button type="button" className="min-h-8 shrink-0 text-small font-semibold text-accent hover:text-accent-hot" onClick={() => setEditing('new')}>
             + Add target
           </button>
         </div>
