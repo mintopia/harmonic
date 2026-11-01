@@ -6,13 +6,14 @@ import { OTHER_EVENTS, SUBSCRIPTION_COLUMNS, channelSubtitle, channelTypeLabel }
 import { useConfirmedDelete } from './useConfirmedDelete';
 import { EmptyState } from './EmptyState';
 
+const cell = 'border-b border-hairline px-2 py-2.5';
+
 /**
  * Event subscriptions buffer through the settings save bar: a
  * checkbox edits the parent's staged channel list and persists on Save.
  * Provisioning or removing a channel is an immediate side-effect action, so
  * create/delete still hit the REST resource directly and sync the parent lists.
  */
-const cell = 'border-b border-hairline px-2 py-2.5';
 
 export function ChannelsSection({
   channels,

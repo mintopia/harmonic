@@ -179,7 +179,7 @@ describe('Code repository section', () => {
     await click(button(host, 'Verify repository'));
     expect(host.textContent).toContain('Reachable on octocat');
     expect(host.textContent).toContain('Detected');
-    expect(host.querySelector('#workspace-code-token')).not.toBeNull();
+    expect(host.querySelector('#workspace-code-token')!.textContent).toBe('Ambient · gh credentials');
     expect(host.textContent).not.toContain('FORGEJO_TOKEN');
   });
 
@@ -219,6 +219,16 @@ describe('Triage labels section', () => {
     expect(input.placeholder).toBe('wayfinder:map');
     expect(input.value).toBe('');
     expect(seen.latest?.triageLabels).toBeNull();
+  });
+
+  it('shows only Configured chips and a retry when detection fails', async () => {
+    stubApi();
+    vi.mocked(api.trackerDetection).mockRejectedValue(new Error('detection down'));
+    const initial = makeWorkspace({ id: 3, triageLabels: { readyForAgent: 'mine' } });
+    const host = await mountComponent(createElement(Harness, { initial, Section: TriageLabelsSection }));
+    const sources = [...host.querySelectorAll('tbody tr')].map((r) => r.querySelectorAll('td')[2]!.textContent);
+    expect(sources).toEqual(['Configured', '', '', '']);
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain('Retry');
   });
 
   it('shows each role with the Source that supplies its label', async () => {

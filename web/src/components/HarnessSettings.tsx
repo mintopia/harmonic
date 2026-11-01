@@ -195,9 +195,8 @@ export function HarnessesSection({
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
-  const shown = Object.entries(config.harnesses).filter(
-    ([id]) => id === editing || Object.keys(fieldErrors).some((k) => k.startsWith(`harnesses.${id}.`)),
-  );
+  const hasErrors = (id: string) => Object.keys(fieldErrors).some((k) => k.startsWith(`harnesses.${id}.`));
+  const shown = Object.entries(config.harnesses).filter(([id]) => id === editing || hasErrors(id));
   const cell = 'border-b border-hairline px-2 py-2.5';
   return (
     <div className="flex flex-col gap-4">
@@ -221,9 +220,11 @@ export function HarnessesSection({
               </td>
               <td className={cell}>{row.modelCount}</td>
               <td className={`${cell} text-right`}>
-                <button type="button" className="font-semibold text-accent hover:underline" onClick={() => setEditing(editing === row.id ? null : row.id)}>
-                  {editing === row.id ? 'Close' : 'Edit'}
-                </button>
+                {!hasErrors(row.id) && (
+                  <button type="button" className="font-semibold text-accent hover:underline" onClick={() => setEditing(editing === row.id ? null : row.id)}>
+                    {editing === row.id ? 'Close' : 'Edit'}
+                  </button>
+                )}
               </td>
             </tr>
           ))}

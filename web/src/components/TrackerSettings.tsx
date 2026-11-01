@@ -570,10 +570,8 @@ export function CodeRepositorySection({ ctx }: { ctx: WorkspaceRenderCtx }) {
           <FieldError message={errors['codeRepository']} />
         </div>
         <div>
-          <label className={fieldLabel} htmlFor="workspace-code-token">Token</label>
-          <select id="workspace-code-token" className={`${selectField} w-full`} value="source" disabled>
-            <option value="source">{tokenSource(effective)}</option>
-          </select>
+          <span className={fieldLabel}>Token</span>
+          <p id="workspace-code-token" className="py-2 text-body text-ink">{tokenSource(effective)}</p>
         </div>
       </div>
       {needsForgejoToken && (
@@ -650,13 +648,16 @@ export function TriageLabelsSection({ ctx }: { ctx: WorkspaceRenderCtx }) {
                   />
                 </td>
                 <td className="border-b border-hairline p-2.5 align-middle">
-                  <span className={`rounded-full px-2 py-0.5 text-micro font-bold ${SOURCE_CHIP[source]}`}>{TRIAGE_SOURCE_LABEL[source]}</span>
+                  {(repoDoc || source === 'configured') && (
+                    <span className={`rounded-full px-2 py-0.5 text-micro font-bold ${SOURCE_CHIP[source]}`}>{TRIAGE_SOURCE_LABEL[source]}</span>
+                  )}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      {detection.state.status === 'error' && <LoadFailure message={detection.state.message} onRetry={detection.reload} />}
       <FieldError message={errors['triageLabels']} />
       <p className="text-small text-muted">
         Labels that pick a workflow or agent live in{' '}

@@ -55,6 +55,7 @@ describe('HarnessesSection table', () => {
       createElement(HarnessesSection, { config: baselineConfig(), baseline: baselineConfig(), fieldErrors: { 'harnesses.claude.command': 'Required' }, permissionModes: {}, onChange: () => {} }),
     );
     expect((host.querySelector('#harness-editor-claude') as HTMLDetailsElement).open).toBe(true);
+    expect([...host.querySelectorAll('tbody tr')][0]!.querySelector('button')).toBeNull();
   });
 });
 
