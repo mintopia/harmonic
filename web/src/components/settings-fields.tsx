@@ -179,7 +179,9 @@ export function ConfigField({
   errors,
   onConfig,
   baseline,
+  hideLabel,
 }: {
+  hideLabel?: boolean;
   descriptor: ScalarDescriptor;
   config: AppConfig;
   errors: Record<string, string>;
@@ -215,6 +217,7 @@ export function ConfigField({
         inheritedValue={d.get(baseline)}
         inherited={d.get(config) === d.get(baseline)}
         dim={false}
+        hideLabel={hideLabel ?? false}
         onChange={(raw) => onConfig(d.set(config, raw))}
         onRevert={() => onConfig(d.set(config, d.get(baseline)))}
       >

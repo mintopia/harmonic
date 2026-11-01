@@ -54,7 +54,9 @@ export function OverrideField({
   workspace,
   errors,
   onWorkspace,
+  hideLabel,
 }: {
+  hideLabel?: boolean;
   descriptor: OverridableDescriptor;
   config: AppConfig;
   workspace: Workspace;
@@ -69,6 +71,7 @@ export function OverrideField({
       <LayerField<Scalar>
         label={d.label ?? spec.label}
         htmlFor={control === 'toggle' ? undefined : d.id}
+        hideLabel={hideLabel ?? false}
         value={d.get(workspace) ?? d.inherited(config, workspace)}
         inheritedValue={d.inherited(config, workspace)}
         inherited={d.get(workspace) === null || d.get(workspace) === undefined}
