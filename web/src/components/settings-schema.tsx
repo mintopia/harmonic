@@ -19,6 +19,7 @@ import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
 import { RouteClassifierSettings } from './RouteClassifierSettings';
+import { providerLabel } from './TaskIdentity';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection, AddDestinationButton, archiveStripRules } from './ArchiveExportSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
@@ -743,6 +744,10 @@ interface SectionNode {
   body: (ctx: RenderCtx) => ReactNode;
   /** Control at the right of the card's title row. */
   action?: (ctx: RenderCtx) => ReactNode;
+  /** Put the action before the title instead of at the right. */
+  leadingAction?: boolean;
+  /** Step-local ordinal shown before the title. */
+  number?: string;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
   /** Render the body without the SettingsSection card — the body owns its own chrome. */
@@ -753,6 +758,35 @@ const BOTH: Surface[] = ['global', 'workspace'];
 
 function twoColGrid(surface: Surface): string {
   return surface === 'global' ? 'grid gap-3.5 sm:grid-cols-2' : 'grid gap-4 sm:grid-cols-2';
+}
+
+function ModelOptionsBlock({ ctx }: { ctx: RenderCtx }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <h3 className="text-body font-bold">Model Options</h3>
+      <p className="text-small text-muted">
+        {ctx.surface === 'global'
+          ? 'The closed list the classifier and Routing Labels pick from. Write each description as when it fits. Workflow YAML can reference a code.'
+          : 'Global rows are managed in Global settings. You can reorder them and turn them off here; Model Options you add are local to this Workspace. Codes are unique across both. Workflow YAML can reference a code.'}
+      </p>
+      {ctx.surface === 'global' ? (
+        <ModelOptionsEditor
+          items={ctx.config.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setConfig({ ...ctx.config, modelOptions })}
+        />
+      ) : (
+        <ModelOptionsEditor
+          workspace
+          overlay={ctx.workspace.modelOptions}
+          config={ctx.config}
+          errors={ctx.errors}
+          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions })}
+        />
+      )}
+    </div>
+  );
 }
 
 export const SETTINGS_SCHEMA: SectionNode[] = [
@@ -836,22 +870,29 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
-    step: 'agent',
+    step: 'where',
     surfaces: BOTH,
-    title: 'Task defaults',
+    title: 'Isolation mode',
     description: {
-      global: 'Pre-filled into every new task; each task can override them.',
-      workspace:
-        'Pre-filled into every new Task in this Workspace. Each inherits the global default until overridden; a Task can still override them one by one.',
+      global: 'How a new task’s checkout is isolated. Each task can override it.',
+      workspace: 'How a new Task’s checkout is isolated here. Inherits the global default until overridden.',
     },
-    body: (ctx) =>
-      grid(twoColGrid(ctx.surface), [taskHarness, taskModel, isolationMode, priority, conflictResolveTurns], ctx),
+    body: (ctx) => grid(twoColGrid(ctx.surface), [isolationMode], ctx),
+  },
+  {
+    tab: 'execution',
+    step: 'limits',
+    surfaces: ['workspace'],
+    title: 'Conflict resolution',
+    description: 'Turns an Attempt gets to resolve a Merge conflict here. Inherits the global default until overridden.',
+    body: (ctx) => grid(twoColGrid(ctx.surface), [conflictResolveTurns], ctx),
   },
   {
     tab: 'execution',
     step: 'agent',
     surfaces: BOTH,
     title: 'Routing Labels',
+    number: '2',
     wide: true,
     description: {
       global:
@@ -925,36 +966,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
-    step: 'agent',
-    surfaces: BOTH,
-    title: 'Model Options',
-    wide: true,
-    description: {
-      global:
-        'A closed list the Route Classifier picks from. It never picks outside the list. Each Model Option has a code that Task Execution Workflow YAML can reference. Write each description as when it fits: the classifier reads it to choose.',
-      workspace:
-        'Global rows are managed in Global settings. You can reorder them and turn them off here; Model Options you add are local to this Workspace. Codes are unique across both.',
-    },
-    body: (ctx) =>
-      ctx.surface === 'global' ? (
-        <ModelOptionsEditor
-          items={ctx.config.modelOptions}
-          config={ctx.config}
-          errors={ctx.errors}
-          onChange={(modelOptions) => ctx.setConfig({ ...ctx.config, modelOptions })}
-        />
-      ) : (
-        <ModelOptionsEditor
-          workspace
-          overlay={ctx.workspace.modelOptions}
-          config={ctx.config}
-          errors={ctx.errors}
-          onChange={(modelOptions) => ctx.setWorkspace({ ...ctx.workspace, modelOptions })}
-        />
-      ),
-  },
-  {
-    tab: 'execution',
     step: 'workflow',
     surfaces: ['workspace'],
     bare: true,
@@ -969,11 +980,17 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'execution',
     step: 'agent',
-    surfaces: ['workspace'],
+    surfaces: BOTH,
     title: 'Route Classifier',
+    number: '3',
     wide: true,
-    description:
-      'Picks one Model Option for each Attempt on a Native Task. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway.',
+    leadingAction: true,
+    description: {
+      global:
+        'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. Each Workspace turns it on and chooses its backend.',
+      workspace:
+        'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. Advisory: when it abstains, errors or times out, the Workspace default applies and the Attempt starts anyway. The Workflow classifier uses this backend too.',
+    },
     action: (ctx) =>
       ctx.surface === 'workspace' ? (
         <Switch
@@ -992,8 +1009,30 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           saving={ctx.saving ?? false}
           {...(ctx.onSave ? { onSave: ctx.onSave } : {})}
           onChange={ctx.setWorkspace}
-        />
-      ) : null,
+        >
+          <ModelOptionsBlock ctx={ctx} />
+        </RouteClassifierSettings>
+      ) : (
+        <ModelOptionsBlock ctx={ctx} />
+      ),
+  },
+  {
+    tab: 'execution',
+    step: 'agent',
+    surfaces: BOTH,
+    title: 'Default agent',
+    number: '4',
+    description: {
+      global: 'Used when no label matches and the classifier is off or abstains. Pre-filled into every new task; each task can override it.',
+      workspace:
+        'Used when no label matches and the classifier is off or abstains. Each value inherits the global default until overridden; a Task can still override them one by one.',
+    },
+    body: (ctx) => (
+      <>
+        {grid(ctx.surface === 'global' ? 'grid gap-3.5 sm:grid-cols-3' : 'grid gap-4 sm:grid-cols-3', [taskHarness, taskModel, priority], ctx)}
+        <p className="mt-3 text-small text-muted">Harness settings live in Integrations › Agents.</p>
+      </>
+    ),
   },
   {
     tab: 'execution',
@@ -1032,7 +1071,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
-    step: 'agent',
+    step: 'limits',
     surfaces: BOTH,
     title: 'Agent Messages',
     description: {
@@ -1227,8 +1266,10 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 export function renderSection(
   section: SectionNode,
   ctx: RenderCtx,
-): { title: string; description: string; body: ReactNode; action: ReactNode } {
+): { title: string; description: string; body: ReactNode; action: ReactNode; number: string | undefined; leadingAction: boolean } {
   return {
+    number: section.number,
+    leadingAction: section.leadingAction ?? false,
     title: pick(section.title, ctx.surface),
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
@@ -1261,8 +1302,34 @@ export function stepValue(ctx: RenderCtx, tab: SettingTab, step: string): string
   return undefined;
 }
 
+function agentStripRules(ctx: RenderCtx): ResolutionRule[] {
+  const ws = ctx.surface === 'workspace' ? ctx.workspace : null;
+  const labels = (ws?.routingLabels ?? ctx.config.routingLabels).length;
+  const options = ws ? enabledOptionCount(ws.modelOptions, ctx.config.modelOptions) : ctx.config.modelOptions.length;
+  const harness = ws?.harness ?? ctx.config.defaults.harness;
+  const model = ws?.model ?? ctx.config.harnesses[harness]?.defaultModel ?? '';
+  return [
+    { caption: '1st', name: 'Operator choice', note: 'Set on the Ticket page' },
+    { caption: '2nd', name: 'Routing Label', note: `${labels} ${labels === 1 ? 'label' : 'labels'}`, href: `#${sectionAnchor('Routing Labels')}` },
+    {
+      caption: '3rd',
+      name: 'Route Classifier',
+      note: ws ? (ws.classifierEnabled ? `On · picks from ${options} Model Options` : 'Off · skipped') : 'Set in each Workspace',
+      href: `#${sectionAnchor('Route Classifier')}`,
+    },
+    {
+      caption: 'Always matches',
+      name: 'Default agent',
+      note: [providerLabel(harness), model].filter(Boolean).join(' · '),
+      href: `#${sectionAnchor('Default agent')}`,
+      always: true,
+    },
+  ];
+}
+
 export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { label: string; rules: ResolutionRule[] } | null {
   if (tab === 'archive') return { label: 'Archive lifecycle', rules: archiveStripRules(ctx) };
+  if (tab === 'execution' && step === 'agent') return { label: 'Agent resolution order', rules: agentStripRules(ctx) };
   if (tab !== 'execution' || step !== 'workflow') return null;
   const labelCount =
     ctx.surface === 'global' ? ctx.config.workflowLabels.length : (ctx.workspace.workflowLabels ?? ctx.config.workflowLabels).length;

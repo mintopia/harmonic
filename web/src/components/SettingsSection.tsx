@@ -8,6 +8,8 @@ export function SettingsSection({
   description,
   className,
   action,
+  leadingAction,
+  number,
   children,
 }: {
   id?: string;
@@ -15,16 +17,22 @@ export function SettingsSection({
   description: string;
   className?: string;
   action?: ReactNode;
+  leadingAction?: boolean;
+  number?: string;
   children: ReactNode;
 }) {
   return (
     <section id={id} className={`${card} p-5${className ? ` ${className}` : ''}`}>
-      <div className="flex items-start justify-between gap-4">
+      <div className={`flex items-start gap-4 ${leadingAction ? '' : 'justify-between'}`}>
+        {action && leadingAction && <div className="mt-1 shrink-0">{action}</div>}
         <div>
-          <h2 className="text-title font-semibold">{title}</h2>
+          <h2 className="text-title font-semibold">
+            {number && <span className="text-muted">{number} · </span>}
+            {title}
+          </h2>
           <p className="mb-4 mt-0.5 text-muted">{description}</p>
         </div>
-        {action && <div className="mt-1 shrink-0">{action}</div>}
+        {action && !leadingAction && <div className="mt-1 shrink-0">{action}</div>}
       </div>
       {children}
     </section>

@@ -113,6 +113,16 @@ describe('settings step rail and Back/Next', () => {
     expect(sectionsForStep('global', 'execution', 'agent').length).toBeGreaterThan(0);
   });
 
+  it('lays the Agent step out as Routing Labels, Route Classifier with nested Model Options, then Default agent', async () => {
+    const host = await mount('global', 'agent', () => {});
+    const titles = [...host.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(titles).toEqual(['2 · Routing Labels', '3 · Route Classifier', '4 · Default agent']);
+    expect(host.querySelector('#settings-section-route-classifier')?.textContent).toContain('Model Options');
+    expect(host.querySelector('#settings-section-model-options')).toBeNull();
+    const rules = [...(host.querySelectorAll('ol[aria-label="Agent resolution order"] li') ?? [])].map((li) => li.querySelector('span')?.textContent);
+    expect(rules).toEqual(['1st', '2nd', '3rd', 'Always matches']);
+  });
+
   it('shows the resolution strip on the Workflow step and drops it elsewhere', async () => {
     const onWorkflow = await mount('global', null, () => {});
     expect(onWorkflow.querySelector('ol[aria-label="Workflow resolution order"]')).not.toBeNull();

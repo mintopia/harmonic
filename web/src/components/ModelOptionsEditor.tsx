@@ -3,7 +3,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { AppConfig, ModelOption, ModelOptionOverlayEntry } from '../types';
 import { btnPrimary, btnQuiet, chip, field } from '../ui';
 import { DiscoveryModelPicker } from './DiscoveryModelPicker';
-import { Precedence, RemoveButton, RoutingListFrame, RoutingRowShell } from './RoutingLabelsEditor';
+import { RemoveButton, RoutingListFrame, RoutingRowShell } from './RoutingLabelsEditor';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Switch } from './Switch';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
@@ -191,7 +191,6 @@ export function ModelOptionsEditor(
 
   return (
     <div>
-      <Precedence highlight="route-classifier" />
       <RoutingListFrame
         heading="Model Options"
         addLabel="+ Add Model Option"
