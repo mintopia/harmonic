@@ -1,7 +1,7 @@
 # Verification (#965)
 
-Built app driven with Playwright. Global and Workspace scope, 1440px and 390px, light and dark, every tab and step (172 shots, `<scope>-<tab>-<step>-<width>-<scheme>.png`). Artboards screenshotted at 1440 and paired in `pair-<Artboard>.png` (artboard left, built right, Global, light). Workflows library, editor Blocks/YAML/Variables also captured.
-Notes: Global Integrations has no Code/Work step and Prompts Edit/Impact need a selected prompt, so those URLs fall back to the first step by design; Workspace shots exist for code/work and a prompt was clicked for Edit/Impact at Global.
+Built app driven with Playwright. Global and Workspace scope, 1440px and 390px, light and dark, every tab and step (164 shots, `<scope>-<tab>-<step>-<width>-<scheme>.png`). Artboards screenshotted at 1440 and paired in `pair-<Artboard>.png` (artboard left, built right, Global, light). Workflows library, editor Blocks/YAML/Variables also captured.
+Notes: Global Integrations has only Agents and Updates (Code and Work are Workspace-only), and Prompts Edit/Impact need a selected prompt, so those URLs fall back to the first step by design; Workspace shots exist for code/work and a prompt was clicked for Edit/Impact at Global.
 
 | Check | Result | Note |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ Notes: Global Integrations has no Code/Work step and Prompts Edit/Impact need a 
 | Rail sticky, stacks at 390px | match | `StepRail` md:sticky; 390 shots stack |
 | Resolution strips present, live | match | Workflow, Agent, Archive strips reflect settings |
 | Classifier cards at Global | defect | #968 |
-| Global Integrations Code/Work | defect | #969 |
+| Global Integrations steps (Agents, Updates only; Code and Work are Workspace-only) | match | #969: artboard amended, pair-Integrations re-taken |
 | Limits toggles/units/layout | defect | #970 |
 | Where Note wrapping | defect | #971 |
 | No max-width caps on intros | match | Workflows library intro fixed in this change |
