@@ -12,7 +12,8 @@ import { firstGlobalModelOptionError } from './model-option-model';
 import { LoadError } from './LoadError';
 import { ConfirmDialog } from './ConfirmDialog';
 import type { GlobalRenderCtx } from './settings-schema';
-import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
+import { SETTING_TABS } from '../../../src/domain/settings-registry.js';
+import { useSettingsLocation } from '../useSettingsLocation';
 
 /**
  * The global settings surface: a thin data shell over the shared
@@ -30,7 +31,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [tab, setTab] = useState<SettingTab>(() => SETTING_TABS.find((t) => t.id === window.location.hash.slice(1))?.id ?? 'general');
+  const { tab, step, setTab, setStep } = useSettingsLocation(SETTING_TABS.map((t) => t.id));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [confirmingRevert, setConfirmingRevert] = useState(false);
@@ -159,6 +160,8 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       tabs={SETTING_TABS}
       tab={tab}
       onTab={setTab}
+      step={step}
+      onStep={setStep}
       ctx={ctx}
       dirty={dirty}
       saving={saving}

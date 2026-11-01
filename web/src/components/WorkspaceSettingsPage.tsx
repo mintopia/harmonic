@@ -12,7 +12,8 @@ import { SettingsForm } from './SettingsForm';
 import type { AppConfig } from '../types';
 import type { WorkspaceRenderCtx } from './settings-schema';
 import { workspaceSavePatch } from '../workspace-save-model';
-import { workspaceTabs, type SettingTab } from '../../../src/domain/settings-registry.js';
+import { workspaceTabs } from '../../../src/domain/settings-registry.js';
+import { useSettingsLocation } from '../useSettingsLocation';
 
 /**
  * The per-Workspace settings surface: a thin data shell over the shared
@@ -41,7 +42,7 @@ export function WorkspaceSettingsPage({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [tab, setTab] = useState<SettingTab>('general');
+  const { tab, step, setTab, setStep } = useSettingsLocation(workspaceTabs().map((t) => t.id));
 
   useEffect(() => {
     setPristine(workspace);
@@ -111,6 +112,8 @@ export function WorkspaceSettingsPage({
       tabs={workspaceTabs()}
       tab={tab}
       onTab={setTab}
+      step={step}
+      onStep={setStep}
       ctx={ctx}
       dirty={dirty}
       saving={saving}

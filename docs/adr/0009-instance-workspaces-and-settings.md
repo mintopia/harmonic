@@ -83,6 +83,9 @@ construction, not of keeping two forms in sync by hand.
   through muted inheritance, a modified marker, and per-field revert
   (ADR-0022). All values flow through one
   buffered save bar; only genuine side-effect actions stay immediate.
+  **Amended by ADR-0058** (this clause only): the tabs are General · Running
+  Tickets · Prompts · Integrations · Archive & Export, and each tab with steps
+  shows a step rail.
 
 ## Configuration lives in a YAML file
 

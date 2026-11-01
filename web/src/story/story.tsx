@@ -452,7 +452,7 @@ function TicketStory() {
     : params.get('state') === 'ready'
     ? { ...withOverrides, state: 'ready' as const, targetWait: params.get('wait') ? { target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 2 } : null, skipReason: params.get('wait') ? 'waiting for k8s-prod' : null }
     : params.get('state') === 'escalated' && params.get('deleted') !== null
-      ? { ...withOverrides, state: 'escalated' as const, escalationReason: "escalated to human: Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Execution." }
+      ? { ...withOverrides, state: 'escalated' as const, escalationReason: "escalated to human: Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Running Tickets." }
     : params.get('state') === 'escalated'
       ? { ...withOverrides, state: 'escalated' as const, hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' }
       : withOverrides;

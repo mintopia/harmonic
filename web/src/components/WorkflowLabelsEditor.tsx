@@ -7,7 +7,6 @@ import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowLibraryEntry } from 
 import { chip, codeChip, field } from '../ui';
 import { useAsyncResource } from '../useAsyncResource';
 import {
-  Precedence,
   RemoveButton,
   RoutingListFrame,
   RoutingRowShell,
@@ -23,7 +22,6 @@ import { WORKFLOW_LABEL, newLocalWorkflowEntry, versionSuffix, workflowOptions, 
 
 type WorkflowLabel = AppConfig['workflowLabels'][number];
 
-const STEPS = ['Operator choice on the Ticket', WORKFLOW_LABEL, 'Workspace default', 'Global default'];
 const compactSelect = 'hm-select min-h-9 w-full rounded-md border border-edge bg-field px-2.5 py-1 text-ink focus:border-accent focus:outline-none';
 const compactField = `${field} min-h-9 py-1 font-data text-data`;
 const globalChip = `${chip} bg-raised text-muted`;
@@ -173,17 +171,10 @@ export function EpicWorkflowEditor({
 }
 
 function RoutingCrossReference() {
-  const go = () => {
-    const heading = Array.from(document.querySelectorAll('h2')).find((h) => h.textContent === 'Routing Labels');
-    heading?.scrollIntoView({ block: 'start' });
-  };
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-dashed border-hairline bg-sunken px-3.5 py-2.5 text-small text-muted">
       <span className="font-semibold text-ink">Routing Labels</span>
-      <span className="min-w-0 flex-1">A separate list further down this page. Routing Labels pick a Harness and Model; Workflow Labels pick a workflow. A Ticket can match one of each.</span>
-      <button type="button" className="font-semibold text-accent hover:text-accent-hot" onClick={go}>
-        Go to Routing Labels
-      </button>
+      <span className="min-w-0 flex-1">Set in step 2, Agent. Routing Labels pick a Harness and Model; Workflow Labels pick a workflow. A Ticket can match one of each.</span>
     </div>
   );
 }
@@ -197,7 +188,6 @@ export function WorkflowLabelsEditor({ config, onChange }: { config: AppConfig; 
   const set = (workflowLabels: WorkflowLabel[]) => onChange({ ...config, workflowLabels });
   return (
     <div>
-      <Precedence steps={STEPS} accent={WORKFLOW_LABEL} />
       <RoutingListFrame
         noun={WORKFLOW_LABEL}
         count={items.length}

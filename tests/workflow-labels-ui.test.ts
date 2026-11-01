@@ -76,14 +76,13 @@ afterEach(async () => {
 });
 
 describe('WorkflowLabelsEditor', () => {
-  it('shows precedence, the rows, the default select with versions and the Routing Labels cross-reference', async () => {
+  it('shows the rows, the default select with versions and the Routing Labels cross-reference', async () => {
     const host = await mountComponent(createElement(Global));
-    expect(host.textContent).toContain('Operator choice on the Ticket→Workflow Label→Workspace default→Global default');
     expect(byLabel<HTMLInputElement>(host, 'Workflow Label 1').value).toBe('security');
     expect(byLabel<HTMLSelectElement>(host, 'Workflow for Workflow Label 2').value).toBe('Docs only');
     const select = host.querySelector<HTMLSelectElement>('#settings-workflow')!;
     expect([...select.options].map((o) => o.textContent)).toContain('Docs only · v2');
-    expect(host.textContent).toContain('Go to Routing Labels');
+    expect(host.textContent).toContain('Set in step 2, Agent');
   });
 
   it('adds, edits, reorders-by-data and removes rows', async () => {

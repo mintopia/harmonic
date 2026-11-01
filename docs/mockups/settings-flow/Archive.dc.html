@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings: archive and export</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-link{border:0;background:none;color:#077067;padding:4px 6px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.field{font:inherit;font-size:13px;padding:7px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.step{display:flex;gap:12px;padding:10px 12px;border-radius:6px;color:#1b1e24;border:0;background:none;font:inherit;font-weight:600;text-align:left;cursor:pointer;width:100%}
+.step.on{background:#fff;box-shadow:0 1px 2px rgb(27 30 36/.08)}
+.num.done{background:#c2f2cd;border-color:#c2f2cd;color:#0d7734}
+.lnk{border:0;background:none;padding:0;font:inherit;font-weight:700;color:#1b1e24;text-align:left;cursor:pointer}
+.lnk:hover{color:#077067;text-decoration:underline}
+.num{width:24px;height:24px;border-radius:50%;border:1px solid #c3c3bc;color:#3d424a;display:grid;place-items:center;font-size:12px;flex:none;box-sizing:border-box}
+.num.cur{background:#077067;border-color:#077067;color:#fff}
+.rung{background:#fff;border:1px solid #d0d0ca;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.sw{width:34px;height:20px;border-radius:999px;background:#858983;position:relative;flex:none;border:0;padding:0}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff}
+.sw.on{background:#077067}.sw.on::after{left:17px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:24px;align-items:center;padding:14px 0;border-top:1px solid #e0e0db}
+.row .t{font-weight:700}.row .d{font-size:13px;color:#656b73;margin-top:3px}
+.th{padding:8px;border-bottom:1px solid #e0e0db;text-align:left}
+.td{padding:10px 8px;border-bottom:1px solid #e0e0db;vertical-align:middle}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1400px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html">Workflows</a><a href="#">API</a>
+      <a href="#" style="background: #b6ece4; color: #075f58; font-weight: 700">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <header style="display: flex; flex-direction: column; gap: 14px">
+        <h1 style="margin: 0; font-size: 22px">Settings</h1>
+        <nav style="display: flex; gap: 22px; border-bottom: 1px solid #d0d0ca; flex-wrap: wrap" aria-label="Settings sections">
+          <a href="General.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">General</a>
+          <a href="Main.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Running Tickets</a>
+          <a href="Prompts.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Prompts</a>
+          <a href="Integrations.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Integrations</a>
+          <a href="Archive.dc.html" style="color: #1b1e24; padding-bottom: 10px; border-bottom: 2px solid #077067">Archive &amp; Export</a>
+        </nav>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › Archive &amp; Export</span></div>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+        <nav aria-label="After a Task ends" style="flex: 1 1 220px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
+          <div class="cap" style="padding: 0 12px 8px">After a Task ends</div>
+          <button type="button" class="{{s1}}" onClick="{{go1}}" aria-current="{{c1}}"><span class="{{n1}}">1</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Keep</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Local Archive</span></span></button>
+          <button type="button" class="{{s2}}" onClick="{{go2}}" aria-current="{{c2}}"><span class="{{n2}}">2</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Export</span><span style="font-size: 12px; color: #656b73; font-weight: 500">When to bundle</span></span></button>
+          <button type="button" class="{{s3}}" onClick="{{go3}}" aria-current="{{c3}}"><span class="{{n3}}">3</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Redact</span><span style="font-size: 12px; color: #656b73; font-weight: 500">What to strip</span></span></button>
+          <button type="button" class="{{s4}}" onClick="{{go4}}" aria-current="{{c4}}"><span class="{{n4}}">4</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Deliver</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Destinations</span></span></button>
+        </nav>
+
+        <section style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <h2 style="margin: 0; font-size: 20px">What happens to a finished Task?</h2>
+            <p style="margin: 0; color: #656b73; line-height: 1.5">Every Task keeps a raw Archive. When it reaches done, closed or failed, Harmonic can bundle it, redact it and deliver it.</p>
+          </div>
+
+          <ol aria-label="Archive lifecycle" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+            <li class="rung"><span class="cap">Always</span><button type="button" class="lnk" onClick="{{go1}}">Keep raw Archive</button><span style="font-size: 12px; color: #077067; font-weight: 600">90 days · 5 GB cap</span></li>
+            <li class="rung"><span class="cap">Then</span><button type="button" class="lnk" onClick="{{go2}}">Build an Export</button><span style="font-size: 12px; color: #077067; font-weight: 600">On · done and closed</span></li>
+            <li class="rung"><span class="cap">Then</span><button type="button" class="lnk" onClick="{{go3}}">Redact</button><span style="font-size: 12px; color: #077067; font-weight: 600">4 patterns</span></li>
+            <li class="rung"><span class="cap">Then</span><button type="button" class="lnk" onClick="{{go4}}">Deliver</button><span style="font-size: 12px; color: #b3253f; font-weight: 600">2 Destinations · 1 failing</span></li>
+          </ol>
+
+          <sc-if value="{{is1}}" hint-placeholder-val="{{ true }}">
+          <article id="keep" class="card" style="padding: 6px 20px; display: flex; flex-direction: column">
+            <h3 style="margin: 14px 0 10px; font-size: 16px"><span style="color: #656b73">1 ·</span> Keep the raw Archive</h3>
+            <div class="row"><div><div class="t">Keep for</div><div class="d">Blank keeps Archives forever.</div></div><input class="field" aria-label="Retention days" value="90 days"></div>
+            <div class="row"><div><div class="t">Total size cap</div><div class="d">Oldest Archives go first. Never pruned while an Export is pending or failed.</div></div><input class="field" aria-label="Size cap" value="5 GB"></div>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is2}}" hint-placeholder-val="{{ false }}">
+          <article id="export" class="card" style="padding: 6px 20px; display: flex; flex-direction: column">
+            <h3 style="margin: 14px 0 10px; font-size: 16px"><span style="color: #656b73">2 ·</span> Build an Export</h3>
+            <div class="row"><div><div class="t">Export finished Tasks</div><div class="d">A redacted .tar.gz, built once per Task.</div></div><div style="display: flex; gap: 8px; align-items: center"><button class="sw on" type="button" role="switch" aria-checked="true" aria-label="Export finished Tasks"></button><span>On</span></div></div>
+            <div class="row"><div><div class="t">For Tasks that end</div><div class="d">Which terminal dispositions export.</div></div><div style="display: flex; gap: 14px"><label><input type="checkbox" checked style="accent-color: #077067"> done</label><label><input type="checkbox" checked style="accent-color: #077067"> closed</label><label><input type="checkbox" style="accent-color: #077067"> failed</label></div></div>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is3}}" hint-placeholder-val="{{ false }}">
+          <article id="redact" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px">
+              <div><h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">3 ·</span> Redact</h3><p style="margin: 4px 0 0; color: #656b73; font-size: 13px">Applied to the Export only; matches become <span class="mono">[REDACTED:id]</span>. The local Archive stays raw.</p></div>
+              <button class="btn-link" type="button">+ Add pattern</button>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+              <thead><tr class="cap"><th class="th">ID</th><th class="th">Pattern</th><th class="th"></th></tr></thead>
+              <tbody>
+                <tr><td class="td mono" style="font-weight: 700">aws-key</td><td class="td mono">AKIA[0-9A-Z]{16}</td><td class="td" style="text-align: right"><button class="btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button></td></tr>
+                <tr><td class="td mono" style="font-weight: 700; border-bottom: 0">gh-token</td><td class="td mono" style="border-bottom: 0">gh[pousr]_[A-Za-z0-9]{36}</td><td class="td" style="text-align: right; border-bottom: 0"><button class="btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button></td></tr>
+              </tbody>
+            </table>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is4}}" hint-placeholder-val="{{ false }}">
+          <article id="deliver" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px">
+              <div><h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">4 ·</span> Deliver</h3><p style="margin: 4px 0 0; color: #656b73; font-size: 13px">Each Destination gets every Export independently. A failure retries at 5 min, 30 min and 2 h, then waits for a manual Export on the Ticket.</p></div>
+              <button class="btn-link" type="button">+ Add Destination</button>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+              <thead><tr class="cap"><th class="th">Destination</th><th class="th">Last delivery</th><th class="th"></th></tr></thead>
+              <tbody>
+                <tr><td class="td"><div style="font-weight: 700">Directory</div><div class="mono" style="font-size: 12px; color: #656b73">/mnt/archive/harmonic</div></td><td class="td"><span class="chip" style="background: #c2f2cd; color: #0d7734">Delivered</span> <span style="font-size: 12px; color: #656b73">4 min ago</span></td><td class="td" style="text-align: right"><button class="btn-link" type="button">Edit</button></td></tr>
+                <tr><td class="td" style="border-bottom: 0"><div style="font-weight: 700">S3</div><div class="mono" style="font-size: 12px; color: #656b73">s3://team-archive/harmonic</div></td><td class="td" style="border-bottom: 0"><span class="chip" style="background: #ffccd6; color: #b3253f">Failed</span> <span style="font-size: 12px; color: #656b73">403 · retry 2 of 3 in 24 min</span></td><td class="td" style="text-align: right; border-bottom: 0"><button class="btn-link" type="button">Fix</button></td></tr>
+              </tbody>
+            </table>
+          </article>
+          </sc-if>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px">
+            <sc-if value="{{hasPrev}}" hint-placeholder-val="{{ false }}"><button class="btn" type="button" onClick="{{prev}}">{{prevLabel}}</button></sc-if>
+            <span></span>
+            <sc-if value="{{hasNext}}" hint-placeholder-val="{{ true }}"><button class="btn" type="button" onClick="{{next}}">{{nextLabel}}</button></sc-if>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+constructor(p) { super(p); this.state = { step: 1 }; }
+renderVals() {
+  const names = ['Keep', 'Export', 'Redact', 'Deliver'];
+  const s = this.state.step, go = (n) => () => this.setState({ step: n }), v = {};
+  names.forEach((_, k) => { const i = k + 1; v['s' + i] = 'step' + (s === i ? ' on' : ''); v['n' + i] = 'num' + (s === i ? ' cur' : (i < s ? ' done' : '')); v['c' + i] = s === i ? 'step' : 'false'; v['is' + i] = s === i; v['go' + i] = go(i); });
+  return Object.assign(v, { hasPrev: s > 1, hasNext: s < names.length, prev: go(s - 1), next: go(s + 1), prevLabel: '← ' + (names[s - 2] || ''), nextLabel: 'Next: ' + (names[s] || '') + ' →' });
+}
+}
+</script>
+</body>
+</html>

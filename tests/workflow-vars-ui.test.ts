@@ -30,7 +30,7 @@ describe('workflow variables UI', () => {
     const host = await mountComponent(createElement(WorkspaceWorkflowVars, { workspace: makeWorkspace({ workflowVars: null }), onChange }));
     await flush();
     expect(host.textContent).toContain('Workspace');
-    expect(host.textContent).toContain('Settings › Execution');
+    expect(host.textContent).toContain('Settings › Running Tickets');
     const input = host.querySelector<HTMLInputElement>('input[aria-label="maxAttempts"]')!;
     await typeInto(input, 'three');
     expect(host.textContent).toContain('maxAttempts must be a number (the workflow default is 3).');

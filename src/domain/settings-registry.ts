@@ -5,7 +5,7 @@ export type SettingScope = 'global-only' | 'overridable';
 export type SettingControl = 'select' | 'toggle' | 'number' | 'text' | 'json' | 'verifier' | 'routing-labels' | 'workflow-labels';
 
 /** The tab a setting groups under in the Settings UI. */
-export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'security' | 'archive';
+export type SettingTab = 'general' | 'execution' | 'prompts' | 'integrations' | 'archive';
 
 export interface SettingSpec {
   readonly scope: SettingScope;
@@ -463,10 +463,9 @@ export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boo
 /** The Settings UI tab strip, in display order. */
 export const SETTING_TABS: readonly { readonly id: SettingTab; readonly label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'execution', label: 'Execution' },
+  { id: 'execution', label: 'Running Tickets' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'security', label: 'Security' },
   { id: 'archive', label: 'Archive & Export' },
 ];
 

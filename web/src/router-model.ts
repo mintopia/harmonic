@@ -13,8 +13,9 @@ export type Scope = { kind: 'global' } | { kind: 'workspace'; workspaceId: numbe
 export interface Route {
   scope: Scope; view: View; task: number | null; epic: TrackerRef | null; conversation: number | null;
   peeked: TaskState[]; table: TableFilters; panel: RailSelection; file: string | null;
+  settings: { tab: string | null; step: string | null };
 }
-export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', task: null, epic: null, conversation: null, peeked: [], table: DEFAULT_TABLE_FILTERS, panel: NO_SELECTION, file: null };
+export const DEFAULT_ROUTE: Route = { scope: { kind: 'global' }, view: 'board', task: null, epic: null, conversation: null, peeked: [], table: DEFAULT_TABLE_FILTERS, panel: NO_SELECTION, file: null, settings: { tab: null, step: null } };
 export const LAST_ROUTE_KEY = 'harmonic.last-route';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -28,6 +29,10 @@ const csvValues = (raw: string, allowed: readonly string[]) => {
 const isSortKey = (value: string | null): value is SortKey => value !== null && (SORT_KEYS as readonly string[]).includes(value);
 const positiveId = (value: string | undefined): number | null => { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : null; };
 const queryOf = (input: string) => input.includes('?') ? input.slice(input.indexOf('?') + 1) : input;
+function settingsOf(search: string): Route['settings'] {
+  const params = new URLSearchParams(queryOf(search));
+  return { tab: params.get('tab'), step: params.get('step') };
+}
 function filters(search: string): TableFilters {
   const params = new URLSearchParams(queryOf(search));
   const sort = params.get('sort');
@@ -45,7 +50,7 @@ function parseDetail(parts: string[]): Pick<Route, 'task' | 'epic' | 'conversati
 export function parseRoute(pathname: string, search: string): Route {
   const normalized = pathname.replace(/\/+$/, '') || '/';
   const globalView = GLOBAL_PATHS[normalized];
-  if (globalView) return { ...DEFAULT_ROUTE, view: globalView, table: filters(search) };
+  if (globalView) return { ...DEFAULT_ROUTE, view: globalView, table: filters(search), settings: globalView === 'settings' ? settingsOf(search) : DEFAULT_ROUTE.settings };
   const match = /^\/workspace\/(\d+)(?:\/(.*))?$/.exec(normalized);
   const workspaceId = positiveId(match?.[1]);
   if (workspaceId === null) return { ...DEFAULT_ROUTE, table: filters(search) };
@@ -53,7 +58,7 @@ export function parseRoute(pathname: string, search: string): Route {
   const detail = parseDetail(parts);
   const view = detail.task !== null || detail.epic !== null ? 'board' : detail.conversation !== null ? 'conversations' : WORKSPACE_PATHS[parts[0] ?? 'board'] ?? 'board';
   const file = view === 'files' && parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')) : null;
-  return { scope: { kind: 'workspace', workspaceId }, view, ...detail, file, peeked: [], table: filters(search) };
+  return { scope: { kind: 'workspace', workspaceId }, view, ...detail, file, peeked: [], table: filters(search), settings: view === 'workspace' ? settingsOf(search) : DEFAULT_ROUTE.settings };
 }
 function detailPath(route: Route): string | null {
   const panel = route.panel.kind === 'none' ? '' : route.panel.kind === 'attempt' ? `/attempt/${route.panel.attemptNumber}` : `/${route.panel.kind}`;
@@ -71,6 +76,10 @@ export function serializeRoute(route: Route): string {
   if (table.search) params.set('q', table.search);
   if (table.sortBy !== 'createdAt') params.set('sort', table.sortBy);
   if (table.order !== 'desc') params.set('order', table.order);
+  if ((route.view === 'settings' || route.view === 'workspace') && route.settings.tab) {
+    params.set('tab', route.settings.tab);
+    if (route.settings.step) params.set('step', route.settings.step);
+  }
   let base: string;
   if (route.scope.kind === 'global') base = Object.entries(GLOBAL_PATHS).find(([, view]) => view === route.view)?.[0] ?? '/';
   else {
