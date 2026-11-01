@@ -17,7 +17,7 @@ Light Paper tokens, Global scope, 1440px wide.
 | `General.dc.html` | Settings › General (Identity, Access, Chats, Files) |
 | `Integrations.dc.html` | Settings › Integrations (Agents, Updates) |
 | `Archive.dc.html` | Settings › Archive & Export (Keep, Export, Redact, Deliver) |
-| `Prompts.dc.html` | Settings › Prompts › 1 Find |
+| `Prompts.dc.html` | Settings › Prompts › 1 Find (Workspace scope adds step 4, Workspace text) |
 | `PromptEdit.dc.html` | Settings › Prompts › 2 Edit and 3 Check impact |
 | `Library.dc.html` | Workflows library |
 | `Editor.dc.html` | Workflow editor: Blocks / YAML / Variables with the live diagram |
