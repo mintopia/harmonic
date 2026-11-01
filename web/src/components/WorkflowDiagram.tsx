@@ -122,7 +122,7 @@ export function WorkflowDiagram({ model, stale, errorCount }: { model: WorkflowD
         {!model ? (
           <p style={{ margin: 0, fontSize: 12, color: 'var(--hm-muted)' }}>Nothing to draw yet.</p>
         ) : ready && (
-          <svg role="img" aria-label="Workflow step diagram graphic" width={ready.width} height={ready.height} style={{ display: 'block', flex: 'none' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
+          <svg role="img" aria-label="Workflow step diagram graphic" width={ready.width} height={ready.height} style={{ display: 'block', width: '100%', maxWidth: ready.width, height: 'auto' }} viewBox={`0 0 ${ready.width} ${ready.height}`}>
             <defs>
               {(Object.keys(EDGE_STYLE) as DiagramEdgeKind[]).map((k) => (
                 <marker key={k} id={`wfd-arrow-${k}`} viewBox="0 0 8 8" refX={7} refY={4} markerWidth={7} markerHeight={7} orient="auto">
