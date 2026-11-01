@@ -215,7 +215,7 @@ function EditorBody({
                   aria-selected={tab === t.id}
                   aria-controls="editor-tabpanel"
                   onClick={() => setTab(t.id)}
-                  className={`min-h-9 rounded-sm px-3.5 text-small font-semibold ${tab === t.id ? 'bg-surface text-ink shadow-card' : 'text-ink'}`}
+                  className={`min-h-9 rounded-sm px-3.5 text-small font-semibold ${tab === t.id ? 'bg-surface text-ink shadow-card' : 'text-ink/80 hover:text-ink'}`}
                 >
                   {t.id === 'variables' ? `Variables · ${varCount}` : t.label}
                 </button>
