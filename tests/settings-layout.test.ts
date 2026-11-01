@@ -99,4 +99,25 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
     expect(text).not.toContain('before the epic merges');
     expect(text).not.toContain('+ Add critic');
   });
+
+  it.each(['global', 'workspace'] as const)('homes every Execution setting across Where and Limits on the %s surface', async (surface) => {
+    const where = await mountTab(surface, 'execution', 'where');
+    expect(where.textContent).toContain('Checkout isolation');
+    expect(where.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    await cleanup();
+    const limits = await mountTab(surface, 'execution', 'limits');
+    const text = limits.textContent ?? '';
+    for (const heading of ['Starting work', 'Bounding an Attempt', 'Agent sessions']) expect(text).toContain(heading);
+    for (const row of ['Auto-runner', 'Budget guardrail', 'Progress guardrail', 'Tool timeout', 'Merge-conflict turns', 'Session reuse', 'Agent Messages', 'maxAttempts']) {
+      expect(text, row).toContain(row);
+    }
+    expect(text).toContain(surface === 'global' ? 'Host ceiling' : 'Concurrency cap');
+    expect(text).toContain('set it in step 1.');
+    expect(text).toContain('per Attempt');
+    expect(text).not.toContain('Armed');
+    await cleanup();
+    const agent = await mountTab(surface, 'execution', 'agent');
+    expect(agent.textContent).not.toContain('Isolation mode');
+    expect(agent.textContent).not.toContain('Agent Messages');
+  });
 });

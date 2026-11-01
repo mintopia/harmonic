@@ -8,6 +8,7 @@ import { ConfigField, registryField, toOptions, withCurrent, type FieldOption, t
 import { OverrideField, type OverridableDescriptor } from './settings-override-fields';
 import { InheritField } from './InheritField';
 import { Switch } from './Switch';
+import { ChoiceCards, SettingGroup, SettingRow } from './SettingRows';
 import { CodeRepositorySection, IssueTrackerSection, TriageLabelsSection } from './TrackerSettings';
 import { HarnessesSection } from './HarnessSettings';
 import { ChannelsSection } from './Channels';
@@ -103,15 +104,16 @@ function scalar(global: ScalarDescriptor | null, workspace: OverridableDescripto
   return { id: global?.id ?? workspace?.id ?? '', global, workspace };
 }
 
-function renderField(node: FieldNode, ctx: RenderCtx): ReactNode {
+function renderField(node: FieldNode, ctx: RenderCtx, hideLabel = false): ReactNode {
   if (ctx.surface === 'global') {
     return node.global ? (
-      <ConfigField key={node.id} descriptor={node.global} config={ctx.config} baseline={ctx.baseline} errors={ctx.errors} onConfig={ctx.setConfig} />
+      <ConfigField key={node.id} hideLabel={hideLabel} descriptor={node.global} config={ctx.config} baseline={ctx.baseline} errors={ctx.errors} onConfig={ctx.setConfig} />
     ) : null;
   }
   return node.workspace ? (
     <OverrideField
       key={node.id}
+      hideLabel={hideLabel}
       descriptor={node.workspace}
       config={ctx.config}
       workspace={ctx.workspace}
@@ -124,28 +126,6 @@ function renderField(node: FieldNode, ctx: RenderCtx): ReactNode {
 function grid(className: string, nodes: FieldNode[], ctx: RenderCtx): ReactNode {
   return <div className={className}>{nodes.map((node) => renderField(node, ctx))}</div>;
 }
-
-function overrideGrid(
-  fields: OverridableDescriptor[],
-  className: string,
-  ctx: WorkspaceRenderCtx,
-): ReactNode {
-  return (
-    <div className={className}>
-      {fields.map((f) => (
-        <OverrideField
-          key={f.id}
-          descriptor={f}
-          config={ctx.config}
-          workspace={ctx.workspace}
-          errors={ctx.errors}
-          onWorkspace={ctx.setWorkspace}
-        />
-      ))}
-    </div>
-  );
-}
-
 
 const instanceName = scalar(
   {
@@ -250,25 +230,6 @@ const taskModel = scalar(
   },
 );
 
-const isolationMode = scalar(
-  registryField('isolationMode', {
-    id: 'settings-isolation',
-    errorKey: 'defaults.isolationMode',
-    get: (c) => c.defaults.isolationMode,
-    options: () => toOptions(['direct', 'worktree']),
-    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, isolationMode: raw as 'direct' | 'worktree' } }),
-  }),
-  {
-    key: 'isolationMode',
-    id: 'workspace-isolation',
-    errorKey: 'isolationMode',
-    get: (w) => w.isolationMode,
-    set: (w, v) => ({ ...w, isolationMode: v as 'direct' | 'worktree' | null }),
-    inherited: (c) => c.defaults.isolationMode,
-    options: () => toOptions(['direct', 'worktree']),
-  },
-);
-
 const priority = scalar(
   registryField('priority', {
     id: 'settings-priority',
@@ -288,7 +249,15 @@ const priority = scalar(
   },
 );
 
-const conflictResolveTurns = scalar(null, {
+const conflictResolveTurns = scalar(
+  registryField('conflictResolveTurns', {
+    id: 'settings-conflict-resolve-turns',
+    errorKey: 'defaults.conflictResolveTurns',
+    min: 0,
+    get: (c) => c.defaults.conflictResolveTurns,
+    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, conflictResolveTurns: Number(raw) } }),
+  }),
+  {
   key: 'conflictResolveTurns',
   id: 'workspace-conflict-turns',
   errorKey: 'conflictResolveTurns',
@@ -296,12 +265,13 @@ const conflictResolveTurns = scalar(null, {
   set: (w, v) => ({ ...w, conflictResolveTurns: v as number | null }),
   inherited: (c) => c.defaults.conflictResolveTurns,
   min: 0,
-});
+  },
+);
 
 const autoRunnerEnabled = scalar(
   registryField('autoRunnerEnabled', {
     id: 'settings-autorunner-enabled',
-    switchLabel: 'Run ready tasks unattended',
+    switchLabel: 'On',
     errorKey: 'autoRunner.enabled',
     get: (c) => c.autoRunner.enabled,
     set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, enabled: Boolean(raw) } }),
@@ -311,7 +281,7 @@ const autoRunnerEnabled = scalar(
     id: 'workspace-autorunner-enabled',
     errorKey: 'autoRunnerEnabled',
     label: 'Enabled',
-    switchLabel: 'Run ready tasks unattended',
+    switchLabel: 'On',
     get: (w) => w.autoRunnerEnabled,
     set: (w, v) => ({ ...w, autoRunnerEnabled: v as boolean | null }),
     inherited: (c) => c.autoRunner.enabled,
@@ -370,7 +340,7 @@ const contextReuseTokenLimit = scalar(
 const agentMessagesEnabled = scalar(
   registryField('agentMessagesEnabled', {
     id: 'settings-agent-messages-enabled',
-    switchLabel: 'Let Attempts message each other',
+    switchLabel: 'On',
     errorKey: 'agentMessages.enabled',
     get: (c) => c.agentMessages.enabled,
     set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, enabled: Boolean(raw) } }),
@@ -380,7 +350,7 @@ const agentMessagesEnabled = scalar(
     id: 'workspace-agent-messages-enabled',
     errorKey: 'agentMessagesEnabled',
     label: 'Enabled',
-    switchLabel: 'Let Attempts message each other',
+    switchLabel: 'On',
     get: (w) => w.agentMessagesEnabled,
     set: (w, v) => ({ ...w, agentMessagesEnabled: typeof v === 'boolean' ? v : null }),
     inherited: (c) => c.agentMessages.enabled,
@@ -414,7 +384,7 @@ const guardrailScalarFields: OverridableDescriptor[] = [
     id: 'workspace-guardrail-progress',
     errorKey: 'guardrailProgress',
     label: 'Progress detector',
-    switchLabel: 'Trip a stalled Attempt to Escalation',
+    switchLabel: 'On',
     get: (w) => w.guardrailProgress,
     set: (w, v) => ({ ...w, guardrailProgress: v as boolean | null }),
     inherited: (c) => c.guardrails.progress,
@@ -495,66 +465,112 @@ function BudgetFields({
   );
 }
 
-function GlobalGuardrails({ ctx }: { ctx: GlobalRenderCtx }) {
-  const { config, errors } = ctx;
-  const g = config.guardrails;
-  const setGuardrails = (guardrails: AppConfig['guardrails']) => ctx.setConfig({ ...config, guardrails });
-  const setBudget = (budget: AppConfig['guardrails']['budget']) => setGuardrails({ ...g, budget });
+const guardrailProgress = scalar(
+  registryField('guardrailProgress', {
+    id: 'settings-guardrail-progress',
+    switchLabel: 'On',
+    errorKey: 'guardrails.progress',
+    get: (c) => c.guardrails.progress,
+    set: (c, raw) => ({ ...c, guardrails: { ...c.guardrails, progress: Boolean(raw) } }),
+  }),
+  guardrailScalarFields[0]!,
+);
+
+const toolTimeout = scalar(
+  registryField('toolTimeoutMinutes', {
+    id: 'settings-tool-timeout',
+    errorKey: 'guardrails.toolTimeoutMinutes',
+    min: 1,
+    widthClass: 'w-28',
+    get: (c) => c.guardrails.toolTimeoutMinutes,
+    set: (c, raw) => ({ ...c, guardrails: { ...c.guardrails, toolTimeoutMinutes: Number(raw) } }),
+  }),
+  guardrailScalarFields[1]!,
+);
+
+function BudgetControl({ ctx }: { ctx: RenderCtx }) {
+  if (ctx.surface === 'global') {
+    const g = ctx.config.guardrails;
+    return (
+      <BudgetFields
+        idPrefix="settings-budget"
+        errorPrefix="guardrails.budget"
+        value={g.budget}
+        onChange={(budget) => ctx.setConfig({ ...ctx.config, guardrails: { ...g, budget } })}
+        errors={ctx.errors}
+      />
+    );
+  }
+  const { config, workspace, errors } = ctx;
   return (
-    <div className="flex flex-col gap-4 sm:max-w-md">
-      <div>
-        <span className={fieldLabel}>Budget</span>
-        <div className="mt-2">
-          <BudgetFields idPrefix="settings-budget" errorPrefix="guardrails.budget" value={g.budget} onChange={setBudget} errors={errors} />
-        </div>
-      </div>
-      <div>
-        <div className="flex items-center justify-between">
-          <span className={fieldLabel}>Progress detector</span>
-          <Switch checked={g.progress} onChange={(progress) => setGuardrails({ ...g, progress })}>
-            Trip a stalled Attempt to Escalation
-          </Switch>
-        </div>
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-tool-timeout">
-          Tool timeout (minutes)
-        </label>
-        <input
-          id="settings-tool-timeout"
-          type="number"
-          min={1}
-          className={`${field} w-40 tabular-nums`}
-          value={g.toolTimeoutMinutes}
-          onChange={(e) => setGuardrails({ ...g, toolTimeoutMinutes: Number(e.target.value) })}
-        />
-        <FieldError message={errors['guardrails.toolTimeoutMinutes']} />
-      </div>
+    <div className="w-full">
+      <InheritField
+        label="Budget"
+        value={workspace.guardrailBudget}
+        inherited={config.guardrails.budget}
+        format={summarizeBudget}
+        onChange={(guardrailBudget) => ctx.setWorkspace({ ...workspace, guardrailBudget })}
+      >
+        {({ value, onChange }) => (
+          <BudgetFields idPrefix="workspace-budget" errorPrefix="guardrailBudget" value={value} onChange={onChange} errors={errors} />
+        )}
+      </InheritField>
     </div>
   );
 }
 
-function WorkspaceGuardrails({ ctx }: { ctx: WorkspaceRenderCtx }) {
-  const { config, workspace, errors } = ctx;
+const ISOLATION_OPTIONS = [
+  { value: 'worktree', title: 'Its own worktree', description: 'A branch per Ticket. Passing work follows its Merge Fate.' },
+  { value: 'direct', title: 'The live checkout (Direct)', description: 'Completes in place. One Ticket at a time.' },
+] as const;
+
+function CheckoutIsolation({ ctx }: { ctx: RenderCtx }) {
+  const inherited = ctx.config.defaults.isolationMode;
+  const value = ctx.surface === 'global' ? inherited : (ctx.workspace.isolationMode ?? inherited);
+  const overridden = ctx.surface === 'workspace' && ctx.workspace.isolationMode != null;
+  const error = ctx.errors[ctx.surface === 'global' ? 'defaults.isolationMode' : 'isolationMode'];
+  const choose = (mode: 'direct' | 'worktree') =>
+    ctx.surface === 'global'
+      ? ctx.setConfig({ ...ctx.config, defaults: { ...ctx.config.defaults, isolationMode: mode } })
+      : ctx.setWorkspace({ ...ctx.workspace, isolationMode: mode });
   return (
-    <div className="flex flex-col gap-4 sm:max-w-md">
-      <div>
-        <InheritField
-          label="Budget"
-          value={workspace.guardrailBudget}
-          inherited={config.guardrails.budget}
-          format={summarizeBudget}
-          onChange={(guardrailBudget) => ctx.setWorkspace({ ...workspace, guardrailBudget })}
-        >
-          {({ value, onChange }) => (
-            <BudgetFields idPrefix="workspace-budget" errorPrefix="guardrailBudget" value={value} onChange={onChange} errors={errors} />
+    <div id="settings-isolation" className="flex flex-col gap-3">
+      <ChoiceCards legend="Each Ticket works in" name={`isolation-${ctx.surface}`} value={value} options={ISOLATION_OPTIONS} onChange={choose} />
+      {ctx.surface === 'workspace' && (
+        <p className="text-small text-muted">
+          {overridden ? 'Overridden here. ' : `Inherited from the global default (${inherited}). `}
+          {overridden && (
+            <button type="button" className="font-semibold text-accent underline underline-offset-2" onClick={() => ctx.setWorkspace({ ...ctx.workspace, isolationMode: null })}>
+              Reset to default
+            </button>
           )}
-        </InheritField>
-      </div>
-      {overrideGrid(guardrailScalarFields, 'flex flex-col gap-4', ctx)}
+        </p>
+      )}
+      <FieldError message={error} />
     </div>
   );
 }
+
+function limitRow(
+  ctx: RenderCtx,
+  title: string,
+  description: PerSurface<string>,
+  nodes: FieldNode[],
+  trailing?: ReactNode,
+): ReactNode {
+  return (
+    <SettingRow key={title} title={title} description={pick(description, ctx.surface)}>
+      {nodes.map((node) => renderField(node, ctx, true))}
+      {trailing}
+    </SettingRow>
+  );
+}
+
+const WORKFLOW_VARS_NOTE = (
+  <>
+    Attempt count is a workflow variable now (<code className="font-data">maxAttempts</code>) — set it in step 1.
+  </>
+);
 
 function WorkspaceIdentity({ ctx }: { ctx: WorkspaceRenderCtx }) {
   const { workspace, errors } = ctx;
@@ -873,20 +889,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'execution',
     step: 'where',
     surfaces: BOTH,
-    title: 'Isolation mode',
-    description: {
-      global: 'How a new task’s checkout is isolated. Each task can override it.',
-      workspace: 'How a new Task’s checkout is isolated here. Inherits the global default until overridden.',
-    },
-    body: (ctx) => grid(twoColGrid(ctx.surface), [isolationMode], ctx),
-  },
-  {
-    tab: 'execution',
-    step: 'limits',
-    surfaces: ['workspace'],
-    title: 'Conflict resolution',
-    description: 'Turns an Attempt gets to resolve a Merge conflict here. Inherits the global default until overridden.',
-    body: (ctx) => grid(twoColGrid(ctx.surface), [conflictResolveTurns], ctx),
+    bare: true,
+    wide: true,
+    title: 'Checkout isolation',
+    description: '',
+    body: (ctx) => (
+      <SettingGroup title="Checkout isolation">
+        <CheckoutIsolation ctx={ctx} />
+      </SettingGroup>
+    ),
   },
   {
     tab: 'execution',
@@ -1083,60 +1094,80 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     tab: 'execution',
     step: 'limits',
     surfaces: BOTH,
-    title: 'Auto-runner',
-    description: {
-      global: 'Starts ready tasks unattended, up to the concurrency cap.',
-      workspace:
-        'Whether ready Tasks here run unattended, and how many at once. Both inherit the global defaults until overridden; a cap override can never exceed the Host Ceiling.',
-    },
-    body: (ctx) =>
-      grid(
-        ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
-        [autoRunnerEnabled, hostCeiling, concurrencyCap],
-        ctx,
-      ),
+    bare: true,
+    wide: true,
+    title: 'Starting work',
+    description: '',
+    body: (ctx) => (
+      <SettingGroup title="Starting work">
+        {limitRow(
+          ctx,
+          'Auto-runner',
+          {
+            global: 'Starts Ready Tickets as capacity frees up. Off: you start each one.',
+            workspace: 'Whether Ready Tickets here start as capacity frees up. Inherits the global default until overridden.',
+          },
+          [autoRunnerEnabled],
+        )}
+        {limitRow(
+          ctx,
+          ctx.surface === 'global' ? 'Host ceiling' : 'Concurrency cap',
+          {
+            global: 'Attempts running at once on this host, across all targets.',
+            workspace: 'Attempts running at once in this Workspace. Inherits the global default; an override can never exceed the Host Ceiling.',
+          },
+          [ctx.surface === 'global' ? hostCeiling : concurrencyCap],
+        )}
+      </SettingGroup>
+    ),
   },
   {
     tab: 'execution',
     step: 'limits',
     surfaces: BOTH,
-    title: 'Agent Messages',
-    description: {
-      global: 'Lets Attempts send each other Agent Messages, up to the send cap per Attempt. Workspaces can override both.',
-      workspace: 'Whether Attempts here can send Agent Messages, and how many each may send. Both inherit the global defaults until overridden.',
-    },
-    body: (ctx) =>
-      grid(
-        ctx.surface === 'global' ? 'flex flex-wrap items-start gap-x-8 gap-y-4' : 'flex flex-col gap-4 sm:max-w-md',
-        [agentMessagesEnabled, agentMessagesSendCap],
-        ctx,
-      ),
+    bare: true,
+    wide: true,
+    title: 'Bounding an Attempt',
+    description: '',
+    body: (ctx) => (
+      <SettingGroup title="Bounding an Attempt" footer={WORKFLOW_VARS_NOTE}>
+        <SettingRow
+          title="Budget guardrail"
+          description="Escalates when an Attempt’s cost passes this."
+        >
+          <BudgetControl ctx={ctx} />
+        </SettingRow>
+        {limitRow(ctx, 'Progress guardrail', 'Escalates after this long with no commit or passing check.', [guardrailProgress])}
+        {limitRow(ctx, 'Tool timeout', 'Cancels one tool call that runs longer.', [toolTimeout])}
+        {limitRow(ctx, 'Merge-conflict turns', 'Agent turns spent resolving a conflict before escalating.', [conflictResolveTurns])}
+      </SettingGroup>
+    ),
   },
   {
     tab: 'execution',
     step: 'limits',
     surfaces: BOTH,
-    title: 'Session reuse',
-    description: {
-      global:
-        'Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Workspaces can override this.',
-      workspace:
-        'Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Inherits the global default until overridden.',
-    },
-    body: (ctx) => grid('', [contextReuseTokenLimit], ctx),
-  },
-  {
-    tab: 'execution',
-    step: 'limits',
-    surfaces: BOTH,
-    title: 'Attempt guardrails',
-    description: {
-      global:
-        'The budget caps, stall detector, and tool timeout that trip an Attempt to Escalation (ADR-0019). Wall-clock always guards; the token and cost caps are opt-in. Each Workspace can override these defaults.',
-      workspace:
-        'The budget caps, stall detector, and tool timeout that trip an Attempt here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in.',
-    },
-    body: (ctx) => (ctx.surface === 'global' ? <GlobalGuardrails ctx={ctx} /> : <WorkspaceGuardrails ctx={ctx} />),
+    bare: true,
+    wide: true,
+    title: 'Agent sessions',
+    description: '',
+    body: (ctx) => (
+      <SettingGroup title="Agent sessions">
+        {limitRow(
+          ctx,
+          'Session reuse',
+          'Retries reuse a warm session while its context stays under this.',
+          [contextReuseTokenLimit],
+        )}
+        {limitRow(
+          ctx,
+          'Agent Messages',
+          'Lets agents message each other over MCP, up to the cap per Attempt.',
+          [agentMessagesEnabled, agentMessagesSendCap],
+          <span className="text-small text-muted">per Attempt</span>,
+        )}
+      </SettingGroup>
+    ),
   },
 
   {
