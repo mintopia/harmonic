@@ -22,6 +22,8 @@ import { RouteClassifierSettings } from './RouteClassifierSettings';
 import { SecuritySection } from './SecuritySection';
 import { ArchiveRetentionSection, DestinationsSection, ExportSection, RedactionSection } from './ArchiveExportSettings';
 import type { SettingTab } from '../../../src/domain/settings-registry.js';
+import { visibleSteps, type StepDef } from '../settings-steps-model';
+import type { ResolutionRule } from './ResolutionStrip';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 import { ExecutionTargetsPanel } from './ExecutionTargetsSettings';
 import { WorkspaceExecutionTargets } from './WorkspaceExecutionTargets';
@@ -730,6 +732,7 @@ function WorkspaceDelete({ ctx }: { ctx: WorkspaceRenderCtx }) {
 
 interface SectionNode {
   tab: SettingTab;
+  step: string;
   surfaces: Surface[];
   title: PerSurface<string>;
   description: PerSurface<string>;
@@ -751,6 +754,7 @@ function twoColGrid(surface: Surface): string {
 export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'general',
+    step: 'identity',
     surfaces: ['global'],
     title: 'Instance',
     description:
@@ -759,6 +763,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'general',
+    step: 'identity',
     surfaces: ['workspace'],
     title: 'Identity',
     description: "This Workspace's name and the project directory it points at.",
@@ -766,6 +771,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'general',
+    step: 'files',
     surfaces: ['workspace'],
     title: 'Excluded folders',
     description:
@@ -774,6 +780,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'general',
+    step: 'chats',
     surfaces: BOTH,
     title: 'Chat defaults',
     description: {
@@ -786,6 +793,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'general',
+    step: 'identity',
     surfaces: ['workspace'],
     title: 'Delete workspace',
     description:
@@ -795,6 +803,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
 
   {
     tab: 'execution',
+    step: 'where',
     surfaces: ['global'],
     bare: true,
     wide: true,
@@ -804,6 +813,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'where',
     surfaces: ['workspace'],
     bare: true,
     wide: true,
@@ -816,12 +826,13 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
           savedKey={JSON.stringify([ctx.pristineWorkspace.executionTargets, ctx.pristineWorkspace.isolationMode, ctx.pristineWorkspace.codeRepository])}
           error={ctx.errors.executionTargets}
           onChange={(executionTargets) => ctx.setWorkspace({ ...ctx.workspace, executionTargets })}
-          onAddRepository={() => ctx.onTab?.('general')}
+          onAddRepository={() => ctx.onTab?.('integrations')}
         />
       ) : null,
   },
   {
     tab: 'execution',
+    step: 'agent',
     surfaces: BOTH,
     title: 'Task defaults',
     description: {
@@ -834,6 +845,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'agent',
     surfaces: BOTH,
     title: 'Routing Labels',
     wide: true,
@@ -856,6 +868,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'workflow',
     surfaces: BOTH,
     title: 'Workflow Labels',
     wide: true,
@@ -880,6 +893,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'workflow',
     surfaces: BOTH,
     title: 'Epic workflow',
     wide: true,
@@ -907,6 +921,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'agent',
     surfaces: BOTH,
     title: 'Model Options',
     wide: true,
@@ -936,6 +951,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'workflow',
     surfaces: ['workspace'],
     bare: true,
     wide: true,
@@ -948,6 +964,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'agent',
     surfaces: ['workspace'],
     title: 'Route Classifier',
     wide: true,
@@ -976,6 +993,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'workflow',
     surfaces: ['workspace'],
     title: 'Workflow classifier',
     wide: true,
@@ -993,6 +1011,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'limits',
     surfaces: BOTH,
     title: 'Auto-runner',
     description: {
@@ -1009,6 +1028,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'agent',
     surfaces: BOTH,
     title: 'Agent Messages',
     description: {
@@ -1024,6 +1044,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'limits',
     surfaces: BOTH,
     title: 'Session reuse',
     description: {
@@ -1036,6 +1057,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
+    step: 'limits',
     surfaces: BOTH,
     title: 'Attempt guardrails',
     description: {
@@ -1049,6 +1071,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
 
   {
     tab: 'prompts',
+    step: 'find',
     surfaces: ['global'],
     bare: true,
     wide: true,
@@ -1059,6 +1082,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
 
   {
     tab: 'integrations',
+    step: 'work',
     surfaces: ['workspace'],
     title: 'Issue Tracker',
     description:
@@ -1067,6 +1091,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'integrations',
+    step: 'code',
     surfaces: ['workspace'],
     title: 'Code Repository',
     description: 'The forge that hosts this Workspace’s branches, PRs/MRs and Merges. Detected from the origin remote unless overridden.',
@@ -1074,6 +1099,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'integrations',
+    step: 'work',
     surfaces: ['workspace'],
     title: 'Triage Labels',
     description: 'The label names the tracker uses for each role Harmonic acts on. Empty roles use the repo’s docs/agents/triage-labels.md, then the defaults.',
@@ -1081,6 +1107,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'integrations',
+    step: 'agents',
     surfaces: ['global'],
     title: 'Harnesses',
     description: 'The agent CLIs Harmonic drives over ACP — command, environment, and models.',
@@ -1092,6 +1119,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'integrations',
+    step: 'updates',
     surfaces: ['global'],
     title: 'Notifications',
     description:
@@ -1108,7 +1136,8 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
 
   {
-    tab: 'security',
+    tab: 'general',
+    step: 'access',
     surfaces: ['global'],
     title: 'Permission rules',
     description:
@@ -1116,7 +1145,8 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     body: () => <PermissionRules />,
   },
   {
-    tab: 'security',
+    tab: 'general',
+    step: 'access',
     surfaces: ['global'],
     title: 'Security',
     description: 'The operator password for this console.',
@@ -1125,6 +1155,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
 
   {
     tab: 'archive',
+    step: 'keep',
     surfaces: BOTH,
     title: 'Archive retention',
     description:
@@ -1133,6 +1164,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'archive',
+    step: 'export',
     surfaces: BOTH,
     title: 'Export',
     description: {
@@ -1143,6 +1175,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'archive',
+    step: 'deliver',
     surfaces: BOTH,
     title: 'Export Destinations',
     wide: true,
@@ -1156,6 +1189,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'archive',
+    step: 'redact',
     surfaces: BOTH,
     title: 'Redaction patterns',
     wide: true,
@@ -1179,5 +1213,59 @@ export function renderSection(
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
     action: section.action?.(ctx) ?? null,
+  };
+}
+
+export function stepsForSurface(surface: Surface, tab: SettingTab): StepDef[] {
+  const withContent = new Set(SETTINGS_SCHEMA.filter((s) => s.tab === tab && s.surfaces.includes(surface)).map((s) => s.step));
+  return visibleSteps(tab, withContent);
+}
+
+export function sectionsForStep(surface: Surface, tab: SettingTab, step: string): SectionNode[] {
+  return sectionsForTab(surface, tab).filter((s) => s.step === step);
+}
+
+export function sectionAnchor(title: string): string {
+  return `settings-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+}
+
+export function stepValue(ctx: RenderCtx, tab: SettingTab, step: string): string | undefined {
+  const key = `${tab}:${step}`;
+  if (key === 'general:identity') return ctx.surface === 'global' ? ctx.config.name || undefined : ctx.workspace.name;
+  if (key === 'execution:agent') return (ctx.surface === 'global' ? ctx.config.defaults.harness : ctx.workspace.harness) ?? ctx.config.defaults.harness;
+  if (key === 'execution:where') return ctx.surface === 'global' ? ctx.config.defaults.isolationMode : (ctx.workspace.isolationMode ?? ctx.config.defaults.isolationMode);
+  if (key === 'archive:keep') {
+    const days = ctx.surface === 'global' ? ctx.config.archive.retain.days : (ctx.workspace.archiveRetentionDays ?? ctx.config.archive.retain.days);
+    return days == null ? 'Forever' : `${days} days`;
+  }
+  return undefined;
+}
+
+export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { label: string; rules: ResolutionRule[] } | null {
+  if (tab !== 'execution' || step !== 'workflow') return null;
+  const labelCount =
+    ctx.surface === 'global' ? ctx.config.workflowLabels.length : (ctx.workspace.workflowLabels ?? ctx.config.workflowLabels).length;
+  const classifierOn = ctx.surface === 'workspace' && ctx.workspace.workflowClassifierEnabled === true;
+  return {
+    label: 'Workflow resolution order',
+    rules: [
+      { caption: '1st', name: 'Operator choice', note: 'Set on the Ticket page' },
+      {
+        caption: '2nd',
+        name: 'Workflow Label',
+        note: `${labelCount} ${labelCount === 1 ? 'label' : 'labels'}`,
+        href: `#${sectionAnchor('Workflow Labels')}`,
+      },
+      ctx.surface === 'workspace'
+        ? {
+            caption: '3rd',
+            name: 'Workflow classifier',
+            note: classifierOn ? 'On' : 'Off · skipped',
+            href: `#${sectionAnchor('Workflow classifier')}`,
+          }
+        : { caption: '3rd', name: 'Workflow classifier', note: 'Set in each Workspace' },
+      { caption: '4th', name: 'Workspace default', note: 'Set in each Workspace' },
+      { caption: 'Always matches', name: 'Global default', note: ctx.config.defaults.workflow ?? 'Built-in', always: true },
+    ],
   };
 }

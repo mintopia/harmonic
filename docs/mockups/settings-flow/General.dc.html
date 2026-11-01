@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings: general</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-link{border:0;background:none;color:#077067;padding:4px 6px}
+.field{font:inherit;font-size:13px;padding:7px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.step{display:flex;gap:12px;padding:10px 12px;border-radius:6px;color:#1b1e24;border:0;background:none;font:inherit;font-weight:600;text-align:left;cursor:pointer;width:100%}
+.step.on{background:#fff;box-shadow:0 1px 2px rgb(27 30 36/.08)}
+.num.done{background:#c2f2cd;border-color:#c2f2cd;color:#0d7734}
+.num{width:24px;height:24px;border-radius:50%;border:1px solid #c3c3bc;color:#3d424a;display:grid;place-items:center;font-size:12px;flex:none;box-sizing:border-box}
+.num.cur{background:#077067;border-color:#077067;color:#fff}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:center;padding:14px 0;border-top:1px solid #e0e0db}
+.row .t{font-weight:700}.row .d{font-size:13px;color:#656b73;margin-top:3px}
+.th{padding:8px;border-bottom:1px solid #e0e0db;text-align:left}
+.td{padding:10px 8px;border-bottom:1px solid #e0e0db}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1400px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html">Workflows</a><a href="#">API</a>
+      <a href="#" style="background: #b6ece4; color: #075f58; font-weight: 700">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <header style="display: flex; flex-direction: column; gap: 14px">
+        <h1 style="margin: 0; font-size: 22px">Settings</h1>
+        <nav style="display: flex; gap: 22px; border-bottom: 1px solid #d0d0ca; flex-wrap: wrap" aria-label="Settings sections">
+          <a href="General.dc.html" style="color: #1b1e24; padding-bottom: 10px; border-bottom: 2px solid #077067">General</a>
+          <a href="Main.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Running Tickets</a>
+          <a href="Prompts.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Prompts</a>
+          <a href="Integrations.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Integrations</a>
+          <a href="Archive.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Archive &amp; Export</a>
+        </nav>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › General</span></div>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+        <nav aria-label="This instance" style="flex: 1 1 220px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
+          <div class="cap" style="padding: 0 12px 8px">This instance</div>
+          <button type="button" class="{{s1}}" onClick="{{go1}}" aria-current="{{c1}}"><span class="{{n1}}">1</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Identity</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Name and project</span></span></button>
+          <button type="button" class="{{s2}}" onClick="{{go2}}" aria-current="{{c2}}"><span class="{{n2}}">2</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Access</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Password and permissions</span></span></button>
+          <button type="button" class="{{s3}}" onClick="{{go3}}" aria-current="{{c3}}"><span class="{{n3}}">3</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Chats</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Conversation defaults</span></span></button>
+          <button type="button" class="{{s4}}" onClick="{{go4}}" aria-current="{{c4}}"><span class="{{n4}}">4</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Files</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Excluded folders</span></span></button>
+        </nav>
+
+        <section style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <h2 style="margin: 0; font-size: 20px">This instance</h2>
+            <p style="margin: 0; color: #656b73; line-height: 1.5">What this Harmonic is called, who can reach it, and what it ignores.</p>
+          </div>
+
+          <sc-if value="{{is1}}" hint-placeholder-val="{{ true }}">
+          <article id="identity" class="card" style="padding: 6px 20px; display: flex; flex-direction: column">
+            <h3 style="margin: 14px 0 10px; font-size: 16px"><span style="color: #656b73">1 ·</span> Identity</h3>
+            <div class="row"><div><div class="t">Instance name</div><div class="d">Shows in the sidebar and tab title as “Harmonic - name - workspace”. Blank shows “Harmonic”.</div></div><input class="field" aria-label="Instance name" placeholder="e.g. studio"></div>
+            <div class="row"><div><div class="t">Workspaces</div><div class="d">Each Workspace’s name, project directory and deletion live in its own settings.</div></div><a href="#">Manage Workspaces →</a></div>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is2}}" hint-placeholder-val="{{ false }}">
+          <article id="access" class="card" style="padding: 6px 20px 14px; display: flex; flex-direction: column">
+            <h3 style="margin: 14px 0 10px; font-size: 16px"><span style="color: #656b73">2 ·</span> Access</h3>
+            <div class="row"><div><div class="t">Operator password</div><div class="d">The password for this console.</div></div><button class="btn" type="button" style="justify-self: start">Change password…</button></div>
+            <div style="border-top: 1px solid #e0e0db; padding-top: 14px; display: flex; flex-direction: column; gap: 8px">
+              <div><div style="font-weight: 700">Always-allow rules</div><div style="font-size: 13px; color: #656b73; margin-top: 3px">Saved from Conversation permission prompts. Each auto-approves a tool kind in a directory. Revoke to be asked again.</div></div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+                <thead><tr class="cap"><th class="th">Tool kind</th><th class="th">Working directory</th><th class="th">Saved</th><th class="th"></th></tr></thead>
+                <tbody>
+                  <tr><td class="td mono">edit</td><td class="td mono">~/Projects/harmonic</td><td class="td" style="color: #656b73">12 Oct</td><td class="td" style="text-align: right"><button class="btn-link" type="button" style="color: #b3253f">Revoke</button></td></tr>
+                  <tr><td class="td mono" style="border-bottom: 0">execute</td><td class="td mono" style="border-bottom: 0">~/Projects/harmonic/web</td><td class="td" style="color: #656b73; border-bottom: 0">28 Oct</td><td class="td" style="text-align: right; border-bottom: 0"><button class="btn-link" type="button" style="color: #b3253f">Revoke</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is3}}" hint-placeholder-val="{{ false }}">
+          <article id="chats" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+            <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">3 ·</span> Chat defaults</h3>
+            <p style="margin: 0; color: #656b73; font-size: 13px">The agent a new Conversation starts with. Separate from the <a href="Agent.dc.html">Ticket agent</a>; each chat can still change it before its first turn.</p>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 560px">
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Harness</span><select class="field"><option>Claude</option></select></label>
+              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Model</span><select class="field"><option>sonnet-5-5</option></select></label>
+            </div>
+          </article>
+
+          </sc-if>
+          <sc-if value="{{is4}}" hint-placeholder-val="{{ false }}">
+          <article id="files" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">4 ·</span> Excluded folders</h3>
+            <p style="margin: 0; color: #656b73; font-size: 13px">Hidden from the Files browser and directory pickers.</p>
+            <textarea class="field mono" aria-label="Excluded folders" rows="3" style="max-width: 560px; resize: vertical">node_modules
+.git
+dist</textarea>
+          </article>
+
+          </sc-if>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px">
+            <sc-if value="{{hasPrev}}" hint-placeholder-val="{{ false }}"><button class="btn" type="button" onClick="{{prev}}">{{prevLabel}}</button></sc-if>
+            <span></span>
+            <sc-if value="{{hasNext}}" hint-placeholder-val="{{ true }}"><button class="btn" type="button" onClick="{{next}}">{{nextLabel}}</button></sc-if>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+constructor(p) { super(p); this.state = { step: 1 }; }
+renderVals() {
+  const names = ['Identity', 'Access', 'Chats', 'Files'];
+  const s = this.state.step, go = (n) => () => this.setState({ step: n }), v = {};
+  names.forEach((_, k) => { const i = k + 1; v['s' + i] = 'step' + (s === i ? ' on' : ''); v['n' + i] = 'num' + (s === i ? ' cur' : (i < s ? ' done' : '')); v['c' + i] = s === i ? 'step' : 'false'; v['is' + i] = s === i; v['go' + i] = go(i); });
+  return Object.assign(v, { hasPrev: s > 1, hasNext: s < names.length, prev: go(s - 1), next: go(s + 1), prevLabel: '← ' + (names[s - 2] || ''), nextLabel: 'Next: ' + (names[s] || '') + ' →' });
+}
+}
+</script>
+</body>
+</html>

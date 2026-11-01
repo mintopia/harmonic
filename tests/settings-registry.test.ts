@@ -102,11 +102,11 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     }
   });
 
-  it('declares exactly 6 tabs, unique ids, in the expected order', () => {
-    expect(SETTING_TABS).toHaveLength(6);
+  it('declares exactly 5 tabs, unique ids, in the expected order', () => {
+    expect(SETTING_TABS).toHaveLength(5);
     const ids = SETTING_TABS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['general', 'execution', 'prompts', 'integrations', 'security', 'archive']);
+    expect(ids).toEqual(['general', 'execution', 'prompts', 'integrations', 'archive']);
   });
 
   it('settingsForTab("general") returns exactly the general settings', () => {
@@ -138,7 +138,6 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
 
   it('settingsForTab returns only registry-declared fields per tab', () => {
     expect(settingsForTab('integrations')).toEqual(['configuredTracker', 'codeRepository', 'triageLabels']);
-    expect(settingsForTab('security')).toEqual([]);
   });
 
   it('every key returned by settingsForTab round-trips: settingSpec(key).tab === tab', () => {

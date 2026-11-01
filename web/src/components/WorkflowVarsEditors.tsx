@@ -62,7 +62,7 @@ function WorkspaceVarsCard({ workspace, name, vars, onChange }: { workspace: Wor
     <section aria-label={`Variables for ${name}`} className={`${card} p-5`}>
       <div className="mb-2 flex items-center gap-2 text-small text-muted">
         <span className="rounded-sm bg-running-tint px-2 py-0.5 font-semibold text-running">Workspace</span>
-        <span>{workspace.name} › Settings › Execution</span>
+        <span>{workspace.name} › Settings › Running Tickets</span>
       </div>
       <h3 className="text-title font-semibold">Variables for “{name}”</h3>
       <p className="mb-4 mt-0.5 text-muted">Overrides apply to every Ticket in this Workspace that uses a workflow declaring the variable.</p>

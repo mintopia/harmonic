@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings: which workflow runs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#edeeeb;color:#1b1e24;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
+a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-decoration:underline}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.cap{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#656b73}
+.btn{font:inherit;font-weight:600;font-size:13px;padding:8px 14px;border:1px solid #d0d0ca;background:#fff;color:#1b1e24;border-radius:4px;cursor:pointer}
+.btn-pri{background:#077067;border-color:#077067;color:#fff}
+.btn-link{border:0;background:none;color:#077067;padding:4px 6px}
+.field{font:inherit;font-size:13px;padding:7px 10px;border:1px solid #d0d0ca;border-radius:4px;background:#fff;color:#1b1e24;box-sizing:border-box}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card{background:#fff;border-radius:6px;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07)}
+.nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:4px;color:#3d424a;font-weight:500}
+.sw{width:34px;height:20px;border-radius:999px;background:#858983;position:relative;flex:none;border:0;padding:0}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff}
+.sw.on{background:#077067}.sw.on::after{left:17px}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1640px; background: #edeeeb">
+  <aside style="flex: 1 1 200px; max-width: 200px; background: #fff; border-right: 1px solid #e0e0db; padding: 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px">
+    <div style="font-weight: 700; padding: 4px 10px 12px">Harmonic</div>
+    <div style="border: 1px solid #d0d0ca; border-radius: 4px; padding: 9px 12px; font-weight: 600; margin-bottom: 8px">Global</div>
+    <nav class="nav" style="display: flex; flex-direction: column; gap: 2px">
+      <a href="#">Dashboard</a><a href="#">Tasks</a><a href="#">Activity</a><a href="#">Statistics</a><a href="#">Operations</a>
+      <a href="Library.dc.html">Workflows</a><a href="#">API</a>
+      <a href="#" style="background: #b6ece4; color: #075f58; font-weight: 700">Settings</a>
+    </nav>
+  </aside>
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 32px 64px; box-sizing: border-box">
+    <div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <header style="display: flex; flex-direction: column; gap: 14px">
+        <h1 style="margin: 0; font-size: 22px">Settings</h1>
+        <nav style="display: flex; gap: 22px; border-bottom: 1px solid #d0d0ca; flex-wrap: wrap" aria-label="Settings sections">
+          <a href="General.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">General</a>
+          <a href="Main.dc.html" style="color: #1b1e24; padding-bottom: 10px; border-bottom: 2px solid #077067">Running Tickets</a>
+          <a href="Prompts.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Prompts</a>
+          <a href="Integrations.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Integrations</a>
+          <a href="Archive.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Archive &amp; Export</a>
+        </nav>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › Running Tickets › Workflow</span></div>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+        <nav aria-label="How a Ticket runs" style="flex: 1 1 220px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
+          <div class="cap" style="padding: 0 12px 8px">How a Ticket runs</div>
+          <a href="Main.dc.html" style="display: flex; gap: 12px; padding: 10px 12px; border-radius: 6px; background: #fff; box-shadow: 0 1px 2px rgb(27 30 36/.08); color: #1b1e24">
+            <span style="width: 24px; height: 24px; border-radius: 50%; background: #077067; color: #fff; display: grid; place-items: center; font-size: 12px; flex: none">1</span>
+            <span style="display: flex; flex-direction: column; gap: 2px"><span>Workflow</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Which process runs</span></span>
+          </a>
+          <a href="Agent.dc.html" style="display: flex; gap: 12px; padding: 10px 12px; border-radius: 6px; color: #1b1e24">
+            <span style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid #c3c3bc; color: #3d424a; display: grid; place-items: center; font-size: 12px; flex: none; box-sizing: border-box">2</span>
+            <span style="display: flex; flex-direction: column; gap: 2px"><span>Agent</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Harness and model</span></span>
+          </a>
+          <a href="Where.dc.html" style="display: flex; gap: 12px; padding: 10px 12px; border-radius: 6px; color: #1b1e24">
+            <span style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid #c3c3bc; color: #3d424a; display: grid; place-items: center; font-size: 12px; flex: none; box-sizing: border-box">3</span>
+            <span style="display: flex; flex-direction: column; gap: 2px"><span>Where</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Execution Target</span></span>
+          </a>
+          <a href="Limits.dc.html" style="display: flex; gap: 12px; padding: 10px 12px; border-radius: 6px; color: #1b1e24">
+            <span style="width: 24px; height: 24px; border-radius: 50%; border: 1px solid #c3c3bc; color: #3d424a; display: grid; place-items: center; font-size: 12px; flex: none; box-sizing: border-box">4</span>
+            <span style="display: flex; flex-direction: column; gap: 2px"><span>Limits</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Bounds and automation</span></span>
+          </a>
+        </nav>
+
+        <section style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <h2 style="margin: 0; font-size: 20px">Which workflow runs?</h2>
+            <p style="margin: 0; color: #656b73; line-height: 1.5">Resolved once when a Ticket starts working, and again on Retry. Harmonic walks these rules in order; the first one that matches picks the workflow.</p>
+          </div>
+
+          <ol aria-label="Workflow resolution order" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px">
+            <li style="background: #f5f5f3; border: 1px dashed #c3c3bc; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span class="cap">1st</span><span style="font-weight: 700">Operator choice</span><span style="font-size: 12px; color: #656b73">Set on the Ticket page</span>
+            </li>
+            <li style="background: #fff; border: 1px solid #d0d0ca; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span class="cap">2nd</span><a href="#labels" style="color: #1b1e24">Workflow Label</a><span style="font-size: 12px; color: #077067; font-weight: 600">2 labels</span>
+            </li>
+            <li style="background: #fff; border: 1px solid #d0d0ca; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span class="cap">3rd</span><a href="#classifier" style="color: #1b1e24">Workflow classifier</a><span style="font-size: 12px; color: #656b73; font-weight: 600">Off · skipped</span>
+            </li>
+            <li style="background: #f5f5f3; border: 1px dashed #c3c3bc; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span class="cap">4th</span><span style="font-weight: 700">Workspace default</span><span style="font-size: 12px; color: #656b73">Set in each Workspace</span>
+            </li>
+            <li style="background: #fff; border: 2px solid #077067; border-radius: 6px; padding: 11px; display: flex; flex-direction: column; gap: 6px">
+              <span class="cap" style="color: #077067">Always matches</span><a href="#default" style="color: #1b1e24">Global default</a><span style="font-size: 12px; color: #077067; font-weight: 600">Migrated (global) v2</span>
+            </li>
+          </ol>
+
+          <article id="labels" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px">
+              <div style="display: flex; flex-direction: column; gap: 4px">
+                <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">2 ·</span> Workflow Labels</h3>
+                <p style="margin: 0; color: #656b73; font-size: 13px">Map a tracker label to a workflow. When an issue has several, the first in this list wins. Matching ignores case.</p>
+              </div>
+              <button class="btn btn-link" type="button">+ Add Workflow Label</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div style="display: grid; grid-template-columns: 20px 20px minmax(0, 1fr) 16px minmax(0, 1.4fr) 64px; gap: 10px; align-items: center; border: 1px solid #e0e0db; border-radius: 4px; padding: 8px 10px">
+                <span aria-hidden="true" style="color: #858983">⋮⋮</span><span style="color: #656b73; font-size: 12px">1</span>
+                <input class="field mono" aria-label="Label" value="security">
+                <span aria-hidden="true" style="color: #656b73">→</span>
+                <select class="field" aria-label="Workflow"><option>Security review on label · v4</option></select>
+                <button class="btn btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button>
+              </div>
+              <div style="display: grid; grid-template-columns: 20px 20px minmax(0, 1fr) 16px minmax(0, 1.4fr) 64px; gap: 10px; align-items: center; border: 1px solid #e0e0db; border-radius: 4px; padding: 8px 10px">
+                <span aria-hidden="true" style="color: #858983">⋮⋮</span><span style="color: #656b73; font-size: 12px">2</span>
+                <input class="field mono" aria-label="Label" value="docs">
+                <span aria-hidden="true" style="color: #656b73">→</span>
+                <select class="field" aria-label="Workflow"><option>Docs only · v2</option></select>
+                <button class="btn btn-link" type="button" style="color: #656b73; font-weight: 500">Remove</button>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: #656b73">Routing Labels pick the agent instead — see <a href="Agent.dc.html">step 2</a>. A Ticket can match one of each.</p>
+          </article>
+
+          <article id="classifier" class="card" style="padding: 20px; display: flex; gap: 16px; align-items: flex-start">
+            <button class="sw" type="button" role="switch" aria-checked="false" aria-label="Workflow classifier"></button>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">3 ·</span> Workflow classifier <span class="chip" style="background: #ecedea; color: #5b616a; margin-left: 6px">Off</span></h3>
+              <p style="margin: 0; color: #656b73; font-size: 13px">When no label matches, read the Ticket and pick a workflow from the library by name and description. Advisory: on error, timeout or bad output the default applies. Uses the classifier backend from <a href="Agent.dc.html">step 2</a>.</p>
+            </div>
+          </article>
+
+          <article id="default" class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <h3 style="margin: 0; font-size: 16px"><span style="color: #656b73">5 ·</span> Global default workflow</h3>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+              <select class="field" aria-label="Global default workflow" style="width: 320px"><option>Migrated (global) · v2</option></select>
+              <a href="Editor.dc.html" style="font-size: 13px">Open in editor</a>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: #656b73">Used when nothing above matches and the Workspace sets no default. Workspaces can override it.</p>
+          </article>
+
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px">
+            <span class="cap" style="color: #3d424a">Then, for the chosen workflow</span><span style="flex: 1; height: 1px; background: #d0d0ca"></span>
+          </div>
+
+          <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap">
+              <div style="display: flex; flex-direction: column; gap: 4px">
+                <h3 style="margin: 0; font-size: 16px">Workflow variables</h3>
+                <p style="margin: 0; color: #656b73; font-size: 13px">Override a workflow’s <span class="mono">vars:</span> defaults. Ticket → Workspace → Global → workflow default; fixed when the Ticket snapshots.</p>
+              </div>
+              <select class="field" aria-label="Workflow"><option>Migrated (global) · v2</option></select>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+              <thead><tr class="cap" style="text-align: left">
+                <th style="padding: 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">Variable</th><th style="padding: 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">Default</th><th style="padding: 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">Value</th><th style="padding: 8px; border-bottom: 1px solid #e0e0db; font-weight: 700">Source</th><th style="padding: 8px; border-bottom: 1px solid #e0e0db"></th>
+              </tr></thead>
+              <tbody>
+                <tr><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><div class="mono" style="font-weight: 700">maxAttempts</div><div style="font-size: 11px; color: #656b73">number</div></td><td class="mono" style="padding: 10px 8px; border-bottom: 1px solid #e0e0db">3</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><input class="field mono" aria-label="maxAttempts" value="5" style="width: 220px"></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><span class="chip" style="background: #cee3fa; color: #1160ae">Global</span></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><button class="btn btn-link" type="button">Reset</button></td></tr>
+                <tr><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><div class="mono" style="font-weight: 700">continueAttempts</div><div style="font-size: 11px; color: #656b73">boolean</div></td><td class="mono" style="padding: 10px 8px; border-bottom: 1px solid #e0e0db">true</td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><span style="display: flex; gap: 8px; align-items: center"><button class="sw on" type="button" role="switch" aria-checked="true" aria-label="continueAttempts"></button><span class="mono">true</span></span></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"><span class="chip" style="background: #ecedea; color: #5b616a">Default</span></td><td style="padding: 10px 8px; border-bottom: 1px solid #e0e0db"></td></tr>
+                <tr><td style="padding: 10px 8px"><div class="mono" style="font-weight: 700">testCommand</div><div style="font-size: 11px; color: #656b73">string</div></td><td class="mono" style="padding: 10px 8px">npm test</td><td style="padding: 10px 8px"><input class="field mono" aria-label="testCommand" value="npm run test:ci" style="width: 220px"></td><td style="padding: 10px 8px"><span class="chip" style="background: #cee3fa; color: #1160ae">Global</span></td><td style="padding: 10px 8px"><button class="btn btn-link" type="button">Reset</button></td></tr>
+              </tbody>
+            </table>
+          </article>
+
+          <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <h3 style="margin: 0; font-size: 16px">Epics</h3>
+            <p style="margin: 0; color: #656b73; font-size: 13px">Epics resolve separately: one workflow verifies and merges every Epic.</p>
+            <label style="display: flex; flex-direction: column; gap: 6px; max-width: 360px"><span class="cap">Epic workflow</span><select class="field"><option>Epic · bundled · v3</option></select></label>
+            <p style="margin: 0; font-size: 12px; color: #656b73">Lists Epic workflows only (<span class="mono">subject: epic</span>). Applies from the next Epic verification.</p>
+          </article>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 8px">
+            <span style="font-size: 12px; color: #656b73">Edits apply from each Ticket’s next Retry.</span>
+            <a href="Agent.dc.html" class="btn" style="font-weight: 600">Next: Which agent →</a>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1640}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

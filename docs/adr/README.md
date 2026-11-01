@@ -1,8 +1,9 @@
 # Harmonic architecture decisions
 
-The current set contains **57 ADRs**, reconciled on **2026-10-03**; ADR-0052
+The current set contains **58 ADRs**, reconciled on **2026-10-03**; ADR-0052
 to ADR-0056 were added on **2026-10-30**, and ADR-0053 (with ADR-0052) was
-amended on **2026-10-31**, when ADR-0057 was added. They record
+amended on **2026-10-31**, when ADR-0057 was added. ADR-0058 was added on
+**2026-11-01** and amends ADR-0009's tabbed-engine clause. They record
 accepted decisions, their rationale, and explicit amendments. A Context section
 may describe a historical defect; it does not by itself identify an open issue.
 Current-status notes and the operative Decision sections describe the current
@@ -31,7 +32,7 @@ Attempts without timing measurements retain the documented wall-clock fallback.
 | Merge placement and publication | 0001 | 0039 administrative worktrees and base synchronization; 0040 reconciliation and atomic publication |
 | Epics | 0004, 0015, 0016 | 0017 summary page; 0018 stored identity; 0023 structural roots; 0028 Epic Attempts; 0039 all-direct completion; 0051 blocked-by hold; 0057 Epics run on the workflow engine (replaces 0028's Epic verification mechanics, amends 0053's Epic deferral) |
 | Verification | 0003 | 0028 stage lists; 0031 ordering; 0037 additive overlays; 0038 Step overrides; 0039 post-merge checkout; 0053 verify commands and Critics become workflow steps for Tickets and Native Tasks; 0057 the same for Epics (replaces 0028's Epic stage and resolve loop) |
-| Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets (amended 2026-10-03: private-host probes; generic git Code Repository); 0049 Routing Labels (amended by 0052 Route Classifier); 0052 Model Options (amended 2026-10-31 by 0053: codes, Ticket overrides) |
+| Configuration and harnesses | 0009 | 0022 baseline/global/workspace layering; 0058 Settings tabs and step rail (amends 0009's tabbed-engine clause); 0025 OpenCode; 0036 unattended permission modes; 0037 verifier overlays; 0046 tracker selection, Code Repository, Secrets (amended 2026-10-03: private-host probes; generic git Code Repository); 0049 Routing Labels (amended by 0052 Route Classifier); 0052 Model Options (amended 2026-10-31 by 0053: codes, Ticket overrides) |
 | Prompts | 0047 | superseded with 0050 by 0054 Prompt Library (0047's visibility rule kept) |
 | Conversations and navigation | 0006, 0011 | 0026 read-only Activity; 0029 transcript view; 0033 scoped routes; 0035 eager command discovery |
 | Persistence and evidence | 0007, 0008 | 0014 fleet Stats; 0042 managed-upgrade snapshots; 0044 Task Archives and Exports (amended 2026-10-03: `agent-messages.json` in Export bundles); 0045 Agent Messages |
@@ -107,6 +108,7 @@ is historical and retains the terminology used at the reset.
 | 0055 | [Existing execution settings migrate to Task Execution Workflows at first boot](0055-migration-to-task-execution-workflows.md) (amended 2026-10-31 by 0057: Epic settings) |
 | 0056 | [Kubernetes Execution Targets run workflow steps in pods behind a Repository Proxy](0056-kubernetes-execution-targets-and-repository-proxy.md) |
 | 0057 | [Epics run on the Task Execution Workflow engine through a bundled Epic workflow](0057-epics-run-on-the-workflow-engine.md) |
+| 0058 | [Settings tabs are regrouped, and each tab with steps uses a step rail](0058-settings-tabs-and-step-rail.md) (amends 0009's tabbed-engine clause) |
 
 ## Where every pre-reset ADR went
 

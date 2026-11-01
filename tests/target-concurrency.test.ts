@@ -133,8 +133,8 @@ describe('deleting an Execution Target', () => {
       const del = await server.api('DELETE', '/api/execution-targets/k8s-prod');
       expect(del.body.escalated).toEqual({ running: 1, waiting: 2, total: 3 });
       expect(escalated.map(([id]) => id)).toEqual([7, 8, 9]);
-      expect(escalated[0]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. Its running Attempt was stopped. Change `runs_on` in the workflow, or add the target back in Settings > Execution.");
-      expect(escalated[1]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Execution.");
+      expect(escalated[0]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. Its running Attempt was stopped. Change `runs_on` in the workflow, or add the target back in Settings > Running Tickets.");
+      expect(escalated[1]?.[1]).toBe("Execution Target 'k8s-prod' was deleted. No Attempt was started. Change `runs_on` in the workflow, or add the target back in Settings > Running Tickets.");
     } finally {
       await server.close();
     }

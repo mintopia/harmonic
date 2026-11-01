@@ -3,12 +3,14 @@ import { card, field, labelType } from '../ui';
 import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 
 export function SettingsSection({
+  id,
   title,
   description,
   className,
   action,
   children,
 }: {
+  id?: string;
   title: string;
   description: string;
   className?: string;
@@ -16,7 +18,7 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className={`${card} p-5${className ? ` ${className}` : ''}`}>
+    <section id={id} className={`${card} p-5${className ? ` ${className}` : ''}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-title font-semibold">{title}</h2>
