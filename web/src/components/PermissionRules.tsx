@@ -6,7 +6,7 @@ import { useConfirmedDelete } from './useConfirmedDelete';
 import { EmptyState } from './EmptyState';
 import { PathTail } from './PathTail';
 
-export function PermissionRules() {
+export function PermissionRules({ table = false }: { table?: boolean }) {
   const [rules, setRules] = useState<PermissionRule[]>([]);
 
   const load = () => api.permissionRules().then(({ rules }) => setRules(rules));
@@ -34,6 +34,40 @@ export function PermissionRules() {
       <EmptyState title="No rules yet" className="my-8">
         Click "Always allow" on a permission prompt in a Conversation to add one.
       </EmptyState>
+    );
+  }
+
+  if (table) {
+    return (
+      <>
+        <table className="w-full border-collapse text-small">
+          <thead>
+            <tr className="text-left text-badge font-bold uppercase text-muted">
+              <th className="border-b border-hairline p-2">Tool kind</th>
+              <th className="border-b border-hairline p-2">Working directory</th>
+              <th className="border-b border-hairline p-2">Saved</th>
+              <th className="border-b border-hairline p-2"><span className="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map((rule) => (
+              <tr key={rule.id}>
+                <td className="border-b border-hairline p-2 font-data">{rule.kind}</td>
+                <td className="border-b border-hairline p-2 font-data">{rule.workingDir}</td>
+                <td className="border-b border-hairline p-2 text-muted">
+                  {new Date(rule.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                </td>
+                <td className="border-b border-hairline p-2 text-right">
+                  <button className={`${btnQuietDestructive} px-2`} onClick={() => askRevoke(rule)}>
+                    Revoke
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {revokeDialog}
+      </>
     );
   }
 

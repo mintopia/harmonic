@@ -22,10 +22,7 @@ const TAB_IDS = SETTING_TABS.map((t) => t.id);
 describe('settings tabs and steps', () => {
   it('lists the five tabs in the mockup order, with Security folded into General', () => {
     expect(SETTING_TABS.map((t) => t.label)).toEqual(['General', 'Running Tickets', 'Prompts', 'Integrations', 'Archive & Export']);
-    expect(SETTINGS_SCHEMA.filter((s) => s.tab === 'general' && s.step === 'access').map((s) => s.title)).toEqual([
-      'Permission rules',
-      'Security',
-    ]);
+    expect(SETTINGS_SCHEMA.filter((s) => s.tab === 'general' && s.step === 'access').map((s) => s.title)).toEqual(['Access']);
   });
 
   it('gives every schema section a step declared for its tab', () => {
@@ -36,7 +33,7 @@ describe('settings tabs and steps', () => {
 
   it('hides steps with no content for the surface', () => {
     expect(stepsForSurface('global', 'execution').map((s) => s.id)).toEqual(['workflow', 'agent', 'where', 'limits']);
-    expect(stepsForSurface('global', 'general').map((s) => s.id)).toEqual(['identity', 'access', 'chats']);
+    expect(stepsForSurface('global', 'general').map((s) => s.id)).toEqual(['identity', 'access', 'chats', 'files']);
     expect(stepsForSurface('workspace', 'general').map((s) => s.id)).toEqual(['identity', 'chats', 'files']);
     expect(visibleSteps('prompts', new Set(['find'])).map((s) => s.id)).toEqual(['find']);
   });

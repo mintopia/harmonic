@@ -84,6 +84,16 @@ modelOptions: []
 chat:
   harness: claude
   model: claude-sonnet-5-5
+excludedDirectories:
+  - .git
+  - node_modules
+  - dist
+  - build
+  - coverage
+  - .next
+  - .turbo
+  - out
+  - target
 autoRunner:
   enabled: false
   maxConcurrentAttempts: 1

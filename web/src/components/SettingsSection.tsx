@@ -30,7 +30,7 @@ export function SettingsSection({
             {ordinal && <span className="text-muted">{ordinal} · </span>}
             {title}
           </h2>
-          <p className="mb-4 mt-0.5 text-muted">{description}</p>
+          {description ? <p className="mb-4 mt-0.5 text-muted">{description}</p> : <div className="mb-2" />}
         </div>
         {!leading && action && <div className="mt-1 shrink-0">{action}</div>}
       </div>

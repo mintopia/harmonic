@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema, epicVerificationCriticSchema, budgetGuardrailSchema } from '../src/config.js';
+import { verificationCommandSchema, epicVerificationCriticSchema, budgetGuardrailSchema, baselineConfig, mergeConfig } from '../src/config.js';
 import { resolveVerifiers } from '../src/domain/setting-override.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -68,10 +68,27 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
   });
 
+  it('seeds new Workspaces from the global excluded-directory list', async () => {
+    const seeded = new WorkspaceService(asyncDb, settingsStore, () => ['vendor']);
+    const workingDir = join(dataDir, 'third-workspace');
+    mkdirSync(workingDir);
+    const created = await seeded.create({ name: 'Third', workingDir });
+
+    expect(created.excludedDirectories).toEqual(['vendor']);
+    expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(['vendor']);
+  });
+
   it('rejects non-canonical excluded directory paths', () => {
     for (const excludedDirectories of [['src/'], ['./src'], ['src//generated'], ['src\\generated'], ['src/../build']]) {
       expect(workspaceOverridesSchema.safeParse({ excludedDirectories }).success).toBe(false);
     }
+  });
+
+  it('rejects non-canonical global excluded directory paths before they can seed a Workspace', () => {
+    for (const excludedDirectories of [['../x'], ['a//b'], ['./src'], ['src/'], ['src\\generated']]) {
+      expect(() => mergeConfig(baselineConfig(), { excludedDirectories })).toThrow(/canonical relative path/);
+    }
+    expect(mergeConfig(baselineConfig(), { excludedDirectories: ['vendor', 'src/generated'] }).excludedDirectories).toEqual(['vendor', 'src/generated']);
   });
 
   it('sets explicit overrides', async () => {

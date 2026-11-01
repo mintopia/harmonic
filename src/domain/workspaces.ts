@@ -17,7 +17,7 @@ import {
   type WorkspaceRow,
   type WorkspaceIdentityRow,
 } from '../db/schema.js';
-import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
+import { CLASSIFIER_BACKENDS, classifierEndpointSchema, EXPORT_STATES, excludedDirectorySchema, modelOptionOverrideSchema, exportDirectoryPathSchema, exportS3EndpointSchema, redactPatternsSchema } from '../config.js';
 import { DomainError } from './errors.js';
 import { secretNameSchema } from '../secrets/secret-service.js';
 import { WORKSPACE_COLORS, WORKSPACE_BADGE_INK } from './workspace-colors.js';
@@ -44,11 +44,6 @@ const workspaceColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must b
     .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
   return (luminance + 0.05) / 0.05 >= 4.5;
 }, 'color must provide AA contrast with the badge initial');
-
-const excludedDirectorySchema = z.string().min(1).refine(
-  (path) => path === path.split('/').filter(Boolean).join('/') && !path.includes('\\') && !path.split('/').includes('.') && !path.split('/').includes('..'),
-  'excluded directory must be a canonical relative path within the workspace',
-);
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
@@ -265,13 +260,14 @@ export class WorkspaceService {
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly settings: WorkspaceSettingsStore,
+    private readonly defaultExcludedDirectories: () => readonly string[] = () => DEFAULT_EXCLUDED_DIRECTORIES,
   ) {}
 
   private compose(row: WorkspaceIdentityRow): WorkspaceRow {
     const o = this.settings.getOverrides(row.id);
     return {
       ...row,
-      excludedDirectories: o.excludedDirectories ?? [...DEFAULT_EXCLUDED_DIRECTORIES],
+      excludedDirectories: o.excludedDirectories ?? [...this.defaultExcludedDirectories()],
       harness: o.harness,
       model: o.model,
       chatHarness: o.chatHarness,
@@ -381,7 +377,7 @@ export class WorkspaceService {
         .returning()
         .get();
     });
-    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...DEFAULT_EXCLUDED_DIRECTORIES] });
+    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...this.defaultExcludedDirectories()] });
     return this.compose(inserted);
   }
 

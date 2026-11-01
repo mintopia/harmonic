@@ -1310,6 +1310,8 @@ export interface AppConfig {
     harness: string;
     model: string;
   };
+  /** Folders hidden from the Files browser and directory pickers; seeds each new Workspace. */
+  excludedDirectories: string[];
   routingLabels: { label: string; harness: string; model: string }[];
   workflowLabels: { label: string; workflow: string }[];
   modelOptions: ModelOption[];
