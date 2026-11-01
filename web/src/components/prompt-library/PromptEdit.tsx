@@ -76,7 +76,7 @@ function TextBox({
         </Fragment>
       ))}
       {readOnly ? (
-        <div id={id} role="textbox" aria-readonly="true" className="absolute inset-0" />
+        <div id={id} role="textbox" aria-readonly="true" aria-label="Text" className="absolute inset-0" />
       ) : (
         <textarea
           id={id}

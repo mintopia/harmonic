@@ -64,7 +64,7 @@ export function ChoiceCards<T extends string>({
             />
             <span className="flex flex-col gap-1">
               <span className="font-semibold text-ink">{option.title}</span>
-              <span className="text-small text-muted">{option.description}</span>
+              <span className={`text-small ${selected ? 'text-ink' : 'text-muted'}`}>{option.description}</span>
             </span>
           </label>
         );

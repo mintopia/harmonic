@@ -216,7 +216,6 @@ export function ConfigField({
         value={d.get(config)}
         inheritedValue={d.get(baseline)}
         inherited={d.get(config) === d.get(baseline)}
-        dim={false}
         hideLabel={hideLabel ?? false}
         onChange={(raw) => onConfig(d.set(config, raw))}
         onRevert={() => onConfig(d.set(config, d.get(baseline)))}

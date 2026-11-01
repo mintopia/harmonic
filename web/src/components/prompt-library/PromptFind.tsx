@@ -83,7 +83,7 @@ export function PromptFind() {
                     type="button"
                     aria-selected={view === f.id}
                     onClick={() => setView(f.id)}
-                    className={`min-h-9 rounded-sm px-3 text-body font-semibold ${view === f.id ? 'bg-surface text-ink shadow-card' : 'text-muted hover:text-ink'}`}
+                    className={`min-h-9 rounded-sm px-3 text-body font-semibold ${view === f.id ? 'bg-surface text-ink shadow-card' : 'text-ink/80 hover:text-ink'}`}
                   >
                     {f.label} {counts[f.id]}
                   </button>
