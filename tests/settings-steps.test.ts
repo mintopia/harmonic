@@ -156,6 +156,28 @@ describe('settings step rail and Back/Next', () => {
     expect(host.textContent).toContain('Edits apply from each Ticket’s next Retry.');
   });
 
+  it('numbers the Global sections to match the strip, with one divider before the per-workflow cards', async () => {
+    const host = await mount('global', null, () => {});
+    const headings = [...host.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(headings).toEqual(['2 · Workflow Labels', '5 · Global default workflow', 'Epics']);
+    expect(host.textContent).toContain('Then, for the chosen workflow');
+    expect(host.querySelector('#settings-section-global-default-workflow')).not.toBeNull();
+    expect(host.querySelector('#settings-workflow')).not.toBeNull();
+  });
+
+  it('makes the Workspace default the editable card at Workspace scope, with variables and Epics under the divider', async () => {
+    const host = await mount('workspace', null, () => {});
+    const headings = [...host.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(headings).toEqual(['2 · Workflow Labels', '3 · Workflow classifier', '4 · Workspace default workflow', 'Epics']);
+    expect(host.querySelectorAll('[class*="tracking-wider"]').length).toBeGreaterThan(0);
+    expect(host.textContent?.match(/Then, for the chosen workflow/g)).toHaveLength(1);
+    expect(host.querySelector('#workspace-workflow')).not.toBeNull();
+    expect(host.querySelector('[role="switch"][aria-label="Workflow classifier"]')).not.toBeNull();
+    const strip = host.querySelector('ol[aria-label="Workflow resolution order"]');
+    expect(strip?.textContent).toContain('Workspace default');
+    expect(strip?.querySelector('a[href="#settings-section-workspace-default-workflow"]')).not.toBeNull();
+  });
+
   it('keeps global-only steps off the Workspace surface', async () => {
     const host = await mount('workspace', null, () => {});
     const rail = host.querySelector('nav[aria-label="How a Ticket runs"]');

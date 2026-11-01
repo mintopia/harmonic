@@ -32,7 +32,7 @@ import { ExportPanel } from '../components/ticket/ExportPanel';
 import type { AppConfig, RoutingLabelOverlayEntry, WorkflowLabelOverlayEntry, TaskExportStatus, Workspace } from '../types';
 import { RoutingLabelOverlayEditor } from '../components/RoutingLabelOverlayEditor';
 import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSection } from '../components/TrackerSettings';
-import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../components/WorkflowLabelsEditor';
+import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor, WorkspaceDefaultWorkflow } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { workflowStory, workflowTaskFields } from './api-stub';
@@ -554,8 +554,14 @@ function WorkflowLabelsStory() {
         <SettingsSection title="Workflow Labels" description="Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.">
           <WorkflowLabelsEditor config={config} onChange={setConfig} />
         </SettingsSection>
+        <SettingsSection title="Global default workflow" ordinal="5" description="">
+          <GlobalDefaultWorkflow config={config} onChange={setConfig} />
+        </SettingsSection>
         <SettingsSection title="Workflow Labels" description="Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.">
-          <WorkflowLabelOverlayEditor overlay={overlay} workflow={workflow} config={config} onChange={setOverlay} onWorkflow={setWorkflow} />
+          <WorkflowLabelOverlayEditor overlay={overlay} config={config} onChange={setOverlay} />
+        </SettingsSection>
+        <SettingsSection title="Workspace default workflow" ordinal="4" description="">
+          <WorkspaceDefaultWorkflow workflow={workflow} config={config} onChange={setWorkflow} />
         </SettingsSection>
       </div>
     </StoryFrame>
