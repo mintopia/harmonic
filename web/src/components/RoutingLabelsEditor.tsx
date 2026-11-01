@@ -200,29 +200,6 @@ export function RemoveButton({ index, onRemove, noun = 'Routing Label', inline }
   );
 }
 
-const ROUTING_STEPS = ['Operator setting on the Ticket', 'Routing Label', 'Route Classifier', 'Workspace default', 'Global default'];
-
-export function Precedence({ highlight }: { highlight?: 'routing-label' | 'route-classifier' }) {
-  const accented = highlight === 'route-classifier' ? 'Route Classifier' : 'Routing Label';
-  const step = 'font-semibold text-ink';
-  const arrow = (
-    <span className="text-faint" aria-hidden="true">
-      →
-    </span>
-  );
-  return (
-    <div className="mb-3.5 flex flex-wrap items-center gap-1.5 rounded-sm border border-hairline bg-sunken px-3 py-2 text-small text-muted">
-      <span className="mr-1 text-label font-semibold uppercase text-faint">Precedence</span>
-      {ROUTING_STEPS.map((name, i) => (
-        <Fragment key={name}>
-          {i > 0 && arrow}
-          <b className={name === accented ? 'font-semibold text-accent' : step}>{name}</b>
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
 export function RoutingListFrame({
   count,
   onMove,
@@ -324,7 +301,6 @@ export function RoutingLabelsEditor({
   const issues = issuesByIndex(routingLabelIssues(items));
   return (
     <div>
-      <Precedence />
       <RoutingListFrame
         count={items.length}
         onMove={(from, to) => onChange(arrayMove(items, from, to))}

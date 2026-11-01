@@ -124,7 +124,7 @@ export function SettingsForm({
           )}
           {strip && <ResolutionStrip label={strip.label} rules={strip.rules} onStep={jump} />}
           {sections.map((section) => {
-            const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab, deliveries });
+            const { title: sectionTitle, description, body, action, number, leadingAction } = renderSection(section, { ...ctx, dirty, onTab, deliveries });
             const anchor = sectionAnchor(sectionTitle);
             if (section.bare) {
               return (
@@ -134,7 +134,7 @@ export function SettingsForm({
               );
             }
             return (
-              <SettingsSection key={`${section.tab}:${sectionTitle}`} id={anchor} title={sectionTitle} description={description} action={action}>
+              <SettingsSection key={`${section.tab}:${sectionTitle}`} id={anchor} title={sectionTitle} description={description} action={action} leadingAction={leadingAction} {...(number ? { number } : {})}>
                 {body}
               </SettingsSection>
             );

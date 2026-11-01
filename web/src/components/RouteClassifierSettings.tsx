@@ -136,7 +136,9 @@ export function RouteClassifierSettings({
   saving = false,
   onSave,
   onChange,
+  children,
 }: {
+  children?: ReactNode;
   workspace: Workspace;
   config: AppConfig;
   optionCount: number;
@@ -338,6 +340,7 @@ export function RouteClassifierSettings({
           <TestResult result={result} error={testError} />
         </div>
       )}
+      {children && <div className="mt-4 border-t border-hairline pt-4">{children}</div>}
     </div>
   );
 }

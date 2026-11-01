@@ -92,9 +92,9 @@ afterEach(async () => {
 });
 
 describe('ModelOptionsEditor (global)', () => {
-  it('shows the Route Classifier precedence step, the add link and the empty state', async () => {
+  it('shows the add link and the empty state', async () => {
     const host = await mount([]);
-    expect(host.textContent).toContain('Operator setting on the Ticket→Routing Label→Route Classifier→Workspace default→Global default');
+    expect(host.textContent).not.toContain('Precedence');
     expect(host.textContent).toContain('+ Add Model Option');
     expect(host.textContent).toContain('No Model Options yet');
     expect(host.textContent).toContain('Epics are not classified, and Critics are never classified');
