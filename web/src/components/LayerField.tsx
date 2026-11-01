@@ -8,7 +8,6 @@ export function LayerField<T>({
   value,
   inheritedValue,
   inherited,
-  dim = true,
   hideLabel = false,
   onChange,
   onRevert,
@@ -19,10 +18,6 @@ export function LayerField<T>({
   value: T;
   inheritedValue: T;
   inherited: boolean;
-  // Dim the field while it tracks a parent layer. The workspace surface wants
-  // this (an un-overridden field visibly defers to the global default); the
-  // global surface has no parent, so a field merely at its baseline must not dim.
-  dim?: boolean;
   hideLabel?: boolean;
   onChange: (value: T) => void;
   onRevert: () => void;
@@ -31,7 +26,7 @@ export function LayerField<T>({
   const state = layerState(value, inheritedValue, inherited);
 
   return (
-    <div className={dim && state.inherited ? 'opacity-60' : undefined}>
+    <div>
       <div className={hideLabel && !state.modified ? 'flex items-center' : 'mb-1.5 flex min-h-6 items-center gap-2'}>
         <label className={hideLabel ? 'sr-only' : `${labelType} whitespace-nowrap text-muted`} htmlFor={htmlFor}>
           {label}

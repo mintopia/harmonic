@@ -274,7 +274,6 @@ function NullableNumberField({ ctx, label, htmlFor, help, placeholder, get, set,
         value={value}
         inheritedValue={base}
         inherited={value === base}
-        dim={false}
         onChange={(v) => ctx.setConfig(set(ctx.config, v))}
         onRevert={() => ctx.setConfig(set(ctx.config, base))}
       >
@@ -430,7 +429,6 @@ function DispositionChips({ ctx }: { ctx: RenderCtx }) {
         value={value}
         inheritedValue={base}
         inherited={key(value) === key(base)}
-        dim={false}
         onChange={setStates}
         onRevert={() => setStates(base)}
       >
@@ -506,7 +504,7 @@ function DestinationCard({
           <Switch checked={enabled} onChange={onEnabled} label={`Enable ${title} Destination`} />
         </span>
       </header>
-      <div className={`flex flex-col gap-3.5 p-3.5 ${enabled ? '' : 'opacity-55'}`}>{children}</div>
+      <div className="flex flex-col gap-3.5 p-3.5">{children}</div>
       <footer className="flex flex-col gap-2.5 border-t border-hairline bg-sunken px-3.5 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={btnGhost} disabled={busy || dirty || !configured} title={dirty ? 'Save changes to test them' : undefined} onClick={test}>
@@ -705,7 +703,6 @@ export function RedactionSection({ ctx }: { ctx: RenderCtx }) {
         value={globalRows}
         inheritedValue={base}
         inherited={JSON.stringify(globalRows) === JSON.stringify(base)}
-        dim={false}
         onChange={set}
         onRevert={() => set(base)}
       >
