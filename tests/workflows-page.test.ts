@@ -139,8 +139,8 @@ describe('Workflow editor tabs', () => {
   it('shares one YAML across Blocks, YAML and Variables and keeps the diagram beside them', async () => {
     const host = await mountComponent(createElement(WorkflowsPage));
     await click(host.querySelectorAll('tbody tr')[2]!.querySelector('td button'));
-    const tab = (label: string) => [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === label);
-    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Blocks', 'YAML', 'Variables']);
+    const tab = (label: string) => [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.startsWith(label));
+    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Blocks', 'YAML', 'Variables · 0']);
     expect(host.querySelector('[aria-label="Workflow builder"]')).not.toBeNull();
 
     await click(tab('Variables'));
@@ -150,14 +150,16 @@ describe('Workflow editor tabs', () => {
       nameInput.dispatchEvent(new Event('input', { bubbles: true }));
       await flush();
     });
-    await click([...host.querySelectorAll('button')].find((b) => b.textContent === 'Add variable'));
+    await click([...host.querySelectorAll('button')].find((b) => b.textContent === '+ Add variable'));
     expect(host.querySelector('[aria-label="Default for fresh_var"]')).not.toBeNull();
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Edited');
 
     await click(tab('YAML'));
     expect(editorView(host).state.doc.toString()).toContain('fresh_var');
     expect(host.querySelector('[aria-label="Workflow step diagram"]')).not.toBeNull();
-    expect(host.textContent).toContain('runs_on');
+    expect(host.textContent).toContain('Runs on');
+    expect(host.textContent).toContain('until their next Retry');
+    expect(host.textContent).toContain('Blocks and YAML in sync · 1 unsaved change');
     expect(host.textContent).toContain('Assigned as');
   });
 });

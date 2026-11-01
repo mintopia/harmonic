@@ -366,7 +366,7 @@ function Palette() {
   );
 }
 
-export function WorkflowBuilder({ text, issues, dirty, readOnly, modelOptions, onChange }: { text: string; modelOptions: readonly ModelOption[]; issues: readonly WorkflowEditorIssue[]; dirty: boolean; readOnly: boolean; onChange: (text: string) => void }) {
+export function WorkflowBuilder({ text, issues, readOnly, modelOptions, onChange }: { text: string; modelOptions: readonly ModelOption[]; issues: readonly WorkflowEditorIssue[]; readOnly: boolean; onChange: (text: string) => void }) {
   const tree = useMemo(() => readBuilder(text), [text]);
   const [dragging, setDragging] = useState<DragItem | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -388,7 +388,6 @@ export function WorkflowBuilder({ text, issues, dirty, readOnly, modelOptions, o
     onChange(item.source === 'palette' ? addBlock(text, path, Number(index), item.item) : moveBlock(text, item.node.path, path, Number(index)));
   };
 
-  const status = tree === null ? 'YAML has errors; fix them to edit blocks' : dirty ? 'In sync with YAML · 1 unsaved change' : 'In sync with YAML';
   const canvas = tree === null ? null : (
     <div className="rounded-lg bg-sunken p-2.5">
       <List
@@ -417,16 +416,9 @@ export function WorkflowBuilder({ text, issues, dirty, readOnly, modelOptions, o
     <section aria-label="Workflow builder" className="px-3.5 pb-3">
       <DndContext measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
         {!readOnly && <Palette />}
-        <p className="my-2 flex items-center gap-2 text-small text-muted">
-          <span className={`size-2 rounded-full ${tree === null ? 'bg-fail-dot' : 'bg-done-dot'}`} />
-          {status}
-        </p>
+        <div className="h-2" />
         {canvas}
       </DndContext>
-      <p className="mt-3 flex items-center gap-2 text-small text-muted">
-        <span className="size-2 rounded-full bg-done-dot" />
-        YAML (edits here update the blocks)
-      </p>
     </section>
   );
 }
