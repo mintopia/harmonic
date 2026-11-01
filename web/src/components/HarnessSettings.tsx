@@ -61,13 +61,12 @@ function CatalogEditor({ items, baseline, onChange }: { items: ModelCatalogEntry
   </div>;
 }
 
-function HarnessCard({
+export function HarnessCard({
   id,
   harness,
   baseline,
   fieldErrors,
   permissionModes,
-  forceOpen,
   onChange,
 }: {
   id: string;
@@ -75,16 +74,14 @@ function HarnessCard({
   baseline: HarnessConfig;
   fieldErrors: Record<string, string>;
   permissionModes: ConfigLayers['harnessPermissionModes'];
-  forceOpen: boolean;
   onChange: (harness: HarnessConfig) => void;
 }) {
   const set = <K extends keyof HarnessConfig>(key: K, value: HarnessConfig[K]) => onChange({ ...harness, [key]: value });
   const prefix = `harnesses.${id}`;
-  const hasErrors = Object.keys(fieldErrors).some((k) => k.startsWith(`${prefix}.`));
   const permissionMode = permissionModes[id];
 
   return (
-    <details id={`harness-editor-${id}`} className="group" open={hasErrors || forceOpen || undefined}>
+    <details id={`harness-editor-${id}`} className="group" open>
       <summary className="flex cursor-pointer select-none items-center gap-2 rounded-md px-1.5 py-2.5 transition-colors duration-150 hover:bg-raised [list-style:none] [&::-webkit-details-marker]:hidden">
         <Icon
           className="-rotate-90 text-faint transition-transform duration-150 group-open:rotate-0 motion-reduce:transition-none"
@@ -198,10 +195,9 @@ export function HarnessesSection({
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
-  const edit = (id: string) => {
-    setEditing(id);
-    document.getElementById(`harness-editor-${id}`)?.scrollIntoView?.({ block: 'nearest' });
-  };
+  const shown = Object.entries(config.harnesses).filter(
+    ([id]) => id === editing || Object.keys(fieldErrors).some((k) => k.startsWith(`harnesses.${id}.`)),
+  );
   const cell = 'border-b border-hairline px-2 py-2.5';
   return (
     <div className="flex flex-col gap-4">
@@ -225,14 +221,16 @@ export function HarnessesSection({
               </td>
               <td className={cell}>{row.modelCount}</td>
               <td className={`${cell} text-right`}>
-                <button type="button" className="font-semibold text-accent hover:underline" onClick={() => edit(row.id)}>Edit</button>
+                <button type="button" className="font-semibold text-accent hover:underline" onClick={() => setEditing(editing === row.id ? null : row.id)}>
+                  {editing === row.id ? 'Close' : 'Edit'}
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="flex flex-col gap-2">
-        {Object.entries(config.harnesses).map(([id, harness]) => (
+        {shown.map(([id, harness]) => (
           <HarnessCard
             key={id}
             id={id}
@@ -240,7 +238,6 @@ export function HarnessesSection({
             baseline={baseline.harnesses[id] ?? harness}
             fieldErrors={fieldErrors}
             permissionModes={permissionModes}
-            forceOpen={editing === id}
             onChange={(next) => onChange({ ...config.harnesses, [id]: next })}
           />
         ))}

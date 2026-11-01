@@ -2,25 +2,27 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { baselineConfig } from '../src/config.js';
-import { HarnessesSection } from '../web/src/components/HarnessSettings.js';
+import { HarnessCard } from '../web/src/components/HarnessSettings.js';
 
 const permissionModes = {
   claude: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
   copilot: { modes: { auto: 'Auto', bypassPermissions: 'Bypass Permissions' }, defaultMode: 'auto' },
 };
 
+function renderCards(config: ReturnType<typeof baselineConfig>): string {
+  return Object.entries(config.harnesses)
+    .map(([id, harness]) =>
+      renderToStaticMarkup(
+        createElement(HarnessCard, { id, harness, baseline: harness, fieldErrors: {}, permissionModes, onChange: () => {} }),
+      ),
+    )
+    .join('');
+}
+
 describe('Harness settings permission mode', () => {
   it('shows adapter-labelled modes only for configurable Harnesses', () => {
     const config = baselineConfig();
-    const html = renderToStaticMarkup(
-      createElement(HarnessesSection, {
-        config,
-        baseline: baselineConfig(),
-        fieldErrors: {},
-        permissionModes,
-        onChange: () => {},
-      }),
-    );
+    const html = renderCards(config);
 
     expect(html).toMatch(/id="harness-claude-permission-mode"[^>]*><option value="auto" selected="">Auto<\/option>/);
     expect(html).toContain('id="harness-copilot-permission-mode"');
@@ -33,15 +35,7 @@ describe('Harness settings permission mode', () => {
   it('renders the persisted mode as selected', () => {
     const config = baselineConfig();
     config.harnesses.claude.permissionMode = 'bypassPermissions';
-    const html = renderToStaticMarkup(
-      createElement(HarnessesSection, {
-        config,
-        baseline: baselineConfig(),
-        fieldErrors: {},
-        permissionModes,
-        onChange: () => {},
-      }),
-    );
+    const html = renderCards(config);
 
     expect(html).toMatch(/id="harness-claude-permission-mode"[^>]*><option value="auto">Auto<\/option><option value="bypassPermissions" selected="">Bypass Permissions<\/option>/);
   });

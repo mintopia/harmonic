@@ -186,11 +186,12 @@ describe('Code repository section', () => {
   it('offers the FORGEJO_TOKEN Secret when the Code Repository is Forgejo and no Forgejo tracker supplies one', async () => {
     stubApi();
     const host = await mountComponent(createElement(Harness, { initial: makeWorkspace({ id: 3, codeRepository: 'forgejo' }), Section: CodeRepositorySection }));
-    expect(host.textContent).toContain('FORGEJO_TOKEN');
+    expect(host.textContent).toContain('The Forgejo API token');
     const withTracker = await mountComponent(
       createElement(Harness, { initial: makeWorkspace({ id: 4, codeRepository: 'forgejo', configuredTracker: { kind: 'forgejo' } }), Section: CodeRepositorySection }),
     );
-    expect(withTracker.textContent).not.toContain('FORGEJO_TOKEN');
+    expect(withTracker.textContent).toContain('Secret · FORGEJO_TOKEN');
+    expect(withTracker.textContent).not.toContain('The Forgejo API token');
   });
 });
 

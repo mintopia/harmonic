@@ -39,11 +39,21 @@ describe('HarnessesSection table', () => {
   it('lists harnesses and Edit opens the existing editor', async () => {
     const host = await mountComponent(createElement(HarnessesSection, { config: baselineConfig(), baseline: baselineConfig(), fieldErrors: {}, permissionModes: {}, onChange: () => {} }));
     expect([...host.querySelectorAll('th')].map((t) => t.textContent)).toContain('Models');
-    const editor = host.querySelector('#harness-editor-claude') as HTMLDetailsElement;
-    expect(editor.open).toBe(false);
+    expect(host.querySelector('#harness-editor-claude')).toBeNull();
     const edit = [...host.querySelectorAll('tbody button')].find((b) => b.textContent === 'Edit') as HTMLElement;
     edit.click();
     await flush();
+    expect((host.querySelector('#harness-editor-claude') as HTMLDetailsElement).open).toBe(true);
+    expect(host.querySelectorAll('details')).toHaveLength(1);
+    (host.querySelector('tbody button') as HTMLElement).click();
+    await flush();
+    expect(host.querySelector('#harness-editor-claude')).toBeNull();
+  });
+
+  it('opens the editor of a harness with field errors', async () => {
+    const host = await mountComponent(
+      createElement(HarnessesSection, { config: baselineConfig(), baseline: baselineConfig(), fieldErrors: { 'harnesses.claude.command': 'Required' }, permissionModes: {}, onChange: () => {} }),
+    );
     expect((host.querySelector('#harness-editor-claude') as HTMLDetailsElement).open).toBe(true);
   });
 });
