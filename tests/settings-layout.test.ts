@@ -10,7 +10,7 @@ afterEach(cleanup);
 
 describe('settings prompts layout', () => {
   it('renders the Prompts settings as the Find, Edit and Check impact steps', () => {
-    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
+    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact', 'overrides']);
     expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
   });
 });
