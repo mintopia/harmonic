@@ -41,6 +41,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     harnesses: { claude: { command: 'claude', args: [], env: {}, models: [{ id: 'claude-sonnet-4-6' }], defaultModel: 'claude-sonnet-4-6', cacheWarmSeconds: 300 } },
     defaults: { harness: 'claude', isolationMode: 'direct', priority: 'normal', conflictResolveTurns: 2, workflow: null, epicWorkflow: null },
     chat: { harness: 'claude', model: 'claude-sonnet-4-6' },
+    excludedDirectories: ['.git', 'node_modules'],
     autoRunner: { enabled: false, maxConcurrentAttempts: 2 },
     agentMessages: { enabled: false, sendCap: 10 },
     verify: { epic: { preMerge: { commands: [], critics: [] }, resolvePrompt: 'Resolve failures.', resolveSuffix: '' } },

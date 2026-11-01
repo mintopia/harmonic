@@ -68,6 +68,16 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(DEFAULT_EXCLUDED_DIRECTORIES);
   });
 
+  it('seeds new Workspaces from the global excluded-directory list', async () => {
+    const seeded = new WorkspaceService(asyncDb, settingsStore, () => ['vendor']);
+    const workingDir = join(dataDir, 'third-workspace');
+    mkdirSync(workingDir);
+    const created = await seeded.create({ name: 'Third', workingDir });
+
+    expect(created.excludedDirectories).toEqual(['vendor']);
+    expect(settingsStore.getOverrides(created.id).excludedDirectories).toEqual(['vendor']);
+  });
+
   it('rejects non-canonical excluded directory paths', () => {
     for (const excludedDirectories of [['src/'], ['./src'], ['src//generated'], ['src\\generated'], ['src/../build']]) {
       expect(workspaceOverridesSchema.safeParse({ excludedDirectories }).success).toBe(false);

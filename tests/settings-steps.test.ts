@@ -33,7 +33,7 @@ describe('settings tabs and steps', () => {
 
   it('hides steps with no content for the surface', () => {
     expect(stepsForSurface('global', 'execution').map((s) => s.id)).toEqual(['workflow', 'agent', 'where', 'limits']);
-    expect(stepsForSurface('global', 'general').map((s) => s.id)).toEqual(['identity', 'access', 'chats']);
+    expect(stepsForSurface('global', 'general').map((s) => s.id)).toEqual(['identity', 'access', 'chats', 'files']);
     expect(stepsForSurface('workspace', 'general').map((s) => s.id)).toEqual(['identity', 'chats', 'files']);
     expect(visibleSteps('prompts', new Set(['find'])).map((s) => s.id)).toEqual(['find']);
   });

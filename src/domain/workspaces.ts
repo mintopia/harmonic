@@ -265,13 +265,14 @@ export class WorkspaceService {
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly settings: WorkspaceSettingsStore,
+    private readonly defaultExcludedDirectories: () => readonly string[] = () => DEFAULT_EXCLUDED_DIRECTORIES,
   ) {}
 
   private compose(row: WorkspaceIdentityRow): WorkspaceRow {
     const o = this.settings.getOverrides(row.id);
     return {
       ...row,
-      excludedDirectories: o.excludedDirectories ?? [...DEFAULT_EXCLUDED_DIRECTORIES],
+      excludedDirectories: o.excludedDirectories ?? [...this.defaultExcludedDirectories()],
       harness: o.harness,
       model: o.model,
       chatHarness: o.chatHarness,
@@ -381,7 +382,7 @@ export class WorkspaceService {
         .returning()
         .get();
     });
-    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...DEFAULT_EXCLUDED_DIRECTORIES] });
+    await this.settings.setOverrides(inserted.id, { excludedDirectories: [...this.defaultExcludedDirectories()] });
     return this.compose(inserted);
   }
 

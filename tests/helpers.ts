@@ -123,6 +123,7 @@ export function stubHarness(harnessId: HarnessId = 'claude'): DeepPartial<AppCon
     // Point the chat default at the stub too, so its model stays one of the
     // stub harness's models (the config schema enforces chat.model ∈ models).
     chat: { harness: harnessId, model: 'stub-model' },
+    excludedDirectories: ['.git', 'node_modules'],
   } as DeepPartial<AppConfig>;
 }
 

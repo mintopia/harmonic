@@ -32587,6 +32587,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -33181,6 +33193,7 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
                     "maxAttempts",
@@ -33605,6 +33618,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -34199,6 +34224,7 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
                     "maxAttempts",
@@ -34594,6 +34620,18 @@
                     "required": [
                       "harness",
                       "model"
+                    ]
+                  },
+                  "excludedDirectories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "example": [
+                      ".git",
+                      "node_modules",
+                      "dist"
                     ]
                   },
                   "autoRunner": {
@@ -35159,6 +35197,7 @@
                   "workflowLabels",
                   "modelOptions",
                   "chat",
+                  "excludedDirectories",
                   "autoRunner",
                   "agentMessages",
                   "maxAttempts",
@@ -35563,6 +35602,18 @@
                         "model"
                       ],
                       "additionalProperties": false
+                    },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
                     },
                     "autoRunner": {
                       "type": "object",
@@ -36158,6 +36209,7 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
                     "maxAttempts",
@@ -36577,6 +36629,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "excludedDirectories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "example": [
+                            ".git",
+                            "node_modules",
+                            "dist"
+                          ]
+                        },
                         "autoRunner": {
                           "type": "object",
                           "properties": {
@@ -37171,6 +37235,7 @@
                         "workflowLabels",
                         "modelOptions",
                         "chat",
+                        "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
                         "maxAttempts",
@@ -37561,6 +37626,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "excludedDirectories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "example": [
+                            ".git",
+                            "node_modules",
+                            "dist"
+                          ]
+                        },
                         "autoRunner": {
                           "type": "object",
                           "properties": {
@@ -38155,6 +38232,7 @@
                         "workflowLabels",
                         "modelOptions",
                         "chat",
+                        "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
                         "maxAttempts",
@@ -38607,6 +38685,18 @@
                       ],
                       "additionalProperties": false
                     },
+                    "excludedDirectories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "example": [
+                        ".git",
+                        "node_modules",
+                        "dist"
+                      ]
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -39201,6 +39291,7 @@
                     "workflowLabels",
                     "modelOptions",
                     "chat",
+                    "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
                     "maxAttempts",

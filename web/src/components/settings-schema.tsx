@@ -592,11 +592,12 @@ function InstanceIdentity({ ctx }: { ctx: GlobalRenderCtx }) {
             Each Workspace’s name, project directory and deletion live in its own settings.
           </div>
         </div>
-        {firstWorkspaceId !== null && (
-          <a className="font-semibold text-accent hover:underline" href={`/workspace/${firstWorkspaceId}/settings?tab=general&step=identity`}>
-            Manage Workspaces →
-          </a>
-        )}
+        <a
+          className="font-semibold text-accent hover:underline"
+          href={firstWorkspaceId === null ? '/' : `/workspace/${firstWorkspaceId}/settings?tab=general&step=identity`}
+        >
+          Manage Workspaces →
+        </a>
       </div>
     </div>
   );
@@ -750,23 +751,22 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   return `#${channel(red)}${channel(green)}${channel(blue)}`.toUpperCase();
 }
 
-function WorkspaceExcludedFolders({ ctx }: { ctx: WorkspaceRenderCtx }) {
-  const { workspace } = ctx;
-  const [text, setText] = useState(() => workspace.excludedDirectories.join('\n'));
-  const [seen, setSeen] = useState(workspace.excludedDirectories);
-  if (seen !== workspace.excludedDirectories) {
-    setSeen(workspace.excludedDirectories);
-    if (parseFolders(text).join('\n') !== workspace.excludedDirectories.join('\n')) setText(workspace.excludedDirectories.join('\n'));
+function ExcludedFoldersField({ folders, onChange }: { folders: string[]; onChange: (folders: string[]) => void }) {
+  const [text, setText] = useState(() => folders.join('\n'));
+  const [seen, setSeen] = useState(folders);
+  if (seen !== folders) {
+    setSeen(folders);
+    if (parseFolders(text).join('\n') !== folders.join('\n')) setText(folders.join('\n'));
   }
   return (
     <textarea
       className={`${field} max-w-xl resize-y font-data`}
       aria-label="Excluded folders"
-      rows={4}
+      rows={3}
       value={text}
       onChange={(e) => {
         setText(e.target.value);
-        ctx.setWorkspace({ ...workspace, excludedDirectories: parseFolders(e.target.value) });
+        onChange(parseFolders(e.target.value));
       }}
     />
   );
@@ -870,10 +870,18 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   {
     tab: 'general',
     step: 'files',
-    surfaces: ['workspace'],
+    surfaces: BOTH,
     title: 'Excluded folders',
-    description: 'Hidden from the Files browser and directory pickers. One folder per line.',
-    body: (ctx) => (ctx.surface === 'workspace' ? <WorkspaceExcludedFolders ctx={ctx} /> : null),
+    description: {
+      global: 'Hidden from the Files browser and directory pickers. One folder per line. New Workspaces start with this list.',
+      workspace: 'Hidden from the Files browser and directory pickers. One folder per line.',
+    },
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <ExcludedFoldersField folders={ctx.workspace.excludedDirectories} onChange={(excludedDirectories) => ctx.setWorkspace({ ...ctx.workspace, excludedDirectories })} />
+      ) : (
+        <ExcludedFoldersField folders={ctx.config.excludedDirectories} onChange={(excludedDirectories) => ctx.setConfig({ ...ctx.config, excludedDirectories })} />
+      ),
   },
   {
     tab: 'general',

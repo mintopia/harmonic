@@ -55,7 +55,7 @@ export interface CreateStoresDeps {
 
 export async function createStores({ opts, asyncDb, bus, fireAndForget }: CreateStoresDeps): Promise<Stores> {
   const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
-  const workspaces = new WorkspaceService(asyncDb, settingsStore);
+  const workspaces = new WorkspaceService(asyncDb, settingsStore, () => settingsStore.getGlobal().excludedDirectories);
   const channels = new ChannelService(asyncDb);
   const secretKey = loadSecretKey(opts.dataDir);
   const secrets = new SecretService(asyncDb, secretKey);
