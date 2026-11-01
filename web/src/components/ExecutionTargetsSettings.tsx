@@ -133,7 +133,7 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     />
                   )}
                 </div>
-                <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted`}>
+                <div role="cell" className={`${dim} flex flex-col gap-1 text-small text-muted ${target.builtIn ? 'md:col-span-2' : ''}`}>
                   {target.builtIn ? (
                     <span>A local Ticket starts here even while a Kubernetes target is full: the two do not share capacity.</span>
                   ) : (
@@ -147,17 +147,15 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
                     </>
                   )}
                 </div>
-                <div role="cell" className="flex items-center justify-end gap-1.5">
-                  {!target.builtIn && (
-                    <>
-                      <button type="button" className={smallBtn} aria-label={`Edit ${target.name}`} onClick={() => setEditing(target)}>Edit</button>
-                      <button type="button" className={smallBtn} aria-label={`${view.toggleLabel} ${target.name}`} disabled={busy === target.name} onClick={() => toggle(target)}>
-                        {view.toggleLabel}
-                      </button>
-                      <button type="button" className={smallBtnFail} aria-label={`Delete ${target.name}`} disabled={busy === target.name} onClick={() => askDelete(target)}>Delete</button>
-                    </>
-                  )}
-                </div>
+                {!target.builtIn && (
+                  <div role="cell" className="flex items-center justify-end gap-1.5">
+                    <button type="button" className={smallBtn} aria-label={`Edit ${target.name}`} onClick={() => setEditing(target)}>Edit</button>
+                    <button type="button" className={smallBtn} aria-label={`${view.toggleLabel} ${target.name}`} disabled={busy === target.name} onClick={() => toggle(target)}>
+                      {view.toggleLabel}
+                    </button>
+                    <button type="button" className={smallBtnFail} aria-label={`Delete ${target.name}`} disabled={busy === target.name} onClick={() => askDelete(target)}>Delete</button>
+                  </div>
+                )}
               </div>
             );
           })}
