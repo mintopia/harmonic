@@ -15,7 +15,7 @@ Light Paper tokens, Global scope, 1440px wide.
 | `Where.dc.html` | Settings › Running Tickets › 3 Where |
 | `Limits.dc.html` | Settings › Running Tickets › 4 Limits |
 | `General.dc.html` | Settings › General (Identity, Access, Chats, Files) |
-| `Integrations.dc.html` | Settings › Integrations (Code, Work, Agents, Updates) |
+| `Integrations.dc.html` | Settings › Integrations (Agents, Updates) |
 | `Archive.dc.html` | Settings › Archive & Export (Keep, Export, Redact, Deliver) |
 | `Prompts.dc.html` | Settings › Prompts › 1 Find |
 | `PromptEdit.dc.html` | Settings › Prompts › 2 Edit and 3 Check impact |

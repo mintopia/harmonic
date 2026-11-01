@@ -52,81 +52,18 @@ a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-
           <a href="Integrations.dc.html" style="color: #1b1e24; padding-bottom: 10px; border-bottom: 2px solid #077067">Integrations</a>
           <a href="Archive.dc.html" style="color: #656b73; font-weight: 500; padding-bottom: 10px">Archive &amp; Export</a>
         </nav>
-        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › Integrations › Work</span></div>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="chip" style="background: #e7ebe7; color: #3d424a">GLOBAL</span><span style="color: #656b73; font-size: 12px">Settings › Integrations › Agents</span></div>
       </header>
 
       <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
         <nav aria-label="Connecting Harmonic" style="flex: 1 1 220px; max-width: 240px; display: flex; flex-direction: column; gap: 4px">
           <div class="cap" style="padding: 0 12px 8px">Connecting Harmonic</div>
-          <button type="button" class="{{s1}}" onClick="{{go1}}" aria-current="{{c1}}"><span class="{{n1}}">1</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Code</span><span style="font-size: 12px; color: #656b73; font-weight: 500">GitHub · detected</span></span></button>
-          <button type="button" class="{{s2}}" onClick="{{go2}}" aria-current="{{c2}}"><span class="{{n2}}">2</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Work</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Tracker and labels</span></span></button>
-          <button type="button" class="{{s3}}" onClick="{{go3}}" aria-current="{{c3}}"><span class="{{n3}}">3</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Agents</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Harnesses</span></span></button>
-          <button type="button" class="{{s4}}" onClick="{{go4}}" aria-current="{{c4}}"><span class="{{n4}}">4</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Updates</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Notifications</span></span></button>
+          <button type="button" class="{{s1}}" onClick="{{go1}}" aria-current="{{c1}}"><span class="{{n1}}">1</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Agents</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Harnesses</span></span></button>
+          <button type="button" class="{{s2}}" onClick="{{go2}}" aria-current="{{c2}}"><span class="{{n2}}">2</span><span style="display: flex; flex-direction: column; gap: 2px"><span>Updates</span><span style="font-size: 12px; color: #656b73; font-weight: 500">Notifications</span></span></button>
         </nav>
 
         <section style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
-          <sc-if value="{{is2}}" hint-placeholder-val="{{ true }}">
-          <div style="display: flex; flex-direction: column; gap: 6px">
-            <h2 style="margin: 0; font-size: 20px">Where does work come from?</h2>
-            <p style="margin: 0; color: #656b73; line-height: 1.5">Harmonic mirrors a tracker’s issues onto the board as Tasks. It uses the first source it finds.</p>
-          </div>
-
-          <ol aria-label="Tracker resolution order" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
-            <li class="rung" style="border: 2px solid #077067; padding: 11px"><span class="cap" style="color: #077067">1st · in use</span><span style="font-weight: 700">Configured tracker</span><span style="font-size: 12px; color: #077067; font-weight: 600">GitHub Issues · mintopia/harmonic</span></li>
-            <li class="rung" style="background: #f5f5f3; border-style: dashed; border-color: #c3c3bc"><span class="cap">2nd</span><span style="font-weight: 700">Repo doc</span><span class="mono" style="font-size: 11px; color: #656b73">docs/agents/issue-tracker.md</span></li>
-            <li class="rung" style="background: #f5f5f3; border-style: dashed; border-color: #c3c3bc"><span class="cap">3rd</span><span style="font-weight: 700">Code Repository</span><span style="font-size: 12px; color: #656b73">The forge from step 1</span></li>
-          </ol>
-
-          <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
-            <h3 style="margin: 0; font-size: 16px">Issue tracker</h3>
-            <fieldset style="border: 0; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap">
-              <legend class="cap" style="margin-bottom: 10px">Tracker</legend>
-              <label class="opt sel"><input type="radio" name="tr" checked style="accent-color: #077067; margin-top: 3px"><span><span style="font-weight: 700; display: block">GitHub Issues</span><span style="font-size: 12px; color: #656b73">Via gh, using the repository token</span></span></label>
-              <label class="opt"><input type="radio" name="tr" style="accent-color: #077067; margin-top: 3px"><span><span style="font-weight: 700; display: block">Linear</span><span style="font-size: 12px; color: #656b73">API key from Secrets</span></span></label>
-              <label class="opt"><input type="radio" name="tr" style="accent-color: #077067; margin-top: 3px"><span><span style="font-weight: 700; display: block">None</span><span style="font-size: 12px; color: #656b73">Create Tasks by hand only</span></span></label>
-            </fieldset>
-            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
-              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Repository</span><input class="field mono" value="mintopia/harmonic"></label>
-              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Mirror issues with</span><select class="field"><option>ready-for-agent label</option></select></label>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #0d7734"><span style="width: 8px; height: 8px; border-radius: 50%; background: #14a049"></span>Connected · last sync 2 min ago · 14 issues mirrored</div>
-          </article>
-
-          <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
-            <div style="display: flex; flex-direction: column; gap: 4px">
-              <h3 style="margin: 0; font-size: 16px">Triage labels</h3>
-              <p style="margin: 0; color: #656b73; font-size: 13px">The tracker’s label for each role Harmonic acts on. Blank uses the repo doc, then the default.</p>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px">
-              <thead><tr class="cap"><th class="th">Role</th><th class="th">Label</th><th class="th">Source</th></tr></thead>
-              <tbody>
-                <tr><td class="td">Pick up for an agent</td><td class="td"><input class="field mono" value="ready-for-agent" style="width: 240px"></td><td class="td"><span class="chip" style="background: #ecedea; color: #5b616a">Default</span></td></tr>
-                <tr><td class="td">Needs a human</td><td class="td"><input class="field mono" value="ready-for-human" style="width: 240px"></td><td class="td"><span class="chip" style="background: #ecedea; color: #5b616a">Default</span></td></tr>
-                <tr><td class="td">Needs triage</td><td class="td"><input class="field mono" value="triage" style="width: 240px"></td><td class="td"><span class="chip" style="background: #cee3fa; color: #1160ae">Configured</span></td></tr>
-                <tr><td class="td" style="border-bottom: 0">Won’t fix</td><td class="td" style="border-bottom: 0"><input class="field mono" placeholder="wontfix" style="width: 240px"></td><td class="td" style="border-bottom: 0"><span class="chip" style="background: #b6ece4; color: #075f58">Repo doc</span></td></tr>
-              </tbody>
-            </table>
-            <p style="margin: 0; font-size: 12px; color: #656b73">Labels that pick a workflow or agent live in <a href="Main.dc.html">Running Tickets</a>.</p>
-          </article>
-
-          </sc-if>
-
-          <sc-if value="{{is1}}" hint-placeholder-val="{{ false }}">
-          <div style="display: flex; flex-direction: column; gap: 6px">
-            <h2 style="margin: 0; font-size: 20px">Where does the code live?</h2>
-            <p style="margin: 0; color: #656b73; line-height: 1.5">The forge that hosts branches, PRs and Merges. Detected from the origin remote unless you override it.</p>
-          </div>
-          <article class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
-            <div style="display: flex; align-items: center; gap: 10px"><span style="font-weight: 700">GitHub · mintopia/harmonic</span><span class="chip" style="background: #c2f2cd; color: #0d7734">Detected</span></div>
-            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
-              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Forge</span><select class="field"><option>Detected from origin</option><option>GitHub</option><option>GitLab</option><option>Forgejo</option></select></label>
-              <label style="display: flex; flex-direction: column; gap: 6px"><span class="cap">Token</span><select class="field"><option>Secret · GITHUB_TOKEN</option></select></label>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #0d7734"><span style="width: 8px; height: 8px; border-radius: 50%; background: #14a049"></span>Token can push branches and open PRs</div>
-          </article>
-          </sc-if>
-
-          <sc-if value="{{is3}}" hint-placeholder-val="{{ false }}">
+          <sc-if value="{{is1}}" hint-placeholder-val="{{ true }}">
           <div style="display: flex; flex-direction: column; gap: 6px">
             <h2 style="margin: 0; font-size: 20px">Which agents can Harmonic drive?</h2>
             <p style="margin: 0; color: #656b73; line-height: 1.5">Harness CLIs driven over ACP. Which one runs a Ticket is chosen in <a href="Agent.dc.html">Running Tickets › Agent</a>.</p>
@@ -144,7 +81,7 @@ a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-
           </article>
           </sc-if>
 
-          <sc-if value="{{is4}}" hint-placeholder-val="{{ false }}">
+          <sc-if value="{{is2}}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; flex-direction: column; gap: 6px">
             <h2 style="margin: 0; font-size: 20px">Who hears about it?</h2>
             <p style="margin: 0; color: #656b73; line-height: 1.5">Channels that receive Task and queue events. Adding or removing a channel applies at once; subscriptions save with the bar.</p>
@@ -174,9 +111,9 @@ a{color:#077067;font-weight:600;text-decoration:none}a:hover{color:#0a6f66;text-
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
 class Component extends DCLogic {
-constructor(p) { super(p); this.state = { step: 2 }; }
+constructor(p) { super(p); this.state = { step: 1 }; }
 renderVals() {
-  const names = ['Code', 'Work', 'Agents', 'Updates'];
+  const names = ['Agents', 'Updates'];
   const s = this.state.step, go = (n) => () => this.setState({ step: n }), v = {};
   names.forEach((_, k) => { const i = k + 1; v['s' + i] = 'step' + (s === i ? ' on' : ''); v['n' + i] = 'num' + (s === i ? ' cur' : (i < s ? ' done' : '')); v['c' + i] = s === i ? 'step' : 'false'; v['is' + i] = s === i; v['go' + i] = go(i); });
   return Object.assign(v, { hasPrev: s > 1, hasNext: s < names.length, prev: go(s - 1), next: go(s + 1), prevLabel: '← ' + (names[s - 2] || ''), nextLabel: 'Next: ' + (names[s] || '') + ' →' });
