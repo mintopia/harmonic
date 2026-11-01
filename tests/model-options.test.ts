@@ -17,6 +17,13 @@ describe('Model Options API', () => {
   beforeEach(async () => { server = await startServer(); });
   afterEach(async () => { await server.close(); });
 
+  it('round-trips the global classifier through PATCH and GET', async () => {
+    const patched = await server.api('PATCH', '/api/config', { classifier: { enabled: true, timeoutSeconds: 9 } });
+    expect(patched.status).toBe(200);
+    expect(patched.body.classifier).toMatchObject({ enabled: true, timeoutSeconds: 9, backend: 'harness', workflowEnabled: false });
+    expect((await server.api('GET', '/api/config')).body.classifier.timeoutSeconds).toBe(9);
+  });
+
   it('round-trips through PATCH and GET', async () => {
     const patched = await server.api('PATCH', '/api/config', { modelOptions: [option('cheap-fix')] });
     expect(patched.status).toBe(200);
@@ -194,7 +201,7 @@ describe('Workspace resolution', () => {
   });
 
   it('defaults to off, harness backend and a 30 s timeout, and rejects non-positive timeouts', () => {
-    expect(resolveClassifierSettings({ classifierEnabled: null, classifierBackend: null, classifierTimeoutSeconds: null, classifierTypesafeModel: null, classifierTypesafeSecret: null, classifierHarness: null, classifierModel: null })).toEqual({ enabled: false, backend: 'harness', timeoutSeconds: 30, typesafeModel: 'typesafe/jev-1.13', typesafeSecret: null, harness: null, model: null });
+    expect(resolveClassifierSettings({ classifierEnabled: null, classifierBackend: null, classifierTimeoutSeconds: null, classifierTypesafeModel: null, classifierTypesafeSecret: null, classifierHarness: null, classifierModel: null }, baselineConfig())).toEqual({ enabled: false, backend: 'harness', timeoutSeconds: 30, typesafeModel: 'typesafe/jev-1.13', typesafeSecret: null, harness: null, model: null });
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: 0 }).success).toBe(false);
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: -5 }).success).toBe(false);
     expect(workspaceOverridesSchema.safeParse({ classifierTimeoutSeconds: 5 }).success).toBe(true);

@@ -41,7 +41,7 @@ export interface ClassifierBackendResult {
 }
 
 export interface ClassifierBackend {
-  classify(input: ClassifierInput, ctx: { timeoutMs: number; workspace: WorkspaceRow; prompt: string }): Promise<ClassifierBackendResult>;
+  classify(input: ClassifierInput, ctx: { timeoutMs: number; workspace: WorkspaceRow; config: Pick<AppConfig, 'classifier'>; prompt: string }): Promise<ClassifierBackendResult>;
 }
 
 export interface RoutingUsage {
@@ -114,12 +114,12 @@ function usageToPriced(result: ClassifierBackendResult, config: Pick<AppConfig, 
 export async function runClassifier(
   backend: ClassifierBackend,
   input: ClassifierInput,
-  ctx: { timeoutMs: number; workspace: WorkspaceRow; config: Pick<AppConfig, 'harnesses'>; prompt: string },
+  ctx: { timeoutMs: number; workspace: WorkspaceRow; config: Pick<AppConfig, 'harnesses' | 'classifier'>; prompt: string },
   options: readonly ModelOption[],
 ): Promise<ClassifierOutcome> {
   let result: ClassifierBackendResult;
   try {
-    result = await withTimeout(backend.classify(input, { timeoutMs: ctx.timeoutMs, workspace: ctx.workspace, prompt: ctx.prompt }), ctx.timeoutMs);
+    result = await withTimeout(backend.classify(input, { timeoutMs: ctx.timeoutMs, workspace: ctx.workspace, config: ctx.config, prompt: ctx.prompt }), ctx.timeoutMs);
   } catch (error) {
     return { kind: 'abstained', reason: error instanceof Error ? error.message : String(error), routing: null, prompt: ctx.prompt };
   }
@@ -138,7 +138,7 @@ export function createHarnessClassifierBackend(deps: {
   return {
     async classify(_input, { timeoutMs, workspace, prompt }) {
       const config = deps.getConfig();
-      const settings = resolveClassifierSettings(workspace);
+      const settings = resolveClassifierSettings(workspace, config);
       const { harness: harnessId, model } = settings.harness
         ? { harness: settings.harness, model: settings.model ?? harnessConfig(config, settings.harness)?.defaultModel ?? '' }
         : defaultRoute(config, workspace, null);
@@ -279,13 +279,9 @@ export class RouteClassifier {
     private readonly prompts: () => EnginePrompts,
   ) {}
 
-  isEnabled(workspace: WorkspaceRow): boolean {
-    return resolveClassifierSettings(workspace).enabled;
-  }
-
   async classify(request: ClassifyRequest): Promise<ClassifierOutcome> {
     const config = this.getConfig();
-    const settings = resolveClassifierSettings(request.workspace);
+    const settings = resolveClassifierSettings(request.workspace, config);
     const options = resolveModelOptions(request.workspace, config, request.modelOptionOverrides);
     if (options.length === 0) return { kind: 'abstained', reason: 'no Model Options are configured', routing: null };
     const backend = this.backends[settings.backend];
@@ -311,7 +307,7 @@ export class RouteClassifier {
   async classifyWorkflow(request: ClassifyWorkflowRequest): Promise<WorkflowClassifierOutcome> {
     if (request.workflows.length === 0) return { kind: 'abstained', reason: 'no workflows are in the library', routing: null };
     const config = this.getConfig();
-    const settings = resolveClassifierSettings(request.workspace);
+    const settings = resolveClassifierSettings(request.workspace, config);
     const backend = this.backends[settings.backend];
     if (!backend) return { kind: 'abstained', reason: `the ${settings.backend} backend is not available`, routing: null };
     const options: ModelOption[] = request.workflows.map((w) => ({ id: w.name, description: w.description, harness: 'workflow', model: 'workflow' }));

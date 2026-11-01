@@ -9657,6 +9657,75 @@
               }
             }
           },
+          "classifier": {
+            "type": "object",
+            "properties": {
+              "workflowEnabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ],
+                "example": "harness"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 30
+              },
+              "typesafeModel": {
+                "type": "string",
+                "minLength": 1,
+                "example": "typesafe/jev-1.13"
+              },
+              "typesafeSecret": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              }
+            }
+          },
           "maxAttempts": {
             "type": "integer",
             "minimum": 1,
@@ -21368,6 +21437,76 @@
             },
             "additionalProperties": false
           },
+          "classifier": {
+            "type": "object",
+            "properties": {
+              "workflowEnabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "example": false
+              },
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "typesafe",
+                  "openai-compatible",
+                  "harness"
+                ],
+                "example": "harness"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "example": 30
+              },
+              "typesafeModel": {
+                "type": "string",
+                "minLength": 1,
+                "example": "typesafe/jev-1.13"
+              },
+              "typesafeSecret": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "harness": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": null
+              }
+            },
+            "additionalProperties": false
+          },
           "maxAttempts": {
             "type": "integer",
             "minimum": 1,
@@ -32687,6 +32826,86 @@
                       ],
                       "additionalProperties": false
                     },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -33244,6 +33463,7 @@
                     "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -33718,6 +33938,86 @@
                       ],
                       "additionalProperties": false
                     },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -34275,6 +34575,7 @@
                     "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -34718,6 +35019,85 @@
                     "required": [
                       "enabled",
                       "sendCap"
+                    ]
+                  },
+                  "classifier": {
+                    "type": "object",
+                    "properties": {
+                      "workflowEnabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "backend": {
+                        "type": "string",
+                        "enum": [
+                          "typesafe",
+                          "openai-compatible",
+                          "harness"
+                        ],
+                        "example": "harness"
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991,
+                        "example": 30
+                      },
+                      "typesafeModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "typesafe/jev-1.13"
+                      },
+                      "typesafeSecret": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      },
+                      "harness": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      },
+                      "model": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "example": null
+                      }
+                    },
+                    "required": [
+                      "workflowEnabled",
+                      "enabled",
+                      "backend",
+                      "timeoutSeconds",
+                      "typesafeModel",
+                      "typesafeSecret",
+                      "harness",
+                      "model"
                     ]
                   },
                   "maxAttempts": {
@@ -35248,6 +35628,7 @@
                   "excludedDirectories",
                   "autoRunner",
                   "agentMessages",
+                  "classifier",
                   "maxAttempts",
                   "contextReuseTokenLimit",
                   "editor",
@@ -35700,6 +36081,86 @@
                       "required": [
                         "enabled",
                         "sendCap"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
                       ],
                       "additionalProperties": false
                     },
@@ -36260,6 +36721,7 @@
                     "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",
@@ -36729,6 +37191,86 @@
                           ],
                           "additionalProperties": false
                         },
+                        "classifier": {
+                          "type": "object",
+                          "properties": {
+                            "workflowEnabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "backend": {
+                              "type": "string",
+                              "enum": [
+                                "typesafe",
+                                "openai-compatible",
+                                "harness"
+                              ],
+                              "example": "harness"
+                            },
+                            "timeoutSeconds": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 30
+                            },
+                            "typesafeModel": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "typesafe/jev-1.13"
+                            },
+                            "typesafeSecret": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "harness": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "workflowEnabled",
+                            "enabled",
+                            "backend",
+                            "timeoutSeconds",
+                            "typesafeModel",
+                            "typesafeSecret",
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        },
                         "maxAttempts": {
                           "type": "integer",
                           "minimum": 1,
@@ -37286,6 +37828,7 @@
                         "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
+                        "classifier",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -37726,6 +38269,86 @@
                           ],
                           "additionalProperties": false
                         },
+                        "classifier": {
+                          "type": "object",
+                          "properties": {
+                            "workflowEnabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "example": false
+                            },
+                            "backend": {
+                              "type": "string",
+                              "enum": [
+                                "typesafe",
+                                "openai-compatible",
+                                "harness"
+                              ],
+                              "example": "harness"
+                            },
+                            "timeoutSeconds": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991,
+                              "example": 30
+                            },
+                            "typesafeModel": {
+                              "type": "string",
+                              "minLength": 1,
+                              "example": "typesafe/jev-1.13"
+                            },
+                            "typesafeSecret": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "harness": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "example": null
+                            }
+                          },
+                          "required": [
+                            "workflowEnabled",
+                            "enabled",
+                            "backend",
+                            "timeoutSeconds",
+                            "typesafeModel",
+                            "typesafeSecret",
+                            "harness",
+                            "model"
+                          ],
+                          "additionalProperties": false
+                        },
                         "maxAttempts": {
                           "type": "integer",
                           "minimum": 1,
@@ -38283,6 +38906,7 @@
                         "excludedDirectories",
                         "autoRunner",
                         "agentMessages",
+                        "classifier",
                         "maxAttempts",
                         "contextReuseTokenLimit",
                         "editor",
@@ -38785,6 +39409,86 @@
                       ],
                       "additionalProperties": false
                     },
+                    "classifier": {
+                      "type": "object",
+                      "properties": {
+                        "workflowEnabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "example": false
+                        },
+                        "backend": {
+                          "type": "string",
+                          "enum": [
+                            "typesafe",
+                            "openai-compatible",
+                            "harness"
+                          ],
+                          "example": "harness"
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "example": 30
+                        },
+                        "typesafeModel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "example": "typesafe/jev-1.13"
+                        },
+                        "typesafeSecret": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "harness": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "example": null
+                        }
+                      },
+                      "required": [
+                        "workflowEnabled",
+                        "enabled",
+                        "backend",
+                        "timeoutSeconds",
+                        "typesafeModel",
+                        "typesafeSecret",
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "maxAttempts": {
                       "type": "integer",
                       "minimum": 1,
@@ -39342,6 +40046,7 @@
                     "excludedDirectories",
                     "autoRunner",
                     "agentMessages",
+                    "classifier",
                     "maxAttempts",
                     "contextReuseTokenLimit",
                     "editor",

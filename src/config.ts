@@ -342,6 +342,17 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: false }),
     sendCap: z.number().int().min(1).meta({ example: 10 }),
   }),
+  /** Global defaults for the workflow classifier and the Route Classifier; a Workspace stores `null` to inherit any of them. */
+  classifier: z.object({
+    workflowEnabled: z.boolean().meta({ example: false }),
+    enabled: z.boolean().meta({ example: false }),
+    backend: z.enum(CLASSIFIER_BACKENDS).meta({ example: 'harness' }),
+    timeoutSeconds: z.number().int().min(1).meta({ example: 30 }),
+    typesafeModel: z.string().min(1).meta({ example: DEFAULT_TYPESAFE_MODEL }),
+    typesafeSecret: z.string().min(1).nullable().meta({ example: null }),
+    harness: z.string().min(1).nullable().meta({ example: null }),
+    model: z.string().min(1).nullable().meta({ example: null }),
+  }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).meta({ example: 2 }),
   /** Reuse a warm Session into Attempt N+1 while its context occupancy stays

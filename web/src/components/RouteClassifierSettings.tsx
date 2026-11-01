@@ -25,7 +25,6 @@ const BACKENDS: ReadonlyArray<{ id: Backend; label: string; note: string }> = [
 ];
 
 const EMPTY_ENDPOINT: ClassifierEndpoint = { baseUrl: '', model: '', apiKeySecret: '' };
-const DEFAULT_TIMEOUT_SECONDS = 30;
 const dataField = `${field} min-h-11 font-data text-data`;
 const notice = 'flex items-start gap-2 rounded-md px-3 py-2.5 text-small';
 const contract = 'rounded-md border border-hairline bg-sunken px-3 py-2.5 text-small text-muted';
@@ -127,7 +126,7 @@ function TestResult({ result, error }: { result: ClassifierTestResult | null; er
   );
 }
 
-/** Per-Workspace Route Classifier controls; every value left `null` inherits the built-in default. */
+/** Per-Workspace Route Classifier controls; every value left `null` inherits Global settings. */
 export function RouteClassifierSettings({
   workspace,
   config,
@@ -151,12 +150,13 @@ export function RouteClassifierSettings({
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<ClassifierTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  const enabled = workspace.classifierEnabled ?? false;
-  const backend = workspace.classifierBackend ?? 'harness';
+  const inherited = config.classifier;
+  const enabled = workspace.classifierEnabled ?? inherited.enabled;
+  const backend = workspace.classifierBackend ?? inherited.backend;
   const endpoint = workspace.classifierEndpoint ?? EMPTY_ENDPOINT;
-  const timeout = workspace.classifierTimeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-  const harness = workspace.classifierHarness ?? defaultHarnessId(config);
-  const model = workspace.classifierModel ?? config.harnesses[harness]?.defaultModel ?? '';
+  const timeout = workspace.classifierTimeoutSeconds ?? inherited.timeoutSeconds;
+  const harness = workspace.classifierHarness ?? inherited.harness ?? defaultHarnessId(config);
+  const model = workspace.classifierModel ?? (workspace.classifierHarness ? null : inherited.model) ?? config.harnesses[harness]?.defaultModel ?? '';
   const set = (patch: Partial<Workspace>) => onChange({ ...workspace, ...patch });
   const setEndpoint = (patch: Partial<ClassifierEndpoint>) => {
     const next = { ...endpoint, ...patch };
@@ -263,7 +263,7 @@ export function RouteClassifierSettings({
         {backend === 'typesafe' && (
           <SecretPicker
             workspaceId={workspace.id}
-            value={workspace.classifierTypesafeSecret ?? ''}
+            value={workspace.classifierTypesafeSecret ?? inherited.typesafeSecret ?? ''}
             error={errors['classifierTypesafeSecret']}
             onChange={(name) => set({ classifierTypesafeSecret: name || null })}
           />
@@ -283,10 +283,10 @@ export function RouteClassifierSettings({
             min={1}
             className={dataField}
             value={workspace.classifierTimeoutSeconds ?? ''}
-            placeholder="30"
+            placeholder={String(inherited.timeoutSeconds)}
             onChange={(e) => set({ classifierTimeoutSeconds: e.target.value === '' ? null : Number(e.target.value) })}
           />
-          <p className="mt-1 text-small text-faint">Default 30. On timeout the classifier abstains.</p>
+          <p className="mt-1 text-small text-faint">Inherits {inherited.timeoutSeconds} s from Global settings. On timeout the classifier abstains.</p>
         </Labeled>
         <div>
           <span className={fieldLabel}>Classifier instructions</span>

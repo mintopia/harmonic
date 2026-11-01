@@ -157,7 +157,7 @@ describe('settings step rail and Back/Next', () => {
   it('numbers the Global sections to match the strip, with one divider before the per-workflow cards', async () => {
     const host = await mount('global', null, () => {});
     const headings = [...host.querySelectorAll('section h2')].map((h) => h.textContent);
-    expect(headings).toEqual(['2 · Workflow Labels', '5 · Global default workflow', 'Epics']);
+    expect(headings).toEqual(['2 · Workflow Labels', '3 · Workflow classifier Off', '5 · Global default workflow', 'Epics']);
     expect(host.textContent).toContain('Then, for the chosen workflow');
     expect(host.querySelector('#settings-section-global-default-workflow')).not.toBeNull();
     expect(host.querySelector('#settings-workflow')).not.toBeNull();

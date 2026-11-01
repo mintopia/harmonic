@@ -100,6 +100,15 @@ autoRunner:
 agentMessages:
   enabled: false
   sendCap: 10
+classifier:
+  workflowEnabled: false
+  enabled: false
+  backend: harness
+  timeoutSeconds: 30
+  typesafeModel: typesafe/jev-1.13
+  typesafeSecret: null
+  harness: null
+  model: null
 maxAttempts: 2
 contextReuseTokenLimit: 200000
 editor:

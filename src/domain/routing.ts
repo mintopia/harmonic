@@ -8,7 +8,7 @@ import { resolveRoutingLabels } from './routing-labels.js';
 import { harnessConfig, resolveRoute, type ResolvedRoute } from './route.js';
 import type { TaskRouting } from './task-routing.js';
 import { resolveWorkspace } from './workspaces.js';
-import { resolveClassifierSettings } from './model-options.js';
+import { resolveClassifierSettings, resolveWorkflowClassifierEnabled } from './model-options.js';
 import { DomainError } from './errors.js';
 
 export interface RoutingScope {
@@ -73,7 +73,7 @@ export class RoutingService {
 
   /** The Routing Label decision plus whether the Workspace's Route Classifier is on. */
   routingFieldsOf(raw: RawTaskRow, scope: RoutingScope): { routing: TaskRouting | null; classifierEnabled: boolean } {
-    return { routing: this.routingOf(raw, scope), classifierEnabled: resolveClassifierSettings(scope.workspace).enabled };
+    return { routing: this.routingOf(raw, scope), classifierEnabled: resolveClassifierSettings(scope.workspace, this.getConfig()).enabled };
   }
 
   async routingFor(taskId: number): Promise<TaskRouting | null> {
@@ -93,13 +93,13 @@ export class RoutingService {
     if (!routeApplies(raw)) return null;
     const scope = await this.scopeFor(raw.workspaceId);
     if (this.matchRoute(raw, scope.labels)) return null;
-    return resolveClassifierSettings(scope.workspace).enabled ? scope.workspace : null;
+    return resolveClassifierSettings(scope.workspace, this.getConfig()).enabled ? scope.workspace : null;
   }
 
   /** The Workspace whose workflow classifier is on for this Ticket, or null. */
   async workflowClassifierWorkspace(task: Pick<TaskRow, 'workspaceId'>): Promise<WorkspaceRow | null> {
     const { workspace } = await this.scopeFor(task.workspaceId);
-    return workspace?.workflowClassifierEnabled ? workspace : null;
+    return resolveWorkflowClassifierEnabled(workspace, this.getConfig()) ? workspace : null;
   }
 
   /** The Harness + Model an Epic-level turn runs on: the Epic's operator Harness/Model override, else its Task row's Routing Label, else the container row's, else the Workspace/global default. */
