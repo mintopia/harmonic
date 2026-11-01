@@ -14,7 +14,7 @@ import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import { RoutingLabelOverlayEditor } from './RoutingLabelOverlayEditor';
 import { RoutingLabelsEditor } from './RoutingLabelsEditor';
-import { EpicWorkflowEditor, WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
+import { EpicWorkflowEditor, GlobalDefaultWorkflow, WorkspaceDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from './WorkflowLabelsEditor';
 import { WorkspaceWorkflowVars } from './WorkflowVarsEditors';
 import { ModelOptionsEditor } from './ModelOptionsEditor';
 import { enabledOptionCount } from './model-option-model';
@@ -47,6 +47,7 @@ export interface GlobalRenderCtx {
   dirty?: boolean;
   deliveries?: ExportDeliveryState;
   onTab?: (tab: SettingTab) => void;
+  onStep?: (step: string) => void;
   channels: {
     list: Channel[];
     onToggleEvent: (id: number, event: string) => void;
@@ -72,6 +73,7 @@ export interface WorkspaceRenderCtx {
   saving?: boolean;
   onSave?: () => void;
   onTab?: (tab: SettingTab) => void;
+  onStep?: (step: string) => void;
 }
 
 export type RenderCtx = GlobalRenderCtx | WorkspaceRenderCtx;
@@ -741,11 +743,15 @@ interface SectionNode {
   surfaces: Surface[];
   title: PerSurface<string>;
   description: PerSurface<string>;
+  /** Step number shown before the title, matching the resolution strip. */
+  ordinal?: string;
+  /** Put the title-row control before the title. */
+  leading?: boolean;
+  /** A labelled rule drawn above the card. */
+  divider?: string;
   body: (ctx: RenderCtx) => ReactNode;
   /** Control at the right of the card's title row. */
   action?: (ctx: RenderCtx) => ReactNode;
-  leadingAction?: boolean;
-  number?: string;
   /** Span both columns of the settings grid — for wide, table-shaped bodies. */
   wide?: boolean;
   /** Render the body without the SettingsSection card — the body owns its own chrome. */
@@ -890,7 +896,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     step: 'agent',
     surfaces: BOTH,
     title: 'Routing Labels',
-    number: '2',
+    ordinal: '2',
     wide: true,
     description: {
       global:
@@ -914,37 +920,94 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     step: 'workflow',
     surfaces: BOTH,
     title: 'Workflow Labels',
+    ordinal: '2',
     wide: true,
     description: {
       global:
-        'Map a tracker label to a Task Execution Workflow. When an issue carries several of these labels, the first one in this list wins. Matching ignores case.',
+        'Map a tracker label to a workflow. When an issue has several, the first in this list wins. Matching ignores case.',
       workspace:
         'Global rows are managed in Global settings. You can reorder them and turn them off here; labels you add are local to this Workspace.',
     },
     body: (ctx) =>
       ctx.surface === 'global' ? (
-        <WorkflowLabelsEditor config={ctx.config} onChange={ctx.setConfig} />
+        <WorkflowLabelsEditor config={ctx.config} onChange={ctx.setConfig} {...(ctx.onStep ? { onStep: ctx.onStep } : {})} />
       ) : (
         <WorkflowLabelOverlayEditor
           overlay={ctx.workspace.workflowLabels}
-          workflow={ctx.workspace.workflow}
           config={ctx.config}
           onChange={(workflowLabels) => ctx.setWorkspace({ ...ctx.workspace, workflowLabels })}
-          onWorkflow={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
         />
       ),
   },
   {
     tab: 'execution',
     step: 'workflow',
-    surfaces: BOTH,
-    title: 'Epic workflow',
+    surfaces: ['workspace'],
+    title: 'Workflow classifier',
+    ordinal: '3',
+    leading: true,
     wide: true,
-    description: {
-      global:
-        "The Task Execution Workflow that verifies an Epic's integration branch, resolves failures, and merges it into the base. Workflow Labels do not apply to Epics.",
-      workspace: 'Overrides the global Epic workflow for every Epic in this Workspace.',
-    },
+    description:
+      'When no label matches, read the Ticket and pick a workflow from the library by name and description. Advisory: on error, timeout or bad output the default applies. Uses the classifier backend from step 2.',
+    action: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <Switch
+          checked={ctx.workspace.workflowClassifierEnabled ?? false}
+          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })}
+          label="Workflow classifier"
+        />
+      ) : null,
+    body: () => null,
+  },
+  {
+    tab: 'execution',
+    step: 'workflow',
+    surfaces: ['workspace'],
+    title: 'Workspace default workflow',
+    ordinal: '4',
+    wide: true,
+    description: 'Used when no Workflow Label or classifier choice applies. Inherits the global default until set.',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <WorkspaceDefaultWorkflow
+          workflow={ctx.workspace.workflow}
+          config={ctx.config}
+          onChange={(workflow) => ctx.setWorkspace({ ...ctx.workspace, workflow })}
+        />
+      ) : null,
+  },
+  {
+    tab: 'execution',
+    step: 'workflow',
+    surfaces: ['global'],
+    title: 'Global default workflow',
+    ordinal: '5',
+    wide: true,
+    description: '',
+    body: (ctx) => (ctx.surface === 'global' ? <GlobalDefaultWorkflow config={ctx.config} onChange={ctx.setConfig} /> : null),
+  },
+  {
+    tab: 'execution',
+    step: 'workflow',
+    surfaces: ['workspace'],
+    bare: true,
+    wide: true,
+    title: 'Workflow variables',
+    divider: 'Then, for the chosen workflow',
+    description: '',
+    body: (ctx) =>
+      ctx.surface === 'workspace' ? (
+        <WorkspaceWorkflowVars workspace={ctx.workspace} onChange={(workflowVars) => ctx.setWorkspace({ ...ctx.workspace, workflowVars })} />
+      ) : null,
+  },
+  {
+    tab: 'execution',
+    step: 'workflow',
+    surfaces: BOTH,
+    title: 'Epics',
+    divider: 'Then, for the chosen workflow',
+    wide: true,
+    description: 'Epics resolve separately: one workflow verifies and merges every Epic.',
     body: (ctx) =>
       ctx.surface === 'global' ? (
         <EpicWorkflowEditor
@@ -964,25 +1027,12 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
   },
   {
     tab: 'execution',
-    step: 'workflow',
-    surfaces: ['workspace'],
-    bare: true,
-    wide: true,
-    title: 'Workflow variables',
-    description: '',
-    body: (ctx) =>
-      ctx.surface === 'workspace' ? (
-        <WorkspaceWorkflowVars workspace={ctx.workspace} onChange={(workflowVars) => ctx.setWorkspace({ ...ctx.workspace, workflowVars })} />
-      ) : null,
-  },
-  {
-    tab: 'execution',
     step: 'agent',
     surfaces: BOTH,
     title: 'Route Classifier',
-    number: '3',
+    ordinal: '3',
     wide: true,
-    leadingAction: true,
+    leading: true,
     description: {
       global:
         'Reads an unlabelled Ticket and picks one Model Option below. It never picks outside the list. Each Workspace turns it on and chooses its backend.',
@@ -1019,7 +1069,7 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     step: 'agent',
     surfaces: BOTH,
     title: 'Default agent',
-    number: '4',
+    ordinal: '4',
     description: {
       global: 'Used when no label matches and the classifier is off or abstains. Pre-filled into every new task; each task can override it.',
       workspace:
@@ -1031,24 +1081,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         <p className="mt-3 text-small text-muted">Harness settings live in Integrations › Agents.</p>
       </>
     ),
-  },
-  {
-    tab: 'execution',
-    step: 'workflow',
-    surfaces: ['workspace'],
-    title: 'Workflow classifier',
-    wide: true,
-    description:
-      "Picks a Ticket's workflow from the library by name and description when no operator choice or Workflow Label applies. Advisory: on error, timeout or invalid output the Workspace default workflow applies. Uses the Route Classifier's backend settings.",
-    action: (ctx) =>
-      ctx.surface === 'workspace' ? (
-        <Switch
-          checked={ctx.workspace.workflowClassifierEnabled ?? false}
-          onChange={(v) => ctx.setWorkspace({ ...ctx.workspace, workflowClassifierEnabled: v })}
-          label="Workflow classifier"
-        />
-      ) : null,
-    body: () => null,
   },
   {
     tab: 'execution',
@@ -1264,10 +1296,8 @@ export function sectionsForTab(surface: Surface, tab: SettingTab): SectionNode[]
 export function renderSection(
   section: SectionNode,
   ctx: RenderCtx,
-): { title: string; description: string; body: ReactNode; action: ReactNode; number: string | undefined; leadingAction: boolean } {
+): { title: string; description: string; body: ReactNode; action: ReactNode} {
   return {
-    number: section.number,
-    leadingAction: section.leadingAction ?? false,
     title: pick(section.title, ctx.surface),
     description: pick(section.description, ctx.surface),
     body: section.body(ctx),
@@ -1350,8 +1380,21 @@ export function stepStrip(ctx: RenderCtx, tab: SettingTab, step: string): { labe
             href: `#${sectionAnchor('Workflow classifier')}`,
           }
         : { caption: '3rd', name: 'Workflow classifier', note: 'Set in each Workspace' },
-      { caption: '4th', name: 'Workspace default', note: 'Set in each Workspace' },
-      { caption: 'Always matches', name: 'Global default', note: ctx.config.defaults.workflow ?? 'Built-in', always: true },
+      ctx.surface === 'workspace'
+        ? {
+            caption: '4th',
+            name: 'Workspace default',
+            note: ctx.workspace.workflow ?? 'Inherits global',
+            href: `#${sectionAnchor('Workspace default workflow')}`,
+          }
+        : { caption: '4th', name: 'Workspace default', note: 'Set in each Workspace' },
+      {
+        caption: 'Always matches',
+        name: 'Global default',
+        note: ctx.config.defaults.workflow ?? 'Built-in',
+        always: true,
+        ...(ctx.surface === 'global' ? { href: `#${sectionAnchor('Global default workflow')}` } : {}),
+      },
     ],
   };
 }

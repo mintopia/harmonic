@@ -5,34 +5,34 @@ import type { LabeledPreview, Placeholder } from '../prompt-preview-model';
 export function SettingsSection({
   id,
   title,
+  ordinal,
+  leading = false,
   description,
   className,
   action,
-  leadingAction,
-  number,
   children,
 }: {
   id?: string;
   title: string;
+  ordinal?: string | undefined;
+  leading?: boolean;
   description: string;
   className?: string;
   action?: ReactNode;
-  leadingAction?: boolean;
-  number?: string;
   children: ReactNode;
 }) {
   return (
     <section id={id} className={`${card} p-5${className ? ` ${className}` : ''}`}>
-      <div className={`flex items-start gap-4 ${leadingAction ? '' : 'justify-between'}`}>
-        {action && leadingAction && <div className="mt-1 shrink-0">{action}</div>}
+      <div className={`flex items-start gap-4 ${leading ? '' : 'justify-between'}`}>
+        {leading && action && <div className="mt-1 shrink-0">{action}</div>}
         <div>
           <h2 className="text-title font-semibold">
-            {number && <span className="text-muted">{number} · </span>}
+            {ordinal && <span className="text-muted">{ordinal} · </span>}
             {title}
           </h2>
           <p className="mb-4 mt-0.5 text-muted">{description}</p>
         </div>
-        {action && !leadingAction && <div className="mt-1 shrink-0">{action}</div>}
+        {!leading && action && <div className="mt-1 shrink-0">{action}</div>}
       </div>
       {children}
     </section>

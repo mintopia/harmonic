@@ -2,7 +2,7 @@
 import { act, createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../web/src/api.js';
-import { WorkflowLabelOverlayEditor, WorkflowLabelsEditor } from '../web/src/components/WorkflowLabelsEditor.js';
+import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor, WorkspaceDefaultWorkflow } from '../web/src/components/WorkflowLabelsEditor.js';
 import { WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
 import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowStepsResponse } from '../web/src/types.js';
@@ -24,6 +24,10 @@ const config: AppConfig = {
 let latestConfig: AppConfig = config;
 let latestOverlay: WorkflowLabelOverlayEntry[] | null = null;
 let latestWorkflow: string | null = null;
+let latestStep: string | null = null;
+const captureStep = (step: string) => {
+  latestStep = step;
+};
 const captureConfig = (next: AppConfig) => {
   latestConfig = next;
 };
@@ -36,18 +40,29 @@ const captureWorkflow = (next: string | null) => {
 
 function Global() {
   const [c, setC] = useState(config);
-  return createElement(WorkflowLabelsEditor, { config: c, onChange: (next: AppConfig) => { captureConfig(next); setC(next); } });
+  return createElement(WorkflowLabelsEditor, { config: c, onChange: (next: AppConfig) => { captureConfig(next); setC(next); }, onStep: captureStep });
+}
+
+function GlobalDefault() {
+  const [c, setC] = useState(config);
+  return createElement(GlobalDefaultWorkflow, { config: c, onChange: (next: AppConfig) => { captureConfig(next); setC(next); } });
+}
+
+function WorkspaceDefault() {
+  const [workflow, setWorkflow] = useState<string | null>(null);
+  return createElement(WorkspaceDefaultWorkflow, {
+    workflow,
+    config: { ...config, defaults: { ...config.defaults, workflow: 'Docs only' } },
+    onChange: (next: string | null) => { captureWorkflow(next); setWorkflow(next); },
+  });
 }
 
 function Overlay({ initial }: { initial: WorkflowLabelOverlayEntry[] | null }) {
   const [overlay, setOverlay] = useState(initial);
-  const [workflow, setWorkflow] = useState<string | null>(null);
   return createElement(WorkflowLabelOverlayEditor, {
     overlay,
-    workflow,
     config: { ...config, defaults: { ...config.defaults, workflow: 'Docs only' } },
     onChange: (next: WorkflowLabelOverlayEntry[]) => { captureOverlay(next); setOverlay(next); },
-    onWorkflow: (next: string | null) => { captureWorkflow(next); setWorkflow(next); },
   });
 }
 
@@ -76,13 +91,12 @@ afterEach(async () => {
 });
 
 describe('WorkflowLabelsEditor', () => {
-  it('shows the rows, the default select with versions and the Routing Labels cross-reference', async () => {
+  it('shows the rows and links the Routing Labels cross-reference to step 2', async () => {
     const host = await mountComponent(createElement(Global));
     expect(byLabel<HTMLInputElement>(host, 'Workflow Label 1').value).toBe('security');
     expect(byLabel<HTMLSelectElement>(host, 'Workflow for Workflow Label 2').value).toBe('Docs only');
-    const select = host.querySelector<HTMLSelectElement>('#settings-workflow')!;
-    expect([...select.options].map((o) => o.textContent)).toContain('Docs only · v2');
-    expect(host.textContent).toContain('Set in step 2, Agent');
+    await click([...host.querySelectorAll('button')].find((b) => b.textContent === 'step 2')!);
+    expect(latestStep).toBe('agent');
   });
 
   it('adds, edits, reorders-by-data and removes rows', async () => {
@@ -96,8 +110,11 @@ describe('WorkflowLabelsEditor', () => {
     expect(latestConfig.workflowLabels.map((l) => l.label)).toEqual(['docs', 'ci']);
   });
 
-  it('sets and clears the global default workflow', async () => {
-    const host = await mountComponent(createElement(Global));
+  it('sets and clears the global default workflow, listing versions and an editor link', async () => {
+    const host = await mountComponent(createElement(GlobalDefault));
+    const select = host.querySelector<HTMLSelectElement>('#settings-workflow')!;
+    expect([...select.options].map((o) => o.textContent)).toContain('Docs only · v2');
+    expect(host.querySelector('a[href="/workflows"]')?.textContent).toBe('Open in editor');
     await change(host.querySelector('#settings-workflow')!, 'Docs only');
     expect(latestConfig.defaults.workflow).toBe('Docs only');
     await change(host.querySelector('#settings-workflow')!, '');
@@ -130,7 +147,7 @@ describe('WorkflowLabelOverlayEditor', () => {
   });
 
   it('offers inherit plus the Library for the Workspace default workflow', async () => {
-    const host = await mountComponent(createElement(Overlay, { initial: null }));
+    const host = await mountComponent(createElement(WorkspaceDefault));
     const select = host.querySelector<HTMLSelectElement>('#workspace-workflow')!;
     expect(select.options[0]?.textContent).toBe('Use global default · Docs only');
     await change(select, 'Security review on label');

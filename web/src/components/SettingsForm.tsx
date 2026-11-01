@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { ExportDeliveryState } from '../types';
 import { PageHeader } from './PageHeader';
@@ -123,20 +123,29 @@ export function SettingsForm({
             </div>
           )}
           {strip && <ResolutionStrip label={strip.label} rules={strip.rules} onStep={jump} />}
-          {sections.map((section) => {
-            const { title: sectionTitle, description, body, action, number, leadingAction } = renderSection(section, { ...ctx, dirty, onTab, deliveries });
+          {sections.map((section, sectionIndex) => {
+            const { title: sectionTitle, description, body, action } = renderSection(section, { ...ctx, dirty, onTab, onStep: jump, deliveries });
             const anchor = sectionAnchor(sectionTitle);
-            if (section.bare) {
-              return (
-                <div key={`${section.tab}:${sectionTitle}`} id={anchor} className="min-w-0">
-                  {body}
-                </div>
-              );
-            }
-            return (
-              <SettingsSection key={`${section.tab}:${sectionTitle}`} id={anchor} title={sectionTitle} description={description} action={action} leadingAction={leadingAction} {...(number ? { number } : {})}>
+            const divider = section.divider && !sections.slice(0, sectionIndex).some((earlier) => earlier.divider === section.divider) ? section.divider : null;
+            const card = section.bare ? (
+              <div id={anchor} className="min-w-0">
+                {body}
+              </div>
+            ) : (
+              <SettingsSection id={anchor} title={sectionTitle} ordinal={section.ordinal} leading={section.leading} description={description} action={action}>
                 {body}
               </SettingsSection>
+            );
+            return (
+              <Fragment key={`${section.tab}:${sectionTitle}`}>
+                {divider && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className="text-micro font-bold uppercase tracking-wider text-ink">{divider}</span>
+                    <span className="h-px flex-1 bg-edge" />
+                  </div>
+                )}
+                {card}
+              </Fragment>
             );
           })}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
