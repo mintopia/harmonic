@@ -14,10 +14,11 @@ Notes: Global Integrations has no Code/Work step and Prompts Edit/Impact need a 
 | Limits toggles/units/layout | defect | #970 |
 | Where Note wrapping | defect | #971 |
 | No max-width caps on intros | match | Workflows library intro fixed in this change |
-| Prompts Edit preview pane | defect | #972 |
+| Prompts Edit preview pane | match | present for editable prompts ("What a step sends", live); only the bundled read-only view omits it; #972 closed |
 | Workflows library and editor (YAML tab, live diagram, Variables) | match | pair-Library, pair-Editor |
-| Prompts keep #902 errors | not exercised | needs invalid-save drive |
+| Prompts keep #902 errors | match | duplicated a bundled prompt, saved a self-include and an unknown code: server 400s render inline ("Include cycle: … Remove one of the includes", "Unknown prompt code doesNotExist at line 1, column 4"); `prompts-902-cycle.png`, `prompts-902-unknown-code.png` |
 | impeccable detect | pass | 3 findings repo-wide, none in settings/workflow/prompt files |
 | axe wcag2a/aa | defect | #973 (baseline not measured) |
 | Keyboard path through every rail | match | Tab+Enter reaches every step; Workspace Prompts unreachable (#967) |
 | Every pre-existing setting reachable | defect | epicPreMergeCommands/Critics have no control (#974) |
+| Pre-existing settings save | match | edited via the UI, saved, reloaded: Global host ceiling, Archive keep, Identity, Where checkout isolation; Workspace host ceiling and Identity (PATCH /api/workspaces/1 200). Fields without a plain input were not driven (Chats, Workspace Archive keep) |
