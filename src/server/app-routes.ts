@@ -37,6 +37,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { updateRoutes } from './routes/update.js';
 import { promptRoutes } from './routes/prompts.js';
 import { workflowRoutes, type WorkflowUsage } from './routes/workflows.js';
+import { workflowAssignments } from '../domain/workflow-assignments.js';
 import { isNotNull, or } from 'drizzle-orm';
 import { tasks } from '../db/schema.js';
 import type { PromptLibrary } from '../domain/prompt-library-store.js';
@@ -76,7 +77,7 @@ export async function registerRoutes(app: App, ctx: AppContext, contexts: AppCon
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register((fastify) => permissionRuleRoutes(fastify, contexts.persistence), { prefix: '/api' });
   await app.register((fastify) => promptRoutes(fastify, { prompts }), { prefix: '/api' });
-  await app.register((fastify) => workflowRoutes(fastify, { workflows: ctx.workflows, usage: () => workflowUsage(ctx.asyncDb) }), { prefix: '/api' });
+  await app.register((fastify) => workflowRoutes(fastify, { workflows: ctx.workflows, usage: () => workflowUsage(ctx.asyncDb), assignments: async () => workflowAssignments(ctx.settingsStore.getGlobal(), await ctx.workspaces.list()) }), { prefix: '/api' });
   await app.register((fastify) => configRoutes(fastify, { ...contexts.execution, prompts, workflows: ctx.workflows, workspaces: ctx.workspaces }), { prefix: '/api' });
   await app.register((fastify) => globalPauseRoutes(fastify, contexts.execution), { prefix: '/api' });
   await app.register((fastify) => updateRoutes(fastify, ctx), { prefix: '/api' });

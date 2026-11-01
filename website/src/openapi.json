@@ -11499,7 +11499,7 @@
                 "kind"
               ]
             },
-            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+            "description": "Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted."
           }
         },
         "required": [
@@ -23234,7 +23234,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "Where the workflow is assigned as a default or by Workflow Label. Empty today: no default or label assignment is stored yet."
+            "description": "Where the workflow is assigned as a default or by Workflow Label. A workflow that is assigned cannot be deleted."
           }
         },
         "required": [
@@ -31636,7 +31636,7 @@
             }
           },
           "409": {
-            "description": "Tickets reference the workflow, so it is kept.",
+            "description": "Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.",
             "content": {
               "application/json": {
                 "schema": {
