@@ -51,7 +51,7 @@ describe('GET /workspaces/:id/tracker-detection', () => {
   it('reports the declared tracker as a registered kind and no code repository without an origin', async () => {
     const { s, id } = await start(repo('# Issue tracker: Local Markdown\n'));
     const { body } = await s.api('GET', `/api/workspaces/${id}/tracker-detection`);
-    expect(body).toEqual({ detectedTracker: { name: 'Local Markdown', kind: 'local-markdown' }, detectedCodeRepository: null });
+    expect(body).toEqual({ detectedTracker: { name: 'Local Markdown', kind: 'local-markdown' }, detectedCodeRepository: null, repoDocTriageLabels: {} });
   });
 
   it('keeps an unregistered declared name with a null kind, and detects the origin host', async () => {
@@ -60,7 +60,15 @@ describe('GET /workspaces/:id/tracker-detection', () => {
     execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'git@github.com:acme/widgets.git']);
     const { s, id } = await start(dir);
     const { body } = await s.api('GET', `/api/workspaces/${id}/tracker-detection`);
-    expect(body).toEqual({ detectedTracker: { name: 'Linear', kind: null }, detectedCodeRepository: 'github' });
+    expect(body).toEqual({ detectedTracker: { name: 'Linear', kind: null }, detectedCodeRepository: 'github', repoDocTriageLabels: {} });
+  });
+
+  it('reports the roles named by the repo triage-labels doc', async () => {
+    const dir = repo();
+    mkdirSync(join(dir, 'docs/agents'), { recursive: true });
+    writeFileSync(join(dir, 'docs/agents/triage-labels.md'), '| Canonical | Label |\n| --- | --- |\n| `ready-for-agent` | `go` |\n');
+    const { s, id } = await start(dir);
+    expect((await s.api('GET', `/api/workspaces/${id}/tracker-detection`)).body.repoDocTriageLabels).toEqual({ readyForAgent: 'go' });
   });
 
   it('reports no detected tracker without a declaration, and 404s an unknown Workspace', async () => {
