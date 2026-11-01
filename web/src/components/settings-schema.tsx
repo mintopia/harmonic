@@ -269,7 +269,7 @@ const conflictResolveTurns = scalar(
 const autoRunnerEnabled = scalar(
   registryField('autoRunnerEnabled', {
     id: 'settings-autorunner-enabled',
-    switchLabel: 'Enabled',
+    switchLabel: 'On',
     errorKey: 'autoRunner.enabled',
     get: (c) => c.autoRunner.enabled,
     set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, enabled: Boolean(raw) } }),
@@ -279,7 +279,7 @@ const autoRunnerEnabled = scalar(
     id: 'workspace-autorunner-enabled',
     errorKey: 'autoRunnerEnabled',
     label: 'Enabled',
-    switchLabel: 'Enabled',
+    switchLabel: 'On',
     get: (w) => w.autoRunnerEnabled,
     set: (w, v) => ({ ...w, autoRunnerEnabled: v as boolean | null }),
     inherited: (c) => c.autoRunner.enabled,
@@ -338,7 +338,7 @@ const contextReuseTokenLimit = scalar(
 const agentMessagesEnabled = scalar(
   registryField('agentMessagesEnabled', {
     id: 'settings-agent-messages-enabled',
-    switchLabel: 'Enabled',
+    switchLabel: 'On',
     errorKey: 'agentMessages.enabled',
     get: (c) => c.agentMessages.enabled,
     set: (c, raw) => ({ ...c, agentMessages: { ...c.agentMessages, enabled: Boolean(raw) } }),
@@ -348,7 +348,7 @@ const agentMessagesEnabled = scalar(
     id: 'workspace-agent-messages-enabled',
     errorKey: 'agentMessagesEnabled',
     label: 'Enabled',
-    switchLabel: 'Enabled',
+    switchLabel: 'On',
     get: (w) => w.agentMessagesEnabled,
     set: (w, v) => ({ ...w, agentMessagesEnabled: typeof v === 'boolean' ? v : null }),
     inherited: (c) => c.agentMessages.enabled,
@@ -382,7 +382,7 @@ const guardrailScalarFields: OverridableDescriptor[] = [
     id: 'workspace-guardrail-progress',
     errorKey: 'guardrailProgress',
     label: 'Progress detector',
-    switchLabel: 'Trip a stalled Attempt to Escalation',
+    switchLabel: 'On',
     get: (w) => w.guardrailProgress,
     set: (w, v) => ({ ...w, guardrailProgress: v as boolean | null }),
     inherited: (c) => c.guardrails.progress,
@@ -466,7 +466,7 @@ function BudgetFields({
 const guardrailProgress = scalar(
   registryField('guardrailProgress', {
     id: 'settings-guardrail-progress',
-    switchLabel: 'Armed',
+    switchLabel: 'On',
     errorKey: 'guardrails.progress',
     get: (c) => c.guardrails.progress,
     set: (c, raw) => ({ ...c, guardrails: { ...c.guardrails, progress: Boolean(raw) } }),
@@ -554,17 +554,19 @@ function limitRow(
   title: string,
   description: PerSurface<string>,
   nodes: FieldNode[],
+  trailing?: ReactNode,
 ): ReactNode {
   return (
     <SettingRow key={title} title={title} description={pick(description, ctx.surface)}>
       {nodes.map((node) => renderField(node, ctx, true))}
+      {trailing}
     </SettingRow>
   );
 }
 
 const WORKFLOW_VARS_NOTE = (
   <>
-    Attempt count is a workflow variable now (<code className="font-data">maxAttempts</code>) — set it in the Workflow step.
+    Attempt count is a workflow variable now (<code className="font-data">maxAttempts</code>) — set it in step 1.
   </>
 );
 
@@ -1102,13 +1104,13 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
       <SettingGroup title="Bounding an Attempt" footer={WORKFLOW_VARS_NOTE}>
         <SettingRow
           title="Budget guardrail"
-          description="Escalates when an Attempt passes its wall-clock, token or cost cap. Wall-clock always guards; the others are opt-in."
+          description="Escalates when an Attempt’s cost passes this."
         >
           <BudgetControl ctx={ctx} />
         </SettingRow>
-        {limitRow(ctx, 'Progress guardrail', 'Escalates a stalled Attempt: no commit or passing check for too long.', [guardrailProgress])}
-        {limitRow(ctx, 'Tool timeout', 'Cancels one tool call that runs longer than this many minutes.', [toolTimeout])}
-        {limitRow(ctx, 'Merge-conflict turns', 'Agent turns spent resolving a merge conflict before escalating.', [conflictResolveTurns])}
+        {limitRow(ctx, 'Progress guardrail', 'Escalates after this long with no commit or passing check.', [guardrailProgress])}
+        {limitRow(ctx, 'Tool timeout', 'Cancels one tool call that runs longer.', [toolTimeout])}
+        {limitRow(ctx, 'Merge-conflict turns', 'Agent turns spent resolving a conflict before escalating.', [conflictResolveTurns])}
       </SettingGroup>
     ),
   },
@@ -1125,14 +1127,15 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
         {limitRow(
           ctx,
           'Session reuse',
-          'Retries reuse a warm session while its context stays under this many tokens; at or above it, a condensed new session starts.',
+          'Retries reuse a warm session while its context stays under this.',
           [contextReuseTokenLimit],
         )}
         {limitRow(
           ctx,
           'Agent Messages',
-          'Lets Attempts message each other over MCP, up to the send cap per Attempt.',
+          'Lets agents message each other over MCP, up to the cap per Attempt.',
           [agentMessagesEnabled, agentMessagesSendCap],
+          <span className="text-small text-muted">per Attempt</span>,
         )}
       </SettingGroup>
     ),

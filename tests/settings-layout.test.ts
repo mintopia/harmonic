@@ -112,6 +112,9 @@ describe('settings Execution tab without Ticket-side execution controls (ADR-005
       expect(text, row).toContain(row);
     }
     expect(text).toContain(surface === 'global' ? 'Host ceiling' : 'Concurrency cap');
+    expect(text).toContain('set it in step 1.');
+    expect(text).toContain('per Attempt');
+    expect(text).not.toContain('Armed');
     await cleanup();
     const agent = await mountTab(surface, 'execution', 'agent');
     expect(agent.textContent).not.toContain('Isolation mode');

@@ -58,6 +58,7 @@ export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
       summary: 'Bounds and automation',
       heading: 'Limits and automation',
       intro: 'What starts work without you, and the bounds that escalate a Ticket instead of letting it run on.',
+      note: 'Saved settings apply from each Ticket’s next Retry.',
     },
   ],
   prompts: [

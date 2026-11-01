@@ -94,13 +94,12 @@ export function ExecutionTargetsPanel({ hostCeiling }: { hostCeiling: number }) 
       <section className={`${card} p-5`}>
         <h2 className={sectionTitle}>Execution Targets</h2>
         <p className="mb-4 mt-0.5 text-muted">
-          Where a Task Execution Workflow runs. A workflow or a Step picks one with <code className={codeInline}>runs_on</code>. Every Kubernetes target
-          needs a Code Repository on the Workspace, because the remote is the base branch&apos;s source of truth.
+          Each target runs up to its ceiling at once. Tickets past it wait in order.
         </p>
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-label font-semibold uppercase text-muted">Targets</span>
           <button type="button" className="min-h-8 text-small font-semibold text-accent hover:text-accent-hot" onClick={() => setEditing('new')}>
-            + Add Kubernetes target
+            + Add target
           </button>
         </div>
         <div role="table" aria-label="Execution Targets" className="flex flex-col gap-1.5 rounded-lg border border-hairline bg-sunken p-1.5">
