@@ -53,6 +53,13 @@ export interface EpicWorkflowRef {
   chosen: 'workspace' | 'global';
 }
 
+export interface WorkflowTemplate {
+  name: string;
+  description: string;
+  subject: 'ticket' | 'epic';
+  text: string;
+}
+
 export interface WorkflowLibraryEntry {
   name: string;
   description: string;

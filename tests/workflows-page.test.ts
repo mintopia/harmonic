@@ -34,6 +34,13 @@ beforeEach(() => {
       entry({ name: 'docs-only' }),
     ],
   });
+  vi.spyOn(api, 'workflowTemplates').mockResolvedValue({
+    total: 2,
+    templates: [
+      { name: 'implement', description: 'Implement a Ticket.', subject: 'ticket', text: '' },
+      { name: 'epic', description: 'Run an Epic.', subject: 'epic', text: '' },
+    ],
+  });
   vi.spyOn(api, 'workflow').mockImplementation(async (name) => ({ name, description: '', version: 2, text: YAML }));
 });
 afterEach(async () => {
@@ -73,6 +80,49 @@ describe('Workflows page', () => {
     expect(host.textContent).toContain('No workflow matches “lint”');
     await click(button(host, 'Clear search'));
     expect(host.querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  it('lists templates apart from the library and creates a workflow from one, then opens it in the editor', async () => {
+    const create = vi.spyOn(api, 'createWorkflowFromTemplate').mockImplementation(async () => {
+      vi.spyOn(api, 'workflows').mockResolvedValue({ total: 4, workflows: [entry({ name: 'my-flow', version: 1 }), entry({ name: 'docs-only' }), entry({ name: 'Default' }), entry({ name: 'security' })] });
+      return { name: 'my-flow', description: '', version: 1, text: YAML };
+    });
+    const host = await mountComponent(createElement(WorkflowsPage));
+    const templates = host.querySelector('section[aria-labelledby=workflow-templates-title]') as HTMLElement;
+    expect(templates.textContent).toContain('Implement a Ticket.');
+    expect(templates.textContent).toContain('Epic template');
+    expect(templates.querySelectorAll('table, [aria-label^="Open"]')).toHaveLength(0);
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(3);
+    expect([...templates.querySelectorAll('button')].some((b) => /delete|duplicate|export/i.test(b.textContent ?? ''))).toBe(false);
+    await click(templates.querySelector('button[aria-label="New from template implement"]'));
+    const input = document.body.querySelector('input[placeholder="docs-only"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ' my-flow ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+    });
+    await click(button(document.body, 'Create workflow'));
+    expect(create).toHaveBeenCalledWith('implement', 'my-flow');
+    await act(async () => {
+      await flush();
+    });
+    expect(host.textContent).toContain('my-flow');
+    expect(host.querySelector('section[aria-labelledby=workflow-templates-title]')).toBeNull();
+  });
+
+  it('shows a refused template name in the dialog and stays on the library', async () => {
+    vi.spyOn(api, 'createWorkflowFromTemplate').mockRejectedValue(new ApiError(409, 'A workflow named docs-only already exists'));
+    const host = await mountComponent(createElement(WorkflowsPage));
+    await click(host.querySelector('button[aria-label="New from template epic"]'));
+    const input = document.body.querySelector('input[placeholder="docs-only"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'docs-only');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+    });
+    await click(button(document.body, 'Create workflow'));
+    expect(document.body.querySelector('[role=alert]')?.textContent).toContain('already exists');
+    expect(host.querySelector('section[aria-labelledby=workflow-templates-title]')).not.toBeNull();
   });
 
   it('confirms before deleting an unused workflow', async () => {

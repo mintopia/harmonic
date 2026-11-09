@@ -447,6 +447,16 @@ export const api: typeof RealApi = {
   importWorkflow: (text: string) => ok({ name: 'imported', description: '', version: 1, text }),
   exportWorkflow: (_name: string) => ok(''),
   duplicateWorkflow: (name: string, newName?: string) => ok({ name: newName ?? `${name}-copy`, description: '', version: 1, text: '' }),
+  workflowTemplates: () =>
+    ok({
+      templates: [
+        { name: 'implement', description: 'Implement a Ticket: rebase, install, agent, verify, review, merge.', subject: 'ticket', text: '' },
+        { name: 'research', description: 'Research a question and file the findings.', subject: 'ticket', text: '' },
+        { name: 'epic', description: 'Run an Epic: plan, fan out child Tickets, close.', subject: 'epic', text: '' },
+      ],
+      total: 3,
+    }),
+  createWorkflowFromTemplate: (_template: string, name: string) => ok({ name, description: '', version: 1, text: '' }),
   deleteWorkflow: (_name: string) => ok({}),
   workflowVars: (_id: number) => ok(storyVars()),
   setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),

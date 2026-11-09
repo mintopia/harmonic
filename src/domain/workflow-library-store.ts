@@ -124,7 +124,12 @@ function templateEntries(): WorkflowEntry[] {
   return TEMPLATES.map(({ name, description, subject, text }) => ({ name, description, subject, text, version: 1 }));
 }
 
-const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
+/** The packaged templates: read-only definitions that are never part of the library. */
+export function workflowTemplates(): WorkflowEntry[] {
+  return templateEntries();
+}
+
+const isMissing =(err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
 
 /** The global workflow library: operator workflows kept as one YAML file each under `<dataDir>/workflows`, with every save kept as an immutable version under `.versions`. Boot seeds the packaged templates as ordinary operator workflows. */
 export class WorkflowLibrary {
@@ -314,6 +319,15 @@ export class WorkflowLibrary {
     const { name } = parseWorkflow(text);
     if (this.list().some((e) => e.name === name)) throw new DomainError('conflict', `A workflow named ${name} already exists`);
     return this.save(name, text);
+  }
+
+  /** Creates an editable operator workflow at version 1 from a packaged template's text. */
+  async createFromTemplate(template: string, name: string): Promise<WorkflowEntry> {
+    const source = TEMPLATES.find((t) => t.name === template);
+    if (!source) throw new DomainError('not_found', `No workflow template is named ${template}`);
+    if (!WORKFLOW_NAME_PATTERN.test(name)) throw new DomainError('validation', `${name} is not a valid workflow name`);
+    if (this.list().some((e) => e.name === name)) throw new DomainError('conflict', `A workflow named ${name} already exists`);
+    return this.save(name, source.text.replace(/^name:.*$/m, `name: ${name}`));
   }
 
   async duplicate(name: string, newName?: string): Promise<WorkflowEntry> {

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { api } from '../../api';
 import { toastError, toastSuccess } from '../../toast';
 import { useAsyncResource } from '../../useAsyncResource';
-import type { WorkflowLibraryEntry } from '../../types';
+import type { WorkflowLibraryEntry, WorkflowTemplate } from '../../types';
 import { btnGhost, btnPrimary, card, field, labelType, searchField, sectionTitle } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { EmptyState } from '../EmptyState';
@@ -53,7 +53,8 @@ function Library({
 }) {
   const [query, setQuery] = useState('');
   const [deleting, setDeleting] = useState<WorkflowLibraryEntry | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [fromTemplate, setFromTemplate] = useState<WorkflowTemplate | null>(null);
+  const templates = useAsyncResource(() => api.workflowTemplates(), []);
   const picker = useRef<HTMLInputElement>(null);
   const visible = filterWorkflows(entries, query);
 
@@ -117,9 +118,6 @@ function Library({
               if (file) void importFile(file);
             }}
           />
-          <button type="button" className={btnPrimary} onClick={() => setCreating(true)} disabled={entries.length === 0}>
-            New workflow
-          </button>
         </div>
         {error !== null && !hasData && <LoadError message={error} onRetry={reload} />}
         {loading && !hasData && <p className="text-muted">Loading workflows…</p>}
@@ -135,7 +133,7 @@ function Library({
               )
             }
           >
-            {query.trim() === '' ? 'Create one or import a YAML file.' : 'Search looks at names.'}
+            {query.trim() === '' ? 'Create one from a template or import a YAML file.' : 'Search looks at names.'}
           </EmptyState>
         )}
         {visible.length > 0 && (
@@ -207,17 +205,39 @@ function Library({
           <a href="/settings?tab=execution" className="font-semibold text-accent hover:text-accent-hot">Settings › Running Tickets</a> sets the default workflows and Workflow Labels.
         </p>
       </section>
+      <section className={`${card} mt-4 bg-raised p-5`} aria-labelledby="workflow-templates-title">
+        <h2 id="workflow-templates-title" className={sectionTitle}>
+          Templates
+        </h2>
+        <p className="mb-3 mt-1 text-small text-muted">Bundled starting points. A template is not a workflow: it cannot be opened, assigned or deleted. New from template makes an editable workflow in the library.</p>
+        {templates.error !== null && templates.data === null && <LoadError message={templates.error} onRetry={templates.reload} />}
+        <ul className="divide-y divide-hairline">
+          {(templates.data?.templates ?? []).map((t) => (
+            <li key={t.name} className="flex flex-wrap items-center gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="font-data text-small font-bold text-ink">
+                  {t.name} <span className="ml-1 font-sans font-medium text-faint">{t.subject === 'epic' ? 'Epic' : 'Ticket'} template</span>
+                </p>
+                <p className="text-small text-muted">{t.description}</p>
+              </div>
+              <button type="button" className={btnGhost} aria-label={`New from template ${t.name}`} onClick={() => setFromTemplate(t)}>
+                New from template
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
       {deleting && (
         <ConfirmDialog label={`Delete ${deleting.name}`} title={`Delete “${deleting.name}”?`} confirmLabel="Delete workflow" tone="danger" onConfirm={() => remove(deleting)} onCancel={() => setDeleting(null)}>
           Deleting removes its YAML file from the data directory and cannot be undone.
         </ConfirmDialog>
       )}
-      {creating && (
-        <NewWorkflowDialog
-          template={entries[0]?.name ?? ''}
-          onCancel={() => setCreating(false)}
+      {fromTemplate && (
+        <NewFromTemplateDialog
+          template={fromTemplate.name}
+          onCancel={() => setFromTemplate(null)}
           onCreated={(name) => {
-            setCreating(false);
+            setFromTemplate(null);
             reload();
             onOpen(name);
           }}
@@ -227,7 +247,7 @@ function Library({
   );
 }
 
-function NewWorkflowDialog({ template, onCancel, onCreated }: { template: string; onCancel: () => void; onCreated: (name: string) => void }) {
+function NewFromTemplateDialog({ template, onCancel, onCreated }: { template: string; onCancel: () => void; onCreated: (name: string) => void }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,7 +256,7 @@ function NewWorkflowDialog({ template, onCancel, onCreated }: { template: string
     setBusy(true);
     setError(null);
     try {
-      onCreated((await api.duplicateWorkflow(template, name.trim())).name);
+      onCreated((await api.createWorkflowFromTemplate(template, name.trim())).name);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -244,7 +264,7 @@ function NewWorkflowDialog({ template, onCancel, onCreated }: { template: string
   };
 
   return (
-    <Modal label="New workflow" onClose={onCancel} className="max-w-md">
+    <Modal label="New from template" onClose={onCancel} className="max-w-md">
       <form
         className="p-5"
         onSubmit={(e) => {
@@ -252,8 +272,8 @@ function NewWorkflowDialog({ template, onCancel, onCreated }: { template: string
           if (name.trim() !== '' && !busy) void create();
         }}
       >
-        <h2 className="mb-2 pr-6 font-display text-display font-display-weight">New workflow</h2>
-        <p className="mb-3 text-muted">Starts as an editable copy of {template}.</p>
+        <h2 className="mb-2 pr-6 font-display text-display font-display-weight">New from template</h2>
+        <p className="mb-3 text-muted">Starts as an editable workflow at version 1, made from the {template} template.</p>
         <label className="block">
           <span className={`${labelType} text-muted`}>Name</span>
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="docs-only" className={`${field} mt-1 font-data`} />
