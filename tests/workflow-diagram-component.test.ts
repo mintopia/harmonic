@@ -43,7 +43,7 @@ describe('WorkflowDiagram', () => {
   });
 
   it('shows the condition on the bundled implement review group', async () => {
-    const text = new WorkflowLibrary(null).list().find((w) => w.name === 'implement' && w.bundled)!.text;
+    const text = new WorkflowLibrary(null).list().find((w) => w.name === 'implement')!.text;
     const implement = buildWorkflowDiagram(parseWorkflow(text));
     const container = await mountComponent(createElement(WorkflowDiagram, { model: implement, stale: false, errorCount: 0 }));
     const group = container.querySelector('[data-node="review"][data-kind="parallel"]');

@@ -6,7 +6,7 @@ import { parseWorkflow } from '../src/domain/workflow.js';
 import { buildWorkflowDiagram } from '../src/domain/workflow-diagram.js';
 import { computeLayout } from '../web/src/workflow-diagram-layout.js';
 
-const bundledWorkflows = new WorkflowLibrary(null).list().filter((w) => w.bundled);
+const bundledWorkflows = new WorkflowLibrary(null).list();
 const bundled = (name: string): string => bundledWorkflows.find((w) => w.name === name)!.text;
 
 const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'settings-workflow-migration');

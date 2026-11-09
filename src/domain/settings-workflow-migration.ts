@@ -318,7 +318,7 @@ export async function writePrompt(prompts: PromptLibrary, entry: PlannedPrompt):
 }
 
 export async function writeWorkflow(library: WorkflowLibrary, workflow: PlannedWorkflow): Promise<void> {
-  const existing = library.list().find((entry) => entry.name === workflow.name && !entry.bundled);
+  const existing = library.list().find((entry) => entry.name === workflow.name);
   if (existing?.text !== workflow.text) await library.save(workflow.name, workflow.text);
 }
 

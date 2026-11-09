@@ -32,7 +32,7 @@ describe('prompt library model', () => {
   });
 
   it('labels used-by with steps and prompts', () => {
-    const step = { workflow: 'w', workflowBundled: false, stepId: 's' };
+    const step = { workflow: 'w', stepId: 's' };
     expect(usedByLabel({ usedBy: [], usedBySteps: [] })).toBe('Unused');
     expect(usedByLabel({ usedBy: ['a'], usedBySteps: [] })).toBe('1 prompt');
     expect(usedByLabel({ usedBy: ['a', 'b'], usedBySteps: [] })).toBe('2 prompts');
@@ -42,9 +42,9 @@ describe('prompt library model', () => {
 
   it('orders Used by rows steps first, then prompts with the include line', () => {
     const lib = [prompt('team-style'), prompt('release-notes', { text: 'a\nb\n${{ prompts.team-style }}' })];
-    const rows = usedByRows({ code: 'team-style', usedBy: ['release-notes'], usedBySteps: [{ workflow: 'w', workflowBundled: true, stepId: 'build' }] }, lib);
+    const rows = usedByRows({ code: 'team-style', usedBy: ['release-notes'], usedBySteps: [{ workflow: 'w', stepId: 'build' }] }, lib);
     expect(rows).toEqual([
-      { kind: 'step', workflow: 'w', bundled: true, stepId: 'build' },
+      { kind: 'step', workflow: 'w', stepId: 'build' },
       { kind: 'prompt', code: 'release-notes', line: 3 },
     ]);
   });

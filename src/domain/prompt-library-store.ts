@@ -12,7 +12,6 @@ import type { WorkflowEntry } from './workflow-library-store.js';
 
 export interface StepUse {
   readonly workflow: string;
-  readonly workflowBundled: boolean;
   readonly stepId: string;
 }
 
@@ -90,7 +89,7 @@ export class PromptLibrary {
 
   private stepUses(code: string): StepUse[] {
     return (this.workflows?.list() ?? []).flatMap((wf) =>
-      stepsOf(wf.text).filter((step) => promptCodeOf(step) === code).map((step) => ({ workflow: wf.name, workflowBundled: wf.bundled, stepId: step.id })),
+      stepsOf(wf.text).filter((step) => promptCodeOf(step) === code).map((step) => ({ workflow: wf.name, stepId: step.id })),
     );
   }
 

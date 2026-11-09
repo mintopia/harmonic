@@ -1,7 +1,6 @@
+import { FALLBACK_WORKFLOWS } from '../../../../src/domain/workflow.js';
 import { ApiError } from '../../api';
 import type { WorkflowIssue, WorkflowLibraryEntry } from '../../types';
-
-export const BUNDLED_READ_ONLY = 'Bundled workflows are read-only.';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -22,7 +21,7 @@ export interface AssignedChip {
 
 export function assignedChips(entry: WorkflowLibraryEntry): AssignedChip[] {
   if (entry.assignedAs.length === 0) {
-    return [{ tone: 'neutral', text: entry.bundled ? 'the process Harmonic runs today' : 'Not assigned' }];
+    return [{ tone: 'neutral', text: 'Not assigned' }];
   }
   return entry.assignedAs.map((a): AssignedChip => {
     if (a.kind === 'global-default') return { tone: 'global', text: 'Global default' };
@@ -32,7 +31,7 @@ export function assignedChips(entry: WorkflowLibraryEntry): AssignedChip[] {
 }
 
 export function deleteBlock(entry: WorkflowLibraryEntry): string | null {
-  if (entry.bundled) return BUNDLED_READ_ONLY;
+  if (FALLBACK_WORKFLOWS.includes(entry.name)) return 'Fallback workflow: used when no default or Workflow Label chooses one.';
   const labels = entry.assignedAs.filter((a) => a.kind === 'label').length;
   const defaults = entry.assignedAs.length - labels;
   const parts = [

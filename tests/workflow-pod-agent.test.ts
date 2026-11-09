@@ -51,7 +51,7 @@ describe('agent and critic steps in a workflow pod', () => {
     config.harnesses.claude = { ...config.harnesses.claude, command: process.execPath, args: [AGENT] };
     const acp = createAcpCriticDrive(testSpawnProcessGroup);
     return new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflow, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflow, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

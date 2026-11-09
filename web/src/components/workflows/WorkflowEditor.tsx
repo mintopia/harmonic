@@ -82,8 +82,7 @@ function EditorBody({
   const issues = useMemo(() => [...live.issues, ...toEditorIssues(state.issues, 'server')], [live.issues, state.issues]);
   const status = editorStatus({ ...state, issues });
   const blocked = deleteBlock(entry);
-  const readOnly = doc.bundled;
-  const saveDisabled = readOnly || status.saveDisabled;
+  const saveDisabled = status.saveDisabled;
 
   const save = async () => {
     if (saveDisabled) return;
@@ -134,25 +133,21 @@ function EditorBody({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3.5">
           <h2 className={sectionTitle}>{doc.name}</h2>
           <span className="font-data text-small text-muted">v{state.version}</span>
-          {readOnly ? (
-            <span className="rounded-sm bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted">Bundled</span>
-          ) : (
-            <span role="status" className={`rounded-sm px-2 py-0.5 text-small font-semibold ${PILL_STYLES[status.status]}`}>
-              {status.pill}
-            </span>
-          )}
+          <span role="status" className={`rounded-sm px-2 py-0.5 text-small font-semibold ${PILL_STYLES[status.status]}`}>
+            {status.pill}
+          </span>
           <span className="flex-1" />
           <button type="button" className={btnGhost} onClick={exportYaml}>
             Export
           </button>
-          <button type="button" className={readOnly ? btnPrimary : btnGhost} onClick={duplicate}>
+          <button type="button" className={btnGhost} onClick={duplicate}>
             Duplicate
           </button>
           <button type="button" className={btnGhost} disabled={blocked !== null} title={blocked ?? undefined} onClick={() => setConfirmingDelete(true)}>
             Delete
           </button>
           <button type="button" className={`${btnPrimary} disabled:border disabled:border-hairline disabled:bg-raised disabled:bg-none disabled:text-faint disabled:opacity-100 disabled:shadow-none disabled:hover:bg-raised`} disabled={saveDisabled} onClick={save}>
-            {readOnly ? 'Save' : status.saveLabel}
+            {status.saveLabel}
           </button>
         </div>
         <div className="mx-4 mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-hairline py-2.5 text-small text-muted">
@@ -171,14 +166,6 @@ function EditorBody({
             In use by {tickets} {tickets === 1 ? 'Ticket' : 'Tickets'} — they keep v{doc.version} until their next Retry
           </span>
         </div>
-        {readOnly && (
-          <div className="px-4 pb-3">
-            <div className="flex flex-wrap items-center gap-2.5 rounded-sm bg-raised px-3 py-2 text-small">
-              <span className="font-semibold text-ink">Read-only.</span>
-              <span>Bundled workflows ship with Harmonic and are upgraded with it. Duplicate this one to edit a copy.</span>
-            </div>
-          </div>
-        )}
         {issues.length > 0 && (
           <div className="px-4 pb-3">
             <ul aria-label="Workflow errors" className="m-0 list-none p-0 text-small text-fail">
@@ -227,16 +214,16 @@ function EditorBody({
             </span>
           </div>
           <div role="tabpanel" id="editor-tabpanel" aria-labelledby={`editor-tab-${tab}`} className="rounded-lg bg-surface py-3 shadow-card">
-            {tab === 'blocks' && <WorkflowBuilder text={state.text} issues={issues} readOnly={readOnly} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} />}
+            {tab === 'blocks' && <WorkflowBuilder text={state.text} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} />}
             {tab === 'yaml' && (
               <div className="px-3.5">
-                <YamlEditor text={state.text} readOnly={readOnly} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
+                <YamlEditor text={state.text} issues={issues} modelOptions={modelOptions} onChange={(text) => dispatch({ type: 'edit', text })} onSave={save} />
                 <p className="pt-2 text-small text-muted">
                   Completion offers Workflow Actions after <code className="font-data">uses:</code> and step keys on a new line. Errors show inline with line and column; Save stays disabled until they&apos;re fixed.
                 </p>
               </div>
             )}
-            {tab === 'variables' && <WorkflowVariablesPanel name={doc.name} text={state.text} readOnly={readOnly} onChange={(text) => dispatch({ type: 'edit', text })} />}
+            {tab === 'variables' && <WorkflowVariablesPanel name={doc.name} text={state.text} onChange={(text) => dispatch({ type: 'edit', text })} />}
           </div>
         </section>
         <div className="min-w-0 xl:sticky xl:top-4">

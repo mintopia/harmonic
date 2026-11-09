@@ -16,7 +16,6 @@ const entry = (over: Partial<WorkflowLibraryEntry> = {}): WorkflowLibraryEntry =
   name: 'docs-only',
   description: '',
   subject: 'ticket',
-  bundled: false,
   version: 2,
   inUse: { tickets: 0, running: 0, workspaces: 0 },
   assignedAs: [],
@@ -37,7 +36,6 @@ describe('workflows library model', () => {
   });
 
   it('renders a neutral placeholder when nothing is assigned', () => {
-    expect(assignedChips(entry({ bundled: true }))).toEqual([{ tone: 'neutral', text: 'the process Harmonic runs today' }]);
     expect(assignedChips(entry())).toEqual([{ tone: 'neutral', text: 'Not assigned' }]);
   });
 
@@ -49,7 +47,7 @@ describe('workflows library model', () => {
   });
 
   it('explains why Delete is blocked', () => {
-    expect(deleteBlock(entry({ bundled: true }))).toBe('Bundled workflows are read-only.');
+    expect(deleteBlock(entry({ name: 'implement' }))).toContain('Fallback workflow');
     expect(deleteBlock(entry({ inUse: { tickets: 41, running: 0, workspaces: 5 } }))).toBe('In use by 41 Tickets and 5 Workspaces.');
     expect(deleteBlock(entry({ inUse: { tickets: 2, running: 0, workspaces: 0 }, assignedAs: [{ kind: 'label', label: 'security' }] }))).toBe('In use by 2 Tickets and 1 Workflow Label.');
     expect(deleteBlock(entry())).toBeNull();

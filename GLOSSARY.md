@@ -357,7 +357,7 @@ runs and in what order, how each outcome moves to the next Step, how a failed
 Attempt loops into the next one and when the loop ends in Escalation, where an
 Escalation action resumes, and what happens at Merge and after it. Assigned
 like a Routing Label, with a Workspace and global default. The process
-Harmonic runs today ships as the built-in default. Written as steps that each call a **Workflow Action**,
+Harmonic runs today is seeded on boot as ordinary, editable workflows (`implement`, `research`, `epic`). Written as steps that each call a **Workflow Action**,
 branch on step outcomes, read per-execution variables, and wrap the Attempt
 loop in one bounded block.
 _Avoid_: Workflow (bare), pipeline, phase, stage, mode, playbook

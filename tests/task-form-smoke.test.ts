@@ -128,7 +128,7 @@ describe('TaskForm smoke (issue #469)', () => {
         return new Response(JSON.stringify(makeTask()));
       }
       if (url.endsWith('/api/workflows')) {
-        return new Response(JSON.stringify({ workflows: [{ name: 'implement', description: 'd', bundled: true, version: 1 }], total: 1 }));
+        return new Response(JSON.stringify({ workflows: [{ name: 'implement', description: 'd', version: 1 }], total: 1 }));
       }
       return new Response('{}');
     });

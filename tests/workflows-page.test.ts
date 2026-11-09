@@ -13,7 +13,6 @@ const entry = (over: Partial<WorkflowLibraryEntry>): WorkflowLibraryEntry => ({
   name: 'docs-only',
   description: '',
   subject: 'ticket',
-  bundled: false,
   version: 2,
   inUse: { tickets: 0, running: 0, workspaces: 0 },
   assignedAs: [],
@@ -30,12 +29,19 @@ beforeEach(() => {
   vi.spyOn(api, 'workflows').mockResolvedValue({
     total: 3,
     workflows: [
-      entry({ name: 'Default', bundled: true, version: 5 }),
+      entry({ name: 'Default', version: 5 }),
       entry({ name: 'security', inUse: { tickets: 2, running: 0, workspaces: 1 }, assignedAs: [{ kind: 'label', label: 'security' }] }),
       entry({ name: 'docs-only' }),
     ],
   });
-  vi.spyOn(api, 'workflow').mockImplementation(async (name) => ({ name, description: '', bundled: name === 'Default', version: 2, text: YAML }));
+  vi.spyOn(api, 'workflowTemplates').mockResolvedValue({
+    total: 2,
+    templates: [
+      { name: 'implement', description: 'Implement a Ticket.', subject: 'ticket', text: '' },
+      { name: 'epic', description: 'Run an Epic.', subject: 'epic', text: '' },
+    ],
+  });
+  vi.spyOn(api, 'workflow').mockImplementation(async (name) => ({ name, description: '', version: 2, text: YAML }));
 });
 afterEach(async () => {
   await cleanup();
@@ -52,15 +58,14 @@ const button = (host: HTMLElement, text: string) => [...host.querySelectorAll('b
 const editorView = (host: HTMLElement) => EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
 
 describe('Workflows page', () => {
-  it('lists the library with disabled Delete and a why line when bundled or in use', async () => {
+  it('lists the library with disabled Delete and a why line when in use', async () => {
     const host = await mountComponent(createElement(WorkflowsPage));
     const rows = [...host.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(3);
-    expect(rows[0]!.textContent).toContain('Bundled workflows are read-only.');
-    expect(rows[0]!.textContent).toContain('the process Harmonic runs today');
+    expect(rows[0]!.textContent).toContain('Not assigned');
     expect(rows[1]!.textContent).toContain('In use by 2 Tickets and 1 Workspace and 1 Workflow Label.');
     expect(rows[1]!.textContent).toContain('Workflow Label · security');
-    expect((button(rows[0] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(true);
+    expect((button(rows[1] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(true);
     expect((button(rows[2] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -75,6 +80,49 @@ describe('Workflows page', () => {
     expect(host.textContent).toContain('No workflow matches “lint”');
     await click(button(host, 'Clear search'));
     expect(host.querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  it('lists templates apart from the library and creates a workflow from one, then opens it in the editor', async () => {
+    const create = vi.spyOn(api, 'createWorkflowFromTemplate').mockImplementation(async () => {
+      vi.spyOn(api, 'workflows').mockResolvedValue({ total: 4, workflows: [entry({ name: 'my-flow', version: 1 }), entry({ name: 'docs-only' }), entry({ name: 'Default' }), entry({ name: 'security' })] });
+      return { name: 'my-flow', description: '', version: 1, text: YAML };
+    });
+    const host = await mountComponent(createElement(WorkflowsPage));
+    const templates = host.querySelector('section[aria-labelledby=workflow-templates-title]') as HTMLElement;
+    expect(templates.textContent).toContain('Implement a Ticket.');
+    expect(templates.textContent).toContain('Epic template');
+    expect(templates.querySelectorAll('table, [aria-label^="Open"]')).toHaveLength(0);
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(3);
+    expect([...templates.querySelectorAll('button')].some((b) => /delete|duplicate|export/i.test(b.textContent ?? ''))).toBe(false);
+    await click(templates.querySelector('button[aria-label="New from template implement"]'));
+    const input = document.body.querySelector('input[placeholder="docs-only"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ' my-flow ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+    });
+    await click(button(document.body, 'Create workflow'));
+    expect(create).toHaveBeenCalledWith('implement', 'my-flow');
+    await act(async () => {
+      await flush();
+    });
+    expect(host.textContent).toContain('my-flow');
+    expect(host.querySelector('section[aria-labelledby=workflow-templates-title]')).toBeNull();
+  });
+
+  it('shows a refused template name in the dialog and stays on the library', async () => {
+    vi.spyOn(api, 'createWorkflowFromTemplate').mockRejectedValue(new ApiError(409, 'A workflow named docs-only already exists'));
+    const host = await mountComponent(createElement(WorkflowsPage));
+    await click(host.querySelector('button[aria-label="New from template epic"]'));
+    const input = document.body.querySelector('input[placeholder="docs-only"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'docs-only');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+    });
+    await click(button(document.body, 'Create workflow'));
+    expect(document.body.querySelector('[role=alert]')?.textContent).toContain('already exists');
+    expect(host.querySelector('section[aria-labelledby=workflow-templates-title]')).not.toBeNull();
   });
 
   it('confirms before deleting an unused workflow', async () => {
@@ -119,19 +167,6 @@ describe('Workflows page', () => {
     });
     expect(host.querySelector('.cm-issue-line')).toBeNull();
     expect((button(host, 'Save as v3') as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('opens a bundled workflow read-only with a banner and no editing', async () => {
-    const host = await mountComponent(createElement(WorkflowsPage));
-    await click(host.querySelectorAll('tbody tr')[0]!.querySelector('td button'));
-    expect(host.textContent).toContain('Read-only.');
-    await act(async () => {
-      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await flush();
-    });
-    expect(host.querySelector('.cm-content')!.getAttribute('contenteditable')).toBe('false');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
-    expect((button(host, 'Delete') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

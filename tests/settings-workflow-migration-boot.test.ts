@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logFilePath } from '../src/daemon.js';
@@ -62,7 +62,7 @@ describe('settings to workflows migration in a built Harmonic process', () => {
 
     expect(code).not.toBe(0);
     expect(output).toContain('Cannot migrate setting maxAttempts');
-    expect(existsSync(join(dataDir, 'workflows'))).toBe(false);
+    expect(readdirSync(join(dataDir, 'workflows')).filter((f) => f.startsWith('migrated-'))).toEqual([]);
     expect(existsSync(join(dataDir, 'prompts'))).toBe(false);
     expect(readFileSync(join(dataDir, 'settings.yaml'), 'utf8')).toBe(UNCONVERTIBLE_SETTINGS);
   }, 60_000);
@@ -90,7 +90,7 @@ describe('settings to workflows migration in a built Harmonic process', () => {
     await waitFor(() => existsSync(v1Marker), 5_000);
     expect(readFileSync(v1Marker, 'utf8')).toBe('v1-running');
     expect(readFileSync(logFilePath(dataDir), 'utf8')).toContain('Cannot migrate setting maxAttempts');
-    expect(existsSync(join(dataDir, 'workflows'))).toBe(false);
+    expect(readdirSync(join(dataDir, 'workflows')).filter((f) => f.startsWith('migrated-'))).toEqual([]);
     expect(readFileSync(join(dataDir, 'settings.yaml'), 'utf8')).toBe(UNCONVERTIBLE_SETTINGS);
   }, 120_000);
 });

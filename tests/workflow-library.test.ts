@@ -91,12 +91,41 @@ describe('/api/workflows', () => {
     expect(readFileSync(join(dataDir, 'workflows', 'imported.yaml'), 'utf8')).toBe(text);
   });
 
-  it('keeps bundled workflows read-only and duplicates them into editable copies', async () => {
-    expect((await server.api('PUT', '/api/workflows/implement', { text: flow('implement') })).status).toBe(403);
+  it('lists the seeded workflows as editable and duplicates them', async () => {
+    const seeded = await server.api('GET', '/api/workflows/implement');
+    const saved = await server.api('PUT', '/api/workflows/implement', { text: seeded.body.text.replace('review: false', 'review: true') });
+    expect(saved.status).toBe(200);
+    expect(saved.body.version).toBe(2);
+    expect(readFileSync(join(dataDir, 'workflows', 'implement.yaml'), 'utf8')).toContain('review: true');
     const copy = await server.api('POST', '/api/workflows/implement/duplicate', {});
     expect(copy.status).toBe(201);
     expect(copy.body.name).toBe('implement-copy');
-    expect(copy.body.bundled).toBe(false);
+  });
+
+  it('lists the bundled templates and creates an editable v1 workflow from one, from the pristine text', async () => {
+    const templates = await server.api('GET', '/api/workflow-templates');
+    expect(templates.status).toBe(200);
+    expect(templates.body.templates.map((t: { name: string }) => t.name)).toEqual(['implement', 'research', 'epic']);
+    expect(templates.body.templates[0]).toEqual(expect.objectContaining({ description: expect.any(String), subject: 'ticket', text: expect.stringContaining('name: implement') }));
+    const created = await server.api('POST', '/api/workflows/from-template', { template: 'implement', name: 'from-tpl' });
+    expect(created.status).toBe(201);
+    expect(created.body.version).toBe(1);
+    expect(created.body.text).toBe(templates.body.templates[0].text.replace('name: implement', 'name: from-tpl'));
+    expect(readFileSync(join(dataDir, 'workflows', 'from-tpl.yaml'), 'utf8')).toBe(created.body.text);
+    expect((await server.api('PUT', '/api/workflows/from-tpl', { text: created.body.text })).body.version).toBe(2);
+  });
+
+  it('refuses a template copy whose name is taken or whose template is unknown', async () => {
+    expect((await server.api('POST', '/api/workflows/from-template', { template: 'research', name: 'implement' })).status).toBe(409);
+    expect((await server.api('POST', '/api/workflows/from-template', { template: 'nope', name: 'fresh-one' })).status).toBe(404);
+    expect((await server.api('GET', '/api/workflows')).body.workflows.some((w: { name: string }) => w.name === 'fresh-one')).toBe(false);
+  });
+
+  it('refuses to delete a fallback workflow even with no default or ticket referencing it', async () => {
+    for (const name of ['implement', 'research', 'epic']) {
+      expect((await server.api('DELETE', `/api/workflows/${name}`)).status).toBe(409);
+      expect(existsSync(join(dataDir, 'workflows', `${name}.yaml`))).toBe(true);
+    }
   });
 
   it('lists inUse and assignedAs for every workflow', async () => {
@@ -115,10 +144,6 @@ describe('/api/workflows', () => {
     expect(existsSync(join(dataDir, 'workflows', '.versions', 'doomed'))).toBe(false);
     expect((await server.api('GET', '/api/workflows/doomed')).status).toBe(404);
     expect((await server.api('DELETE', '/api/workflows/doomed')).status).toBe(404);
-  });
-
-  it('refuses to delete a bundled workflow', async () => {
-    expect((await server.api('DELETE', '/api/workflows/implement')).status).toBe(403);
   });
 
   it('counts a working ticket as running only under the workflow it is pinned to', async () => {
@@ -149,7 +174,9 @@ describe('WorkflowLibrary on a real filesystem', () => {
 
   it('leaves the previous file intact when a crash lands between the temp write and the rename', async () => {
     const dir = join(root, 'crash');
-    await new WorkflowLibrary(dir).save('crashy', flow('crashy'));
+    const seeder = new WorkflowLibrary(dir);
+    await seeder.load();
+    await seeder.save('crashy', flow('crashy'));
     const crashing = new WorkflowLibrary(dir, { rename: async () => { throw new Error('simulated crash'); } });
     await crashing.load();
     await expect(crashing.save('crashy', flow('crashy', '  - id: more\n    run: echo\n'))).rejects.toThrow('simulated crash');
@@ -159,7 +186,7 @@ describe('WorkflowLibrary on a real filesystem', () => {
     expect(reloaded.get('crashy').text).toBe(flow('crashy'));
     expect(reloaded.get('crashy').version).toBe(1);
     expect(await reloaded.listVersions('crashy')).toEqual([1]);
-    expect(readdirSync(join(dir, 'workflows')).filter((f) => f.endsWith('.yaml'))).toEqual(['crashy.yaml']);
+    expect(readdirSync(join(dir, 'workflows')).filter((f) => f.endsWith('.yaml')).sort()).toEqual(['crashy.yaml', 'epic.yaml', 'implement.yaml', 'research.yaml']);
   });
 
   it('discards a version file orphaned by a process that died before its rename', async () => {
@@ -268,5 +295,41 @@ describe('stored workflows saved before the stricter with: rules', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('seeding the packaged workflows on boot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harmonic-workflow-seed-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const onDisk = (dir: string) => Object.fromEntries(['implement', 'research', 'epic'].map((n) => [n, readFileSync(join(dir, 'workflows', `${n}.yaml`), 'utf8')]));
+
+  it('writes version 1 of each once, and a second boot changes nothing', async () => {
+    const dir = join(root, 'fresh');
+    const first = new WorkflowLibrary(dir);
+    await first.load();
+    expect(first.list().map((e) => e.name)).toEqual(['epic', 'implement', 'research']);
+    const seeded = onDisk(dir);
+    for (const n of Object.keys(seeded)) {
+      expect(parseWorkflow(seeded[n]!).name).toBe(n);
+      expect(readFileSync(join(dir, 'workflows', '.versions', n, '1.yaml'), 'utf8')).toBe(seeded[n]);
+    }
+    await first.save('implement', seeded.implement!.replace('review: false', 'review: true'));
+    const edited = onDisk(dir);
+    const second = new WorkflowLibrary(dir);
+    await second.load();
+    expect(onDisk(dir)).toEqual(edited);
+    expect(second.get('implement').version).toBe(2);
+    expect(readdirSync(join(dir, 'workflows')).filter((f) => f.endsWith('.yaml')).sort()).toEqual(['epic.yaml', 'implement.yaml', 'research.yaml']);
+  });
+
+  it('never overwrites an existing operator file of that name', async () => {
+    const dir = join(root, 'existing');
+    mkdirSync(join(dir, 'workflows'), { recursive: true });
+    const mine = flow('research');
+    writeFileSync(join(dir, 'workflows', 'research.yaml'), mine);
+    const library = new WorkflowLibrary(dir);
+    await library.load();
+    expect(readFileSync(join(dir, 'workflows', 'research.yaml'), 'utf8')).toBe(mine);
+    expect(library.list().map((e) => e.name)).toEqual(['epic', 'implement', 'research']);
   });
 });

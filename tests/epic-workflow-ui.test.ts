@@ -8,7 +8,7 @@ import type { Epic } from '../web/src/epic-model.js';
 import { cleanup, flush, makeConfig, mountComponent } from './component-smoke-harness.js';
 
 const entry = (name: string, subject: 'ticket' | 'epic', version: number) => ({
-  name, description: '', subject, bundled: false, version, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [],
+  name, description: '', subject, version, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [],
 });
 const library = [entry('Plain ticket', 'ticket', 2), entry('epic', 'epic', 1), entry('Migrated Epic (global)', 'epic', 1)];
 
@@ -25,7 +25,7 @@ const optionTexts = (el: Element | null) => [...(el as HTMLSelectElement).option
 describe('Epic workflow settings', () => {
   it('global card lists only Epic workflows with versions', async () => {
     const host = await mountComponent(createElement(EpicWorkflowEditor, { surface: 'global', value: null, globalValue: null, onChange: () => {} }));
-    expect(optionTexts(host.querySelector('#settings-epic-workflow'))).toEqual(['Bundled default · epic · v1', 'epic · v1', 'Migrated Epic (global) · v1']);
+    expect(optionTexts(host.querySelector('#settings-epic-workflow'))).toEqual(['Default · epic · v1', 'epic · v1', 'Migrated Epic (global) · v1']);
     expect(host.textContent).toContain('Used when the Workspace has no Epic workflow of its own.');
   });
 

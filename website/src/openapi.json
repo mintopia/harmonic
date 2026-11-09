@@ -11226,10 +11226,6 @@
                   "type": "string",
                   "example": "implement"
                 },
-                "workflowBundled": {
-                  "type": "boolean",
-                  "description": "Whether the workflow ships with Harmonic."
-                },
                 "stepId": {
                   "type": "string",
                   "example": "review"
@@ -11237,7 +11233,6 @@
               },
               "required": [
                 "workflow",
-                "workflowBundled",
                 "stepId"
               ]
             },
@@ -11289,10 +11284,6 @@
             "type": "string",
             "description": "The workflow YAML exactly as saved."
           },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
-          },
           "version": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -11305,8 +11296,38 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version"
+        ]
+      },
+      "WorkflowTemplateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "subject",
+          "text"
         ]
       },
       "WorkflowListEntryInput": {
@@ -11331,10 +11352,6 @@
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
-          },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
           },
           "version": {
             "type": "integer",
@@ -11397,7 +11414,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version",
           "inUse",
           "assignedAs"
@@ -22834,10 +22850,6 @@
                   "type": "string",
                   "example": "implement"
                 },
-                "workflowBundled": {
-                  "type": "boolean",
-                  "description": "Whether the workflow ships with Harmonic."
-                },
                 "stepId": {
                   "type": "string",
                   "example": "review"
@@ -22845,7 +22857,6 @@
               },
               "required": [
                 "workflow",
-                "workflowBundled",
                 "stepId"
               ],
               "additionalProperties": false
@@ -22899,10 +22910,6 @@
             "type": "string",
             "description": "The workflow YAML exactly as saved."
           },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
-          },
           "version": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -22915,8 +22922,39 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowTemplate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "subject",
+          "text"
         ],
         "additionalProperties": false
       },
@@ -22942,10 +22980,6 @@
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
-          },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
           },
           "version": {
             "type": "integer",
@@ -23010,7 +23044,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version",
           "inUse",
           "assignedAs"
@@ -31185,7 +31218,7 @@
         "tags": [
           "Workflows"
         ],
-        "description": "List the workflow library: bundled workflows first, then operator workflows. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "List the workflow library. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -31196,7 +31229,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every workflow, bundled first.",
+            "description": "Every workflow, by name.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31220,7 +31253,7 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "Every workflow, bundled first."
+                  "description": "Every workflow, by name."
                 }
               }
             }
@@ -31306,16 +31339,6 @@
           "204": {
             "description": "Deleted."
           },
-          "403": {
-            "description": "The workflow is bundled.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "404": {
             "description": "No workflow has that name.",
             "content": {
@@ -31327,7 +31350,7 @@
             }
           },
           "409": {
-            "description": "Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.",
+            "description": "Tickets reference the workflow it is assigned as a default or Workflow Label, or it is one of the fallback workflows (`implement`, `research`, `epic`), so it is kept.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31396,16 +31419,6 @@
           },
           "400": {
             "description": "The YAML does not validate; `error.issues` lists each problem with its line and column. Nothing was written.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The workflow is bundled and read-only.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31485,6 +31498,130 @@
         }
       }
     },
+    "/api/workflow-templates": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "List the bundled workflow templates. Templates are not library workflows: they cannot be run, assigned, edited or deleted, only copied with `POST /workflows/from-template`. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every template, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkflowTemplate"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "templates",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every template, by name."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/from-template": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Create an editable library workflow from a bundled template, at version 1. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                    "example": "implement",
+                    "description": "The template to copy."
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                    "example": "implement",
+                    "description": "Name for the new workflow."
+                  }
+                },
+                "required": [
+                  "template",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No template has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A workflow already has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workflows/{name}/export": {
       "get": {
         "tags": [
@@ -31541,7 +31678,7 @@
         "tags": [
           "Workflows"
         ],
-        "description": "Make an editable copy of a workflow, bundled or not. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "Make an editable copy of a workflow. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {

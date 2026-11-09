@@ -17,7 +17,9 @@ configured Critics in parallel. Every check must pass.
 
 Each Critic runs on its own Harness and Model, chosen when you configure it.
 It never falls back to the Task's Harness or the default Harness, so a Critic
-must have a Harness set before it can run.
+must have a Harness set before it can run. To turn the Critic on in the
+`implement` workflow and pick its Harness and Model, see
+[Workflows](/work/workflows/#configure-the-critic).
 
 A failed command, a Critic rejection, or an inconclusive result feeds the
 next Attempt in the same working directory. Once the maximum number of
