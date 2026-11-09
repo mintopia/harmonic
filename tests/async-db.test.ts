@@ -104,7 +104,7 @@ describe('openAsyncDb boot', () => {
     }
   });
 
-  it('does not migrate legacy tracker settings or assign orphan Tasks on boot', async () => {
+  it('does not migrate legacy tracker settings, and attaches orphan Tasks to their working_dir Workspace on boot', async () => {
     const now = Date.now();
     const workspace = await h.db.insert(workspaces).values({ name: 'Test', workingDir: '/tmp', createdAt: now, updatedAt: now }).returning().get();
     await h.db.insert(settings).values({ key: 'config', value: JSON.stringify({ tracker: { enabled: true, pollIntervalSeconds: 15 } }) }).run();
@@ -114,7 +114,7 @@ describe('openAsyncDb boot', () => {
     h = await openAsyncDb(dir);
 
     expect((await h.db.select().from(workspaces).where(eq(workspaces.id, workspace.id)).get())?.trackerEnabled).toBe(false);
-    expect((await h.db.select().from(tasks).where(eq(tasks.id, orphan.id)).get())?.workspaceId).toBeNull();
+    expect((await h.db.select().from(tasks).where(eq(tasks.id, orphan.id)).get())?.workspaceId).toBe(workspace.id);
     expect(await h.db.select().from(settings).where(eq(settings.key, 'trackerEnabledBackfilled')).get()).toBeUndefined();
   });
 });

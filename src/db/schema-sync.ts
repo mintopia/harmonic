@@ -100,6 +100,24 @@ async function contractWorkflowColumn(client: Client): Promise<void> {
   await client.execute('UPDATE `tasks` SET `issue_workflow` = `workflow` WHERE `issue_workflow` IS NULL AND `workflow` IS NOT NULL');
 }
 
+// tasks.workspace_id is nullable only for SQLite ADD COLUMN; pre-Workspace rows must be attached before the API serialises them.
+async function backfillTaskWorkspaces(client: Client): Promise<void> {
+  const orphanDirs = (await client.execute('SELECT DISTINCT `working_dir` FROM `tasks` WHERE `workspace_id` IS NULL')).rows.map((row) => String(row.working_dir));
+  if (orphanDirs.length === 0) return;
+  const now = Date.now();
+  for (const dir of orphanDirs) {
+    const name = dir.split('/').filter(Boolean).pop() ?? dir;
+    await client.execute({
+      sql: 'INSERT OR IGNORE INTO `workspaces` (`name`, `working_dir`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?)',
+      args: [name, dir, now, now],
+    });
+  }
+  const result = await client.execute(
+    'UPDATE `tasks` SET `workspace_id` = (SELECT `id` FROM `workspaces` WHERE `workspaces`.`working_dir` = `tasks`.`working_dir`) WHERE `workspace_id` IS NULL',
+  );
+  logger.warn('schema-sync: attached tasks with no workspace to the workspace for their working_dir', { tasks: result.rowsAffected });
+}
+
 async function convergeIncremental(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
   const declaredTables = new Set(baseline.tables.map((t) => t.name));
   const declaredIndexes = new Set(baseline.indexes.map((i) => i.name));
@@ -138,6 +156,7 @@ async function convergeIncremental(client: Client, baseline: Baseline, onStep: (
     }
   }
   await dedupeAttemptEventSeqsBeforeUniqueIndex(client, baseline);
+  await backfillTaskWorkspaces(client);
   for (const index of baseline.indexes) {
     await client.execute(index.sql.replace(/^CREATE (UNIQUE )?INDEX /, 'CREATE $1INDEX IF NOT EXISTS '));
     onStep();
