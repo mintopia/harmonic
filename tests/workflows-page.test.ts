@@ -13,7 +13,6 @@ const entry = (over: Partial<WorkflowLibraryEntry>): WorkflowLibraryEntry => ({
   name: 'docs-only',
   description: '',
   subject: 'ticket',
-  bundled: false,
   version: 2,
   inUse: { tickets: 0, running: 0, workspaces: 0 },
   assignedAs: [],
@@ -30,12 +29,12 @@ beforeEach(() => {
   vi.spyOn(api, 'workflows').mockResolvedValue({
     total: 3,
     workflows: [
-      entry({ name: 'Default', bundled: true, version: 5 }),
+      entry({ name: 'Default', version: 5 }),
       entry({ name: 'security', inUse: { tickets: 2, running: 0, workspaces: 1 }, assignedAs: [{ kind: 'label', label: 'security' }] }),
       entry({ name: 'docs-only' }),
     ],
   });
-  vi.spyOn(api, 'workflow').mockImplementation(async (name) => ({ name, description: '', bundled: name === 'Default', version: 2, text: YAML }));
+  vi.spyOn(api, 'workflow').mockImplementation(async (name) => ({ name, description: '', version: 2, text: YAML }));
 });
 afterEach(async () => {
   await cleanup();
@@ -52,15 +51,14 @@ const button = (host: HTMLElement, text: string) => [...host.querySelectorAll('b
 const editorView = (host: HTMLElement) => EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
 
 describe('Workflows page', () => {
-  it('lists the library with disabled Delete and a why line when bundled or in use', async () => {
+  it('lists the library with disabled Delete and a why line when in use', async () => {
     const host = await mountComponent(createElement(WorkflowsPage));
     const rows = [...host.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(3);
-    expect(rows[0]!.textContent).toContain('Bundled workflows are read-only.');
-    expect(rows[0]!.textContent).toContain('the process Harmonic runs today');
+    expect(rows[0]!.textContent).toContain('Not assigned');
     expect(rows[1]!.textContent).toContain('In use by 2 Tickets and 1 Workspace and 1 Workflow Label.');
     expect(rows[1]!.textContent).toContain('Workflow Label · security');
-    expect((button(rows[0] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(true);
+    expect((button(rows[1] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(true);
     expect((button(rows[2] as HTMLElement, 'Delete') as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -119,19 +117,6 @@ describe('Workflows page', () => {
     });
     expect(host.querySelector('.cm-issue-line')).toBeNull();
     expect((button(host, 'Save as v3') as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('opens a bundled workflow read-only with a banner and no editing', async () => {
-    const host = await mountComponent(createElement(WorkflowsPage));
-    await click(host.querySelectorAll('tbody tr')[0]!.querySelector('td button'));
-    expect(host.textContent).toContain('Read-only.');
-    await act(async () => {
-      [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent === 'YAML')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await flush();
-    });
-    expect(host.querySelector('.cm-content')!.getAttribute('contenteditable')).toBe('false');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
-    expect((button(host, 'Delete') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

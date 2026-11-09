@@ -48,7 +48,7 @@ describe('workflow pod checkpoints against a real repository through the Reposit
   const moveBase = (file: string, message: string): string => `  - id: bump-${file.replace('.', '-')}\n    run: cd '${repo}' && echo m > ${file} && git add ${file} && git commit -qm '${message}' && git push -q origin main\n`;
   const engine = (workflow: string): WorkflowEngine =>
     new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflow, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflow, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

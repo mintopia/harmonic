@@ -48,7 +48,7 @@ steps:
   const owner = (): StepRunOwner => ({ workspaceId, epicRef });
   const engine = (over: Partial<WorkflowEngineDeps<EpicSubject>> = {}): WorkflowEngine<EpicSubject> =>
     new WorkflowEngine<EpicSubject>({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'epic' as const, text: workflow, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'epic' as const, text: workflow, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

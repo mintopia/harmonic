@@ -67,8 +67,8 @@ function Grip() {
   );
 }
 
-function Drag({ id, data, children, className, disabled }: { id: string; data: DragItem; children: (grip: ReactNode) => ReactNode; className?: string; disabled: boolean }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data, disabled });
+function Drag({ id, data, children, className }: { id: string; data: DragItem; children: (grip: ReactNode) => ReactNode; className?: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data });
   return (
     <div ref={setNodeRef} className={`${className ?? ''} ${isDragging ? 'opacity-40' : ''}`}>
       {children(
@@ -139,7 +139,6 @@ interface Ctx {
   modelOptions: readonly ModelOption[];
   selected: string | null;
   select: (key: string | null) => void;
-  readOnly: boolean;
 }
 
 function Controls({ node, ctx, siblings, index, container }: { node: BuilderNode; ctx: Ctx; siblings: number; index: number; container: BuilderPath }) {
@@ -171,15 +170,15 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
   return (
     <div className="mt-2 border-t border-hairline pt-1">
       <Labelled label="Step ID">
-        <input disabled={ctx.readOnly} className={field} value={step.id} onChange={(e) => set('id', e.target.value)} />
+        <input className={field} value={step.id} onChange={(e) => set('id', e.target.value)} />
       </Labelled>
       {isRun ? (
         <Labelled label="Command">
-          <input disabled={ctx.readOnly} className={`${field} font-data`} value={step.run ?? ''} onChange={(e) => set('run', e.target.value)} />
+          <input className={`${field} font-data`} value={step.run ?? ''} onChange={(e) => set('run', e.target.value)} />
         </Labelled>
       ) : (
         <Labelled label="Action">
-          <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.uses ?? ''} onChange={(e) => set('uses', e.target.value)}>
+          <select className={`${selectField} w-full`} value={step.uses ?? ''} onChange={(e) => set('uses', e.target.value)}>
             {step.uses === undefined && <option value="" />}
             {WORKFLOW_ACTIONS.map((a) => (
               <option key={a}>{a}</option>
@@ -190,7 +189,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
       {agentLike && (
         <>
           <Labelled label="Model Option">
-            <select aria-label="Model Option" disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.option ?? ''} onChange={(e) => set('option', e.target.value)}>
+            <select aria-label="Model Option" className={`${selectField} w-full`} value={step.option ?? ''} onChange={(e) => set('option', e.target.value)}>
               <option value="">None (use Harness and Model)</option>
               {modelOptions.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -201,7 +200,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
             </select>
           </Labelled>
           <Labelled label="Harness">
-            <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.harness ?? ''} onChange={(e) => set('harness', e.target.value)}>
+            <select className={`${selectField} w-full`} value={step.harness ?? ''} onChange={(e) => set('harness', e.target.value)}>
               <option value="">Default</option>
               {harnesses.map((h) => (
                 <option key={h} value={h}>
@@ -211,10 +210,10 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
             </select>
           </Labelled>
           <Labelled label="Model">
-            <input disabled={ctx.readOnly} className={field} value={step.model ?? ''} placeholder="Default" onChange={(e) => set('model', e.target.value)} />
+            <input className={field} value={step.model ?? ''} placeholder="Default" onChange={(e) => set('model', e.target.value)} />
           </Labelled>
           <Labelled label="Prompt (prompt library code)">
-            <select disabled={ctx.readOnly} className={`${selectField} w-full`} value={step.prompt ?? ''} onChange={(e) => set('prompt', e.target.value)}>
+            <select className={`${selectField} w-full`} value={step.prompt ?? ''} onChange={(e) => set('prompt', e.target.value)}>
               <option value="">None</option>
               {prompts.map((p) => (
                 <option key={p}>{p}</option>
@@ -224,7 +223,7 @@ function StepForm({ step, ctx }: { step: BuilderStep; ctx: Ctx }) {
         </>
       )}
       <Labelled label="Run only if (if:)">
-        <input disabled={ctx.readOnly} className={`${field} font-data`} value={step.condition ?? ''} onChange={(e) => set('condition', e.target.value)} />
+        <input className={`${field} font-data`} value={step.condition ?? ''} onChange={(e) => set('condition', e.target.value)} />
       </Labelled>
     </div>
   );
@@ -236,7 +235,7 @@ function StepBlock({ step, ctx, index, siblings, container }: { step: BuilderSte
   const errors = ctx.issues.get(key) ?? [];
   const detail = stepDetail(step);
   return (
-    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: step }} className={`rounded-md bg-surface shadow-card ${errors.length > 0 ? 'border border-fail' : open ? 'border border-accent' : 'border border-transparent'} px-3 py-1.5`}>
+    <Drag id={`block|${key}`} data={{ source: 'block', node: step }} className={`rounded-md bg-surface shadow-card ${errors.length > 0 ? 'border border-fail' : open ? 'border border-accent' : 'border border-transparent'} px-3 py-1.5`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -246,7 +245,7 @@ function StepBlock({ step, ctx, index, siblings, container }: { step: BuilderSte
               <span className="font-semibold text-ink">{step.id}</span>
               {detail !== '' && <span className="truncate font-data text-small text-muted">{detail}</span>}
             </button>
-            {!ctx.readOnly && <Controls node={step} ctx={ctx} siblings={siblings} index={index} container={container} />}
+            <Controls node={step} ctx={ctx} siblings={siblings} index={index} container={container} />
           </div>
           {open && <StepForm step={step} ctx={ctx} />}
           <ErrorText issues={errors} />
@@ -257,7 +256,7 @@ function StepBlock({ step, ctx, index, siblings, container }: { step: BuilderSte
 }
 
 function List({ container, nodes, ctx, renderNode }: { container: BuilderPath; nodes: readonly BuilderNode[]; ctx: Ctx; renderNode: (n: BuilderNode, i: number) => ReactNode }) {
-  const active = !ctx.readOnly && accepts(container, ctx.dragging) && !inside(container, ctx.dragging);
+  const active = accepts(container, ctx.dragging) && !inside(container, ctx.dragging);
   return (
     <div>
       {nodes.map((node, i) => (
@@ -277,7 +276,7 @@ function ParallelBlock({ group, ctx, index, siblings, container }: { group: Buil
   const open = ctx.selected === key;
   const set = (value: string) => ctx.change(setStepField(ctx.text, group.path, 'condition', value));
   return (
-    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: group }} className={`rounded-md bg-sunken px-2 py-1.5 ${errors.length > 0 ? 'border border-fail' : 'border border-transparent'}`}>
+    <Drag id={`block|${key}`} data={{ source: 'block', node: group }} className={`rounded-md bg-sunken px-2 py-1.5 ${errors.length > 0 ? 'border border-fail' : 'border border-transparent'}`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -287,12 +286,12 @@ function ParallelBlock({ group, ctx, index, siblings, container }: { group: Buil
               <span className="font-data text-small text-muted">{group.id}</span>
               {group.condition !== undefined && <span className="font-data text-small font-semibold text-ink">◇ if: {group.condition}</span>}
             </button>
-            {!ctx.readOnly && <Controls node={group} ctx={ctx} siblings={siblings} index={index} container={container} />}
+            <Controls node={group} ctx={ctx} siblings={siblings} index={index} container={container} />
           </div>
           {open && (
             <div className="px-1 pb-1">
               <Labelled label="Run only if (if:)">
-                <input disabled={ctx.readOnly} className={`${field} font-data`} value={group.condition ?? ''} onChange={(e) => set(e.target.value)} />
+                <input className={`${field} font-data`} value={group.condition ?? ''} onChange={(e) => set(e.target.value)} />
               </Labelled>
             </div>
           )}
@@ -309,7 +308,7 @@ function AttemptsBlock({ block, ctx, index, siblings, container }: { block: Buil
   const errors = ctx.issues.get(key) ?? [];
   const inner = [...block.path, 'attempts', 'steps'];
   return (
-    <Drag disabled={ctx.readOnly} id={`block|${key}`} data={{ source: 'block', node: block }} className={`rounded-md border border-dashed px-2 py-1.5 ${errors.length > 0 ? 'border-fail' : 'border-accent'}`}>
+    <Drag id={`block|${key}`} data={{ source: 'block', node: block }} className={`rounded-md border border-dashed px-2 py-1.5 ${errors.length > 0 ? 'border-fail' : 'border-accent'}`}>
       {(grip) => (
         <div data-block={key}>
           <div className="flex items-center gap-2">
@@ -318,9 +317,9 @@ function AttemptsBlock({ block, ctx, index, siblings, container }: { block: Buil
             <span className="flex-1" />
             <label className="flex items-center gap-2 text-small text-muted">
               max
-              <input aria-label="Attempts max" disabled={ctx.readOnly} className={`${field} w-44 font-data ${errors.length > 0 ? 'border-fail' : ''}`} value={block.max} onChange={(e) => ctx.change(setAttemptsMax(ctx.text, block.path, e.target.value))} />
+              <input aria-label="Attempts max" className={`${field} w-44 font-data ${errors.length > 0 ? 'border-fail' : ''}`} value={block.max} onChange={(e) => ctx.change(setAttemptsMax(ctx.text, block.path, e.target.value))} />
             </label>
-            {!ctx.readOnly && <Controls node={block} ctx={ctx} siblings={siblings} index={index} container={container} />}
+            <Controls node={block} ctx={ctx} siblings={siblings} index={index} container={container} />
           </div>
           <ErrorText issues={errors} />
           <List
@@ -366,7 +365,7 @@ function Palette() {
   );
 }
 
-export function WorkflowBuilder({ text, issues, readOnly, modelOptions, onChange }: { text: string; modelOptions: readonly ModelOption[]; issues: readonly WorkflowEditorIssue[]; readOnly: boolean; onChange: (text: string) => void }) {
+export function WorkflowBuilder({ text, issues, modelOptions, onChange }: { text: string; modelOptions: readonly ModelOption[]; issues: readonly WorkflowEditorIssue[]; onChange: (text: string) => void }) {
   const tree = useMemo(() => readBuilder(text), [text]);
   const [dragging, setDragging] = useState<DragItem | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -374,7 +373,7 @@ export function WorkflowBuilder({ text, issues, readOnly, modelOptions, onChange
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const grouped = useMemo(() => (tree === null ? new Map<string, WorkflowEditorIssue[]>() : issuesByBlock(tree, issues)), [tree, issues]);
 
-  const ctx: Ctx = { text, change: onChange, issues: grouped, dragging, prompts: (prompts.data?.prompts ?? []).map((p) => p.code), modelOptions, selected, select: setSelected, readOnly };
+  const ctx: Ctx = { text, change: onChange, issues: grouped, dragging, prompts: (prompts.data?.prompts ?? []).map((p) => p.code), modelOptions, selected, select: setSelected };
 
   const onDragStart = (event: DragStartEvent) => setDragging((event.active.data.current as DragItem | undefined) ?? null);
   const onDragEnd = (event: DragEndEvent) => {
@@ -415,7 +414,7 @@ export function WorkflowBuilder({ text, issues, readOnly, modelOptions, onChange
   return (
     <section aria-label="Workflow builder" className="px-3.5 pb-3">
       <DndContext measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-        {!readOnly && <Palette />}
+        <Palette />
         <div className="h-2" />
         {canvas}
       </DndContext>

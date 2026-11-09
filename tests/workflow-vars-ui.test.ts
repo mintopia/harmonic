@@ -20,8 +20,8 @@ const typeInto = async (input: HTMLInputElement, value: string) => {
 
 describe('workflow variables UI', () => {
   beforeEach(() => {
-    vi.spyOn(api, 'workflows').mockResolvedValue({ workflows: [{ name: 'wf', description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }], total: 1 });
-    vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'wf', description: '', bundled: false, version: 1, text: 'name: wf\ndescription: t\nvars:\n  maxAttempts: 3\nsteps:\n  - attempts:\n      max: ${{ vars.maxAttempts }}\n      steps:\n        - id: a\n          run: exit 1\n' });
+    vi.spyOn(api, 'workflows').mockResolvedValue({ workflows: [{ name: 'wf', description: '', subject: 'ticket', version: 1, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }], total: 1 });
+    vi.spyOn(api, 'workflow').mockResolvedValue({ name: 'wf', description: '', version: 1, text: 'name: wf\ndescription: t\nvars:\n  maxAttempts: 3\nsteps:\n  - attempts:\n      max: ${{ vars.maxAttempts }}\n      steps:\n        - id: a\n          run: exit 1\n' });
   });
 
   it('Workspace card refuses a type mismatch inline and saves a valid number in the card', async () => {

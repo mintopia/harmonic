@@ -127,14 +127,12 @@ const issueTheme = EditorView.theme({
 
 export function YamlEditor({
   text,
-  readOnly,
   issues,
   modelOptions,
   onChange,
   onSave,
 }: {
   text: string;
-  readOnly: boolean;
   issues: readonly WorkflowEditorIssue[];
   modelOptions: readonly CompletionModelOption[];
   onChange: (text: string) => void;
@@ -172,8 +170,6 @@ export function YamlEditor({
       EditorState.languageData.of(() => [{ autocomplete: source }]),
       keymap.of([{ key: 'Tab', run: acceptCompletion }]),
       EditorView.lineWrapping,
-      EditorState.readOnly.of(readOnly),
-      EditorView.editable.of(!readOnly),
       EditorView.contentAttributes.of({ 'aria-label': 'Workflow YAML' }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -201,7 +197,7 @@ export function YamlEditor({
       created.destroy();
       view.current = null;
     };
-  }, [readOnly]);
+  }, []);
 
   useEffect(() => {
     const current = view.current;
@@ -217,7 +213,7 @@ export function YamlEditor({
     <div
       ref={host}
       data-testid="workflow-yaml"
-      className={`overflow-auto rounded-sm border border-edge font-code text-small [&_.cm-editor]:min-h-[20rem] [&_.cm-scroller]:font-code ${readOnly ? 'bg-sunken' : 'bg-field'}`}
+      className={`overflow-auto rounded-sm border border-edge font-code text-small [&_.cm-editor]:min-h-[20rem] [&_.cm-scroller]:font-code bg-field`}
     />
   );
 }

@@ -25,7 +25,6 @@ describe('bundled epic workflow', () => {
   it('parses with subject epic and the ticket workflows stay tickets', () => {
     const entry = library.get('epic');
     expect(entry.subject).toBe('epic');
-    expect(entry.bundled).toBe(true);
     expect(parseWorkflow(entry.text).subject).toBe('epic');
     expect(library.get('implement').subject).toBe('ticket');
   });

@@ -19,7 +19,7 @@ function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
 }
 
 function workflow(name: string, tickets: number, running: number): WorkflowLibraryEntry {
-  return { name, description: '', subject: 'ticket', bundled: false, version: 1, inUse: { tickets, running, workspaces: 1 }, assignedAs: [] };
+  return { name, description: '', subject: 'ticket', version: 1, inUse: { tickets, running, workspaces: 1 }, assignedAs: [] };
 }
 
 const LIB: Prompt[] = [
@@ -28,9 +28,9 @@ const LIB: Prompt[] = [
     text: 'Keep it small.\n${{ prompts.security-checklist }}',
     usedBy: ['release-notes'],
     usedBySteps: [
-      { workflow: 'Default', workflowBundled: true, stepId: 'implement' },
-      { workflow: 'Security review', workflowBundled: false, stepId: 'security' },
-      { workflow: 'Default', workflowBundled: true, stepId: 'review' },
+      { workflow: 'Default', stepId: 'implement' },
+      { workflow: 'Security review', stepId: 'security' },
+      { workflow: 'Default', stepId: 'review' },
     ],
     updatedAt: new Date(2026, 9, 29, 14, 2).toISOString(),
   }),
@@ -202,8 +202,8 @@ describe('Prompt Library page', () => {
     const rows = [...host.querySelectorAll('[data-used-by]')];
     expect(rows.map((r) => r.getAttribute('data-used-by'))).toEqual(['step', 'step', 'step', 'prompt']);
     expect(rows[0]?.textContent).toContain('Default · step implement');
-    expect(rows[0]?.textContent).toContain('Bundled workflow · 5 Tickets');
-    expect(rows[1]?.textContent).toContain('Your workflow · 3 Tickets');
+    expect(rows[0]?.textContent).toContain('Workflow · 5 Tickets');
+    expect(rows[1]?.textContent).toContain('Workflow · 3 Tickets');
     expect(rows[0]?.querySelector('a')?.textContent).toBe('Open workflow');
   });
 

@@ -10,6 +10,7 @@ export const WORKFLOW_ACTIONS = ['rebase', 'agent', 'verify', 'command', 'critic
 
 export const WORKFLOW_SUBJECTS = ['ticket', 'epic'] as const;
 export const BUNDLED_EPIC_WORKFLOW = 'epic';
+export const FALLBACK_WORKFLOWS: readonly string[] = ['implement', 'research', BUNDLED_EPIC_WORKFLOW];
 export type WorkflowSubject = (typeof WORKFLOW_SUBJECTS)[number];
 
 const stepIdSchema = z.string().regex(WORKFLOW_NAME_PATTERN, 'a step id starts with a lowercase letter and holds lowercase letters, digits, - or _');

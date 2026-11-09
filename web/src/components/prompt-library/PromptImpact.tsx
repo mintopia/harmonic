@@ -16,9 +16,9 @@ export function PromptImpact() {
   const library = workflows.data?.workflows ?? [];
   const rows = usedByRows(prompt, flow.prompts);
   const running = runningNow(prompt, flow.prompts, library);
-  const detail = (workflow: string, bundled: boolean) => {
+  const detail = (workflow: string) => {
     const entry = library.find((w) => w.name === workflow);
-    return `${bundled ? 'Bundled' : 'Your'} workflow${entry ? ` · ${ticketsLabel(entry.inUse.tickets)}` : ''}`;
+    return `Workflow${entry ? ` · ${ticketsLabel(entry.inUse.tickets)}` : ''}`;
   };
 
   return (
@@ -53,7 +53,7 @@ export function PromptImpact() {
                   <>
                     <span className="min-w-0">
                       <b>{row.workflow}</b> · step <code className="font-data">{row.stepId}</code>
-                      <span className="block text-micro text-muted">{detail(row.workflow, row.bundled)}</span>
+                      <span className="block text-micro text-muted">{detail(row.workflow)}</span>
                     </span>
                     <a href="/workflows" className={LINK}>
                       Open workflow

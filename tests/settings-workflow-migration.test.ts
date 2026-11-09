@@ -49,7 +49,7 @@ describe('settings to workflows migration', () => {
 
     await migrate(harness);
 
-    const workflows = readdirSync(join(harness.dir, 'workflows')).filter((f) => f.endsWith('.yaml'));
+    const workflows = readdirSync(join(harness.dir, 'workflows')).filter((f) => f.startsWith('migrated-') && f.endsWith('.yaml'));
     expect(workflows).toEqual(['migrated-alpha-app.yaml', 'migrated-beta-service.yaml', 'migrated-global.yaml']);
     for (const file of workflows) expect(readFileSync(join(harness.dir, 'workflows', file), 'utf8')).toBe(fixture(`edited-${file}`));
     const prompts = Object.fromEntries(readdirSync(join(harness.dir, 'prompts')).sort().map((f) => [f.replace(/\.json$/, ''), JSON.parse(readFileSync(join(harness.dir, 'prompts', f), 'utf8')) as unknown]));
@@ -133,7 +133,7 @@ describe('settings to workflows migration', () => {
 
     expect(order.indexOf('timer')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('timer')).toBeLessThan(order.indexOf('finished'));
-    expect(readdirSync(join(harness.dir, 'workflows')).filter((f) => f.endsWith('.yaml'))).toHaveLength(501);
+    expect(readdirSync(join(harness.dir, 'workflows')).filter((f) => f.startsWith('migrated-') && f.endsWith('.yaml'))).toHaveLength(501);
   }, 60_000);
 
   it('leaves every old settings.yaml key byte-identical', async () => {
