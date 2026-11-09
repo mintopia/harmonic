@@ -31287,7 +31287,7 @@
             }
           },
           "409": {
-            "description": "Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.",
+            "description": "Tickets reference the workflow it is assigned as a default or Workflow Label, or it is one of the fallback workflows (`implement`, `research`, `epic`), so it is kept.",
             "content": {
               "application/json": {
                 "schema": {

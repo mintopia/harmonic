@@ -351,3 +351,7 @@ are upgraded with Harmonic. Duplicate makes an editable copy."
   delete-protected like any other workflow.
 - **Packaged definitions stay in the package as templates** that boot seeds
   from. They are not upgraded in place: an operator's edited copy is theirs.
+- **`implement`, `research` and `epic` cannot be deleted.** They are the
+  fallbacks when no default, Workflow Label or Wayfinder type chooses a
+  workflow, and a fresh install has no assignment recording that. Edit them
+  freely; delete is refused with a 409, as for a workflow referenced by a default.

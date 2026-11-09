@@ -102,6 +102,13 @@ describe('/api/workflows', () => {
     expect(copy.body.name).toBe('implement-copy');
   });
 
+  it('refuses to delete a fallback workflow even with no default or ticket referencing it', async () => {
+    for (const name of ['implement', 'research', 'epic']) {
+      expect((await server.api('DELETE', `/api/workflows/${name}`)).status).toBe(409);
+      expect(existsSync(join(dataDir, 'workflows', `${name}.yaml`))).toBe(true);
+    }
+  });
+
   it('lists inUse and assignedAs for every workflow', async () => {
     const list = await server.api('GET', '/api/workflows');
     const implement = list.body.workflows.find((w: { name: string }) => w.name === 'implement');

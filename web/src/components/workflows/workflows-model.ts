@@ -1,3 +1,4 @@
+import { FALLBACK_WORKFLOWS } from '../../../../src/domain/workflow.js';
 import { ApiError } from '../../api';
 import type { WorkflowIssue, WorkflowLibraryEntry } from '../../types';
 
@@ -30,6 +31,7 @@ export function assignedChips(entry: WorkflowLibraryEntry): AssignedChip[] {
 }
 
 export function deleteBlock(entry: WorkflowLibraryEntry): string | null {
+  if (FALLBACK_WORKFLOWS.includes(entry.name)) return 'Fallback workflow: used when no default or Workflow Label chooses one.';
   const labels = entry.assignedAs.filter((a) => a.kind === 'label').length;
   const defaults = entry.assignedAs.length - labels;
   const parts = [
