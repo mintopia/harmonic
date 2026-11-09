@@ -4,6 +4,7 @@ import { kubernetesWorkflowRefusal, mixedWorkflowRefusal } from '../../execution
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { logger } from '../../logger.js';
 import type { AppContext } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema, compareListRows } from '../../domain/tasks.js';
 import { previewManualResumeContinuation } from '../../domain/session-continuation.js';
@@ -523,7 +524,10 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const needle = query.q?.trim().toLowerCase();
       const epicTickets = query.workspaceId == null ? [] : await ctx.trackerManager.listEpicTickets(query.workspaceId);
       const epicRefs = new Set(epicTickets.map((ticket) => ticket.ref));
-      const nonDriverTasks = (await ctx.tasks.listWithDeps(query)).filter((task) => task.trackerRef == null || !epicRefs.has(task.trackerRef));
+      const listed = await ctx.tasks.listWithDeps(query);
+      const orphans = listed.filter((task) => task.workspaceId == null);
+      if (orphans.length > 0) logger.warn('GET /tasks: skipping tasks with no workspace', { taskIds: orphans.map((task) => task.id).join(',') });
+      const nonDriverTasks = listed.filter((task) => task.workspaceId != null && (task.trackerRef == null || !epicRefs.has(task.trackerRef)));
       const wantEpics =
         epics === 'true' && query.workspaceId != null && filterEmpty(query.state) && filterEmpty(query.harness) && filterEmpty(query.priority);
       const epicRows = wantEpics

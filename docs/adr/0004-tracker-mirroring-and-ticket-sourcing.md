@@ -62,6 +62,11 @@ tickets with children. Missing structure degrades to per-task behaviour.
   a repo that may declare no tracker. The obsolete tracker-config and
   orphan-Workspace boot backfill has been removed; startup does not migrate
   `settings.config` or assign unscoped rows to the oldest Workspace.
+  Amendment (#976): schema-sync does attach a pre-Workspace Task
+  (`workspace_id` NULL) to the Workspace whose `working_dir` equals its own,
+  creating that Workspace if absent, because the API requires a Workspace on
+  every Task. A row whose attach would break `(workspace_id, tracker_ref)`
+  uniqueness stays unscoped and `GET /tasks` skips it with a logged warning.
 - The **Resolved Tracker** (which tracker a repo declares, or why resolution
   failed) is derived in-memory in the poller manager and merged into API
   responses at serialize time — never a persisted column. Resolution is a

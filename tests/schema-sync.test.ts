@@ -254,3 +254,54 @@ describe('workflow_step_runs Epic owner upgrade', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 });
+
+describe('legacy tasks without a workspace', () => {
+  it('backfills a null workspace_id from the matching working_dir, creating the workspace when none exists', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-orphan-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute(
+      "INSERT INTO workspaces (name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at) VALUES ('known', '/tmp/known', 0, 60, 1, 1)",
+    );
+    const insertTask = (dir: string) =>
+      sqlite.execute(`INSERT INTO tasks (prompt, working_dir, state, origin, workspace_id, created_at, updated_at) VALUES ('p', '${dir}', 'cancelled', 'native', NULL, 1, 1)`);
+    await insertTask('/tmp/known');
+    await insertTask('/tmp/legacy-only');
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const rows = (
+      await sqlite.execute('select t.working_dir as dir, w.working_dir as wdir from tasks t join workspaces w on w.id = t.workspace_id order by t.id')
+    ).rows.map((r) => [r.dir, r.wdir]);
+    expect(rows).toEqual([
+      ['/tmp/known', '/tmp/known'],
+      ['/tmp/legacy-only', '/tmp/legacy-only'],
+    ]);
+    expect((await sqlite.execute('select count(*) as c from tasks where workspace_id is null')).rows[0]?.c).toBe(0);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('leaves a legacy task unscoped, without wiping the database, when attaching it would duplicate a tracker_ref', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-orphan-dup-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute(
+      "INSERT INTO workspaces (id, name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at) VALUES (7, 'known', '/tmp/known', 0, 60, 1, 1)",
+    );
+    const insertTask = (workspaceId: string) =>
+      sqlite.execute(`INSERT INTO tasks (prompt, working_dir, state, origin, tracker_ref, workspace_id, created_at, updated_at) VALUES ('p', '/tmp/known', 'cancelled', 'native', '12', ${workspaceId}, 1, 1)`);
+    await insertTask('7');
+    await insertTask('NULL');
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    expect((await sqlite.execute('select count(*) as c from tasks')).rows[0]?.c).toBe(2);
+    expect((await sqlite.execute('select count(*) as c from tasks where workspace_id is null')).rows[0]?.c).toBe(1);
+    expect((await sqlite.execute('select count(*) as c from workspaces where id = 7')).rows[0]?.c).toBe(1);
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+});
