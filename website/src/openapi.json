@@ -29328,7 +29328,7 @@
             }
           },
           "409": {
-            "description": "Tracking is not enabled for this Workspace.",
+            "description": "Tracking is not enabled for this Workspace, or the installed `gh` CLI is too old for the GitHub tracker.",
             "content": {
               "application/json": {
                 "schema": {

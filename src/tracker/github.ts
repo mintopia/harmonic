@@ -29,6 +29,14 @@ export class GhError extends Error {
   }
 }
 
+/** `gh` older than the `parent`/`blockedBy`/`blocking` JSON fields rejects the bulk read with "Unknown JSON field". */
+export const GH_TOO_OLD_MESSAGE =
+  'The GitHub tracker needs a newer `gh` CLI (it must support the parent, blockedBy and blocking JSON fields; gh 2.45 does not). Upgrade gh, e.g. from https://github.com/cli/cli#installation, then refresh.';
+
+export function isGhTooOld(err: unknown): boolean {
+  return err instanceof GhError && /Unknown JSON field/i.test(err.stderr);
+}
+
 const defaultGh: GhRunner = async (args, cwd) => {
   try {
     const { stdout } = await execFileAsync('gh', args, { cwd, maxBuffer: 32 * 1024 * 1024 });
