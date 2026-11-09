@@ -45,7 +45,7 @@ export interface WorkflowIssue {
   column: number;
 }
 
-export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'bundled' | 'version'> & { text: string };
+export type WorkflowDocument = Pick<WorkflowLibraryEntry, 'name' | 'description' | 'version'> & { text: string };
 
 export interface EpicWorkflowRef {
   name: string;
@@ -57,7 +57,6 @@ export interface WorkflowLibraryEntry {
   name: string;
   description: string;
   subject: 'ticket' | 'epic';
-  bundled: boolean;
   version: number;
   inUse: { tickets: number; running: number; workspaces: number };
   assignedAs: Array<{ kind: 'global-default' | 'workspace-default' | 'label'; label?: string }>;
@@ -1485,6 +1484,5 @@ export interface Prompt {
 
 export interface PromptStepUse {
   workflow: string;
-  workflowBundled: boolean;
   stepId: string;
 }

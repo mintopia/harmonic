@@ -45,7 +45,7 @@ describe('a workflow whose runs_on names a Kubernetes Execution Target', () => {
   const flow = (steps: string, top = 'runs_on: k8s-prod\n'): string => `name: flow\ndescription: test\n${top}steps:\n${inBlock(steps)}`;
   const engine = (api: FakePodApi, over: Partial<WorkflowEngineDeps> = {}): WorkflowEngine =>
     new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflows.get(`${name}@${version}`)!, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

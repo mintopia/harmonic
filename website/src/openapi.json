@@ -11226,10 +11226,6 @@
                   "type": "string",
                   "example": "implement"
                 },
-                "workflowBundled": {
-                  "type": "boolean",
-                  "description": "Whether the workflow ships with Harmonic."
-                },
                 "stepId": {
                   "type": "string",
                   "example": "review"
@@ -11237,7 +11233,6 @@
               },
               "required": [
                 "workflow",
-                "workflowBundled",
                 "stepId"
               ]
             },
@@ -11289,10 +11284,6 @@
             "type": "string",
             "description": "The workflow YAML exactly as saved."
           },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
-          },
           "version": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -11305,7 +11296,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version"
         ]
       },
@@ -11331,10 +11321,6 @@
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
-          },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
           },
           "version": {
             "type": "integer",
@@ -11397,7 +11383,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version",
           "inUse",
           "assignedAs"
@@ -22834,10 +22819,6 @@
                   "type": "string",
                   "example": "implement"
                 },
-                "workflowBundled": {
-                  "type": "boolean",
-                  "description": "Whether the workflow ships with Harmonic."
-                },
                 "stepId": {
                   "type": "string",
                   "example": "review"
@@ -22845,7 +22826,6 @@
               },
               "required": [
                 "workflow",
-                "workflowBundled",
                 "stepId"
               ],
               "additionalProperties": false
@@ -22899,10 +22879,6 @@
             "type": "string",
             "description": "The workflow YAML exactly as saved."
           },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
-          },
           "version": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -22915,7 +22891,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version"
         ],
         "additionalProperties": false
@@ -22942,10 +22917,6 @@
           "text": {
             "type": "string",
             "description": "The workflow YAML exactly as saved."
-          },
-          "bundled": {
-            "type": "boolean",
-            "description": "Bundled workflows ship with Harmonic and are read-only; duplicate one to edit."
           },
           "version": {
             "type": "integer",
@@ -23010,7 +22981,6 @@
           "description",
           "subject",
           "text",
-          "bundled",
           "version",
           "inUse",
           "assignedAs"
@@ -31185,7 +31155,7 @@
         "tags": [
           "Workflows"
         ],
-        "description": "List the workflow library: bundled workflows first, then operator workflows. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "List the workflow library. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "security": [
           {
             "bearerAuth": []
@@ -31196,7 +31166,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Every workflow, bundled first.",
+            "description": "Every workflow, by name.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31220,7 +31190,7 @@
                     "total"
                   ],
                   "additionalProperties": false,
-                  "description": "Every workflow, bundled first."
+                  "description": "Every workflow, by name."
                 }
               }
             }
@@ -31306,16 +31276,6 @@
           "204": {
             "description": "Deleted."
           },
-          "403": {
-            "description": "The workflow is bundled.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "404": {
             "description": "No workflow has that name.",
             "content": {
@@ -31396,16 +31356,6 @@
           },
           "400": {
             "description": "The YAML does not validate; `error.issues` lists each problem with its line and column. Nothing was written.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The workflow is bundled and read-only.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31541,7 +31491,7 @@
         "tags": [
           "Workflows"
         ],
-        "description": "Make an editable copy of a workflow, bundled or not. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "description": "Make an editable copy of a workflow. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
         "requestBody": {
           "required": true,
           "content": {

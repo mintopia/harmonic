@@ -99,7 +99,7 @@ export async function createEpicEngineHarness(options: EpicEngineHarnessOptions)
   await db.write((d) => d.insert(epics).values({ workspaceId, trackerRef: EPIC_REF, kind: 'epic', state: 'open' } as typeof epics.$inferInsert).run());
   const workspace = (await db.read((d) => d.select().from(workspaces).get())) as unknown as WorkspaceRow;
   const config = (options.config ?? ((c) => c))({ ...baselineConfig(), defaults: { ...baselineConfig().defaults, epicWorkflow: WORKFLOW_NAME } });
-  const entry = { name: WORKFLOW_NAME, description: '', subject: 'epic' as const, text: options.workflow, bundled: false, version: 1 };
+  const entry = { name: WORKFLOW_NAME, description: '', subject: 'epic' as const, text: options.workflow, version: 1 };
   const attempts = new AttemptStore(db);
   const stepRuns = new WorkflowStepRunStore(db);
   const harnessConfig = Object.values(config.harnesses)[0] as AppConfig['harnesses'][keyof AppConfig['harnesses']];
@@ -161,6 +161,6 @@ export async function createEpicEngineHarness(options: EpicEngineHarnessOptions)
 }
 
 export function engineWiring(db: AsyncDbHandle, workflow: string, drive: AgentDrive<EpicSubject>['run']): { library: EpicWorkflowRunnerDeps['library']; stepRuns: WorkflowStepRunStore; resolvePrompt: (text: string) => Promise<string>; drive: AgentDrive<EpicSubject> } {
-  const entry = { name: WORKFLOW_NAME, description: '', subject: 'epic' as const, text: workflow, bundled: false, version: 1 };
+  const entry = { name: WORKFLOW_NAME, description: '', subject: 'epic' as const, text: workflow, version: 1 };
   return { library: { list: () => [entry], get: () => entry, getVersion: async () => entry }, stepRuns: new WorkflowStepRunStore(db), resolvePrompt: async (text) => text, drive: { run: drive } };
 }

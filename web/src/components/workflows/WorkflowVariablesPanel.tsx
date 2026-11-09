@@ -4,7 +4,7 @@ import { useAsyncResource } from '../../useAsyncResource';
 import { btnGhost, field, labelType, selectField } from '../../ui';
 import { addVar, overriddenIn, readVars, removeVar, setVar } from '../../workflow-yaml-vars-model';
 
-export function WorkflowVariablesPanel({ name, text, readOnly, onChange }: { name: string; text: string; readOnly: boolean; onChange: (text: string) => void }) {
+export function WorkflowVariablesPanel({ name, text, onChange }: { name: string; text: string; onChange: (text: string) => void }) {
   const workspaces = useAsyncResource(() => api.workspaces(), []);
   const [draftName, setDraftName] = useState('');
   const vars = readVars(text);
@@ -40,21 +40,19 @@ export function WorkflowVariablesPanel({ name, text, readOnly, onChange }: { nam
                   <td className="py-1.5 pr-3 text-muted">{v.type}</td>
                   <td className="py-1.5 pr-3">
                     {v.type === 'boolean' ? (
-                      <select aria-label={`Default for ${v.name}`} className={`${selectField} w-30`} value={v.value} disabled={readOnly} onChange={(e) => onChange(setVar(text, v.name, e.target.value))}>
+                      <select aria-label={`Default for ${v.name}`} className={`${selectField} w-30`} value={v.value} onChange={(e) => onChange(setVar(text, v.name, e.target.value))}>
                         <option>true</option>
                         <option>false</option>
                       </select>
                     ) : (
-                      <input aria-label={`Default for ${v.name}`} className={`${field} font-data`} value={v.value} readOnly={readOnly} onChange={(e) => onChange(setVar(text, v.name, e.target.value))} />
+                      <input aria-label={`Default for ${v.name}`} className={`${field} font-data`} value={v.value} onChange={(e) => onChange(setVar(text, v.name, e.target.value))} />
                     )}
                   </td>
                   <td className="py-1.5 pr-3 text-muted">{where.length === 0 ? '—' : `Global · ${where.join(', ')}`}</td>
                   <td className="py-1.5 text-right">
-                    {!readOnly && (
-                      <button type="button" className={btnGhost} aria-label={`Remove ${v.name}`} onClick={() => onChange(removeVar(text, v.name))}>
-                        Remove
-                      </button>
-                    )}
+                    <button type="button" className={btnGhost} aria-label={`Remove ${v.name}`} onClick={() => onChange(removeVar(text, v.name))}>
+                      Remove
+                    </button>
                   </td>
                 </tr>
               );
@@ -62,21 +60,19 @@ export function WorkflowVariablesPanel({ name, text, readOnly, onChange }: { nam
           </tbody>
         </table>
       )}
-      {!readOnly && (
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (draftName.trim() !== '' && !duplicate) add();
-          }}
-        >
-          <input aria-label="New variable name" className={field} placeholder="new_var" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
-          <button type="submit" className={btnGhost} disabled={draftName.trim() === '' || duplicate}>
-            + Add variable
-          </button>
-          {duplicate && <span className="text-small text-fail">A variable with that name already exists.</span>}
-        </form>
-      )}
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (draftName.trim() !== '' && !duplicate) add();
+        }}
+      >
+        <input aria-label="New variable name" className={field} placeholder="new_var" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+        <button type="submit" className={btnGhost} disabled={draftName.trim() === '' || duplicate}>
+          + Add variable
+        </button>
+        {duplicate && <span className="text-small text-fail">A variable with that name already exists.</span>}
+      </form>
     </section>
   );
 }

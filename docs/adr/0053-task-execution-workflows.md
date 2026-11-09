@@ -148,8 +148,9 @@ ignores routing. The Route Classifier runs once per Attempt, not per step.
 
 - **Each workflow is its own YAML file in Harmonic's data directory**, with
   import and export as files.
-- **Bundled workflows ship in the package**, read-only, and are upgraded with
-  Harmonic. **Duplicate** makes an editable copy.
+- **Bundled workflows are seeded on boot** (amended 2026-11-09; see the
+  amendment below). They are editable operator workflows, not read-only
+  library entries. **Duplicate** makes a copy of any workflow.
 - **One global library.** A Workspace only chooses its default and its Workflow
   Labels.
 - **Not read from the repository.**
@@ -334,3 +335,19 @@ input, so a Ticket with no label can still reach the right workflow.
   `workflow_routing_cost`. They are kept apart from implementation Cost.
 - **Not a Step.** The classification adds no Step type and no Step, as with
   the Route Classifier (ADR-0052).
+
+## Amendment (2026-11-09): Bundled workflows are seeded, not read-only
+
+This replaces the clause "Bundled workflows ship in the package, read-only, and
+are upgraded with Harmonic. Duplicate makes an editable copy."
+
+- **On boot, each packaged definition (`implement`, `research`, `epic`) whose
+  name has no operator workflow file is written as an operator workflow at
+  version 1.** Seeding is idempotent: an existing operator file of that name is
+  never overwritten, and a second boot changes nothing.
+- **Bundled definitions no longer appear in the library.** The Workflows API
+  and settings page list only operator workflows; there is no `bundled` flag and
+  no read-only mode. The seeded copies are edited, assigned, and
+  delete-protected like any other workflow.
+- **Packaged definitions stay in the package as templates** that boot seeds
+  from. They are not upgraded in place: an operator's edited copy is theirs.

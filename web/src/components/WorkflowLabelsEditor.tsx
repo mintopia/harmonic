@@ -205,7 +205,7 @@ export function EpicWorkflowEditor({
       }
       library={library}
       value={value}
-      inheritLabel={workspace ? `Use global default · ${globalValue ?? BUNDLED_EPIC_WORKFLOW}` : `Bundled default · ${BUNDLED_EPIC_WORKFLOW}${versionSuffix(library, BUNDLED_EPIC_WORKFLOW)}`}
+      inheritLabel={workspace ? `Use global default · ${globalValue ?? BUNDLED_EPIC_WORKFLOW}` : `Default · ${BUNDLED_EPIC_WORKFLOW}${versionSuffix(library, BUNDLED_EPIC_WORKFLOW)}`}
       onChange={onChange}
     />
   );

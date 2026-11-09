@@ -45,7 +45,7 @@ describe('workflow label errors', () => {
 });
 
 describe('library helpers', () => {
-  const library = [{ name: 'review', description: '', subject: 'ticket' as const, bundled: false, version: 4, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }];
+  const library = [{ name: 'review', description: '', subject: 'ticket' as const, version: 4, inUse: { tickets: 0, running: 0, workspaces: 0 }, assignedAs: [] }];
 
   it('adds a blank enabled local entry', () => {
     expect(newLocalWorkflowEntry('review')).toEqual({ kind: 'local', enabled: true, workflowLabel: { label: '', workflow: 'review' } });

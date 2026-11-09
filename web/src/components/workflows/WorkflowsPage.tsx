@@ -117,7 +117,7 @@ function Library({
               if (file) void importFile(file);
             }}
           />
-          <button type="button" className={btnPrimary} onClick={() => setCreating(true)} disabled={!entries.some((e) => e.bundled)}>
+          <button type="button" className={btnPrimary} onClick={() => setCreating(true)} disabled={entries.length === 0}>
             New workflow
           </button>
         </div>
@@ -158,7 +158,6 @@ function Library({
                       <td className="py-2.5 pr-4">
                         <button type="button" className="inline-flex min-h-11 items-center gap-2 text-left font-bold text-ink hover:text-accent" onClick={() => onOpen(entry.name)}>
                           {entry.name}
-                          {entry.bundled && <span className="rounded-sm bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted">Bundled</span>}
                         </button>
                       </td>
                       <td className="py-2.5 pr-4 font-data text-small leading-[2.75rem]">v{entry.version}</td>
@@ -215,7 +214,7 @@ function Library({
       )}
       {creating && (
         <NewWorkflowDialog
-          template={entries.find((e) => e.bundled)?.name ?? ''}
+          template={entries[0]?.name ?? ''}
           onCancel={() => setCreating(false)}
           onCreated={(name) => {
             setCreating(false);

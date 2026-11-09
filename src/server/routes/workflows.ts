@@ -16,7 +16,6 @@ const workflowSchema = z
     description: z.string(),
     subject: z.enum(['ticket', 'epic']).describe('What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows.'),
     text: z.string().describe('The workflow YAML exactly as saved.'),
-    bundled: z.boolean().describe('Bundled workflows ship with Harmonic and are read-only; duplicate one to edit.'),
     version: z.number().int().describe('The current version; every save creates the next one.'),
   })
   .meta({ id: 'Workflow' });
@@ -51,7 +50,7 @@ export async function workflowRoutes(
 
   app.get(
     '/workflows',
-    { schema: { tags, description: 'List the workflow library: bundled workflows first, then operator workflows.', security, response: { 200: listResponse('workflows', listEntrySchema).describe('Every workflow, bundled first.') } } },
+    { schema: { tags, description: 'List the workflow library.', security, response: { 200: listResponse('workflows', listEntrySchema).describe('Every workflow, by name.') } } },
     async () => {
       const [usage, assignments] = await Promise.all([ctx.usage(), ctx.assignments()]);
       const workflows = ctx.workflows.list().map((w) => ({ ...w, inUse: usage.get(w.name) ?? { tickets: 0, running: 0, workspaces: 0 }, assignedAs: assignments.get(w.name) ?? [] }));
@@ -73,15 +72,13 @@ export async function workflowRoutes(
         description: 'Delete an operator workflow with all its kept versions.',
         security,
         params: nameParamsSchema,
-        response: { 204: z.null().describe('Deleted.'), 403: errorResponse('The workflow is bundled.'), 404: errorResponse('No workflow has that name.'), 409: errorResponse('Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.') },
+        response: { 204: z.null().describe('Deleted.'), 404: errorResponse('No workflow has that name.'), 409: errorResponse('Tickets reference the workflow or it is assigned as a default or Workflow Label, so it is kept.') },
       },
     },
     async (req, reply) => {
       const entry = ctx.workflows.get(req.params.name);
-      if (!entry.bundled) {
-        if (((await ctx.usage()).get(entry.name)?.tickets ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is in use by Tickets`);
-        if (((await ctx.assignments()).get(entry.name)?.length ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is assigned as a default or Workflow Label`);
-      }
+      if (((await ctx.usage()).get(entry.name)?.tickets ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is in use by Tickets`);
+      if (((await ctx.assignments()).get(entry.name)?.length ?? 0) > 0) throw new DomainError('conflict', `${entry.name} is assigned as a default or Workflow Label`);
       await ctx.workflows.delete(entry.name);
       return reply.status(204).send(null);
     },
@@ -96,7 +93,7 @@ export async function workflowRoutes(
         security,
         params: nameParamsSchema,
         body: textBodySchema,
-        response: { 200: workflowSchema.describe('The saved workflow at its new version.'), 400: invalid, 403: errorResponse('The workflow is bundled and read-only.') },
+        response: { 200: workflowSchema.describe('The saved workflow at its new version.'), 400: invalid },
       },
     },
     async (req) => ctx.workflows.save(req.params.name, req.body.text),
@@ -135,7 +132,7 @@ export async function workflowRoutes(
     {
       schema: {
         tags,
-        description: 'Make an editable copy of a workflow, bundled or not.',
+        description: 'Make an editable copy of a workflow.',
         security,
         params: nameParamsSchema,
         body: z.object({ name: nameSchema.optional().describe('Name for the copy; defaults to `<name>-copy`.') }),

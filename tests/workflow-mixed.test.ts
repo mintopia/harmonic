@@ -134,7 +134,7 @@ describe('a workflow mixing local and Kubernetes steps', () => {
     const pods: PodOpener<typeof task> = { open: async () => fakePod(branch) };
     let completed = 0;
     const engine = new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: MIXED, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: MIXED, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => ({}),

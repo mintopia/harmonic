@@ -10,7 +10,6 @@ export interface WorkflowEntry {
   readonly description: string;
   readonly subject: WorkflowSubject;
   readonly text: string;
-  readonly bundled: boolean;
   readonly version: number;
 }
 
@@ -27,7 +26,7 @@ export interface WorkflowLibraryOptions {
 
 const PICK_PROMPT = "${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'implement-ticket-heal' || 'implement-ticket') || (attempt.number > 1 && 'implement-native-heal' || 'implement-native') }}";
 
-const BUNDLED_IMPLEMENT = `name: implement
+const TEMPLATE_IMPLEMENT = `name: implement
 description: Build the ticket, verify it, review it and merge it.
 vars:
   maxAttempts: 2
@@ -66,7 +65,7 @@ cleanup:
     uses: cleanup
 `;
 
-const BUNDLED_RESEARCH = `name: research
+const TEMPLATE_RESEARCH = `name: research
 description: Research the ticket and keep the branch as the artifact.
 vars:
   maxAttempts: 2
@@ -84,7 +83,7 @@ steps:
     uses: artifact
 `;
 
-const BUNDLED_EPIC = `name: epic
+const TEMPLATE_EPIC = `name: epic
 description: Verify the Epic integration branch, review it, merge it into the base and close the Epic ticket.
 subject: epic
 vars:
@@ -119,19 +118,17 @@ cleanup:
     uses: cleanup
 `;
 
-function bundledEntries(): WorkflowEntry[] {
-  return [BUNDLED_IMPLEMENT, BUNDLED_RESEARCH, BUNDLED_EPIC].map((text) => {
-    const def = parseWorkflow(text);
-    return { name: def.name, description: def.description, subject: def.subject, text, bundled: true, version: 1 };
-  });
+const TEMPLATES = [TEMPLATE_IMPLEMENT, TEMPLATE_RESEARCH, TEMPLATE_EPIC].map((text) => ({ ...parseWorkflow(text), text }));
+
+function templateEntries(): WorkflowEntry[] {
+  return TEMPLATES.map(({ name, description, subject, text }) => ({ name, description, subject, text, version: 1 }));
 }
 
 const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
 
-/** The global workflow library: bundled workflows (read-only) plus operator workflows kept as one YAML file each under `<dataDir>/workflows`, with every save kept as an immutable version under `.versions`. */
+/** The global workflow library: operator workflows kept as one YAML file each under `<dataDir>/workflows`, with every save kept as an immutable version under `.versions`. Boot seeds the packaged templates as ordinary operator workflows. */
 export class WorkflowLibrary {
   private readonly dir: string | null;
-  private readonly bundled = bundledEntries();
   private queue: Promise<void> = Promise.resolve();
   private operator = new Map<string, WorkflowEntry>();
   private readonly referenced: () => Promise<ReadonlySet<string>>;
@@ -139,19 +136,21 @@ export class WorkflowLibrary {
   private readonly targetCheck: ((name: string) => TargetCheck) | undefined;
   private readonly rename: (from: string, to: string) => Promise<void>;
 
-  /** A `null` data directory gives a library of bundled workflows only. */
+  /** A `null` data directory gives a read-only in-memory library of the packaged templates. */
   constructor(dataDir: string | null, options: WorkflowLibraryOptions = {}) {
     this.dir = dataDir === null ? null : join(dataDir, 'workflows');
     this.referenced = options.referencedVersions ?? (async () => new Set());
     this.rename = options.rename ?? rename;
     this.optionCodeUsable = options.optionCodeUsable;
     this.targetCheck = options.targetCheck;
+    if (dataDir === null) this.operator = new Map(templateEntries().map((e) => [e.name, e]));
   }
 
-  /** Scans the directory at boot, yielding the event loop between files. */
+  /** Seeds missing templates, then scans the directory at boot, yielding the event loop between files. */
   async load(): Promise<void> {
-    this.operator = new Map();
     if (this.dir === null) return;
+    this.operator = new Map();
+    await this.seedTemplates();
     let files: string[];
     try {
       files = await readdir(this.dir);
@@ -165,11 +164,29 @@ export class WorkflowLibrary {
         const text = await readFile(join(this.dir!, file), 'utf8');
         const def = parseWorkflow(text, { lenient: true });
         if (def.name !== name) throw new Error(`file holds workflow ${def.name}`);
-        this.operator.set(name, { name, description: def.description, subject: def.subject, text, bundled: false, version: await this.settledVersion(name, text) });
+        this.operator.set(name, { name, description: def.description, subject: def.subject, text, version: await this.settledVersion(name, text) });
       } catch (err) {
         logger.warn(`skipping invalid workflow file ${file}: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
+  }
+
+  /** Writes each packaged template that has no operator file as version 1; an existing file is never touched. */
+  private async seedTemplates(): Promise<void> {
+    await mkdir(this.dir!, { recursive: true });
+    for (const { name, text } of TEMPLATES) {
+      const file = join(this.dir!, `${name}.yaml`);
+      try {
+        await readFile(file);
+        continue;
+      } catch (err) {
+        if (!isMissing(err)) throw err;
+      }
+      await rm(this.versionDir(name), { recursive: true, force: true });
+      await mkdir(this.versionDir(name), { recursive: true });
+      await writeFile(join(this.versionDir(name), '1.yaml'), text);
+      await this.writeAtomic(file, text);
+    }
   }
 
   private versionDir(name: string): string {
@@ -204,7 +221,7 @@ export class WorkflowLibrary {
   }
 
   list(): WorkflowEntry[] {
-    return [...this.bundled, ...[...this.operator.values()].sort((a, b) => a.name.localeCompare(b.name))];
+    return [...this.operator.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   get(name: string): WorkflowEntry {
@@ -215,19 +232,19 @@ export class WorkflowLibrary {
 
   async listVersions(name: string): Promise<number[]> {
     const entry = this.get(name);
-    if (entry.bundled || this.dir === null) return [entry.version];
+    if (this.dir === null) return [entry.version];
     return (await this.versionNumbers(name)).sort((a, b) => a - b);
   }
 
   async getVersion(name: string, version: number): Promise<WorkflowEntry> {
     const entry = this.get(name);
-    if (entry.bundled) {
+    if (this.dir === null) {
       if (version !== entry.version) throw new DomainError('not_found', `${name} has no version ${version}`);
       return entry;
     }
     try {
       const text = await readFile(join(this.versionDir(name), `${version}.yaml`), 'utf8');
-      return { name, description: parseWorkflow(text, { lenient: true }).description, subject: parseWorkflow(text, { lenient: true }).subject, text, bundled: false, version };
+      return { name, description: parseWorkflow(text, { lenient: true }).description, subject: parseWorkflow(text, { lenient: true }).subject, text, version };
     } catch (err) {
       if (isMissing(err)) throw new DomainError('not_found', `${name} has no version ${version}`);
       throw err;
@@ -250,7 +267,6 @@ export class WorkflowLibrary {
 
   private async saveNow(name: string, text: string): Promise<WorkflowEntry> {
     if (this.dir === null) throw new DomainError('forbidden', 'This workflow library has no storage');
-    if (this.bundled.some((b) => b.name === name)) throw new DomainError('forbidden', `${name} is a bundled workflow and is read-only; duplicate it to edit`);
     const def = parseWorkflow(text);
     if (this.optionCodeUsable) await optionCodeProblems(text, this.optionCodeUsable);
     if (this.targetCheck) await targetProblems(text, this.targetCheck(name));
@@ -265,7 +281,7 @@ export class WorkflowLibrary {
       await rm(versionFile, { force: true });
       throw err;
     }
-    const entry: WorkflowEntry = { name, description: def.description, subject: def.subject, text, bundled: false, version };
+    const entry: WorkflowEntry = { name, description: def.description, subject: def.subject, text, version };
     this.operator.set(name, entry);
     await this.prune(name, version);
     return entry;
@@ -286,8 +302,7 @@ export class WorkflowLibrary {
   }
 
   private async deleteNow(name: string): Promise<void> {
-    const entry = this.get(name);
-    if (entry.bundled) throw new DomainError('forbidden', `${name} is a bundled workflow and cannot be deleted`);
+    this.get(name);
     if (this.dir === null) throw new DomainError('forbidden', 'This workflow library has no storage');
     await rm(join(this.dir, `${name}.yaml`), { force: true });
     await rm(this.versionDir(name), { recursive: true, force: true });

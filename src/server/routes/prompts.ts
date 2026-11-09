@@ -10,7 +10,6 @@ const codeSchema = z.string().regex(PROMPT_CODE_PATTERN, 'a code starts with a l
 
 const stepUseSchema = z.object({
   workflow: z.string().meta({ example: 'implement' }),
-  workflowBundled: z.boolean().describe('Whether the workflow ships with Harmonic.'),
   stepId: z.string().meta({ example: 'review' }),
 });
 

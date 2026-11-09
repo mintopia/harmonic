@@ -87,11 +87,11 @@ export function editedLabel(iso: string | null): string | null {
 }
 
 export type UsedByRow =
-  | { kind: 'step'; workflow: string; bundled: boolean; stepId: string }
+  | { kind: 'step'; workflow: string; stepId: string }
   | { kind: 'prompt'; code: string; line: number | null };
 
 export function usedByRows(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[]): UsedByRow[] {
-  const steps = prompt.usedBySteps.map((u): UsedByRow => ({ kind: 'step', workflow: u.workflow, bundled: u.workflowBundled, stepId: u.stepId }));
+  const steps = prompt.usedBySteps.map((u): UsedByRow => ({ kind: 'step', workflow: u.workflow, stepId: u.stepId }));
   const includes = prompt.usedBy.map((code): UsedByRow => ({ kind: 'prompt', code, line: includeLine(prompts.find((p) => p.code === code)?.text ?? '', prompt.code) }));
   return [...steps, ...includes];
 }

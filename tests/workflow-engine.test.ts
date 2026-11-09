@@ -37,7 +37,7 @@ describe('WorkflowEngine', () => {
   const flow = (steps: string, max = 1): string => `name: flow\ndescription: test\nsteps:\n${inBlock(steps, max)}`;
   const engine = (over: Partial<WorkflowEngineDeps> = {}): WorkflowEngine =>
     new WorkflowEngine({
-      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflows.get(`${name}@${version}`)!, bundled: false, version }) },
+      library: { getVersion: async (name, version) => ({ name, description: '', subject: 'ticket' as const, text: workflows.get(`${name}@${version}`)!, version }) },
       stepRuns: new WorkflowStepRunStore(db),
       spawn: createChildProcessSpawn(testSpawnProcessGroup),
       secrets: async () => Object.fromEntries(secretValues.map((value, i) => [`S${i}`, value])),

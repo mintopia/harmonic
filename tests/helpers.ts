@@ -389,7 +389,7 @@ function replanWorkflowsOnSettingsChange(app: App, legacyGlobal: LegacyGlobalPat
       else await prompts.create(entry.code, entry.description, entry.text);
     }
     for (const workflow of plan.workflows) {
-      const existing = app.ctx.workflows.list().find((entry) => entry.name === workflow.name && !entry.bundled);
+      const existing = app.ctx.workflows.list().find((entry) => entry.name === workflow.name);
       if (existing?.text !== workflow.text) await app.ctx.workflows.save(workflow.name, workflow.text);
     }
     const planned = new Map(plan.workspaceWorkflows.map((entry) => [entry.workspaceId, entry.workflow]));
