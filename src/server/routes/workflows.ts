@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { workflowTemplates, type WorkflowLibrary } from '../../domain/workflow-library-store.js';
+import { templateEntries, type WorkflowLibrary } from '../../domain/workflow-library-store.js';
 import { DomainError } from '../../domain/errors.js';
 import { FALLBACK_WORKFLOWS, WORKFLOW_NAME_PATTERN } from '../../domain/workflow.js';
 import type { WorkflowAssignment } from '../../domain/workflow-assignments.js';
@@ -22,7 +22,7 @@ const workflowSchema = z
 
 const templateSchema = workflowSchema.omit({ version: true }).meta({ id: 'WorkflowTemplate' });
 
-const listEntrySchema =workflowSchema
+const listEntrySchema = workflowSchema
   .extend({
     inUse: z.object({ tickets: z.number().int(), running: z.number().int(), workspaces: z.number().int() }).describe('Tickets that request or are pinned to this workflow, how many of them are working now, and the distinct Workspaces those Tickets belong to.'),
     assignedAs: z
@@ -127,7 +127,7 @@ export async function workflowRoutes(
       },
     },
     async () => {
-      const templates = workflowTemplates().map(({ name, description, subject, text }) => ({ name, description, subject, text }));
+      const templates = templateEntries().map(({ name, description, subject, text }) => ({ name, description, subject, text }));
       return { templates, total: templates.length };
     },
   );

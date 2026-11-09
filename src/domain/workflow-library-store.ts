@@ -120,16 +120,11 @@ cleanup:
 
 const TEMPLATES = [TEMPLATE_IMPLEMENT, TEMPLATE_RESEARCH, TEMPLATE_EPIC].map((text) => ({ ...parseWorkflow(text), text }));
 
-function templateEntries(): WorkflowEntry[] {
+export function templateEntries(): WorkflowEntry[] {
   return TEMPLATES.map(({ name, description, subject, text }) => ({ name, description, subject, text, version: 1 }));
 }
 
-/** The packaged templates: read-only definitions that are never part of the library. */
-export function workflowTemplates(): WorkflowEntry[] {
-  return templateEntries();
-}
-
-const isMissing =(err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
+const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
 
 /** The global workflow library: operator workflows kept as one YAML file each under `<dataDir>/workflows`, with every save kept as an immutable version under `.versions`. Boot seeds the packaged templates as ordinary operator workflows. */
 export class WorkflowLibrary {
@@ -321,7 +316,6 @@ export class WorkflowLibrary {
     return this.save(name, text);
   }
 
-  /** Creates an editable operator workflow at version 1 from a packaged template's text. */
   async createFromTemplate(template: string, name: string): Promise<WorkflowEntry> {
     const source = TEMPLATES.find((t) => t.name === template);
     if (!source) throw new DomainError('not_found', `No workflow template is named ${template}`);
