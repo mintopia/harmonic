@@ -143,7 +143,7 @@ mirroring to resolve the tracker*.
 declaration. Otherwise pick GitHub, GitLab, Forgejo, Jira or Local Markdown.
 Fields below change with the choice; required ones are marked *(required)*.
 
-- **GitHub** has no fields. It uses the `gh` login already on the host.
+- **GitHub** has no fields. It uses the `gh` login already on the host. It needs a recent `gh` CLI (2.45 and older fail with "Unknown JSON field"); distro packages are often too old, so install from the GitHub CLI site.
 - **GitLab** has one optional field, **Project**, which defaults to the
   repo's `origin` remote. It uses the `glab` login on the host.
 - **Local Markdown** has one field, **Folder**, the folder in the repo that

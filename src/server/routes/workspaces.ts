@@ -1,3 +1,4 @@
+import { GH_TOO_OLD_MESSAGE, isGhTooOld } from '../../tracker/github.js';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -406,7 +407,7 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
         response: {
           200: z.object({ ok: z.literal(true) }).describe('The tracker was re-polled.'),
           404: errorResponse('No Workspace has that id.'),
-          409: errorResponse('Tracking is not enabled for this Workspace.'),
+          409: errorResponse('Tracking is not enabled for this Workspace, or the installed `gh` CLI is too old for the GitHub tracker.'),
           500: errorResponse('The tracker scan failed (e.g. an unreadable ticket directory).'),
         },
       },
@@ -414,7 +415,12 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     async (req) => {
       const ws = await ctx.workspaces.get(req.params.id);
       if (!ws.trackerEnabled) throw new DomainError('conflict', `tracking is not enabled for workspace ${ws.id}`);
-      await ctx.trackerManager.pollNow(ws.id);
+      try {
+        await ctx.trackerManager.pollNow(ws.id);
+      } catch (err) {
+        if (isGhTooOld(err)) throw new DomainError('invalid_state', GH_TOO_OLD_MESSAGE);
+        throw err;
+      }
       return { ok: true as const };
     },
   );
