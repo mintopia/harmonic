@@ -112,10 +112,21 @@ async function backfillTaskWorkspaces(client: Client): Promise<void> {
       args: [name, dir, now, now],
     });
   }
-  const result = await client.execute(
-    'UPDATE `tasks` SET `workspace_id` = (SELECT `id` FROM `workspaces` WHERE `workspaces`.`working_dir` = `tasks`.`working_dir`) WHERE `workspace_id` IS NULL',
-  );
-  logger.warn('schema-sync: attached tasks with no workspace to the workspace for their working_dir', { tasks: result.rowsAffected });
+  const orphans = (await client.execute('SELECT `id`, `working_dir` FROM `tasks` WHERE `workspace_id` IS NULL')).rows;
+  let attached = 0;
+  for (const row of orphans) {
+    try {
+      await client.execute({
+        sql: 'UPDATE `tasks` SET `workspace_id` = (SELECT `id` FROM `workspaces` WHERE `working_dir` = ?) WHERE `id` = ?',
+        args: [String(row.working_dir), Number(row.id)],
+      });
+      attached += 1;
+    } catch (err) {
+      if (!isConstraintViolation(err)) throw err;
+      logger.warn('schema-sync: left a task with no workspace because attaching it would duplicate a tracker_ref', { taskId: Number(row.id) });
+    }
+  }
+  logger.warn('schema-sync: attached tasks with no workspace to the workspace for their working_dir', { tasks: attached });
 }
 
 async function convergeIncremental(client: Client, baseline: Baseline, onStep: () => void): Promise<void> {
