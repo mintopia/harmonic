@@ -35,6 +35,7 @@ import { SecretField, IssueTrackerSection, CodeRepositorySection, TriageLabelsSe
 import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor, WorkspaceDefaultWorkflow } from '../components/WorkflowLabelsEditor';
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
+import { WorkflowsPage } from '../components/workflows/WorkflowsPage';
 import { workflowStory, workflowTaskFields } from './api-stub';
 import { PromptEditStep } from '../components/prompt-library/PromptEdit';
 import { PromptFind } from '../components/prompt-library/PromptFind';
@@ -568,6 +569,14 @@ function WorkflowLabelsStory() {
   );
 }
 
+function WorkflowTemplatesStory() {
+  return (
+    <StoryFrame>
+      <WorkflowsPage />
+    </StoryFrame>
+  );
+}
+
 function RetryStory() {
   const choices = {
     defaultHarness: 'claude',
@@ -626,6 +635,7 @@ const STORIES: Record<string, () => JSX.Element> = {
   'routing-overlay': RoutingOverlayStory,
   'workflow-labels': WorkflowLabelsStory,
   retry: RetryStory,
+  'workflow-templates': WorkflowTemplatesStory,
 };
 
 function Story() {

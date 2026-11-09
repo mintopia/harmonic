@@ -102,6 +102,25 @@ describe('/api/workflows', () => {
     expect(copy.body.name).toBe('implement-copy');
   });
 
+  it('lists the bundled templates and creates an editable v1 workflow from one, from the pristine text', async () => {
+    const templates = await server.api('GET', '/api/workflow-templates');
+    expect(templates.status).toBe(200);
+    expect(templates.body.templates.map((t: { name: string }) => t.name)).toEqual(['implement', 'research', 'epic']);
+    expect(templates.body.templates[0]).toEqual(expect.objectContaining({ description: expect.any(String), subject: 'ticket', text: expect.stringContaining('name: implement') }));
+    const created = await server.api('POST', '/api/workflows/from-template', { template: 'implement', name: 'from-tpl' });
+    expect(created.status).toBe(201);
+    expect(created.body.version).toBe(1);
+    expect(created.body.text).toBe(templates.body.templates[0].text.replace('name: implement', 'name: from-tpl'));
+    expect(readFileSync(join(dataDir, 'workflows', 'from-tpl.yaml'), 'utf8')).toBe(created.body.text);
+    expect((await server.api('PUT', '/api/workflows/from-tpl', { text: created.body.text })).body.version).toBe(2);
+  });
+
+  it('refuses a template copy whose name is taken or whose template is unknown', async () => {
+    expect((await server.api('POST', '/api/workflows/from-template', { template: 'research', name: 'implement' })).status).toBe(409);
+    expect((await server.api('POST', '/api/workflows/from-template', { template: 'nope', name: 'fresh-one' })).status).toBe(404);
+    expect((await server.api('GET', '/api/workflows')).body.workflows.some((w: { name: string }) => w.name === 'fresh-one')).toBe(false);
+  });
+
   it('refuses to delete a fallback workflow even with no default or ticket referencing it', async () => {
     for (const name of ['implement', 'research', 'epic']) {
       expect((await server.api('DELETE', `/api/workflows/${name}`)).status).toBe(409);

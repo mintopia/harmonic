@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import type { WorkflowLibrary } from '../../domain/workflow-library-store.js';
+import { templateEntries, type WorkflowLibrary } from '../../domain/workflow-library-store.js';
 import { DomainError } from '../../domain/errors.js';
 import { FALLBACK_WORKFLOWS, WORKFLOW_NAME_PATTERN } from '../../domain/workflow.js';
 import type { WorkflowAssignment } from '../../domain/workflow-assignments.js';
@@ -19,6 +19,8 @@ const workflowSchema = z
     version: z.number().int().describe('The current version; every save creates the next one.'),
   })
   .meta({ id: 'Workflow' });
+
+const templateSchema = workflowSchema.omit({ version: true }).meta({ id: 'WorkflowTemplate' });
 
 const listEntrySchema = workflowSchema
   .extend({
@@ -112,6 +114,36 @@ export async function workflowRoutes(
       },
     },
     async (req, reply) => reply.status(201).send(await ctx.workflows.import(req.body.text)),
+  );
+
+  app.get(
+    '/workflow-templates',
+    {
+      schema: {
+        tags,
+        description: 'List the bundled workflow templates. Templates are not library workflows: they cannot be run, assigned, edited or deleted, only copied with `POST /workflows/from-template`.',
+        security,
+        response: { 200: listResponse('templates', templateSchema).describe('Every template, by name.') },
+      },
+    },
+    async () => {
+      const templates = templateEntries().map(({ name, description, subject, text }) => ({ name, description, subject, text }));
+      return { templates, total: templates.length };
+    },
+  );
+
+  app.post(
+    '/workflows/from-template',
+    {
+      schema: {
+        tags,
+        description: 'Create an editable library workflow from a bundled template, at version 1.',
+        security,
+        body: z.object({ template: nameSchema.describe('The template to copy.'), name: nameSchema.describe('Name for the new workflow.') }),
+        response: { 201: workflowSchema.describe('The new workflow.'), 404: errorResponse('No template has that name.'), 409: errorResponse('A workflow already has that name.') },
+      },
+    },
+    async (req, reply) => reply.status(201).send(await ctx.workflows.createFromTemplate(req.body.template, req.body.name)),
   );
 
   app.get(

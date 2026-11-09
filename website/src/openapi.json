@@ -11299,6 +11299,37 @@
           "version"
         ]
       },
+      "WorkflowTemplateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "subject",
+          "text"
+        ]
+      },
       "WorkflowListEntryInput": {
         "type": "object",
         "properties": {
@@ -22895,6 +22926,38 @@
         ],
         "additionalProperties": false
       },
+      "WorkflowTemplate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "example": "implement"
+          },
+          "description": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "ticket",
+              "epic"
+            ],
+            "description": "What the workflow runs: a Ticket, or an Epic. Ticket workflow selectors exclude Epic workflows."
+          },
+          "text": {
+            "type": "string",
+            "description": "The workflow YAML exactly as saved."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "subject",
+          "text"
+        ],
+        "additionalProperties": false
+      },
       "WorkflowListEntry": {
         "type": "object",
         "properties": {
@@ -31414,6 +31477,130 @@
           },
           "400": {
             "description": "The YAML does not validate; `error.issues` lists each problem with its line and column. Nothing was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A workflow already has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflow-templates": {
+      "get": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "List the bundled workflow templates. Templates are not library workflows: they cannot be run, assigned, edited or deleted, only copied with `POST /workflows/from-template`. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every template, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkflowTemplate"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "templates",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every template, by name."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflows/from-template": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "description": "Create an editable library workflow from a bundled template, at version 1. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                    "example": "implement",
+                    "description": "The template to copy."
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                    "example": "implement",
+                    "description": "Name for the new workflow."
+                  }
+                },
+                "required": [
+                  "template",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new workflow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No template has that name.",
             "content": {
               "application/json": {
                 "schema": {

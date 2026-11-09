@@ -120,7 +120,7 @@ cleanup:
 
 const TEMPLATES = [TEMPLATE_IMPLEMENT, TEMPLATE_RESEARCH, TEMPLATE_EPIC].map((text) => ({ ...parseWorkflow(text), text }));
 
-function templateEntries(): WorkflowEntry[] {
+export function templateEntries(): WorkflowEntry[] {
   return TEMPLATES.map(({ name, description, subject, text }) => ({ name, description, subject, text, version: 1 }));
 }
 
@@ -314,6 +314,14 @@ export class WorkflowLibrary {
     const { name } = parseWorkflow(text);
     if (this.list().some((e) => e.name === name)) throw new DomainError('conflict', `A workflow named ${name} already exists`);
     return this.save(name, text);
+  }
+
+  async createFromTemplate(template: string, name: string): Promise<WorkflowEntry> {
+    const source = TEMPLATES.find((t) => t.name === template);
+    if (!source) throw new DomainError('not_found', `No workflow template is named ${template}`);
+    if (!WORKFLOW_NAME_PATTERN.test(name)) throw new DomainError('validation', `${name} is not a valid workflow name`);
+    if (this.list().some((e) => e.name === name)) throw new DomainError('conflict', `A workflow named ${name} already exists`);
+    return this.save(name, source.text.replace(/^name:.*$/m, `name: ${name}`));
   }
 
   async duplicate(name: string, newName?: string): Promise<WorkflowEntry> {
