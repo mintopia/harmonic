@@ -183,7 +183,7 @@ export function AttemptPanel({
   );
   const tabContent =
     activeTab && active ? (
-      activeTab.pending ? (
+      activeTab.pending && !(activeTab.type === 'implementation' && (run.state === 'running' || events.length > 0)) ? (
         <PendingStep label={activeTab.label} />
       ) : activeTab.type === 'rebase' ? (
         <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
@@ -210,10 +210,17 @@ export function AttemptPanel({
   return (
     <>
       <AttemptHeader run={run} steps={steps} />
-      {tabs.length > 0 && active && <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />}
       <AttemptSummaryCard run={run} snapshot={snapshot} model={topModel} toolCalls={stats.toolCalls} />
-      <AttemptStats stats={stats} />
+      {tabs.length > 0 && active && <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />}
       {tabContent}
+      <details className="group mt-8 border-t border-hairline">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
+          <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+          <h3 className="text-title font-semibold">Usage</h3>
+          <span className="text-small text-muted">tokens by model, agent and tool</span>
+        </summary>
+        <AttemptStats stats={stats} />
+      </details>
     </>
   );
 }

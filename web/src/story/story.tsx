@@ -36,7 +36,7 @@ import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { WorkflowsPage } from '../components/workflows/WorkflowsPage';
-import { workflowStory, workflowTaskFields } from './api-stub';
+import { runningStory, workflowStory, workflowTaskFields } from './api-stub';
 import { PromptEditStep } from '../components/prompt-library/PromptEdit';
 import { PromptFind } from '../components/prompt-library/PromptFind';
 import { PromptImpact } from '../components/prompt-library/PromptImpact';
@@ -456,7 +456,9 @@ function TicketStory() {
   const withOverrides = params.get('overrides') === '1'
     ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
     : routedTask;
-  const shown = params.get('pod') !== null
+  const shown = runningStory
+    ? { ...withOverrides, state: 'working' as const, mergeStatus: null, escalationReason: null }
+    : params.get('pod') !== null
     ? { ...withOverrides, state: 'working' as const, summary: 'Rework retry backoff in the mirror poller', branch: 'harmonic/task-482' }
     : params.get('state') === 'ready'
     ? { ...withOverrides, state: 'ready' as const, targetWait: params.get('wait') ? { target: 'k8s-prod', disabled: false, running: 1, limit: 1, position: 2 } : null, skipReason: params.get('wait') ? 'waiting for k8s-prod' : null }

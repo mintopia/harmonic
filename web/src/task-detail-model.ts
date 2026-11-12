@@ -452,7 +452,7 @@ export function defaultSelection(
  * The tab to open by default when an Attempt is selected: the live Step wins
  * (that's where the operator's attention is), else a failed Step (what an
  * escalated Attempt needs reviewed), else the Implementation tab once it has
- * content, else the furthest-progressed tab, else the first. Null only when
+ * content, else the furthest-progressed tab, else Implementation, else the first. Null only when
  * the Attempt has no Steps at all.
  */
 export function defaultStepTab(tabs: readonly StepTab[]): string | null {
@@ -464,7 +464,7 @@ export function defaultStepTab(tabs: readonly StepTab[]): string | null {
   const implementation = tabs.find((tab) => tab.type === 'implementation' && !tab.pending);
   if (implementation) return implementation.id;
   const progressed = [...tabs].reverse().find((tab) => !tab.pending);
-  return (progressed ?? tabs[0]!).id;
+  return (progressed ?? tabs.find((tab) => tab.type === 'implementation') ?? tabs[0]!).id;
 }
 
 /** The PR/MR link for a Task page: the newest Attempt's opened PR/MR URL, or null when no Attempt opened one. */

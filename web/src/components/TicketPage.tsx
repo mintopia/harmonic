@@ -184,11 +184,11 @@ export function TicketPage({
                 <span className="font-data text-[12.5px]">epic/{parentEpicRef ?? task.mapRef}</span>
               </button>
             )}
-            <div className="flex flex-wrap items-start gap-4 pb-1">
-              <h1 className={`min-w-0 max-w-[680px] ${task.execution ? '' : 'flex-1'} text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] [overflow-wrap:anywhere] max-sm:basis-full`}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="min-w-0 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-balance [overflow-wrap:anywhere]">
                 {cardTitle(task.summary)}
               </h1>
-              <span className="mt-2.5 flex shrink-0 items-center gap-1.5 max-sm:mt-0">
+              <span className="flex shrink-0 items-center gap-1.5">
                 <StatePill state={task.state} />
                 <TargetWaitChip wait={task.targetWait} />
                 {task.mergeStatus && (
@@ -209,26 +209,17 @@ export function TicketPage({
 
             {task.execution && <ExecutionRow execution={task.execution} branch={task.branch} agent={<AgentFact task={task} attempts={attempts} />} />}
 
-            <div className="mt-3 grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-11 max-rail:grid-cols-1 max-rail:gap-3">
-              <div className="min-w-0">
-                {(detail?.prompt ?? task.prompt) != null && (
-                  <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
-                )}
-              </div>
-              <div className="min-w-0">
-                <Metrics task={task} runs={runs} live={liveUsage} now={now} />
-                <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} latestVersion={workflowSteps?.latestVersion ?? null} attempts={attempts} />
-                <ModelOptionOverrides task={detail ?? task} onChanged={onChanged} />
-              </div>
+            <div className="mt-5">
+              <Metrics task={task} runs={runs} live={liveUsage} now={now} />
+              <Properties task={task} allTasks={allTasks} workspaceName={workspaceName} latestVersion={workflowSteps?.latestVersion ?? null} attempts={attempts} />
             </div>
-
-            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
-
-            <WorkflowSteps data={workflowSteps} attemptSelector execution={task.execution} />
-            <TicketVariables taskId={task.id} />
-
-            <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
-
+            {(detail?.prompt ?? task.prompt) != null && (
+              <div className="mt-5 max-w-[78ch]">
+                <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
+              </div>
+            )}
+            <ModelOptionOverrides task={detail ?? task} onChanged={onChanged} />
+            <div className="mt-6">
             {task.skipReason && !task.targetWait && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
@@ -258,7 +249,7 @@ export function TicketPage({
               </div>
             )}
             {task.state === 'escalated' && (
-              <div className="mb-4">
+              <div className="mb-8">
               <div className="rounded-md bg-await-tint px-3 py-2 text-small">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-await">
                   <Icon name="alert-triangle" className="size-3.5" />
@@ -310,6 +301,15 @@ export function TicketPage({
                 Resume continues at the next unexecuted step{nextUnexecutedStep(workflowSteps) ? <>, <code>{nextUnexecutedStep(workflowSteps)}</code></> : ''}.
               </p>
             )}
+
+            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
+
+            <WorkflowSteps data={workflowSteps} attemptSelector execution={task.execution} />
+            <TicketVariables taskId={task.id} />
+
+            <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
+
+            </div>
 
             {/* content panel: driven by the sidebar selection — Stats (default),
                 an Attempt, a changed-file diff, or the Timeline. */}

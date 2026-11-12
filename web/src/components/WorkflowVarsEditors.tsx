@@ -6,6 +6,7 @@ import { btnGhost, btnPrimary, card } from '../ui';
 import { parseWorkflowRef } from '../workflow-ref-model';
 import { useAsyncResource } from '../useAsyncResource';
 import { VariablesTable } from './VariablesTable';
+import { Icon } from './Icon';
 import {
   defaultHint,
   overridesFrom,
@@ -145,10 +146,18 @@ export function TicketVariables({ taskId }: { taskId: number }) {
       setSaving(false);
     }
   };
+  const overridden = data.vars.filter((entry) => !ticketInherited(entry)).length;
   return (
-    <section aria-label="Variables" className={`${card} p-5`}>
-      <h2 className="text-title font-semibold">Variables</h2>
-      <p className="mb-4 mt-0.5 text-muted">
+    <details aria-label="Variables" className="group mb-4" open={draft !== null || undefined}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+        <h2 className="text-title font-semibold">Variables</h2>
+        <span className="text-small text-muted tabular-nums">
+          {data.vars.length} declared{overridden > 0 ? ` · ${overridden} set on this Ticket` : ''}
+        </span>
+      </summary>
+      <div className="pb-4 pl-[22px]">
+      <p className="mb-3 text-small text-muted">
         Only variables declared by {data.workflow}
         {version !== null ? ` v${version}` : ''}. Takes effect from the next Retry.
       </p>
@@ -169,6 +178,7 @@ export function TicketVariables({ taskId }: { taskId: number }) {
         </div>
       )}
       {SECRETS_NOTE}
-    </section>
+      </div>
+    </details>
   );
 }

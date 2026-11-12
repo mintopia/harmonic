@@ -438,6 +438,10 @@ describe('defaultStepTab', () => {
     expect(defaultStepTab(tabs)).toBe('rebase');
   });
 
+  it('opens Implementation when no Step has been recorded yet', () => {
+    expect(defaultStepTab(attemptStepTabs([]))).toBe('implementation');
+  });
+
   it('returns null for an Attempt with no Steps', () => {
     expect(defaultStepTab([])).toBeNull();
   });

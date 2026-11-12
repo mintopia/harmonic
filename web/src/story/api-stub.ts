@@ -4,6 +4,11 @@ import * as f from './fixtures';
 
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
 const podParam = new URLSearchParams(window.location.search).get('pod');
+export const runningStory = new URLSearchParams(window.location.search).get('running') === '1';
+const storyRuns = runningStory ? f.runs.map((r, i, all) => (i === all.length - 1 ? { ...r, state: 'running' as const, finishedAt: null, pullRequestUrl: null } : r)) : f.runs;
+const storyAttempts = runningStory
+  ? f.attempts.map((a0) => ({ ...a0, harness: 'claude', model: 'claude-opus-4-8' })).map((a, i, all) => (i === all.length - 1 ? { ...a, state: 'running' as const, endedAt: null, verifiedSha: null, steps: new URLSearchParams(window.location.search).get('nosteps') === '1' ? [] : a.steps.map((s) => (s.type === 'rebase' ? s : s.type === 'implementation' ? { ...s, state: 'running' as const, endedAt: null } : { ...s, state: 'pending' as const, startedAt: null, endedAt: null })) } : a))
+  : f.attempts;
 export const storyExecution: Task['execution'] = podParam === null ? null : { target: 'k8s-prod', podName: 'harmonic-task-482-7f9c', podState: podParam as 'pending' | 'running' | 'deleted' | 'lost', namespace: 'harmonic-agents', image: 'harmonic-harnesses:2.19.0', source: 'workflow' };
 export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security', execution: storyExecution };
 import { agentMessageThreads } from './agent-message-fixtures';
@@ -526,12 +531,12 @@ export const api: typeof RealApi = {
   closeTask: (_id: number) => ok(f.task),
   deleteTask: (id: number) => ok({ id }),
   runTask: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),
-  taskAttempts: (_id: number) => ok({ attempts: f.runs, total: f.runs.length }),
+  taskAttempts: (_id: number) => ok({ attempts: storyRuns, total: storyRuns.length }),
   taskAttemptTimeline: (id: number) => {
     const s = timelineSpans().find((x) => x.taskId === id);
     return s
       ? ok({ attempts: [syntheticAttempt(s)], budgetBase: 0, total: 1 })
-      : ok({ attempts: f.attempts, budgetBase: 0, total: f.attempts.length });
+      : ok({ attempts: storyAttempts, budgetBase: 0, total: storyAttempts.length });
   },
   taskTimeline: (_id: number) => ok({ events: f.timeline, total: f.timeline.length }),
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
