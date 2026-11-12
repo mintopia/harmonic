@@ -61,6 +61,26 @@ export interface ChangedFile {
   deletions: number;
 }
 
+/** Post-image path of a numstat path field: `a/{x => y}/f` and `old => new` rename forms, git-quoted names. */
+export function numstatPath(raw: string): string {
+  const unquote = (p: string) =>
+    p.startsWith('"') && p.endsWith('"')
+      ? new TextDecoder().decode(
+          Uint8Array.from(
+            p.slice(1, -1).replace(/\\(?:([0-7]{3})|(.))/g, (_, o: string | undefined, c: string) =>
+              o ? String.fromCharCode(parseInt(o, 8)) : ({ t: '\t', n: '\n' } as Record<string, string>)[c] ?? c,
+            ),
+            (ch) => ch.charCodeAt(0),
+          ),
+        )
+      : p;
+  const path = unquote(raw);
+  const brace = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(path);
+  if (brace) return `${brace[1]}${brace[3]}${brace[4]}`.replace(/\/\//g, '/');
+  const arrow = path.indexOf(' => ');
+  return arrow >= 0 ? path.slice(arrow + 4) : path;
+}
+
 /**
  * Parse the per-file lines from `git diff --numstat`, each
  * `additions<TAB>deletions<TAB>path`. Counts are exact line totals — unlike the
@@ -79,7 +99,7 @@ export function changedFilesFromNumstat(numstat: string | null): ChangedFile[] {
     const path = match[3];
     if (additions === undefined || deletions === undefined || path === undefined) continue;
     files.push({
-      path,
+      path: numstatPath(path),
       kind: 'M',
       additions: additions === '-' ? 0 : Number(additions),
       deletions: deletions === '-' ? 0 : Number(deletions),
