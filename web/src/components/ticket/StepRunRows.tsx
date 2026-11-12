@@ -3,7 +3,7 @@ import { api } from '../../api';
 import { useLiveEffect } from '../../useLiveEffect';
 import type { AttemptLogEvent, AttemptSummary, GuardrailEvent, StepRun, TaskExecution, WorkflowStepsResponse } from '../../types';
 import { checkpointView, stepTarget } from '../../step-target-model';
-import { criticVerdictWord, defaultOpenKey, eventsForStepRun, iconKind, isFailed, rowSummary, stepRunDuration, type IconKind, type StepRowModel } from '../../step-run-model';
+import { criticVerdictWord, defaultOpenKey, eventsForStepRun, iconKind, isFailed, rowSummary, stepRunElapsedMs, type IconKind, type StepRowModel } from '../../step-run-model';
 import { harnessLabel } from '../../task-detail-model';
 import { promptSentCount, stepRunPromptLocator } from '../../resolved-prompt-model';
 import { useTurnPrompts } from './useTurnPrompts';
@@ -13,10 +13,11 @@ import { PromptSent } from './Description';
 import { SteerBox } from './SteerBox';
 import { CheckpointLine, TargetChip } from './TargetParts';
 import { useStepRunLog } from '../useStepRunLog';
+import { fmtDur } from './Metrics';
 
 const ICON_WORD: Record<IconKind, string> = { pass: 'passed', fail: 'failed', running: 'running', pending: 'pending', skipped: 'skipped', interrupted: 'interrupted' };
 
-const ICON_TEXT: Record<IconKind, string> = { pass: 'text-merged', fail: 'text-fail', running: 'text-running', pending: 'text-faint', skipped: 'text-faint', interrupted: 'text-await' };
+const ICON_TEXT: Record<IconKind, string> = { pass: 'text-merged', fail: 'text-fail', running: 'text-running', pending: 'text-faint', skipped: 'text-faint', interrupted: 'text-muted' };
 
 export function StatusIcon({ kind, label }: { kind: IconKind; label?: string }) {
   const common = { width: 18, height: 18, viewBox: '0 0 18 18', role: 'img', 'aria-label': label ?? ICON_WORD[kind], className: `shrink-0 ${ICON_TEXT[kind]}` } as const;
@@ -60,17 +61,12 @@ export function StatusIcon({ kind, label }: { kind: IconKind; label?: string }) 
   );
 }
 
-export function Chevron() {
+export function Chevron({ prompt = false }: { prompt?: boolean }) {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90">
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={`shrink-0 transition-transform ${prompt ? 'group-open/prompt:rotate-90' : 'group-open:rotate-90'}`}>
       <path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="var(--color-faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
-}
-
-export function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  return total >= 60 ? `${Math.floor(total / 60)}m ${total % 60}s` : `${total}s`;
 }
 
 const BAD_LINE = /fail|error|assert|exited with code [1-9]|exit(?:ed)? [1-9]/i;
@@ -118,9 +114,9 @@ function StepPrompt({ run }: { run: StepRun }) {
   }, [opened, run.id]);
   if (!run.hasPrompt) return null;
   return (
-    <details className="group mt-3" onToggle={(e) => e.currentTarget.open && setOpened(true)}>
+    <details className="group/prompt" onToggle={(e) => e.currentTarget.open && setOpened(true)}>
       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-[12px] font-semibold text-muted [&::-webkit-details-marker]:hidden">
-        <Chevron />
+        <Chevron prompt />
         Prompt sent
       </summary>
       {prompt !== null ? <PromptSent prompt={prompt} label="Prompt sent" className="mt-1" /> : <p className="text-small text-muted">{failed ? 'Prompt not archived.' : 'Loading sent prompt…'}</p>}
@@ -161,11 +157,11 @@ function AgentBody({ step, ctx }: { step: StepRun; ctx: StepRunContext }) {
       {step.id === ctx.lastAgentId && <GuardrailAlert events={ctx.guardrailEvents} />}
       <StepPrompt run={step} />
       {live && events.length === 0 ? (
-        <p className="mt-3 text-small text-muted">Waiting for the agent…</p>
+        <p className="mt-2 text-small text-muted">Waiting for the agent…</p>
       ) : !live && recorded.loading ? (
-        <p className="mt-3 text-small text-muted">Loading transcript…</p>
+        <p className="mt-2 text-small text-muted">Loading transcript…</p>
       ) : (
-        <div className="mt-3">
+        <div className="mt-1">
           <ChatTranscript
             embedded
             events={events}
@@ -287,14 +283,15 @@ function RowBody({ step, ctx }: { step: StepRun; ctx: StepRunContext }) {
 function SummaryLine({ step, stepId, kind, now, execution }: { step: StepRun | null; stepId: string; kind: string | null; now: number; execution: TaskExecution | null | undefined }) {
   const target = step ? stepTarget(step, execution) : null;
   const failed = step !== null && isFailed(step);
-  const duration = step === null ? null : stepRunDuration(step, now);
+  const elapsed = step === null ? null : stepRunElapsedMs(step, now);
+  const duration = elapsed === null ? null : fmtDur(elapsed);
   return (
     <>
       <StatusIcon kind={step === null ? 'pending' : iconKind(step)} label={step === null ? 'not started' : undefined} />
       <span className={`shrink-0 font-semibold ${step?.state === 'skipped' || step === null ? 'text-faint' : 'text-ink'}`}>{stepId}</span>
       {kind && <span className="shrink-0 text-[12px] text-faint">{kind}</span>}
       {target && <TargetChip target={target} />}
-      <span className={`min-w-0 flex-1 truncate text-[12.5px] ${step?.state === 'interrupted' ? 'text-await' : 'text-muted'}`}>{rowSummary(step)}</span>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{rowSummary(step)}</span>
       {failed && <span className="shrink-0 rounded-[3px] bg-fail-tint px-[7px] py-px text-[10px] font-bold uppercase tracking-[0.04em] text-fail">{step.outcome}</span>}
       <span className="shrink-0 text-[12px] tabular-nums text-muted">{duration ?? ''}</span>
     </>

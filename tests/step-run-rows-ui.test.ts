@@ -63,8 +63,9 @@ describe('Attempt step list', () => {
 
   it('renders unrun outline steps as pending rows while the Attempt is current', async () => {
     const host = await mount([step({ stepId: 'implement', kind: 'agent', action: 'agent', state: 'running', outcome: null, endedAt: null })], { showPending: true });
-    const pending = [...host.querySelectorAll('li')].filter((li) => li.textContent?.includes('pending'));
+    const pending = [...host.querySelectorAll('li')].filter((li) => li.querySelector('[aria-label="not started"]'));
     expect(pending.map((li) => li.textContent)).toEqual([expect.stringContaining('verify'), expect.stringContaining('merge')]);
+    expect(pending.some((li) => li.textContent?.includes('pending'))).toBe(false);
   });
 
   it('shows an interrupted step as interrupted, not running or failed', async () => {

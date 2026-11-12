@@ -91,11 +91,8 @@ export function eventsForStepRun(events: readonly AttemptLogEvent[], run: Pick<S
   );
 }
 
-export const stepRunDuration = (run: Pick<StepRun, 'startedAt' | 'endedAt' | 'state'>, now: number): string | null => {
-  if (run.state === 'skipped') return null;
-  const total = Math.max(0, Math.round(((run.endedAt ?? now) - run.startedAt) / 1000));
-  return total >= 60 ? `${Math.floor(total / 60)}m ${total % 60}s` : `${total}s`;
-};
+export const stepRunElapsedMs = (run: Pick<StepRun, 'startedAt' | 'endedAt' | 'state'>, now: number): number | null =>
+  run.state === 'skipped' ? null : Math.max(0, (run.endedAt ?? now) - run.startedAt);
 
 const CRITIC_VERDICT_WORD = { pass: 'pass', fail: 'block', inconclusive: 'inconclusive' } as const;
 
@@ -103,7 +100,7 @@ export const criticVerdictWord = (verdict: NonNullable<StepRun['outputs']['verdi
 
 /** The one-line summary a row shows beside its step id. */
 export function rowSummary(run: StepRun | null): string {
-  if (run === null) return 'pending';
+  if (run === null) return '';
   if (run.state === 'interrupted') return 'interrupted';
   return run.summary ?? run.detail ?? '';
 }

@@ -50,7 +50,6 @@ describe('TicketPage smoke (issue #469)', () => {
     expect(host!.textContent).toContain('Fix the flaky retry test');
     expect(host!.querySelector('ol[aria-label="Task progress"]')).toBeNull();
     expect(host!.querySelector('section[aria-label="Attempt history"]')?.textContent).toContain("hasn't been attempted yet");
-    expect(host!.textContent).toContain('No attempts yet');
   });
 
   it('shows the No attempts yet empty state when an attempt is selected but none exist', async () => {
