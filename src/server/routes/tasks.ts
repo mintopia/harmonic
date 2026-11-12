@@ -18,23 +18,26 @@ import {
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
-  STEP_TYPES,
   TASK_EXECUTION_POD_STATES,
   WORKFLOW_CHOSEN,
   isEpicAttempt,
   isTaskAttempt,
+  workflowStepRuns,
   type AttemptRow,
+  type WorkflowStepRunRow,
 } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
+import { safeSegment } from '../../archive/task-archive.js';
 import { DomainError, GitError } from '../../domain/errors.js';
 import { attempted, orFallback } from '../../error-handling.js';
 import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type TranscriptLog } from '../../execution/transcript-log.js';
 import { adapterFor } from '../../execution/harness/registry.js';
-import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi } from '../serialize.js';
 import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
 import { escalationCauseSchema, taskClassifierSchema, taskRoutingSchema } from '../../domain/task-routing.js';
-import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
+import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import { diffFilesResponseSchema } from './diff.js';
 import { deleteTaskKeepingArchive, operatorReasonSchema, recordOperatorActionBestEffort, recordOperatorActionsBestEffort, requestActor } from '../operator-inputs.js';
@@ -284,8 +287,14 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running attempt's id, so the board can match the attempt_usage firehose to this card; null unless running. */
     attemptId: z.number().nullable().meta({ example: 41 }),
-    /** The running attempt's current Step; null unless the Task is working, or between Steps. */
-    currentStep: z.enum(STEP_TYPES).nullable().meta({ example: 'verification' }),
+    /** The running Attempt's running step run; null unless the Task is working, or between steps. */
+    currentStep: z
+      .object({
+        stepId: z.string().meta({ example: 'verify' }),
+        action: z.string().meta({ example: 'run' }),
+        kind: z.enum(['rebase', 'agent', 'check', 'critic', 'publish', 'tracker', 'cleanup', 'marker']).meta({ example: 'check' }),
+      })
+      .nullable(),
     /** The running attempt's context-window occupancy in tokens; null unless running (or unreported). */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
     /** The model's effective context window; null when unknown. */
@@ -378,7 +387,7 @@ const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'guardrail', 'operator-retry', 'agent-message', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'step-run', 'guardrail', 'operator-retry', 'agent-message', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -435,9 +444,7 @@ const verificationAttemptSchema = z.object({
   outputTruncated: z.boolean().meta({ example: false }),
 });
 
-const verificationAttemptsListResponseSchema = listResponse('verificationAttempts', verificationAttemptSchema).extend({
-  verifierStatuses: z.array(verifierStatusSchema),
-});
+const verificationAttemptsListResponseSchema = listResponse('verificationAttempts', verificationAttemptSchema);
 
 const usageResponseSchema = attemptUsageSchema.extend({
   cost: costSchema.nullable(),
@@ -1089,7 +1096,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     {
       schema: {
         tags: ['Attempts'],
-        description: "A ticket's attempt timeline. Steps are ordered exactly as they ran.",
+        description: "A ticket's attempt timeline; each Attempt carries its step runs in execution order.",
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: attemptTimelineResponseSchema },
@@ -1180,6 +1187,49 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => await attemptToApi(ctx, await ctx.attempts.get(req.params.id)),
   );
 
+  const readSessionTranscript = async (
+    run: AttemptRow,
+    sessionRowId: number,
+    range: { startedAt: number; finishedAt: number | null },
+    boundExported: boolean,
+  ): Promise<{ log: TranscriptLog; fromArchive: boolean } | null> => {
+    let session;
+    try {
+      session = await ctx.sessions.get(sessionRowId);
+    } catch {
+      return null;
+    }
+    const adapter = adapterFor(session.harness);
+    let log: TranscriptLog;
+    let nativePath: string | null = null;
+    let fromArchive = false;
+    if (adapter.exportTranscript) {
+      const exported = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
+      const events = boundExported ? exported?.filter((event) => event.ts >= range.startedAt && event.ts <= (range.finishedAt ?? Infinity)) : exported;
+      log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
+    } else {
+      nativePath = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(sessionRowId).catch(() => null));
+      log = await readTranscriptLog({ harness: session.harness, path: nativePath, ...range });
+    }
+    if (log.status !== 'available' && !adapter.exportTranscript) {
+      const owner = await archiveOwner(run);
+      const archived = owner ? await ctx.archive.archivedTranscript(owner, run.number, 'implementation', nativePath) : null;
+      if (archived) {
+        log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
+        fromArchive = log.status === 'available';
+      }
+    }
+    return { log, fromArchive };
+  };
+
+  const operatorMessagesOf = async (attemptId: number, range: { startedAt: number; finishedAt: number | null }): Promise<OperatorMessage[]> =>
+    (await ctx.attempts.listEvents(attemptId)).flatMap((e) => {
+      const p = e.payload as { event?: string; text?: unknown } | null;
+      return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string' && e.ts >= range.startedAt && e.ts <= (range.finishedAt ?? Infinity)
+        ? [{ ts: e.ts, text: p.text, queued: p.event === 'steer_queued' }]
+        : [];
+    });
+
   app.get(
     '/attempts/:id/log',
     {
@@ -1193,47 +1243,105 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     },
     async (req) => {
       const run = await ctx.attempts.get(req.params.id);
-      if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
-      let session;
-      try {
-        session = await ctx.sessions.get(run.sessionRowId);
-      } catch {
-        return { status: 'unavailable' as const, liveCursor: ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) };
-      }
-      const adapter = adapterFor(session.harness);
-      const range = { startedAt: run.startedAt, finishedAt: run.endedAt };
-      let log: TranscriptLog;
-      let nativePath: string | null = null;
-      let fromArchive = false;
-      if (adapter.exportTranscript) {
-        const events = await adapter.exportTranscript({ sessionId: session.harnessSessionId, cwd: session.cwd });
-        log = events && events.length > 0 ? { status: 'available', events } : { status: 'unavailable' };
-      } else {
-        nativePath = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId).catch(() => null));
-        log = await readTranscriptLog({ harness: session.harness, path: nativePath, ...range });
-      }
-      if (log.status !== 'available' && !adapter.exportTranscript) {
-        const owner = await archiveOwner(run);
-        const archived = owner ? await ctx.archive.archivedTranscript(owner, run.number, 'implementation', nativePath) : null;
-        if (archived) {
-          log = await readTranscriptLog({ harness: session.harness, path: archived, ...range });
-          fromArchive = log.status === 'available';
-        }
-      }
       const liveCursor = ctx.bus.latestAttemptLogSeq({ attemptId: run.id });
+      if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor };
+      const range = { startedAt: run.startedAt, finishedAt: run.endedAt };
+      const read = await readSessionTranscript(run, run.sessionRowId, range, false);
+      if (!read) return { status: 'unavailable' as const, liveCursor };
+      const { log, fromArchive } = read;
       if (log.status !== 'available') return { ...log, liveCursor };
-      const operator: OperatorMessage[] = (await ctx.attempts.listEvents(run.id)).flatMap((e) => {
-        const p = e.payload as { event?: string; text?: unknown } | null;
-        return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string'
-          ? [{ ts: e.ts, text: p.text, queued: p.event === 'steer_queued' }]
-          : [];
-      });
       return {
         status: 'available' as const,
         liveCursor,
         ...(fromArchive ? { fromArchive: true } : {}),
-        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, attemptId: run.id })),
+        events: withOperatorMessages(log.events, await operatorMessagesOf(run.id, { startedAt: 0, finishedAt: null })).map((event) => ({ ...event, attemptId: run.id })),
       };
+    },
+  );
+
+  const stepRunOf = async (id: number) => {
+    const row = await ctx.asyncDb.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.id, id)).get());
+    if (!row) throw new DomainError('not_found', `no step run has id ${id}`);
+    return row;
+  };
+
+  const stepRunArchiveRel = (row: WorkflowStepRunRow) => `steps/${row.attempt ?? '_'}-${safeSegment(row.stepId)}-${row.id}`;
+
+  app.get(
+    '/step-runs/:id/log',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description:
+          "Read one step run's transcript: its Session's native harness transcript bounded to the step run's start and end, falling back to the Archive's copy. Unavailable for steps with no Session (checks, publish) or when neither copy can be read.",
+        params: idParamsSchema,
+        response: {
+          200: attemptLogResponseSchema.describe('The step run transcript events, or an explicit unavailable state.'),
+          404: errorResponse('No step run has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      const row = await stepRunOf(req.params.id);
+      const run = row.attemptId === null ? null : await ctx.attempts.get(row.attemptId).catch(() => null);
+      const liveCursor = run ? ctx.bus.latestAttemptLogSeq({ attemptId: run.id }) : 0;
+      if (!run || row.sessionRowId === null) return { status: 'unavailable' as const, liveCursor };
+      const range = { startedAt: row.startedAt, finishedAt: row.endedAt };
+      const read = await readSessionTranscript(run, row.sessionRowId, range, true);
+      if (!read) return { status: 'unavailable' as const, liveCursor };
+      const { log, fromArchive } = read;
+      if (log.status !== 'available') return { ...log, liveCursor };
+      return {
+        status: 'available' as const,
+        liveCursor,
+        ...(fromArchive ? { fromArchive: true } : {}),
+        events: withOperatorMessages(log.events, await operatorMessagesOf(run.id, range)).map((event) => ({ ...event, attemptId: run.id })),
+      };
+    },
+  );
+
+  app.get(
+    '/step-runs/:id/prompt',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description: 'The prompt an agent or critic step run sent, Prompt Library includes expanded and secrets masked, as text/plain. 404 when the step run sent none.',
+        params: idParamsSchema,
+        response: {
+          200: z.any().describe('The resolved prompt as plain text.'),
+          404: errorResponse('No such step run, or it sent no prompt.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const row = await stepRunOf(req.params.id);
+      if (row.resolvedPrompt === null) throw new DomainError('not_found', `step run ${row.id} sent no prompt`);
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(row.resolvedPrompt);
+    },
+  );
+
+  app.get(
+    '/step-runs/:id/output',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description: "Stream a `run:` step run's full, uncapped output from the Archive (text/plain). 404 when the Archive holds none.",
+        params: idParamsSchema,
+        response: {
+          200: z.any().describe('The full combined stdout and stderr of the step run command.'),
+          404: errorResponse('No such step run, or no archived full output.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const row = await stepRunOf(req.params.id);
+      const run = row.attemptId === null ? null : await ctx.attempts.get(row.attemptId).catch(() => null);
+      const owner = run ? await archiveOwner(run) : null;
+      const file = run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, `${stepRunArchiveRel(row)}/output.log`) : null;
+      if (!file) throw new DomainError('not_found', `no archived full output for step run ${row.id}`);
+      const stream = createReadStream(file);
+      reply.raw.once('close', () => stream.destroy());
+      return reply.header('content-type', 'text/plain; charset=utf-8').send(stream);
     },
   );
 
@@ -1302,12 +1410,11 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       if (!isTaskAttempt(run)) throw new DomainError('not_found', `Epic Attempt ${run.id} has no task verification status`);
       const { limit, offset } = req.query;
       const attempts = await ctx.verificationAttempts.list(run.id);
-      const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
       const { items, total } = paginate(
         attempts.map(verificationAttemptToApi),
         { limit, offset },
       );
-      return { verificationAttempts: items, total, verifierStatuses };
+      return { verificationAttempts: items, total };
     },
   );
 

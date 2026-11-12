@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { AppContext } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
-import { attemptUsageSchema, costSchema, errorResponse, trackerRefParam } from '../schemas.js';
+import { attemptUsageSchema, costSchema, errorResponse, stepRunSchema, trackerRefParam } from '../schemas.js';
 import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
 import { diffFilesResponseSchema } from './diff.js';
@@ -150,22 +150,6 @@ const epicDetailSchema = epicSchema
 
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
-const verificationAttemptSchema = z.object({
-  id: z.number().int(),
-  attemptId: z.number().int(),
-  seq: z.number().int(),
-  ts: z.number().int(),
-  mechanism: z.enum(['critic', 'command']),
-  inputOid: z.string(),
-  verdict: z.enum(['pass', 'fail', 'inconclusive']),
-  summary: z.string(),
-  output: z.string(),
-  promptLocator: z.string().nullable(),
-  harness: z.string().nullable(),
-  hasTranscript: z.boolean(),
-  outputTruncated: z.boolean(),
-});
-
 const epicAttemptSchema = z
   .object({
     id: z.number().int(),
@@ -178,19 +162,7 @@ const epicAttemptSchema = z
     contextTokens: z.number().nullable(),
     startedAt: z.number().int(),
     endedAt: z.number().int().nullable(),
-    steps: z.array(z.object({
-      id: z.number().int(),
-      attemptId: z.number().int(),
-      type: z.enum(['rebase', 'implementation', 'verification', 'review']),
-      position: z.number().int(),
-      state: z.enum(['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled']),
-      command: z.string().nullable(),
-      verdict: z.string().nullable(),
-      logLocator: z.string().nullable(),
-      startedAt: z.number().int().nullable(),
-      endedAt: z.number().int().nullable(),
-    })),
-    verificationAttempts: z.array(verificationAttemptSchema),
+    stepRuns: z.array(stepRunSchema),
     resolverPrompts: z.array(z.object({
       kind: z.enum(['merge-conflict', 'verification', 'refresh']),
       locator: z.string(),

@@ -6,6 +6,7 @@ import { decideEpicIntegrate, type EpicIntegrateFacts, type MemberMergeState } f
 import { type Epic } from '../src/domain/epic-view.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { type PostMergeHook } from '../src/execution/branch-merge.js';
 import { EpicCoordinator, type EpicGit, type EpicIntegrate, type EpicRunWorkflow, integrationBranchName } from '../src/execution/epic-coordinator.js';
 import { type MergePolicyDeps, type MergePolicyOutcome, type PostMergeCheckResult, runMergePolicy } from '../src/execution/merge-policy.js';
@@ -910,8 +911,9 @@ describe('epic-routes', () => {
           cost: cost(2),
           usage: usageJson({ totals: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 12 } }),
         });
-        const step = await server.app.ctx.attempts.createStep(run.id, { type: 'implementation' });
-        await server.app.ctx.attempts.updateStep(step.id, { state: 'passed', startedAt: Date.now(), endedAt: Date.now() });
+        const stepRuns = new WorkflowStepRunStore(server.app.ctx.asyncDb);
+        const step = await stepRuns.start({ workspaceId, epicRef: trackerRef(778), workflowRef: 'epic@1', stepId: 'resolve', position: 0, action: 'agent', attempt: 1, attemptId: run.id });
+        await stepRuns.finish(step.id, { outcome: 'pass', outputs: { stdout: '', exitCode: null }, summary: 'resolved' });
 
         const { status, body } = await server.api('GET', `/api/workspaces/${workspaceId}/epics/778/attempts`);
         expect(status).toBe(200);
@@ -921,7 +923,7 @@ describe('epic-routes', () => {
           state: 'passed',
           cost: expect.objectContaining({ totalUsd: 2 }),
           usage: expect.objectContaining({ totals: expect.objectContaining({ totalTokens: 12 }) }),
-          steps: [expect.objectContaining({ id: step.id, type: 'implementation', state: 'passed' })],
+          stepRuns: [expect.objectContaining({ id: step.id, stepId: 'resolve', kind: 'agent', pass: 1, state: 'pass', attemptId: run.id })],
         }));
       });
 
