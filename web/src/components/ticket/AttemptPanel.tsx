@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import type { Attempt, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, GuardrailEvent, StepRun, TaskExecution, WorkflowStepsResponse } from '../../types';
 import { Icon } from '../Icon';
 import { attemptIdentityModel, type TaskStats } from '../../task-detail-model';
-import { attemptRows, outlineRows, passNumbers, passTone, type PassTone } from '../../step-run-model';
+import { attemptRows, outlineRows, passNumbers } from '../../step-run-model';
 import type { PendingSteer } from './ChatTranscript';
 import { AttemptStats, AttemptSummaryCard } from './StatsPanel';
 import { StatePill } from './shared';
-import { StatusIcon, StepRunList, type StepRunContext } from './StepRunRows';
+import { PassSelector, StepRunList, type StepRunContext } from './StepRunRows';
 
 function attemptPillState(run: AttemptSummary, stepRuns: readonly StepRun[]): string {
   if (run.state === 'completed') return 'passed';
@@ -25,29 +25,6 @@ function AttemptHeader({ run, stepRuns }: { run: AttemptSummary; stepRuns: reado
           continued Attempt {run.number - 1}
         </span>
       )}
-    </div>
-  );
-}
-
-const PASS_ICON: Record<PassTone, 'pass' | 'fail' | 'running'> = { pass: 'pass', fail: 'fail', running: 'running' };
-
-function PassSelector({ numbers, runs, selected, max, onSelect }: { numbers: number[]; runs: readonly StepRun[]; selected: number; max: number | null; onSelect: (pass: number) => void }) {
-  return (
-    <div role="group" aria-label="Pass" className="mt-4 flex flex-wrap items-center gap-2">
-      <span className="text-label font-bold uppercase tracking-[0.1em] text-faint">Pass</span>
-      {numbers.map((n) => (
-        <button
-          key={n}
-          type="button"
-          aria-pressed={n === selected}
-          onClick={() => onSelect(n)}
-          className={`inline-flex min-h-9 items-center gap-1.5 rounded-[3px] border bg-surface px-2.5 py-[3px] text-[12px] tabular-nums ${n === selected ? 'border-accent font-semibold text-ink shadow-[0_0_0_1px_var(--color-accent)]' : 'border-edge font-medium text-muted'}`}
-        >
-          <StatusIcon kind={PASS_ICON[passTone(runs, n)]} label={`pass ${passTone(runs, n)}`} />
-          {n}
-          {n === numbers.at(-1) && max !== null ? ` of ${max}` : ''}
-        </button>
-      ))}
     </div>
   );
 }

@@ -207,7 +207,6 @@ describe('one merge policy, everywhere (issue #381, ADR-0001)', () => {
       const task = await waitEscalated(taskId);
 
       expect(task.escalationReason).toMatch(/workflow step merge .*git worktree add/s);
-      expect(task.mergeStatus).toBeNull();
       expect(await server.app.ctx.attempts.listForTask(taskId)).toHaveLength(1);
       expect(git(repo, 'rev-parse', 'main')).toBe(baseTip);
       expect(() => git(repo, 'show', `main:impl-${trackerRef}.txt`)).toThrow();

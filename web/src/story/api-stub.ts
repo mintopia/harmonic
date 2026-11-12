@@ -556,8 +556,8 @@ export const api: typeof RealApi = {
   taskAttemptTimeline: (id: number) => {
     const s = timelineSpans().find((x) => x.taskId === id);
     return s
-      ? ok({ attempts: [syntheticAttempt(s)], budgetBase: 0, total: 1 })
-      : ok({ attempts: storyAttempts, budgetBase: 0, total: storyAttempts.length });
+      ? ok({ attempts: [syntheticAttempt(s)], total: 1 })
+      : ok({ attempts: storyAttempts, total: storyAttempts.length });
   },
   taskTimeline: (_id: number) => ok({ events: f.timeline, total: f.timeline.length }),
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
@@ -566,7 +566,6 @@ export const api: typeof RealApi = {
   epicExport: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicExportFixture : { exportable: true, latest: null, earlier: [] }),
   exportEpicAgain: (_workspaceId: number, _epicRef: TrackerRef) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
-  verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   resolvedPrompt: (_owner: ResolvedPromptOwner, locator: string, index?: number) =>
     locator === 'routing/classifier/prompt.md'
       ? ok(storyClassifierPrompt)
@@ -575,7 +574,6 @@ export const api: typeof RealApi = {
       : index === 9
         ? Promise.reject(new ApiError(404, 'not archived'))
         : ok(storyResolvedPrompts[index] ?? 'Sample resolved prompt.'),
-  verificationFullOutput: (id: number) => ok(`full output of verification ${id}`),
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   attempt: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),
@@ -583,12 +581,9 @@ export const api: typeof RealApi = {
   attemptEvents: (_id: number) => ok<{ events: AttemptEvent[]; total: number }>({ events: [], total: 0 }),
   attemptLog: (_id: number) => ok({ status: 'available' as const, events: f.attemptLog, liveCursor: 999 }),
   attemptGuardrailEvents: (_id: number) => ok({ guardrailEvents: [], total: 0 }),
-  attemptVerificationAttempts: (_id: number) => ok({ verificationAttempts: f.verificationAttempts, total: f.verificationAttempts.length }),
-  verificationAttempt: (_id: number) => ok({ output: '', summary: 'pass', hasTranscript: false }),
   stepRunLog: (id: number) => ok({ status: 'available' as const, events: f.stepRunsFor(stepVariant).find((r) => r.id === id)?.kind === 'critic' ? f.criticLog : f.attemptLog, liveCursor: 999 }),
   stepRunPrompt: (_id: number) => Promise.resolve('/implement\n\nTicket #172: Guardrail defaults must not leak into per-task overrides.\n\nKeep the override null when the operator did not set one; resolve against the live default at read time.'),
   stepRunOutputUrl: (id: number) => `/api/step-runs/${id}/output`,
-  criticLog: (_id: number) => ok({ status: 'available' as const, events: f.criticLog, liveCursor: 999, fromArchive: storyName === 'x-archive' }),
   attemptDiff: (_id: number) => ok({ branch: f.task.branch ?? null, baseBranch: f.task.baseBranch ?? null, stat: f.task.stat }),
   attemptDiffFiles: (_id: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   changePassword: (_currentPassword: string, _newPassword: string) => ok({ ok: true as const }),

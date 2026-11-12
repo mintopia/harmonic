@@ -1,17 +1,13 @@
 import { adapterFor } from './harness/registry.js';
-import { collectUsage } from './usage.js';
 import type { AppConfig } from '../config.js';
-import { pricesForHarness } from '../domain/pricing.js';
 import type { SessionStore } from '../domain/sessions.js';
-import type { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { bestEffort, orFallback } from '../error-handling.js';
-import { logger } from '../logger.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 /**
  * Resolves and persists the harnesses' native transcript (`${sessionId}.jsonl`)
- * paths for Sessions and critic verification attempts. A harness may not have
- * flushed the file by the time a dispatch or a critic turn ends, so every capture
+ * paths for Sessions. A harness may not have
+ * flushed the file by the time a dispatch ends, so every capture
  * here retries a few times off the hot path (or resolves lazily on read) and is
  * strictly best-effort: a missing transcript never fails an Attempt.
  */
@@ -20,7 +16,6 @@ export class TranscriptCapture {
 
   constructor(
     private readonly sessionStore: SessionStore,
-    private readonly verificationAttempts: VerificationAttemptStore,
     private readonly getConfig: () => AppConfig,
   ) {}
 
@@ -79,77 +74,6 @@ export class TranscriptCapture {
       context: { sessionRowId },
     });
     return transcriptPath;
-  }
-
-  /** The critic equivalent of {@link captureSessionTranscript}. */
-  async captureCriticTranscript(input: {
-    attemptId: number;
-    sessionId: string;
-    harnessId: string;
-    sessionLogDir: string | undefined;
-  }): Promise<void> {
-    const resolver = adapterFor(input.harnessId).usage?.resolveTranscriptPath;
-    if (!resolver) return;
-    for (const delayMs of [100, 500, 2_000]) {
-      if (!(await this.pause(delayMs))) return;
-      const transcriptPath = await orFallback(
-        () => resolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }),
-        { op: 'transcriptCapture.captureCriticTranscript.resolve', level: 'debug', context: { attemptId: input.attemptId } },
-        null,
-      );
-      if (!transcriptPath) continue;
-      await bestEffort(() => this.verificationAttempts.setTranscriptPath(input.attemptId, transcriptPath), {
-        op: 'transcriptCapture.captureCriticTranscript.persist',
-        level: 'warn',
-        context: { attemptId: input.attemptId },
-      });
-      return;
-    }
-  }
-
-  /**
-   * Resolve the critic turn's per-model usage from its settled session log and
-   * persist it, so Task Stats can bill the critic its own slice. Like the
-   * transcript, the tokens rarely exist at the session-end boundary, so this
-   * retries off the hot path and is strictly best-effort: a missing reading
-   * only costs the critic its Stats line, never the Attempt.
-   */
-  async captureCriticUsage(input: {
-    attemptId: number;
-    sessionId: string;
-    harnessId: string;
-    cwd: string;
-  }): Promise<void> {
-    const harness = this.getConfig().harnesses[input.harnessId as keyof AppConfig['harnesses']];
-    if (!harness) return;
-    for (const delayMs of [100, 500, 2_000]) {
-      if (!(await this.pause(delayMs))) return;
-      const usage = collectUsage({
-        harnessId: input.harnessId,
-        harness,
-        cwd: input.cwd,
-        sessionId: input.sessionId,
-        prices: pricesForHarness(harness),
-      });
-      if (usage && Object.keys(usage.models).length > 0) {
-        await bestEffort(() => this.verificationAttempts.setUsage(input.attemptId, JSON.stringify(usage)), {
-          op: 'transcriptCapture.captureCriticUsage.persist',
-          level: 'warn',
-          context: { attemptId: input.attemptId, harness: input.harnessId },
-        });
-        logger.info('captured critic usage', {
-          attemptId: input.attemptId,
-          harness: input.harnessId,
-          models: Object.keys(usage.models).join(','),
-        });
-        return;
-      }
-    }
-    logger.warn('critic usage unresolved after retries; Task Stats will omit this critic run', {
-      attemptId: input.attemptId,
-      harness: input.harnessId,
-      sessionId: input.sessionId,
-    });
   }
 
   /** Shutdown: abandon pending retries (a later read re-resolves lazily) so nothing writes after the DB closes. */

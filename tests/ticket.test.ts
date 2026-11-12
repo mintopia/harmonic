@@ -36,9 +36,6 @@ describe('ticket-timeline-route', () => {
       await server.app.ctx.attempts.update(attempt.id, { startedAt: 100, endedAt: 900 });
       await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } });
       await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'permission_request', payload: { reason: 'outside the timeline' } });
-      await server.app.ctx.verificationAttempts.append(attempt.id, {
-        mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '',
-      }, 200);
       await server.app.ctx.guardrailEvents.append(attempt.id, {
         dimension: 'wall-clock', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
       }, 250);
@@ -50,14 +47,11 @@ describe('ticket-timeline-route', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-        'attempt-started', 'verification', 'guardrail', 'step-run', 'step-run', 'attempt-finished', 'fact', 'lifecycle',
+        'attempt-started', 'guardrail', 'step-run', 'step-run', 'attempt-finished', 'fact', 'lifecycle',
       ]);
-      expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 200, 250, 300, 400, 900, expect.any(Number), expect.any(Number)]);
+      expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 250, 300, 400, 900, expect.any(Number), expect.any(Number)]);
       expect(response.body.events.find((event: { kind: string }) => event.kind === 'fact')).toMatchObject({ data: { type: 'task-created' } });
       expect(response.body.events.every((event: { attemptId: number | null }) => event.attemptId === null || event.attemptId === attempt.id)).toBe(true);
-      expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
-        verdict: 'pass', summary: 'checks passed', mechanism: 'command',
-      } });
       expect(response.body.events.filter((event: { kind: string }) => event.kind === 'step-run').map((event: { data: unknown }) => event.data)).toEqual([
         { stepRunId: stepRun.id, stepId: 'test', action: 'run', kind: 'check', pass: 1, phase: 'started' },
         { stepRunId: stepRun.id, stepId: 'test', action: 'run', kind: 'check', pass: 1, phase: 'finished', outcome: 'fail', summary: 'exit 1' },

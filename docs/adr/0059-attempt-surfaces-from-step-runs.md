@@ -100,6 +100,15 @@ command.
 - Old Attempts lose their step rows after upgrade (ADR-0042 snapshots cover
   rollback).
 - "Attempt N" and "Pass k of max" no longer collide.
+- The legacy Step model is removed: the `steps` table, `verification_attempts`
+  and its `/verification-attempts` routes, `tasks.merge_status` (now derived
+  from the running `merge` step run) and `attempts.verified_ref`. schema-sync
+  drops them on existing databases.
+- Pre-2026-10-31 verdict history that lived only in `verification_attempts` is
+  gone; Stats counts step runs only (owner decision D1).
+- The ADR-0055 legacy resume seeding (pre-cutover Tickets resumed at the step
+  matching their last Step type) is removed. Any Ticket started after the
+  2026-10-31 cutover has step runs and needs no seeding.
 
 ## Supersedes
 

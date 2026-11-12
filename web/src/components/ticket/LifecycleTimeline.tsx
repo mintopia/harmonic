@@ -14,6 +14,7 @@ const DOT: Record<LifecycleTimelineTone, string> = {
   passed: 'bg-merged-dot',
   failed: 'bg-fail-dot',
   awaiting: 'bg-await-dot',
+  muted: 'bg-edge',
   sent: 'bg-accent',
   received: 'bg-ready',
 };
@@ -31,6 +32,7 @@ const WORD: Record<LifecycleTimelineTone, string> = {
   passed: 'text-merged',
   failed: 'text-fail',
   awaiting: 'text-await',
+  muted: 'text-muted',
   sent: 'text-accent',
   received: 'text-ready',
 };

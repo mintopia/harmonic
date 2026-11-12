@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
-import type { Verdict } from '../verification/critic-schema.js';
 import type { TicketRef, TicketState, TrackerRef } from '../tracker/adapter.js';
 import type { EscalationCause } from '../domain/task-routing.js';
 import type { VarRecord } from '../domain/workflow-vars.js';
@@ -29,7 +28,7 @@ export interface TrackerFacts {
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
-/** Transient merge indicator, orthogonal to `state`: `merging` while the candidate is being merged onto its base, `resolving-conflicts` once that merge hit conflicts a human must settle. Null at rest. */
+/** Transient merge indicator derived from the running step run, orthogonal to `state`. Null at rest. */
 export const MERGE_STATUSES = ['verifying', 'merging', 'resolving-conflicts'] as const;
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 
@@ -136,8 +135,6 @@ export const tasks = sqliteTable('tasks', {
   escalationReason: text('escalation_reason'),
   /** The machine-readable form of `escalationReason` when the cause has one; null otherwise. */
   escalationCause: text('escalation_cause', { mode: 'json' }).$type<EscalationCause>(),
-  /** Live merge indicator, orthogonal to `state`; null at rest. */
-  mergeStatus: text('merge_status').$type<MergeStatus>(),
   /** Merged, but the tracker ticket close failed and is outstanding. */
   ticketClosePending: integer('ticket_close_pending', { mode: 'boolean' }).notNull().default(false),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
@@ -203,10 +200,6 @@ export const taskDependencies = sqliteTable(
 /** One pass through a Ticket's implement → verify loop. */
 export const ATTEMPT_STATES = ['running', 'passed', 'failed', 'escalated', 'cancelled'] as const;
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
-export const STEP_TYPES = ['rebase', 'implementation', 'verification', 'review'] as const;
-export type StepType = (typeof STEP_TYPES)[number];
-export const STEP_STATES = ['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled'] as const;
-export type StepState = (typeof STEP_STATES)[number];
 
 export const attempts = sqliteTable('attempts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -247,8 +240,6 @@ export const attempts = sqliteTable('attempts', {
   stat: text('stat'),
   /** The branch-head OID captured at implementation end; null when nothing is verifiable. */
   verifiedHeadOid: text('verified_head_oid'),
-  /** The private ref (`refs/harmonic/direct/attempt-<id>`) a direct Attempt's head is pinned to; null for worktree Attempts. */
-  verifiedRef: text('verified_ref'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
   /** JSON: Cost frozen when the final Usage is recorded. */
@@ -298,21 +289,6 @@ export function isTaskAttempt(attempt: AttemptRow): attempt is TaskAttemptRow {
 export function isEpicAttempt(attempt: AttemptRow): attempt is EpicAttemptRow {
   return attempt.taskId === null && attempt.workspaceId !== null && attempt.epicRef !== null;
 }
-
-/** Individually visible work within an Attempt. `logLocator` points to its transcript/output. */
-export const steps = sqliteTable('steps', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  attemptId: integer('attempt_id').notNull().references(() => attempts.id),
-  type: text('type').$type<StepType>().notNull(),
-  position: integer('position').notNull(),
-  state: text('state').$type<StepState>().notNull().default('pending'),
-  command: text('command'),
-  verdict: text('verdict'),
-  logLocator: text('log_locator'),
-  startedAt: integer('started_at'),
-  endedAt: integer('ended_at'),
-}, (t) => [uniqueIndex('steps_attempt_position_unique').on(t.attemptId, t.position)]);
-export type StepRow = typeof steps.$inferSelect;
 
 export const TASK_EXECUTION_POD_STATES = ['pending', 'running', 'deleted', 'lost'] as const;
 export type TaskExecutionPodState = (typeof TASK_EXECUTION_POD_STATES)[number];
@@ -705,43 +681,6 @@ export const epicMergeEvents = sqliteTable('epic_merge_events', {
 export type EpicMergeEventRow = typeof epicMergeEvents.$inferSelect;
 
 export type AttemptEventRow = typeof attemptEvents.$inferSelect;
-
-export const VERIFICATION_MECHANISMS = ['critic', 'command'] as const;
-export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
-
-/** Append-only log of Verification attempts, one total order per Attempt via `seq`. `inputOid` is per-row because an Attempt can be re-verified against more than one head. */
-export const verificationAttempts = sqliteTable('verification_attempts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  attemptId: integer('attempt_id')
-    .notNull()
-    .references(() => attempts.id),
-  /** Monotonic per-Attempt sequence (1-based). */
-  seq: integer('seq').notNull(),
-  ts: integer('ts').notNull(),
-  mechanism: text('mechanism').$type<VerificationMechanism>().notNull(),
-  inputOid: text('input_oid').notNull(),
-  /** 'pass' | 'fail' | 'inconclusive' (`verification/critic-schema.ts`'s `Verdict`). */
-  verdict: text('verdict').$type<Verdict>().notNull(),
-  summary: text('summary').notNull(),
-  /** Raw verifier output (the critic's agent text), capped by the caller. */
-  output: text('output').notNull(),
-  /** Archive-relative key (under the Attempt's archive directory) of the complete, uncapped command output; null when `output` was not truncated, the log was not saved, or for a critic. */
-  fullOutputKey: text('full_output_key'),
-  /** Archive locator (relative to the Attempt's archive directory) of the critic's Resolved Prompt `prompt.md`; null for the command verifier, a critic run without an Archive, and pre-locator rows. The prompt text lives only in the Archive. */
-  promptKey: text('prompt_key'),
-  /** Locator for the critic's native harness transcript; null for the command verifier or a harness with no native JSONL. Server-only. */
-  transcriptPath: text('transcript_path'),
-  /** The critic harness id that produced {@link transcriptPath}; may differ from the builder's. */
-  harness: text('harness'),
-  /** The critic turn's `AttemptUsage` as JSON, resolved from the critic session
-   * log after it settled; null for the command verifier and where usage could
-   * not be read. Feeds the critic's own slice of Task Stats. */
-  usage: text('usage'),
-}, (t) => [
-  uniqueIndex('verification_attempts_attempt_seq_unique').on(t.attemptId, t.seq),
-]);
-
-export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
 
 /** Cost `limit_value`/`observed_value` are stored in micro-USD (USD × 1e6); the human USD floats ride in `payload`. */
 export const GUARDRAIL_DIMENSIONS = ['wall-clock', 'tokens', 'cost', 'progress', 'tool-timeout'] as const;

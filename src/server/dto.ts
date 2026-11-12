@@ -7,8 +7,8 @@ import type {
   ConversationRow,
   ConversationState,
   TaskRow,
-  VerificationAttemptRow,
   NotificationRow,
+  MergeStatus,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { classifierRouteOf, type AttemptClassifier, type TaskClassifier, type TaskRouting } from '../domain/task-routing.js';
@@ -161,8 +161,6 @@ const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchem
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
-  /** The attempt number the `maxAttempts` budget counts from (`AttemptStore.budgetBase`). */
-  budgetBase: number;
 }
 
 export function attemptToTimelineApi(
@@ -202,7 +200,6 @@ export type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
   | 'lifecycle'
-  | 'verification'
   | 'step-run'
   | 'guardrail'
   | 'operator-retry'
@@ -291,7 +288,6 @@ export type ApiAttemptSummary = {
   diffHeadOid: string | null;
   stat: string | null;
   verifiedHeadOid: string | null;
-  verifiedRef: string | null;
   /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none. */
   pullRequestUrl: string | null;
   usage: AttemptUsage | null;
@@ -342,19 +338,6 @@ export function epicResolverPrompts(events: readonly PersistedAttemptEvent[]): A
   });
 }
 
-export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey' | 'promptKey'> & {
-  /** Archive locator of the Resolved Prompt; read it with `GET /api/attempts/:attemptId/resolved-prompt?locator=`. */
-  promptLocator: string | null;
-  hasTranscript: boolean;
-  /** The command output was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
-  outputTruncated: boolean;
-};
-
-export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
-  const { transcriptPath: _transcriptPath, usage: _usage, fullOutputKey, promptKey, ...attempt } = row;
-  return { ...attempt, promptLocator: promptKey, outputTruncated: fullOutputKey !== null, hasTranscript: row.transcriptPath !== null };
-}
-
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
   if (state === 'passed') return 'completed';
   if (state === 'escalated') return 'failed';
@@ -380,7 +363,6 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
     diffHeadOid: run.diffHeadOid,
     stat: run.stat,
     verifiedHeadOid: run.verifiedHeadOid,
-    verifiedRef: run.verifiedRef,
     pullRequestUrl: run.pullRequestUrl,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
@@ -459,6 +441,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' 
     isolationMode: IsolationMode | null;
     priority: Priority | null;
   };
+  /** Derived from the running step run (`merging`); null at rest. */
+  mergeStatus: MergeStatus | null;
   /** Cost of the workflow classifier call that chose or declined this Ticket's workflow; null when it was not consulted. */
   workflowRouting: { cost: Cost | null } | null;
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
@@ -609,7 +593,7 @@ function stripTrackerFactCols(task: Omit<TaskWithDeps, 'classifierEnabled'>): Om
 /** The ref an operator Accept would merge; null for a direct Attempt, whose work is already on the base branch. */
 export function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   if (!run) return null;
-  return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
+  return run.verifiedHeadOid && run.branch ? run.branch : null;
 }
 
 /** `startedAt` is rewritten on resume, so paused time is excluded. */

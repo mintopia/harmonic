@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type VerificationCommand, verificationCommandSchema } from '../src/config.js';
 import { startServer, stubHarness, type TestServer, waitFor } from './helpers.js';
 import { execFileSync } from 'node:child_process';
@@ -8,94 +8,6 @@ import { join } from 'node:path';
 
 const localCommands = (...commands: VerificationCommand[]) =>
   commands.map((command) => ({ kind: 'local' as const, enabled: true, command }));
-
-describe('verification-attempts-route', () => {
-  describe('GET /api/attempts/:id/verification-attempts (issue #169)', () => {
-    let server: TestServer;
-    const ctx = () => server.app.ctx;
-
-    beforeEach(async () => {
-      server = await startServer(stubHarness());
-    });
-    afterEach(async () => {
-      await server.close();
-    });
-
-    it("lists a run's verification attempts in seq order", async () => {
-      const created = await server.api('POST', '/api/tasks', { prompt: 'verification target' });
-      const task = await ctx().tasks.get(created.body.id);
-      const run = await ctx().attempts.create(task.id);
-      const attempt = run;
-
-      await ctx().verificationAttempts.append(attempt.id, {
-        mechanism: 'command',
-        inputOid: 'oid1',
-        verdict: 'pass',
-        summary: 'ok',
-        output: '',
-      });
-      await ctx().verificationAttempts.append(attempt.id, {
-        mechanism: 'critic',
-        inputOid: 'oid2',
-        verdict: 'fail',
-        summary: 'nope',
-        output: 'details',
-      });
-
-      const res = await server.api('GET', `/api/attempts/${run.id}/verification-attempts`);
-      expect(res.status).toBe(200);
-      expect(res.body.verificationAttempts).toHaveLength(2);
-      expect(res.body.verificationAttempts[0]).toMatchObject({
-        attemptId: attempt.id,
-        seq: 1,
-        mechanism: 'command',
-        inputOid: 'oid1',
-        verdict: 'pass',
-        summary: 'ok',
-        output: '',
-      });
-      expect(res.body.verificationAttempts[1]).toMatchObject({
-        attemptId: attempt.id,
-        seq: 2,
-        mechanism: 'critic',
-        inputOid: 'oid2',
-        verdict: 'fail',
-        summary: 'nope',
-        output: 'details',
-      });
-      expect(res.body.verifierStatuses).toEqual(expect.arrayContaining([
-        { mechanism: 'command', state: 'passed', reason: null },
-        { mechanism: 'critic', state: 'failed', reason: null },
-      ]));
-    });
-
-    it('reports a mechanism with no recorded attempt as disabled, since Tickets configure no verifiers', async () => {
-      const created = await server.api('POST', '/api/tasks', { prompt: 'verification status target' });
-      const task = await server.app.ctx.tasks.get(created.body.id);
-      const run = await server.app.ctx.attempts.create(task.id);
-      await server.app.ctx.verificationAttempts.append(run.id, {
-        mechanism: 'critic',
-        inputOid: 'oid1',
-        verdict: 'pass',
-        summary: 'looks good',
-        output: '',
-      });
-
-      const res = await server.api('GET', `/api/attempts/${run.id}/verification-attempts`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.verifierStatuses).toEqual([
-        { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
-        { mechanism: 'critic', state: 'passed', reason: null },
-      ]);
-    });
-
-    it('404s for an unknown run', async () => {
-      const res = await server.api('GET', '/api/attempts/999999/verification-attempts');
-      expect(res.status).toBe(404);
-    });
-  });
-});
 
 describe('verification-command', () => {
   const git = (dir: string, ...args: string[]) =>
@@ -171,7 +83,6 @@ describe('verification-command', () => {
       expect(run.verifiedHeadOid).not.toBe(baseBefore);
       expect(git(repoDir, 'for-each-ref', 'refs/harmonic/')).toBe('');
       expect(run.branch).toBeNull();
-      expect(run.verifiedRef).toBeNull();
     });
 
     it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit', async () => {

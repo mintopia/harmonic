@@ -1,6 +1,5 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
-import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
@@ -230,56 +229,6 @@ export interface GuardrailEvent {
   payload: unknown;
 }
 
-/** A Verification mechanism: a command verifier runs an
- * argv check against a frozen candidate; a critic verifier is a read-only
- * agent reviewer. Mirrors the server's `VERIFICATION_MECHANISMS`. */
-export type VerificationMechanism = 'critic' | 'command';
-
-/** One verifier category's current read-time status, including categories that did not run. */
-export interface VerifierStatus {
-  mechanism: VerificationMechanism;
-  verifier?: string;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
-  reason: string | null;
-  /** The ordered command plan; `command` mechanism only. */
-  commands?: string[];
-  /** The resolved review harness that will drive the critic; `critic` mechanism
-   * only. Labels the running critic before its persisted attempt row exists. */
-  harness?: string | null;
-}
-
-/** One persisted Verification-attempt event, as
- * `GET /api/attempts/:id/verification-attempts` serves it — mirrors the server's
- * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Task's
- * self-heal retries append further attempts for the same `mechanism`, so the
- * log is append-only and `seq`-ordered; the latest attempt per mechanism is
- * the one that currently governs the Verification outcome (see
- * `verification-attempts-model.ts`). */
-export interface VerificationAttempt {
-  id: number;
-  /** The Attempt this row is keyed to. */
-  attemptId: number;
-  seq: number;
-  ts: number;
-  mechanism: VerificationMechanism;
-  inputOid: string;
-  verdict: Verdict;
-  summary: string;
-  output: string;
-  /** Archive locator of the critic's Resolved Prompt — read it with
-   * `api.resolvedPrompt(attemptId, promptLocator)`; null for a command verifier
-   * and for rows with no archived prompt. */
-  promptLocator: string | null;
-  /** The critic harness that drove this attempt (may differ from the builder's);
-   * null for a command verifier or a pre-feature row. */
-  harness: string | null;
-  /** Whether a critic-session transcript can be read for this attempt
-   * — fetch it with `api.criticLog(id)`. */
-  hasTranscript: boolean;
-  /** The command output was capped; the full text is served by `api.verificationOutputUrl(id)`. */
-  outputTruncated: boolean;
-}
-
 export type ExportDestinationKind = 'directory' | 's3';
 
 export interface ExportDestinationStatus {
@@ -330,7 +279,6 @@ export type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
   | 'lifecycle'
-  | 'verification'
   | 'step-run'
   | 'guardrail'
   | 'operator-retry'

@@ -25,7 +25,6 @@ describe('retrying an escalated Ticket after changing its route', () => {
     const placeholder = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body;
     expect(placeholder.attempts).toHaveLength(1);
     expect(placeholder.attempts[0]).toMatchObject({ number: 1, state: 'escalated' });
-    expect(placeholder.budgetBase).toBe(1);
 
     expect((await server.api('PATCH', `/api/tasks/${taskId}`, { harness: 'claude' })).status).toBe(200);
     expect((await server.api('POST', `/api/tasks/${taskId}/retry`, { guidance: 'Retry after changing the route.', startNow: true })).status).toBe(200);
@@ -35,7 +34,7 @@ describe('retrying an escalated Ticket after changing its route', () => {
     expect(after).toMatchObject({ harness: 'claude', escalationReason: null, escalationCause: null });
     const timeline = (await server.api('GET', `/api/tasks/${taskId}/attempts/timeline`)).body;
     const next = timeline.attempts.at(-1);
-    expect(next.number - timeline.budgetBase).toBe(1);
+    expect(next.number).toBe(2);
     expect(next.state).toBe('passed');
   });
 });

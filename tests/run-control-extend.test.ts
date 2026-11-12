@@ -31,7 +31,6 @@ function runningAttempt(over: Partial<TaskAttemptRow> = {}): TaskAttemptRow {
     diffHeadOid: null,
     stat: null,
     verifiedHeadOid: null,
-    verifiedRef: null,
     pullRequestUrl: null,
     startOid: null,
     usage: null,

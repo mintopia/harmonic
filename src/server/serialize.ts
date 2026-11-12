@@ -1,8 +1,8 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, WorkflowStepRunRow, ConversationRow } from '../db/schema.js';
-import { attempts, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts, workflowStepRuns } from '../db/schema.js';
+import type { AttemptRow, AttemptState, TaskAttemptRow, WorkflowStepRunRow, ConversationRow } from '../db/schema.js';
+import { attempts, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, workflowStepRuns } from '../db/schema.js';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveAgentMessages } from '../domain/agent-messages.js';
@@ -86,11 +86,7 @@ function criticsOf(ctx: AppContext, rows: readonly WorkflowStepRunRow[], fallbac
 
 /** One DTO builder for REST hydration. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const [task, rows, budgetBase] = await Promise.all([
-    ctx.tasks.get(taskId),
-    ctx.attempts.listForTask(taskId),
-    ctx.attempts.budgetBase(taskId),
-  ]);
+  const [task, rows] = await Promise.all([ctx.tasks.get(taskId), ctx.attempts.listForTask(taskId)]);
   const sessionPaths = task.isolationMode === 'worktree'
     ? await ctx.sessions.worktreePaths(rows.flatMap((attempt) => (attempt.sessionRowId === null ? [] : [attempt.sessionRowId])))
     : new Map<number, string>();
@@ -103,7 +99,6 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   const byAttempt = new Map<number, ApiStepRun[]>();
   for (const stepRun of stepRuns) byAttempt.set(stepRun.attemptId!, [...(byAttempt.get(stepRun.attemptId!) ?? []), stepRun]);
   return {
-    budgetBase,
     attempts: rows.map((attempt) => attemptToTimelineApi(attempt, byAttempt.get(attempt.id) ?? [], workingDirOf(attempt))),
   };
 }
@@ -140,10 +135,9 @@ function parsePayload(raw: string): unknown {
 }
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
-  const [taskAttempts, lifecycle, verification, stepRunRows, guardrails, taskLevel] = await Promise.all([
+  const [taskAttempts, lifecycle, stepRunRows, guardrails, taskLevel] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: attemptEvents }).from(attemptEvents).innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id)).where(and(eq(attempts.taskId, taskId), eq(attemptEvents.type, 'lifecycle'))).orderBy(desc(attemptEvents.ts), desc(attemptEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select().from(workflowStepRuns).where(and(eq(workflowStepRuns.taskId, taskId), isNotNull(workflowStepRuns.attemptId))).orderBy(desc(workflowStepRuns.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(attempts, eq(guardrailEvents.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.taskEvents.listRecent(taskId, TICKET_TIMELINE_SOURCE_LIMIT),
@@ -151,12 +145,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
-  const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
-  for (const { attempt: v } of verification) {
-    const rows = verificationByAttempt.get(v.attemptId) ?? [];
-    rows.push(v);
-    verificationByAttempt.set(v.attemptId, rows);
-  }
   const pending: PendingTicketTimelineEvent[] = [];
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
@@ -169,7 +157,6 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (prior?.state === 'escalated' && prior.feedback !== null) add({ attemptId: prior.id, ts: attempt.startedAt, kind: 'operator-retry', data: { attempt: prior.number, feedback: prior.feedback } }, 4);
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: parsePayload(event.payload) } }, 3); });
-  await forEachYielding(verification, async ({ attempt }) => { add({ attemptId: attempt.attemptId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
   await forEachYielding(stepRunRows, async (row) => {
     const data = { stepRunId: row.id, stepId: row.stepId, action: row.action, kind: stepRunKind(row.action), pass: row.attempt };
     add({ attemptId: row.attemptId, ts: row.startedAt, kind: 'step-run', data: { ...data, phase: 'started' } }, 1);

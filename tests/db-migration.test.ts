@@ -23,15 +23,15 @@ describe('drizzle single-baseline schema (ADR-0001 #388, ADR-0007)', () => {
     ).rows.map((row) => String(row.name));
 
     for (const present of [
-      'tasks', 'attempts', 'steps', 'sessions', 'conversations', 'conversation_events',
-      'task_dependencies', 'tracker_dismissals', 'verification_attempts', 'guardrail_events',
+      'tasks', 'attempts', 'workflow_step_runs', 'sessions', 'conversations', 'conversation_events',
+      'task_dependencies', 'tracker_dismissals', 'guardrail_events',
       'attempt_events', 'task_events', 'attempt_tool_calls', 'scheduled_jobs', 'settings', 'workspaces',
       'tracker_containers', 'epics', 'agent_messages',
     ]) {
       expect(tableNames, `expected table ${present}`).toContain(present);
     }
     for (const absent of [
-      'runs', 'run_facts', 'run_events', 'run_tool_calls', 'merge_journal', 'turn_queue',
+      'steps', 'verification_attempts', 'runs', 'run_facts', 'run_events', 'run_tool_calls', 'merge_journal', 'turn_queue',
       'execution_chains', 'work_context_leases', 'work_context_lease_dispositions',
     ]) {
       expect(tableNames, `expected NO table ${absent}`).not.toContain(absent);

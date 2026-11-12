@@ -809,8 +809,9 @@ describe('TaskExporter (#734)', () => {
     let outputLog: string;
 
     beforeEach(async () => {
-      const log = await archive.verificationOutputLog(task, 1, 'pre-merge', 'test');
-      outputLog = log!.path;
+      const dir = join(await archive.ensure(task), 'attempts', '1', 'verification', 'pre-merge', 'test');
+      mkdirSync(dir, { recursive: true });
+      outputLog = join(dir, 'output.log');
     });
 
     const exportedFile = (rel: string): { text: string; manifest: { redaction: { applied: boolean; matches: Record<string, number> } } } => {

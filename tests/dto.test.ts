@@ -46,7 +46,6 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   diffHeadOid: null,
   stat: null,
   verifiedHeadOid: null,
-  verifiedRef: null,
   pullRequestUrl: null,
   startOid: null,
   usage: null,
@@ -90,7 +89,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,
-  mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, execution: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
+  ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, execution: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
   mapRef: null,
   baseBranch: null,
   trackerState: null,
@@ -266,19 +265,14 @@ describe('latestVerifiedRef', () => {
     expect(latestVerifiedRef(undefined)).toBeNull();
   });
 
-  it('returns verifiedRef when set', () => {
-    const run = attemptRow({ verifiedRef: 'refs/harmonic/direct/attempt-1', verifiedHeadOid: null, branch: null });
-    expect(latestVerifiedRef(run)).toBe('refs/harmonic/direct/attempt-1');
-  });
-
   it('falls back to branch when verifiedHeadOid and branch are both set', () => {
-    const run = attemptRow({ verifiedRef: null, verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' });
+    const run = attemptRow({ verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' });
     expect(latestVerifiedRef(run)).toBe('harmonic/task-1');
   });
 
-  it('returns null when neither verifiedRef nor a verified branch is available', () => {
-    expect(latestVerifiedRef(attemptRow({ verifiedRef: null, verifiedHeadOid: null, branch: 'harmonic/task-1' }))).toBeNull();
-    expect(latestVerifiedRef(attemptRow({ verifiedRef: null, verifiedHeadOid: 'abc123', branch: null }))).toBeNull();
+  it('returns null when no verified branch is available', () => {
+    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: null, branch: 'harmonic/task-1' }))).toBeNull();
+    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: 'abc123', branch: null }))).toBeNull();
   });
 });
 

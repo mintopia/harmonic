@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrailEvents, tasks, verificationAttempts, workflowStepRuns, workspaces } from '../src/db/schema.js';
+import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrailEvents, tasks, workflowStepRuns, workspaces } from '../src/db/schema.js';
 import { type GateReason, type SettledTaskAttempt, type SettleEventRow, StatsWorkerClient } from '../src/db/stats-reader.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
@@ -246,15 +246,11 @@ describe('stats-enriched', () => {
           ])
           .run(),
       );
+      const stepRun = (attemptId: number, action: string, outcome: 'pass' | 'fail') => ({
+        taskId: healed.id, attemptId, workflowRef: 'w', stepId: action, position: 0, action, outcome, startedAt: now, endedAt: now,
+      });
       await ctx.asyncDb.write((d) =>
-        d
-          .insert(verificationAttempts)
-          .values([
-            { attemptId: a1.id, seq: 1, ts: now, mechanism: 'critic', inputOid: 'o1', verdict: 'fail', summary: 's', output: 'o' },
-            { attemptId: a3.id, seq: 1, ts: now, mechanism: 'critic', inputOid: 'o2', verdict: 'pass', summary: 's', output: 'o' },
-            { attemptId: a3.id, seq: 2, ts: now, mechanism: 'command', inputOid: 'o2', verdict: 'pass', summary: 's', output: 'o' },
-          ])
-          .run(),
+        d.insert(workflowStepRuns).values([stepRun(a1.id, 'critic', 'fail'), stepRun(a3.id, 'critic', 'pass'), stepRun(a3.id, 'run', 'pass')]).run(),
       );
       await ctx.asyncDb.write((d) =>
         d
@@ -730,7 +726,7 @@ describe('stats verdicts from step runs', () => {
     await server?.close();
   });
 
-  it('counts check and critic step runs, scoped, and keeps legacy rows only where no step runs exist', async () => {
+  it('counts check and critic step runs, scoped', async () => {
     server = await startServer(stubHarness());
     const { ctx } = server.app;
     const now = Date.now();
@@ -749,7 +745,8 @@ describe('stats verdicts from step runs', () => {
     const t1 = await mk(ws.id, epic1);
     const t2 = await mk(ws.id, epic1);
     const t3 = await mk(other.id);
-    const [a1, a2, a3] = [await att(t1.id), await att(t2.id), await att(t3.id)];
+    const [a1, a3] = [await att(t1.id), await att(t3.id)];
+    await att(t2.id);
     const run = (owner: object, action: string, outcome: string | null) => ({
       ...owner, workflowRef: 'w', stepId: action, position: 0, action, outcome: outcome as never, startedAt: now, endedAt: outcome ? now : null,
     });
@@ -770,23 +767,16 @@ describe('stats verdicts from step runs', () => {
         run({ taskId: t3.id, attemptId: a3.id }, 'run', 'pass'),
       ]).run(),
     );
-    await ctx.asyncDb.write((d) =>
-      d.insert(verificationAttempts).values([
-        { attemptId: a1.id, seq: 1, ts: now, mechanism: 'command', inputOid: 'o', verdict: 'pass', summary: 's', output: 'o' },
-        { attemptId: a2.id, seq: 1, ts: now, mechanism: 'critic', inputOid: 'o', verdict: 'fail', summary: 's', output: 'o' },
-      ]).run(),
-    );
-
     const all = (await server.api('GET', `/api/stats?from=0&to=${now + 1000}`)).body;
     expect(all.verdicts.command).toEqual({ pass: 2, block: 2, inconclusive: 0 });
-    expect(all.verdicts.critic).toEqual({ pass: 2, block: 2, inconclusive: 1 });
+    expect(all.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
 
     const scoped = (await server.api('GET', `/api/stats?from=0&to=${now + 1000}&workspaceId=${ws.id}`)).body;
     expect(scoped.verdicts.command).toEqual({ pass: 1, block: 2, inconclusive: 0 });
-    expect(scoped.verdicts.critic).toEqual({ pass: 2, block: 2, inconclusive: 1 });
+    expect(scoped.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
 
     const epic = (await ctx.statsReader.compute({ from: 0, to: now + 1000, epicRef: epic1 })) as any;
     expect(epic.verdicts.command).toEqual({ pass: 1, block: 2, inconclusive: 0 });
-    expect(epic.verdicts.critic).toEqual({ pass: 2, block: 2, inconclusive: 1 });
+    expect(epic.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
   });
 });

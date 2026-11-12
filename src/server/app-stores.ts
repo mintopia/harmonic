@@ -11,7 +11,6 @@ import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { SessionStore } from '../domain/sessions.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { SecretService } from '../secrets/secret-service.js';
 import { GlobalSecretService } from '../secrets/global-secret-service.js';
 import { ExecutionTargetService } from '../execution/execution-targets.js';
@@ -39,7 +38,6 @@ export interface Stores {
   agentMessages: AgentMessageStore;
   epicMergeEvents: EpicMergeEventStore;
   guardrailEvents: GuardrailEventStore;
-  verificationAttempts: VerificationAttemptStore;
   conversations: ConversationStore;
   permissionRules: PermissionRuleStore;
   auth: AuthService;
@@ -88,8 +86,6 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
   const agentMessages = new AgentMessageStore(asyncDb, (workspaceId) => bus.emit('agent_messages_changed', { workspaceId }));
   const epicMergeEvents = new EpicMergeEventStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
-  const verificationAttempts = new VerificationAttemptStore(asyncDb);
-  await verificationAttempts.backfillFullOutputKeys();
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(asyncDb);
   const auth = new AuthService(asyncDb);
@@ -113,7 +109,6 @@ export async function createStores({ opts, asyncDb, bus, fireAndForget }: Create
     agentMessages,
     epicMergeEvents,
     guardrailEvents,
-    verificationAttempts,
     conversations,
     permissionRules,
     auth,

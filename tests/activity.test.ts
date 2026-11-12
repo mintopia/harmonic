@@ -105,27 +105,6 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     }));
   });
 
-  it('returns Epic command output and critic transcript availability', async () => {
-    const [workspace] = await server.app.ctx.workspaces.list();
-    await server.app.ctx.tasks.syncEpics(workspace!.id, [{ ref: trackerRef(541), kind: 'epic' }]);
-    const attempt = await server.app.ctx.attempts.createForEpic({ workspaceId: workspace!.id, epicRef: trackerRef(541) });
-    await server.app.ctx.verificationAttempts.append(attempt.id, {
-      mechanism: 'command', inputOid: 'a'.repeat(40), verdict: 'fail', summary: 'command exited 1', output: 'script stdout',
-    });
-    await server.app.ctx.verificationAttempts.append(attempt.id, {
-      mechanism: 'critic', inputOid: 'a'.repeat(40), verdict: 'pass', summary: 'review passed', output: 'VERDICT: pass',
-      transcriptPath: '/tmp/critic.jsonl', harness: 'claude',
-    });
-
-    const { status, body } = await server.api('GET', `/api/workspaces/${workspace!.id}/epics/541/attempts`);
-
-    expect(status).toBe(200);
-    expect(body.attempts[0].verificationAttempts).toEqual([
-      expect.objectContaining({ mechanism: 'command', verdict: 'fail', output: 'script stdout', hasTranscript: false }),
-      expect.objectContaining({ mechanism: 'critic', verdict: 'pass', hasTranscript: true, harness: 'claude' }),
-    ]);
-  });
-
   it("keeps an escalated ticket's settled Run visible on its run rail without counting it as running", async () => {
     const runningBefore = await server.app.ctx.attempts.countRunning();
     const task = (await server.api('POST', '/api/tasks', { prompt: 'escalated', workingDir: workDir })).body;

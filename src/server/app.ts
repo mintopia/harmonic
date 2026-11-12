@@ -166,7 +166,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     autoRunner: runtime.autoRunner,
     globalPause: runtime.globalPause,
     guardrailEvents: stores.guardrailEvents,
-    verificationAttempts: stores.verificationAttempts,
     trackerManager: runtime.trackerManager,
     epicService: runtime.epicService,
     scheduler,

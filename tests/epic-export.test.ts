@@ -99,8 +99,9 @@ describe('Epic Export (#739)', () => {
     const critic = join(epicDir, 'attempts', '1', 'verification', 'pre-merge', '5');
     mkdirSync(critic, { recursive: true });
     writeFileSync(join(critic, 'prompt.md'), 'critic prompt');
-    const log = await archive.epicVerificationOutputLog(workspaceId, trackerRef(EPIC), 1, 'cmd-test');
-    writeFileSync(log!.path, 'command output');
+    const cmd = join(epicDir, 'attempts', '1', 'verification', 'pre-merge', 'cmd-test');
+    mkdirSync(cmd, { recursive: true });
+    writeFileSync(join(cmd, 'output.log'), 'command output');
   });
 
   afterEach(async () => {

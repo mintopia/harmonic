@@ -11,7 +11,6 @@ import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
 import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
 import { TaskArchive } from '../archive/task-archive.js';
-import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
@@ -231,7 +230,7 @@ export async function createRuntime(deps: {
   fireAndForget: FireAndForget;
 }): Promise<Runtime> {
   const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion, fireAndForget } = deps;
-  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore, secrets } = deps.stores;
+  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, sessions: sessionStore, secrets } = deps.stores;
   const resolveTracker = createTrackerResolver(secrets);
   const resolveRepository = createRepositoryResolver(secrets);
 
@@ -294,7 +293,7 @@ export async function createRuntime(deps: {
     },
   });
   const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
+  const transcripts = new TranscriptCapture(sessionStore, promptConfig);
   touchStartupProgress(opts.dataDir);
   await runStartupRecovery({
     attempts, tasks, auth, bus, archive,
@@ -406,8 +405,6 @@ export async function createRuntime(deps: {
   await globalPause.rebuild();
   touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
-  touchStartupProgress(opts.dataDir);
-  await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, {
     resume: (task, guidance, options) => runner.resumeWithGuidance(task, guidance, options),
