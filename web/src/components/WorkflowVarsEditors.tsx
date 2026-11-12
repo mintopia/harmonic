@@ -148,9 +148,9 @@ export function TicketVariables({ taskId }: { taskId: number }) {
   };
   const overridden = data.vars.filter((entry) => !ticketInherited(entry)).length;
   return (
-    <details aria-label="Variables" className="group mb-4" open={draft !== null || undefined}>
+    <details aria-label="Variables" className="group/vars mb-4" open={draft !== null || undefined}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
-        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/vars:rotate-0" />
         <h2 className="text-title font-semibold">Variables</h2>
         <span className="text-small text-muted tabular-nums">
           {data.vars.length} declared{overridden > 0 ? ` · ${overridden} set on this Ticket` : ''}
