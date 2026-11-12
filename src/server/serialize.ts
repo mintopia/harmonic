@@ -11,7 +11,7 @@ import { stepRunKind } from '../domain/step-run-kind.js';
 import { pinnedWorkflow, stepInfoOf } from './workflow-steps-response.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, parseCost, withCriticContribution, withRoutingContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
-import type { AttemptUsage, AttemptUsageSnapshot } from '../execution/usage.js';
+import { normalizeStepRunUsage, type AttemptUsage, type AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -57,13 +57,7 @@ const pricesOf = (ctx: AppContext, harness = 'claude') => {
 
 const stepRunStore = (ctx: AppContext) => new WorkflowStepRunStore(ctx.asyncDb);
 
-const usageOf = (row: Pick<WorkflowStepRunRow, 'usage'>): AttemptUsage | null => {
-  try {
-    return parseUsage(row.usage);
-  } catch {
-    return null;
-  }
-};
+const usageOf = (row: Pick<WorkflowStepRunRow, 'usage' | 'model'>): AttemptUsage | null => normalizeStepRunUsage(row.usage, row.model);
 
 /** Step runs as API rows: cost derived from each row's recorded usage, detail from its pinned workflow's outline. */
 export async function stepRunsToApi(ctx: AppContext, rows: readonly WorkflowStepRunRow[], fallbackHarness?: string): Promise<ApiStepRun[]> {

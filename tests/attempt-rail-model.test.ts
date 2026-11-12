@@ -131,3 +131,29 @@ describe('changedFilesFromNumstat', () => {
     expect(changedFilesFromNumstat('')).toEqual([]);
   });
 });
+
+describe('changedFilesFromNumstat real git output', () => {
+  it('names renames by their new path and decodes quoted paths', () => {
+    const numstat = [
+      '-\t-\tbin.dat',
+      '1\t0\tdir with space/x y.ts',
+      '0\t0\tsrc/a/g.ts => g.ts',
+      '0\t0\tsrc/{a => b}/f.ts',
+      '0\t0\tsrc/{old.ts => new.ts}',
+      '0\t0\tsrc/{ => sub}/h.ts',
+      '1\t0\t"tab\\tname.ts"',
+      '1\t0\t"\\303\\251.ts"',
+      '',
+    ].join('\n');
+    expect(changedFilesFromNumstat(numstat).map((f) => f.path)).toEqual([
+      'bin.dat',
+      'dir with space/x y.ts',
+      'g.ts',
+      'src/b/f.ts',
+      'src/new.ts',
+      'src/sub/h.ts',
+      'tab\tname.ts',
+      'é.ts',
+    ]);
+  });
+});

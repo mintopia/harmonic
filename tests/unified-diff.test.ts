@@ -211,3 +211,56 @@ describe('parseUnifiedDiff', () => {
     ]);
   });
 });
+
+describe('parseUnifiedDiff real git output without ---/+++ lines', () => {
+  const raw = [
+    'diff --git a/bin.dat b/bin.dat',
+    'index 8352675..eaf36c1 100644',
+    'Binary files a/bin.dat and b/bin.dat differ',
+    'diff --git a/dir with space/x y.ts b/dir with space/x y.ts',
+    'index 45b983b..65ef226 100644',
+    '--- a/dir with space/x y.ts\t',
+    '+++ b/dir with space/x y.ts\t',
+    '@@ -1 +1,2 @@',
+    ' hi',
+    '+more',
+    'diff --git a/src/a/g.ts b/g.ts',
+    'similarity index 100%',
+    'rename from src/a/g.ts',
+    'rename to g.ts',
+    'diff --git a/src/old.ts b/src/new.ts',
+    'similarity index 100%',
+    'rename from src/old.ts',
+    'rename to src/new.ts',
+    'diff --git "a/tab\\tname.ts" "b/tab\\tname.ts"',
+    'new file mode 100644',
+    'index 0000000..8ba3a16',
+    '--- /dev/null',
+    '+++ "b/tab\\tname.ts"',
+    '@@ -0,0 +1 @@',
+    '+n',
+    'diff --git "a/\\303\\251.ts" "b/\\303\\251.ts"',
+    'index 45b983b..7fda762 100644',
+    '--- "a/\\303\\251.ts"',
+    '+++ "b/\\303\\251.ts"',
+    '@@ -1 +1,2 @@',
+    ' hi',
+    '+x',
+    'diff --git a/empty.txt b/empty.txt',
+    'new file mode 100644',
+    'index 0000000..e69de29',
+    '',
+  ].join('\n');
+
+  it('never yields an empty path', () => {
+    expect(parseUnifiedDiff(raw).map((f) => f.path)).toEqual([
+      'bin.dat',
+      'dir with space/x y.ts',
+      'g.ts',
+      'src/new.ts',
+      'tab\tname.ts',
+      'é.ts',
+      'empty.txt',
+    ]);
+  });
+});

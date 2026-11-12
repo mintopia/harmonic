@@ -36,7 +36,9 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
       });
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_changed' && msg.run.taskId === taskId) {
+      // A starting Attempt emits no attempt_changed; its first step_run_changed is the only live signal.
+      if (msg.type === 'step_run_changed' && msg.taskId === taskId) load();
+      else if (msg.type === 'attempt_changed' && msg.run.taskId === taskId) {
         setRuns((current) => {
           const rest = current.filter((r) => r.id !== msg.run.id);
           return [...rest, msg.run].sort((a, b) => a.number - b.number);

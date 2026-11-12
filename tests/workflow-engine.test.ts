@@ -443,7 +443,7 @@ describe('WorkflowEngine', () => {
       const [row] = await stepRows(task.id);
       expect(row).toMatchObject({ action: 'critic', outcome: 'pass', harness: 'claude', model: 'stub-model', attemptId: run.id });
       expect(row!.sessionRowId).not.toBeNull();
-      expect(JSON.parse(row!.usage!)).toEqual(usage);
+      expect(JSON.parse(row!.usage!)).toMatchObject({ models: { 'stub-model': { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 } } });
     });
 
     it.each(['paused', 'settled'] as const)('halts on a %s turn: the step row stays unfinished, nothing escalates or completes, later steps do not run', async (halt) => {

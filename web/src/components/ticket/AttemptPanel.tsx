@@ -111,9 +111,9 @@ export function AttemptPanel({
       ) : (
         <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />
       )}
-      <details className="group mt-8 border-t border-hairline">
+      <details className="group/usage mt-8 border-t border-hairline">
         <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
-          <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+          <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/usage:rotate-0" />
           <h3 className="text-title font-semibold">Usage</h3>
           <span className="text-small text-muted">tokens by model, agent and tool</span>
         </summary>

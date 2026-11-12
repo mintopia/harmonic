@@ -89,9 +89,9 @@ export function ModelOptionOverrides({ task, onChanged }: { task: Task; onChange
   };
 
   return (
-    <details aria-label="Model Option overrides" className="group mt-4" open={draft.length > 0 || undefined}>
+    <details aria-label="Model Option overrides" className="group/overrides mt-4" open={draft.length > 0 || undefined}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
-        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/overrides:rotate-0" />
         <h3 className="text-title font-semibold">Model Option overrides</h3>
         <span className="text-small text-muted tabular-nums">{saved.length === 0 ? 'none' : `${saved.length} on this Ticket`}</span>
       </summary>

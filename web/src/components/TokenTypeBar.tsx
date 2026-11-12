@@ -40,7 +40,7 @@ function TokenTooltip({
   return (
     <div
       role="tooltip"
-      className={`pointer-events-none absolute bottom-full z-20 mb-2 hidden w-52 rounded-md border border-edge bg-surface p-3 text-left shadow-card group-hover:block group-focus-within:block ${
+      className={`pointer-events-none absolute bottom-full z-20 mb-2 hidden w-52 rounded-md border border-edge bg-surface p-3 text-left shadow-card group-hover/token:block group-focus-within/token:block ${
         align === 'right' ? 'right-0' : 'left-0'
       }`}
     >
@@ -86,7 +86,7 @@ export function TokenTypeBar({
   const widthPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
   const seg = (v: number) => (total > 0 ? (v / total) * 100 : 0);
   return (
-    <div className="group relative grid gap-1.5" tabIndex={0}>
+    <div className="group/token relative grid gap-1.5" tabIndex={0}>
       <TokenTooltip usage={usage} total={total} trailing={trailing} />
       <div className="flex items-baseline justify-between gap-3">
         <span className="truncate font-data text-data font-semibold text-ink" title={label}>
@@ -123,7 +123,7 @@ export function TokenSum({ usage, trailing }: { usage: ModelUsage; trailing?: st
   const total = totalTokens(usage);
   const seg = (v: number) => (total > 0 ? (v / total) * 100 : 0);
   return (
-    <span className="group relative inline-flex flex-col items-end gap-1" tabIndex={0}>
+    <span className="group/token relative inline-flex flex-col items-end gap-1" tabIndex={0}>
       <TokenTooltip usage={usage} total={total} trailing={trailing} align="right" />
       <span className="tabular-nums text-small text-ink">{compactTokens.format(total)}</span>
       <span className="flex h-1 w-12 overflow-hidden rounded-full bg-raised" aria-hidden="true">
