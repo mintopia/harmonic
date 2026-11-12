@@ -5,7 +5,8 @@ import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { LOCAL_TARGET } from '../execution/execution-targets.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
-import type { TaskRow, AttemptRow } from '../db/schema.js';
+import { attempts as attemptsTable, type TaskRow, type AttemptRow } from '../db/schema.js';
+import { desc, eq } from 'drizzle-orm';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
 import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
@@ -355,10 +356,15 @@ export async function createRuntime(deps: {
     events: {
       onAttemptEvent: (event) => bus.emit('attempt_event', event),
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
-      onCriticLogEvent: (event) => bus.emitCriticLog(event),
       onAttemptFinished: (run) => bus.emit('attempt_changed', run),
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
-      onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),
+      onStepChanged: (taskId) => fireAndForget(
+        async () => {
+          const latest = await asyncDb.read((db) => db.select({ id: attemptsTable.id }).from(attemptsTable).where(eq(attemptsTable.taskId, taskId)).orderBy(desc(attemptsTable.id)).limit(1).get());
+          bus.emit('step_changed', { taskId, attemptId: latest?.id ?? null });
+        },
+        { op: 'app.stepChanged', level: 'debug', context: { taskId } },
+      ),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
       onTaskEvent: (taskId) => bus.emit('step_changed', { taskId }),
     },

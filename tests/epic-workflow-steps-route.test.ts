@@ -49,6 +49,9 @@ describe('GET /api/workspaces/:workspaceId/epics/:epicRef/workflow-steps', () =>
     ]);
     const attempts = await server.api('GET', `/api/workspaces/${workspaceId}/epics/802/attempts`);
     expect(attempts.body.attempts).toHaveLength(1);
+    expect(attempts.body.attempts[0]).toMatchObject({ stepRuns: [] });
+    expect(attempts.body.attempts[0]).not.toHaveProperty('steps');
+    expect(attempts.body.attempts[0]).not.toHaveProperty('verificationAttempts');
   });
 
   it('404s for an unknown Workspace', async () => {

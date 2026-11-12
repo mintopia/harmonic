@@ -168,10 +168,11 @@ describe('read-scoped key (issue #35)', () => {
     opWs.close();
   });
 
-  it('delivers attempt_timeline_changed to a Read Key', async () => {
+  it('delivers step_run_changed to a Read Key', async () => {
     const readWs = await connectFirehose(server, readToken);
-    server.app.ctx.bus.emit('step_changed', { taskId: 1 });
-    await waitFor(async () => readWs.messages.some((m) => m.type === 'attempt_timeline_changed'));
+    server.app.ctx.bus.emit('step_changed', { taskId: 1, attemptId: 5 });
+    const msg = await waitFor(async () => readWs.messages.find((m) => m.type === 'step_run_changed'));
+    expect(msg).toEqual({ type: 'step_run_changed', taskId: 1, attemptId: 5 });
     readWs.close();
   });
 });

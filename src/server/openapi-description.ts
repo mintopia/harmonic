@@ -20,11 +20,11 @@ endpoint below.
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
 paths): every attempt event, attempt state change, task state change/removal, and
 Conversation event/change is broadcast to every connected client as JSON
-messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'attempt_timeline_changed' |
+messages of the form \`{ type: 'attempt_event' | 'attempt_changed' | 'step_run_changed' |
 'attempt_usage' | 'task_changed' | 'task_removed' | 'epic_changed' | 'epic_integrated' |
 'agent_messages_changed' | 'scheduled-jobs' | 'operations' | 'worktrees' | 'host_load' |
 'export_failed' | 'notification_created' | 'notifications_read' | 'fs_changed' | 'git_status' |
-'attempt_log_event' | 'critic_log_event' | 'heartbeat' | 'conversation_event' |
+'attempt_log_event' | 'heartbeat' | 'conversation_event' |
 'conversation_changed' | 'conversation_commands' | 'permission_request' |
 'elicitation_request', ... }\`, using the same Task/Attempt/Conversation/Scheduled Job/Operation shapes
 served over REST. \`attempt_usage\` is a live-usage snapshot for a running Attempt
@@ -45,7 +45,7 @@ into logs and browser history. A browser client authenticated by session
 cookie needs no subprotocol. A \`read\`-scoped key gets the firehose minus the Conversation and permission
 traffic (\`conversation_event\`, \`conversation_changed\`, \`conversation_commands\`,
 \`permission_request\`, \`elicitation_request\`); everything else, including
-\`attempt_timeline_changed\` and the \`epic_*\` events, is delivered. The server
+\`step_run_changed\` and the \`epic_*\` events, is delivered. The server
 sends a protocol ping and a \`{ type: 'heartbeat', intervalMs, ts }\` message every
 30 seconds (browsers cannot see protocol pings); a client that sees nothing for
 two intervals can treat the connection as dead and reconnect. A connection that
