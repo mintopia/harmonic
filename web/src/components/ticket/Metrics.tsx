@@ -244,7 +244,7 @@ export function AgentFact({ task, attempts = [] }: { task: Task; attempts?: Atte
           <span className="text-muted">Not started</span>
         ) : (
           <>
-            {harnessLabel(task.harness)} · <span className="font-data text-muted">{formatModelLabel(task.model)}</span>
+            {harnessLabel(task.harness)} · <span className="text-muted">{formatModelLabel(task.model)}</span>
           </>
         )}
         {task.routing && <RoutedByNote routing={task.routing} />}
@@ -258,7 +258,7 @@ export function Properties({ task, allTasks, workspaceName, latestVersion, attem
   const created = `${createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
   return (
     <>
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
+    <dl className="flex flex-wrap gap-x-8 gap-y-3">
       <Fact label="Priority">{task.priority}</Fact>
       {!task.execution && <AgentFact task={task} attempts={attempts} />}
       <Fact label="Workspace">{workspaceName ?? '—'}</Fact>

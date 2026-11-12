@@ -86,14 +86,14 @@ export function AttemptSummaryCard({ run, snapshot, model, toolCalls }: AttemptS
   const contextTokens = run.state === 'running' ? snapshot?.contextTokens ?? run.contextTokens ?? null : run.contextTokens ?? null;
   const contextWindow = run.contextWindow ?? null;
   const items: Array<[string, ReactNode]> = [
-    ['Model', <span key="model" className="font-data" title={model}>{formatModelLabel(model)}</span>],
+    ['Model', <span key="model" title={model}>{formatModelLabel(model)}</span>],
     ['Cost', formatCost(runCost) ?? '—'],
     ['Duration', durMs > 0 ? fmtDur(durMs) : '—'],
     ['Tool calls', toolCalls > 0 ? toolCalls.toLocaleString() : '—'],
     ['Context', contextTokens === null ? '—' : <span key="context">{contextTokens.toLocaleString()}{contextWindow !== null && <span className="ml-1 font-medium text-muted"> / {contextWindow.toLocaleString()} · {Math.round((contextTokens / contextWindow) * 100)}%</span>}</span>],
     ['Session', run.sessionId ? <span key="session" className="font-data text-[12.5px]">{run.sessionId}</span> : 'cold start'],
   ];
-  return <section className={`${card} mt-4 flex flex-wrap gap-x-9 gap-y-3 p-4`}>{items.map(([key, value]) => <div key={key} className="min-w-0"><div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{key}</div><div className="text-[14px] font-bold leading-none text-ink tabular-nums">{value}</div></div>)}</section>;
+  return <section aria-label="Attempt summary" className="flex flex-wrap gap-x-9 gap-y-3">{items.map(([key, value]) => <div key={key} className="min-w-0"><div className="mb-[5px] text-[10px] font-bold uppercase tracking-[0.07em] text-faint">{key}</div><div className="text-[14px] font-bold leading-none text-ink tabular-nums">{value}</div></div>)}</section>;
 }
 
 export function statsAttemptsOf(runs: AttemptSummary[], live: Map<number, AttemptUsageEvent>): StatsAttempt[] {

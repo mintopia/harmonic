@@ -36,13 +36,13 @@ export function AttemptsNav({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => onSelect(attempt)}
-                  className={`${railNavButton} ${selected ? railNavSelected : railNavIdle}`}
+                  className={`${railNavButton} flex-wrap ${selected ? railNavSelected : railNavIdle}`}
                 >
                   <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${NAV_DOT[tone]}`} />
                   <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
                   <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${selected && tone === 'failed' ? 'text-ink' : NAV_WORD[tone]}`}>{attempt.state}</span>
+                  <AttemptRoute attempt={attempt} harnessChanged={harnessChanged} />
                 </button>
-                <AttemptRoute attempt={attempt} harnessChanged={harnessChanged} />
               </li>
             );
           })}
@@ -56,18 +56,18 @@ function AttemptRoute({ attempt, harnessChanged }: { attempt: Attempt; harnessCh
   const { classifier } = attempt;
   if (!attempt.harness && !classifier) return null;
   return (
-    <div className="px-2.5 pb-1.5 text-small text-muted">
+    <span className="block basis-full pl-[18px] text-small text-muted">
       {attempt.harness && (
-        <div>
-          {harnessLabel(attempt.harness)} <span className="font-data">{formatModelLabel(attempt.model ?? '')}</span>
+        <span className="block">
+          {harnessLabel(attempt.harness)} · {formatModelLabel(attempt.model ?? '')}
           {classifier?.optionId && <code className={`${codeChip} ml-1.5 bg-tool-tint text-tool`}>{classifier.optionId}</code>}
-        </div>
+        </span>
       )}
-      {harnessChanged && <div className="text-accent">Harness changed: cold Session</div>}
-      {classifier?.kind === 'routed' && classifier.reason && <div>Classifier: {classifier.reason}</div>}
-      {attempt.routing && <div className="font-data">Routing {formatCost(attempt.routing.cost) ?? 'cost unavailable'}</div>}
-      {classifier?.kind === 'abstained' && <div>Classifier abstained{classifier.reason ? `: ${classifier.reason}` : ''}</div>}
-    </div>
+      {harnessChanged && <span className="block text-accent">Harness changed: cold Session</span>}
+      {classifier?.kind === 'routed' && classifier.reason && <span className="block">Classifier: {classifier.reason}</span>}
+      {attempt.routing && <span className="block">Routing {formatCost(attempt.routing.cost) ?? 'cost unavailable'}</span>}
+      {classifier?.kind === 'abstained' && <span className="block">Classifier abstained{classifier.reason ? `: ${classifier.reason}` : ''}</span>}
+    </span>
   );
 }
 
