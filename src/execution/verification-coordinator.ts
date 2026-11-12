@@ -33,7 +33,7 @@ export class VerificationCoordinator {
     const { workspaceId, epicRef } = task;
     const { harness, harnessId, model, cwd } = req;
     const branch = integrationBranchName(epicRef);
-    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId, epicRef }, run.number, 'epic-resolve', req.stepRowId ?? 1, req.prompt);
+    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId, epicRef }, run.number, 'epic-resolve', req.stepRunId ?? 1, req.prompt);
     await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
       logger.warn('epic-resolve event failed', { attemptId: run.id, error: err instanceof Error ? err.message : String(err) });
     });

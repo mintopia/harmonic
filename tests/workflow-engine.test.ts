@@ -13,7 +13,8 @@ import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
 import { mergeIntoBase } from '../src/execution/branch-merge.js';
 import { WorkflowEngine, ONLY_THE_AGENT_COMMITS, CRITIC_CHANGED_THE_WORK, UNCOMMITTED_AFTER_AGENT, type WorkflowEngineDeps } from '../src/execution/workflow-engine.js';
-import { createAcpCriticDrive, type CriticHarnessDrive } from '../src/verification/critic.js';
+import { SessionStore } from '../src/domain/sessions.js';
+import { createAcpCriticDrive, type CriticDriveRequest, type CriticHarnessDrive } from '../src/verification/critic.js';
 import { resolveRoute } from '../src/domain/route.js';
 import { resolveModelOption } from '../src/domain/model-options.js';
 import type { ModelOption } from '../src/config.js';
@@ -399,17 +400,50 @@ describe('WorkflowEngine', () => {
       expect(driven[0]).toMatchObject({ harnessId: 'claude', model: 'stub-model' });
     });
 
-    const scripted = (result: { halt?: 'paused' | 'settled'; escalate?: string }, seen: { task?: number; stepRowId?: number }[] = []): Partial<WorkflowEngineDeps['agent']> => ({
-      drive: { run: async (req) => { seen.push({ task: req.task?.id, stepRowId: req.stepRowId }); return { output: '', permissionRequests: [], sessionId: 's1', ...result }; } },
+    const scripted = (result: { halt?: 'paused' | 'settled'; escalate?: string }, seen: { task?: number; stepRunId?: number }[] = []): Partial<WorkflowEngineDeps['agent']> => ({
+      drive: { run: async (req) => { seen.push({ task: req.task?.id, stepRunId: req.stepRunId }); return { output: '', permissionRequests: [], sessionId: 's1', ...result }; } },
     });
     const twoSteps = '  - id: build\n    uses: agent\n    with:\n      prompt: hi\n  - id: after\n    run: echo after\n';
 
     it('hands the Task, Attempt and step row to the agent drive', async () => {
-      const seen: { task?: number; stepRowId?: number }[] = [];
+      const seen: { task?: number; stepRunId?: number }[] = [];
       const { task, run } = await startTask(flow(twoSteps));
       await agentEngine(scripted({}, seen)).run(task, run);
       const rows = await stepRows(task.id);
-      expect(seen).toEqual([{ task: task.id, stepRowId: rows[0]!.id }]);
+      expect(seen).toEqual([{ task: task.id, stepRunId: rows[0]!.id }]);
+    });
+
+    it('writes a run step full output to the step-run log', async () => {
+      const refs: unknown[] = [];
+      const logPath = join(dir, 'step-output.log');
+      const { task, run } = await startTask(flow('  - id: ok\n    run: echo hello\n'));
+      await engine({ stepOutputLog: async (_t, _r, ref) => (refs.push(ref), { path: logPath }) }).run(task, run);
+      const [row] = await stepRows(task.id);
+      expect(refs).toEqual([{ pass: 1, stepId: 'ok', stepRunId: row!.id }]);
+      expect(readFileSync(logPath, 'utf8')).toBe('hello\n');
+    });
+
+    it('records the Attempt id, harness and model on every step run', async () => {
+      const { task, run } = await startTask(flow(twoSteps));
+      await agentEngine(scripted({})).run(task, run);
+      const rows = await stepRows(task.id);
+      expect(rows.map((row) => row.attemptId)).toEqual([run.id, run.id]);
+      expect(rows[0]).toMatchObject({ harness: 'claude', model: 'stub-model' });
+      expect(rows[1]).toMatchObject({ harness: null, model: null });
+    });
+
+    it('records the critic Session, harness, model and usage on its step run', async () => {
+      const usage = { inputTokens: 10, outputTokens: 2 };
+      const verdict = JSON.stringify({ verdict: 'pass', summary: 'fine', findings: [] });
+      const { task, run } = await startTask(flow(`  - id: review\n    uses: critic\n    with:\n      harness: claude\n      model: stub-model\n      prompt: hi\n`));
+      const drive = { run: async (req: CriticDriveRequest) => { await req.onSessionCreated?.('crit-1', {} as never); return { output: verdict, permissionRequests: [], sessionId: 'crit-1', usage }; } };
+      const recordSession: WorkflowEngineDeps['recordSession'] = async (_t, input) =>
+        (await new SessionStore(db).recordDispatch({ harness: input.harnessId, harnessSessionId: input.harnessSessionId, model: input.model, cwd: input.cwd, workspaceId: null, mcpTemplates: [], capabilities: undefined, adapterVersion: 'x', now: 1 })).id;
+      await engine({ recordSession, agent: { drive, getConfig: stubConfig, prompts: bundledEnginePrompts, route: async () => resolveRoute(stubConfig(), 'claude', 'stub-model', null), resolveOption: async () => { throw new Error('none'); }, resolvePrompt: async (text) => text, promptFields: async () => ({}) as never } }).run(task, run);
+      const [row] = await stepRows(task.id);
+      expect(row).toMatchObject({ action: 'critic', outcome: 'pass', harness: 'claude', model: 'stub-model', attemptId: run.id });
+      expect(row!.sessionRowId).not.toBeNull();
+      expect(JSON.parse(row!.usage!)).toEqual(usage);
     });
 
     it.each(['paused', 'settled'] as const)('halts on a %s turn: the step row stays unfinished, nothing escalates or completes, later steps do not run', async (halt) => {
@@ -432,7 +466,7 @@ describe('WorkflowEngine', () => {
 
     it('escalates at once with the agent reason and burns no further Attempt', async () => {
       const { task, run } = await startTask(flow(twoSteps, 3));
-      const seen: { task?: number; stepRowId?: number }[] = [];
+      const seen: { task?: number; stepRunId?: number }[] = [];
       await agentEngine(scripted({ escalate: 'agent asked for help' }, seen)).run(task, run);
       expect(seen).toHaveLength(1);
       expect(escalations).toHaveLength(1);

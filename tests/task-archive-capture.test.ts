@@ -20,7 +20,14 @@ function archiveDirFor(dataDir: string, taskId: number): string {
   throw new Error(`no archive dir for task ${taskId}`);
 }
 
-describe('Task Archive implementation-Step capture (#728)', () => {
+function agentStepDir(archiveDir: string): string {
+  const steps = join(archiveDir, 'attempts', '1', 'steps');
+  const name = readdirSync(steps).find((entry) => existsSync(join(steps, entry, 'prompt.md')));
+  if (!name) throw new Error('no agent step run directory archived');
+  return join(steps, name);
+}
+
+describe('Task Archive step-run capture (#728)', () => {
   let server: TestServer;
   const workDir = mkdtempSync(join(tmpdir(), 'harmonic-archive-work-'));
   const logDir = mkdtempSync(join(tmpdir(), 'harmonic-archive-native-'));
@@ -77,7 +84,7 @@ describe('Task Archive implementation-Step capture (#728)', () => {
     const taskId = await runToCompletion('archive me');
     const dir = archiveDirFor(dataDir, taskId);
     expect(existsSync(join(dir, 'archive.json'))).toBe(true);
-    const step = join(dir, 'attempts', '1', 'implementation');
+    const step = agentStepDir(dir);
     expect(readFileSync(join(step, 'prompt.md'), 'utf8')).toContain('archive me');
     expect(readFileSync(join(step, 'acp.jsonl'), 'utf8')).toContain('archived-output');
     expect(readFileSync(join(step, 'native', `${sessionId}.jsonl`), 'utf8')).toBe('{"type":"assistant"}\n');
@@ -85,7 +92,7 @@ describe('Task Archive implementation-Step capture (#728)', () => {
 
   it('still archives prompt and updates when no native transcript exists', async () => {
     const taskId = await runToCompletion('no native');
-    const step = join(archiveDirFor(dataDir, taskId), 'attempts', '1', 'implementation');
+    const step = agentStepDir(archiveDirFor(dataDir, taskId));
     expect(readFileSync(join(step, 'prompt.md'), 'utf8')).toContain('no native');
     expect(readFileSync(join(step, 'acp.jsonl'), 'utf8')).toContain('archived-output');
     expect(existsSync(join(step, 'native'))).toBe(false);

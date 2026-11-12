@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import type { AppConfig, DeepPartial } from '../src/config.js';
 import { startServer, type TestServer } from './helpers.js';
 
+const REF = { pass: 1, stepId: 'implement', stepRunId: 1 };
+
 describe('GET /api/attempts/:id/resolved-prompt', () => {
   const root = mkdtempSync(join(tmpdir(), 'harmonic-resolved-prompt-'));
   let server: TestServer;
@@ -42,17 +44,17 @@ describe('GET /api/attempts/:id/resolved-prompt', () => {
 
   it('serves one prompt of a multi-prompt file by index, and 404s past the end', async () => {
     const taskRow = await server.app.ctx.tasks.get((await server.app.ctx.attempts.get(attemptId)).taskId as number);
-    const writer = server.app.ctx.archive.implementationStep(taskRow, attemptNumber);
+    const writer = server.app.ctx.archive.stepRun(taskRow, attemptNumber, REF);
     expect(await writer.appendPrompt('turn zero')).toBe(0);
     expect(await writer.appendPrompt('turn one\n\nwith a body')).toBe(1);
     await writer.close();
     const byIndex = (index: string) =>
-      fetch(`${server.baseUrl}/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent('implementation/prompt.md')}&index=${index}`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+      fetch(`${server.baseUrl}/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent('steps/1-implement-1/prompt.md')}&index=${index}`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
     expect(await (await byIndex('0')).text()).toBe('turn zero');
     expect(await (await byIndex('1')).text()).toBe('turn one\n\nwith a body');
     expect((await byIndex('2')).status).toBe(404);
     expect((await byIndex('-1')).status).toBe(400);
-    expect(await (await fetchPrompt(attemptId, 'implementation/prompt.md')).text()).toBe('turn zero\n\n---\n\nturn one\n\nwith a body');
+    expect(await (await fetchPrompt(attemptId, 'steps/1-implement-1/prompt.md')).text()).toBe('turn zero\n\n---\n\nturn one\n\nwith a body');
   });
 
   it('404s for a missing prompt, an unknown attempt, a traversal, and a non-prompt file', async () => {
@@ -67,7 +69,7 @@ describe('GET /api/attempts/:id/resolved-prompt', () => {
     fetch(`${server.baseUrl}/api/attempts/${id}/resolved-prompt?locator=${encodeURIComponent(loc)}&segments=true`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
 
   it('rejects segments=true combined with index instead of ignoring the index', async () => {
-    const res = await fetch(`${server.baseUrl}/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent('implementation/prompt.md')}&segments=true&index=1`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+    const res = await fetch(`${server.baseUrl}/api/attempts/${attemptId}/resolved-prompt?locator=${encodeURIComponent('steps/1-implement-1/prompt.md')}&segments=true&index=1`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
     expect(res.status).toBe(400);
     expect(await res.text()).toContain('index');
   });

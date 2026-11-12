@@ -152,6 +152,7 @@ export class Runner {
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
     this.transcripts = new TranscriptCapture(this.sessionStore, this.verificationAttempts, this.getConfig);
+    this.stepRuns = new WorkflowStepRunStore(this.asyncDb);
     this.sessionContinuation = new SessionContinuation(
       this.attempts,
       this.sessionStore,
@@ -161,6 +162,7 @@ export class Runner {
       (attemptId) => this.activeRuns.getLastTurnContextTokens(attemptId),
       (task) => this.workspaceProvisioner.dispatchCwd(task),
       this.fireAndForget,
+      this.stepRuns,
     );
     this.usage = new UsageSampler(
       this.attempts,
@@ -202,7 +204,6 @@ export class Runner {
     this.verification = new VerificationCoordinator(this.verificationCoordinatorDeps());
     this.turnDriver = new TurnDriver(this.turnDriverDeps());
     this.workflowLibrary = options.workflows?.library ?? new WorkflowLibrary(null);
-    this.stepRuns = new WorkflowStepRunStore(this.asyncDb);
     this.workflowEngine = this.createWorkflowEngine(options.workflows);
     this.runControl = new RunControl(this.runControlDeps());
     this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
@@ -270,10 +271,13 @@ export class Runner {
               dir: workflows.podTranscriptDir,
               sessions: this.sessionStore,
               attempts: this.attempts,
-              archive: (task, run, kind, stepId) => (kind === 'agent' ? this.archive?.implementationStep(task, run.number) : this.archive?.criticStep(task, run.number, 'pre-merge', stepId)),
+              stepRuns: this.stepRuns,
+              archive: (task, run, ref) => this.archive?.stepRun(task, run.number, ref),
             }),
           }
         : {}),
+      ...(this.archive ? { stepOutputLog: (task, run, ref) => this.archive!.stepRunOutputLog(task, run.number, ref) } : {}),
+      recordSession: async (task, input) => this.sessionContinuation.recordSession({ ...input, workspaceId: task.workspaceId }),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),

@@ -69,7 +69,8 @@ describe('agent and critic steps in a workflow pod', () => {
         dir: join(dir, 'pod-transcripts'),
         sessions: new SessionStore(db),
         attempts,
-        archive: (task, run) => archive.implementationStep(task as TaskRow, run.number),
+        stepRuns: new WorkflowStepRunStore(db),
+        archive: (task, run, ref) => archive.stepRun(task as TaskRow, run.number, ref),
         locateDelaysMs: [],
       }),
       agent: {
