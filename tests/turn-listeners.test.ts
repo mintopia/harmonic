@@ -50,3 +50,23 @@ describe('TurnListeners', () => {
     ]);
   });
 });
+
+describe('TurnListeners step run tagging', () => {
+  it('tags live events with the step run id', () => {
+    const live: { stepRunId?: number }[] = [];
+    const listeners = new TurnListeners({
+      task: { harness: 'claude' } as never,
+      run: { id: 42 } as never,
+      state: new TurnState({} as AttemptRow, new Map(), []),
+      autoDriven: false,
+      events: { onAttemptLogEvent: (event) => live.push(event) },
+      stepRunId: 7,
+      record: () => {},
+      nextProgressSequence: () => 1,
+      outstandingAction: () => {},
+      completeOutstandingAction: () => {},
+    });
+    listeners.onSessionUpdate({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } }, false);
+    expect(live[0]?.stepRunId).toBe(7);
+  });
+});

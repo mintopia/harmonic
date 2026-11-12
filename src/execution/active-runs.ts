@@ -26,6 +26,7 @@ export interface ActiveRun {
   agentFinished: boolean;
   escalateReason: string | null;
   steerQueue: SteerEntry[];
+  stepRunId?: number;
   idle: boolean;
   externallySettled: boolean;
   steerable: boolean;

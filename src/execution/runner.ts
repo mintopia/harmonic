@@ -437,11 +437,13 @@ export class Runner {
 
   private emitSteerLog({ attemptId, text, queued }: { attemptId: number; text: string; queued: boolean }): void {
     const seq = this.activeRuns.nextProgressSequence(attemptId);
+    const stepRunId = this.activeRuns.get(attemptId)?.stepRunId;
     this.events.onAttemptLogEvent?.({
       id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
       attemptId,
       seq,
       ts: Date.now(),
+      ...(stepRunId !== undefined ? { stepRunId } : {}),
       type: 'session_update',
       payload: { sessionUpdate: 'operator_message', content: { type: 'text', text }, pending: true, queued },
     });

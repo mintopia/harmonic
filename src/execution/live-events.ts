@@ -6,6 +6,7 @@ export interface LiveAttemptEvent {
   attemptId: number;
   seq: number;
   ts: number;
+  stepRunId?: number;
   type: 'session_update';
   payload: { sessionUpdate: string; [key: string]: unknown };
 }

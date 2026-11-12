@@ -41,7 +41,7 @@ export class VerificationCoordinator {
     this.deps.activeRuns.setToolCallTotals(run.id, toolCalls);
     const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
       const seq = this.deps.activeRuns.nextProgressSequence(run.id);
-      this.deps.events.onAttemptLogEvent?.({ id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq, attemptId: run.id, seq, ts: Date.now(), type: 'session_update', payload: update });
+      this.deps.events.onAttemptLogEvent?.({ id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq, attemptId: run.id, seq, ts: Date.now(), ...(req.stepRunId !== undefined ? { stepRunId: req.stepRunId } : {}), type: 'session_update', payload: update });
       if (update.sessionUpdate !== 'tool_call') return;
       const name = toolCallName(update, (payload) => adapterFor(harnessId).usage?.toolName(payload) ?? null);
       toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);

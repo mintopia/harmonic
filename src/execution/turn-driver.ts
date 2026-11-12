@@ -146,7 +146,7 @@ export class TurnDriver {
     const { workspace, mcpServers, child, stderr } = spawned;
 
     const { active, driver, guardrails, listeners, finalize } = this.createTurnRuntime({
-      task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child,
+      task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child, stepRunId: req.stepRunId,
     });
 
     try {
@@ -313,6 +313,7 @@ export class TurnDriver {
     record: RunEventRecorder;
     flushToolCalls: () => Promise<void>;
     child: ChildProcess;
+    stepRunId: number | undefined;
   }): TurnRuntime {
     const {
       task,
@@ -325,6 +326,7 @@ export class TurnDriver {
       record,
       flushToolCalls,
       child,
+      stepRunId,
     } = input;
     const listeners = new TurnListeners({
       task,
@@ -332,6 +334,7 @@ export class TurnDriver {
       state: turn,
       autoDriven,
       events: this.deps.events,
+      stepRunId,
       record,
       nextProgressSequence: () => this.deps.activeRuns.nextProgressSequence(run.id),
       outstandingAction: (event) => this.deps.activeRuns.setOutstandingProgressAction(run.id, event),
@@ -350,6 +353,7 @@ export class TurnDriver {
     const active: ActiveRun = {
       attemptId: run.id,
       taskId: task.id,
+      ...(stepRunId !== undefined ? { stepRunId } : {}),
       child,
       driver,
       harnessId: task.harness,
