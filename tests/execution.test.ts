@@ -70,33 +70,20 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
-  it('a native Run resolves and uses the Workspace Task Prompt override, else inherits the global default (#339)', async () => {
+  it('a native Run uses the global Task Prompt; no Workspace override exists (#339, ADR-0054)', async () => {
     const wsId = (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
-    const promptOf = async (attemptId: number) => (await withArchivedPrompt(server, await server.app.ctx.attempts.get(attemptId))).prompt;
-    const settle = async (taskId: number) =>
-      waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined), {
-        timeoutMs: 20_000,
-      });
     const scenarioObj = { updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }], stopReason: 'end_turn' };
+    const { taskId, attemptId } = await createAndRun(scenarioObj);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined), { timeoutMs: 20_000 });
+    const prompt = (await withArchivedPrompt(server, await server.app.ctx.attempts.get(attemptId))).prompt;
+    expect(prompt).not.toBeNull();
+    expect(prompt!.startsWith(scenario(scenarioObj))).toBe(true);
 
-    const inherit = await createAndRun(scenarioObj);
-    await settle(inherit.taskId);
-    const inheritPrompt = await promptOf(inherit.attemptId);
-
-    let overridePrompt: string | null;
-    try {
-      expect((await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: 'WS-TASKPROMPT::{prompt}' })).status).toBe(200);
-      const override = await createAndRun(scenarioObj);
-      await settle(override.taskId);
-      overridePrompt = await promptOf(override.attemptId);
-    } finally {
-      await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: null });
-    }
-
-    expect(inheritPrompt).not.toBeNull();
-    expect(overridePrompt).not.toBeNull();
-    expect(inheritPrompt!.startsWith(scenario(scenarioObj))).toBe(true);
-    expect(overridePrompt!.startsWith('WS-TASKPROMPT::')).toBe(true);
+    await server.api('PATCH', `/api/workspaces/${wsId}`, { taskPrompt: 'WS-TASKPROMPT::{prompt}' });
+    const again = await createAndRun(scenarioObj);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${again.taskId}`)).body.state === 'done' ? true : undefined), { timeoutMs: 20_000 });
+    const second = (await withArchivedPrompt(server, await server.app.ctx.attempts.get(again.attemptId))).prompt;
+    expect(second!.startsWith('WS-TASKPROMPT::')).toBe(false);
   });
 
   it('a native Run merges terminal exactly once — done is final and the escalation actions refuse', async () => {
