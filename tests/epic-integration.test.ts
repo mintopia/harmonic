@@ -263,6 +263,23 @@ describe('EpicLifecycle.reconcile (issue #159)', () => {
     expect(await baseOf(trackerRef(12))).toBe('epic/10');
   });
 
+  it('cuts the branch and assigns it to a human-only ready member so Run now can spawn it', async () => {
+    const tickets = [
+      ticket({ ref: trackerRef(10), title: 'Epic' }),
+      ticket({ ref: trackerRef(11), parent: trackerRef(10), labels: [] }),
+    ];
+    const mirrored = await mscan(tickets);
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicLifecycle(tasks, dir, fireAndForget, git);
+
+    await coord.reconcile(tickets, mirrored);
+
+    expect(git.created).toEqual(['epic/10']);
+    expect(await baseOf(trackerRef(11))).toBe('epic/10');
+    const member = (await tasks.list()).find((t) => t.trackerRef === trackerRef(11))!;
+    expect(await coord.memberBaseNotReady(member)).toBe('ready');
+  });
+
   it('creates no branch for an Epic with an empty ready frontier', async () => {
     const tickets = [
       ticket({ ref: trackerRef(10), title: 'Epic' }),
