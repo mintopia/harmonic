@@ -4,6 +4,8 @@ Status: accepted
 Date: 2026-08-28
 Reconciled: 2026-10-02. Execution teardown shipped; later merge, pause, Epic and escalation refinements are incorporated below.
 
+Amended 2026-11-12 (D3b): a Ticket workflow's `merge` action runs up to `conflictResolveTurns` agent resolve turns on a conflict before escalating, as Epic integration does. The Ticket workflow engine had called the merge without resolve turns since the workflow cutover.
+
 Part of the 2026-08-28 ADR reset (see README.md). Implemented by
 [epic #390](https://github.com/mintopia/harmonic/issues/390), closed 2026-08-29.
 Current refinements: ADR-0018/0023 for stored Epics, ADR-0027 for pause,

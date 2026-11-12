@@ -1,33 +1,32 @@
 ---
 title: Reviewing & merging
-description: Configure verification commands and Critics, and choose how successful work reaches its base branch.
+description: How a workflow checks work with commands and Critics, and how successful work reaches its base branch.
 ---
 
-Harmonic runs the verification you configure for a Task, whether you create
-it by hand or mirror it from a tracker. Commands and Critics are empty by
-default. Configure them in [Settings & overrides](/run/settings/)
-to check work before it completes.
+A Task's workflow decides how its work is checked. Verification commands and
+Critics are steps of the workflow, so the checks are whatever its steps say.
+Edit them in [Workflows](/work/workflows/).
 
 ## Verification
 
-An Attempt starts with implementation. The agent makes the changes and
-commits them. Harmonic then runs each configured verification command in
-order, stopping at the first failure. Once commands pass, it runs the
-configured Critics in parallel. Every check must pass.
+An Attempt runs the workflow. In `implement`, a Pass has the agent make the
+changes and commit them, then runs the `verify` step, then the Critic if
+enabled. A failed command, a Critic rejection, or an inconclusive result starts
+the next Pass in the same working directory. Once the workflow's maximum
+number of Passes is reached, the Task is escalated for a human to resolve.
 
-Each Critic runs on its own Harness and Model, chosen when you configure it.
-It never falls back to the Task's Harness or the default Harness, so a Critic
-must have a Harness set before it can run. To turn the Critic on in the
-`implement` workflow and pick its Harness and Model, see
+The Ticket page shows each step that ran as a row in the selected Attempt, with
+its status, summary and duration. Expand a row for its output (a command), its
+transcript (an agent) or its verdict and findings (a Critic). A Pass selector
+appears when more than one Pass ran.
+
+Each Critic runs on the Harness and Model set on its `critic` step. To turn the
+Critic on in `implement` and pick them, see
 [Workflows](/work/workflows/#configure-the-critic).
 
-A failed command, a Critic rejection, or an inconclusive result feeds the
-next Attempt in the same working directory. Once the maximum number of
-Attempts is reached, the Task is escalated for a human to resolve.
-
-Configure Task pre-merge and post-merge checks separately. Epic verification
-has its own configuration. See [Epics](/work/epics/) for how a group
-of Tasks is verified and integrated.
+Pre-merge and post-merge checks are separate steps of the workflow. Epics are
+verified by the `epic` workflow. See [Epics](/work/epics/) for how a group of
+Tasks is verified and integrated.
 
 To reuse a result elsewhere, such as in a tracker comment or a steer, hover
 over it on the ticket page and click the copy icon. It's on a Critic's summary,
@@ -42,22 +41,22 @@ already filled in.
 
 ## Completion and merging
 
-Successful Tasks complete automatically after their configured checks.
+Successful Tasks complete automatically after the workflow's checks.
 This applies to both manually created and mirrored Tasks. There is no
 separate Accept or Retry gate for a manually created Task.
 
 With **Direct** isolation, the agent works in the Workspace's Working
 Directory and completes in place. With **Worktree** isolation, the Task
-has its own branch and working directory. Its **merge fate** determines
-what happens after verification:
+has its own branch and working directory. The workflow's publish step
+determines what happens after verification:
 
-| Merge fate | What happens |
+| Step | What happens |
 | --- | --- |
-| **Merge** | Merge the branch into its base branch. |
-| **Open a PR** | Push the branch and open a pull request for your usual PR flow. |
-| **Leave the branch** | Leave the branch for you or CI to pick up. |
+| `merge` | Merge the branch into its base branch. |
+| `open-pr` | Push the branch and open a pull request for your usual PR flow. |
+| `artifact` | Leave the branch or output for you or CI to pick up. |
 
-Merge is the shipped default. Merge fate applies to worktree-isolated
+`implement` ships with `merge`. These steps apply to worktree-isolated
 Tasks, where there is a separate branch to integrate. See
 [Branches & worktrees](/work/branches-and-worktrees/) for how
 Harmonic reconciles base-branch movement and handles conflicts.
@@ -82,7 +81,8 @@ If a merge can't finish, Harmonic escalates the Task and the merge progress
 says why:
 
 - **Merge conflict.** The work clashed with the base branch and the agent
-  couldn't resolve it in its allowed turns.
+  couldn't resolve it in its allowed turns (**Merge-conflict turns**, which
+  applies to Tickets and Epics).
 - **Post-merge check failed.** A post-merge command went red after the merge.
   Harmonic reverts the merge and records the revert on the Timeline.
 - **Base update failed.** Harmonic couldn't write the base branch, for example

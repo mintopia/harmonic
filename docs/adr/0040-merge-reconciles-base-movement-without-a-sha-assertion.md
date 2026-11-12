@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-22
 
+Amended 2026-11-12: the bounded resolve turns apply to Ticket workflow `merge` steps too (see ADR-0001).
+
 Current status (2026-10-02): `src/execution/merge-policy.ts` builds the merge
 off-lock and reconciles its result onto a moved base during publication. The
 CAS write in `publish` guards only the current ref update and retries on a

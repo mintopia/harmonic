@@ -97,12 +97,12 @@ for the git-level diagram of both paths.
 
 ## Configure Epic verification
 
-Beyond what each Member checks on its own, you can add a check that runs
-against the whole Epic before it merges: any number of commands, plus
-named critics, run against the integration branch as it stands once every
-Member is in. Switch **Settings → Verification** to the Epic scope to set
-it up. It's off until you add at least one command or critic there, same
-as task-level verification.
+Beyond what each Member checks on its own, the `epic` workflow checks the
+whole Epic before it merges: its steps run against the integration branch as
+it stands once every Member is in. Edit the `epic` workflow in
+[Workflows](/work/workflows/) to change the commands, add or remove the
+`critic` step, or change how many Passes it gets to fix a failure. Settings
+no longer has a Verification tab.
 
 ## When a Member gets stuck
 
@@ -114,7 +114,7 @@ You'll see it called out in the board's attention count and sitting in
 the blocked column when you expand the band.
 
 If the Epic's own verification is stuck, failed and out of automatic
-attempts, the Epic page shows an escalation panel of its own: a text box
+Passes, the Epic page shows an escalation panel of its own: a text box
 for guidance and two ways forward, **Continue with guidance** (keeps
 working from where it left off) or **Retry and start fresh** (requeues
 with a clean run). Either way, add what the resolver got wrong and it

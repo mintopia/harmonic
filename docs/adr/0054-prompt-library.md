@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-30
 
+Amended 2026-11-12 (D3a): the per-Workspace override promise below is retracted for seven prompts with no runtime reader: `drivePrompt`, `driveUnattendedReminder`, `driveContinuePrompt`, `taskPrompt`, `driveCommitNudge`, `mergeConflictPrompt`, `verifyEpicResolveSuffix`. They are removed from Settings, the registry, the schema and the API. Only `pauseMessage`, `mergeEpicConflictPrompt` and `mergeEpicRefreshPrompt` remain overridable per Workspace. Workflow prompts are customised through the Prompt Library and workflows.
+
 Amended 2026-11-01 (#967): the ten higher-level engine prompts that the settings registry marks overridable (`drivePrompt`, `driveUnattendedReminder`, `driveContinuePrompt`, `taskPrompt`, `pauseMessage`, `driveCommitNudge`, `mergeConflictPrompt`, `mergeEpicConflictPrompt`, `mergeEpicRefreshPrompt`, `verifyEpicResolveSuffix`) may be overridden per Workspace and inherit the global text otherwise. This replaces only the "No per-Workspace" clause below for those keys; Prompt Library entries stay global and per-Ticket text stays out.
 
 Prompts become entries in a **Prompt Library**: named prompts, each with a

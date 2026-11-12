@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-22
 
+Amended 2026-11-12 by ADR-0059: the fixed Step wording is replaced by workflow step runs; Accept and Reject behave as before.
+
 Current status (2026-10-02): The Step pipeline and operator override are
 implemented in `src/execution/turn-completion.ts` and
 `src/domain/escalation.ts`. The "today" statement under Consequences refers

@@ -4,6 +4,8 @@ Status: accepted
 Date: 2026-08-28
 Reconciled: 2026-10-02. Epic and Global navigation follow ADR-0017/0018/0033; Paper remains the visual system.
 
+Amended 2026-11-12 by ADR-0059: the Ticket page's lifecycle-timeline and progress clauses ("Attempt/Step transitions", "skipped/disabled", "actual Attempt/Step results") are replaced; both derive from workflow step runs and the Attempt view.
+
 Part of the 2026-08-28 ADR reset (see README.md). The reset UI work
 shipped; the current Epic presentation follows ADR-0017/0018.
 Refined by: 0017-epic-summary-page-replaces-board-focus.md (the epic-focus
