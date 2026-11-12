@@ -284,8 +284,8 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   });
 }
 
-async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
-  let hasCandidate = latestVerifiedRef(lastRun) !== null;
+export async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
+  let hasCandidate = latestVerifiedRef(lastRun) !== null || (task.isolationMode !== 'worktree' && !!lastRun?.verifiedHeadOid);
   if (!hasCandidate && task.state === 'escalated' && task.isolationMode === 'worktree' && lastRun?.branch && lastRun?.baseBranch) {
     hasCandidate = (await Git.commitsAhead(task.workingDir, lastRun.baseBranch, lastRun.branch)) > 0;
   }

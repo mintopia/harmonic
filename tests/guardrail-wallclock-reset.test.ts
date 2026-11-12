@@ -19,7 +19,6 @@ function makeSupervisor(state: { startedAt: number }, onTrip: () => void) {
   const deps = {
     attempts: {
       get: vi.fn(async () => row()),
-      currentStepType: vi.fn(async () => 'implementation' as const),
     },
     guardrailEvents: { append: vi.fn(async () => undefined) },
     getWorkspace: undefined,
