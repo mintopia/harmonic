@@ -4,7 +4,8 @@ import { newerVersion, parseWorkflowRef } from '../../workflow-ref-model';
 import { checkpointView, stepTarget } from '../../step-target-model';
 import { sectionCaps } from './shared';
 import type { IconKind } from '../../step-run-model';
-import { Chevron, LogBlock, StatusIcon, formatDuration, outputLines, outputsFooter } from './StepRunRows';
+import { Chevron, LogBlock, StatusIcon, outputLines, outputsFooter } from './StepRunRows';
+import { fmtDur } from './Metrics';
 import { CheckpointLine, TargetChip } from './TargetParts';
 
 const OUTCOME_ICON: Record<WorkflowStepOutcome, IconKind> = { pass: 'pass', fail: 'fail', inconclusive: 'fail', conflict: 'fail', skipped: 'skipped' };
@@ -44,7 +45,7 @@ function StepRow({ step, info, child, open, now, execution }: { step: WorkflowSt
   const kind: IconKind = step.outcome === null ? 'running' : OUTCOME_ICON[step.outcome];
   const failed = kind === 'fail';
   const duration =
-    step.outcome === 'skipped' ? 'skipped' : step.startedAt === null ? '–' : formatDuration((step.endedAt ?? now) - step.startedAt);
+    step.outcome === 'skipped' ? 'skipped' : step.startedAt === null ? '–' : fmtDur((step.endedAt ?? now) - step.startedAt);
   const hasPane = step.outcome !== null && step.outcome !== 'skipped';
   const body = (
     <>
