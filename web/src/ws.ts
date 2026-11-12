@@ -1,7 +1,6 @@
 import { reportIfSessionLost } from './api.js';
 import type { TrackerRef } from './types.js';
 import type {
-  Attempt,
   Conversation,
   AdvertisedCommand,
   ConversationEvent,
@@ -65,10 +64,9 @@ export function parseServerMessage(wire: WireMessage): ServerMessage | null {
 export type ServerMessage =
   | { type: 'attempt_event'; event: AttemptEvent }
   | { type: 'attempt_log_event'; event: AttemptLogEvent }
-  | { type: 'critic_log_event'; event: AttemptLogEvent }
   | { type: 'attempt_changed'; run: AttemptSummary }
   | { type: 'task_changed'; task: Task }
-  | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[]; budgetBase: number }
+  | { type: 'step_run_changed'; taskId: number; attemptId: number | null }
   // Hard-delete: the Task is gone server-side (Attempts/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }
@@ -266,32 +264,16 @@ export function subscribeFiles(workspaceId: number): () => void {
   };
 }
 
-function subscribeLog(
-  channel: 'attempt_log_event' | 'critic_log_event',
-  subscribe: 'attempt_log_subscribe' | 'critic_log_subscribe',
-  { attemptId, after, onEvent }: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void },
-  // The attempt log hydrates its history from REST, so it skips the first
-  // replay; the critic channel has no REST snapshot, so it replays the buffer.
-  replayOnFirstOpen: boolean,
-): () => void {
+/** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
+export function subscribeAttemptLog({ attemptId, after, onEvent }: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void }): () => void {
+  // The REST snapshot already holds the first replay, so only reconnects replay.
   let firstSubscription = true;
   return subscribeWithOpen((message) => {
-    if (message.type === channel && message.event.attemptId === attemptId && message.event.seq > after()) {
+    if (message.type === 'attempt_log_event' && message.event.attemptId === attemptId && message.event.seq > after()) {
       onEvent(message.event);
     }
   }, (socket) => {
-    socket.send(JSON.stringify({ type: subscribe, attemptId, after: after(), replay: replayOnFirstOpen || !firstSubscription }));
+    socket.send(JSON.stringify({ type: 'attempt_log_subscribe', attemptId, after: after(), replay: !firstSubscription }));
     firstSubscription = false;
   });
-}
-
-/** A cursor-resumable subscription to one AttemptSummary's transient ACP transcript. */
-export function subscribeAttemptLog(args: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void }): () => void {
-  return subscribeLog('attempt_log_event', 'attempt_log_subscribe', args, false);
-}
-
-/** A cursor-resumable subscription to a running critic's own live ACP transcript
- * — its own channel, keyed by the builder Attempt id. */
-export function subscribeCriticLog(args: { attemptId: number; after: () => number; onEvent: (event: AttemptLogEvent) => void }): () => void {
-  return subscribeLog('critic_log_event', 'critic_log_subscribe', args, true);
 }

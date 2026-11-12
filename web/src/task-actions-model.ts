@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { Task, TaskState, StepType, WorkflowStepRun } from './types.js';
+import type { Task, TaskState, WorkflowStepRun } from './types.js';
 
 /**
  * The operator actions the TaskDetail footer and TaskCard offer in a given
@@ -82,25 +82,14 @@ export function nextUnexecutedStep(workflow: Pick<WorkflowFacts, 'steps' | 'outl
   return workflow.outline.find((entry) => !(entry.children.length > 0 ? entry.children.every(done) : done(entry.id)))?.id ?? null;
 }
 
-export function acceptPresentation(failedStep: StepType | null) {
-  switch (failedStep) {
-    case 'rebase':
-      return { label: 'Accept & implement', description: 'Override the failed rebase step and continue with implementation.' };
-    case 'implementation':
-      return { label: 'Accept & verify', description: 'Override the failed implementation step and continue with verification.' };
-    case 'verification':
-      return { label: 'Accept & review', description: 'Override the failed verification step and continue with review.' };
-    case 'review':
-      return { label: 'Accept & merge', description: 'Override the failed review step and merge the candidate.' };
-    case null:
-      return { label: 'Accept', description: 'Override the failed step and continue the pipeline; accepting the final review merges the candidate.' };
-  }
+export function acceptPresentation(notes: WorkflowEscalationNotes | null) {
+  return notes ? { label: 'Accept', description: notes.accept } : { label: 'Accept', description: 'Override the failed step and continue the workflow; accepting the last step merges the candidate.' };
 }
 
 export function acceptedOutcome(task: Pick<Task, 'state' | 'mergeStatus' | 'currentStep'>): string {
   if (task.state === 'done') return 'completed';
   if (task.mergeStatus === 'merging') return 'merging';
   if (task.state === 'escalated') return 'needs your attention';
-  if (task.currentStep) return `continuing with ${task.currentStep}`;
+  if (task.currentStep) return `continuing with ${task.currentStep.stepId}`;
   return task.state === 'working' ? 'continuing the pipeline' : task.state;
 }

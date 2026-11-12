@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { AttemptSummary, Step } from './types.js';
+import type { AttemptSummary, StepRun } from './types.js';
 
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
  * Rule); `neutral` is the un-coloured register (cancelled). */
@@ -22,7 +22,7 @@ export interface AttemptDisplay {
  * `Attempt.number`); pass `[]` when it isn't loaded (e.g. a historical run
  * the gate bar never actually renders `running` for). Pure.
  */
-export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = []): AttemptDisplay {
+export function attemptDisplay(run: AttemptSummary, steps: readonly Pick<StepRun, 'stepId' | 'state'>[] = []): AttemptDisplay {
   switch (run.state) {
     case 'failed':
       return { word: 'failed', dot: 'fail', pulse: false };
@@ -31,8 +31,7 @@ export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = [])
     case 'completed':
       return { word: 'merged', dot: 'merged', pulse: false };
     case 'running': {
-      const running = steps.find((step) => step.state === 'running');
-      const word = running?.type ?? 'running';
+      const word = steps.find((step) => step.state === 'running')?.stepId ?? 'running';
       return { word, dot: 'running', pulse: true };
     }
   }

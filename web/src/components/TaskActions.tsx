@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
-import type { Task, StepType } from '../types';
-import { acceptPresentation, acceptedOutcome, taskActions, type TaskAction } from '../task-actions-model';
+import type { Task } from '../types';
+import { acceptPresentation, acceptedOutcome, taskActions, type TaskAction, type WorkflowEscalationNotes } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnRetry } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { RetryDialog } from './RetryDialog';
@@ -15,13 +15,13 @@ type Confirming = 'cancel' | 'complete' | 'close';
 
 export function TaskActions({
   task,
-  failedStep = null,
+  workflowNotes = null,
   variant,
   onEdit,
   onChanged,
 }: {
   task: Task;
-  failedStep?: StepType | null;
+  workflowNotes?: WorkflowEscalationNotes | null;
   variant: 'card' | 'footer' | 'bar';
   onEdit: (task: Task) => void;
   onChanged: () => void;
@@ -35,7 +35,7 @@ export function TaskActions({
   const [extendOpen, setExtendOpen] = useState(false);
 
   const actions = taskActions(task.state, task.wallClockDeadline, task.hasCandidate);
-  const accept = acceptPresentation(failedStep);
+  const accept = acceptPresentation(workflowNotes);
   // Persisted on the Task so actions stay disabled across a reload; `resolving-conflicts` is excluded so the operator can still Close.
   const acceptInFlight = task.mergeStatus === 'merging';
   if (variant !== 'card' && actions.length === 0) return null;

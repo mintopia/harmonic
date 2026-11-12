@@ -11,11 +11,10 @@ import type {
   AttemptUsage,
   Cost,
   DiffFile,
-  Step,
+  StepRun,
   Task,
   TicketTimelineEvent,
   VerificationAttempt,
-  VerifierStatus,
   Workspace,
 } from '../types.js';
 import type { Epic, EpicMember } from '../epic-model.js';
@@ -181,17 +180,48 @@ export const runs = [
   { id: 503, pullRequestUrl: 'https://github.com/acme/harmonic-core/pull/214', taskId: 172, number: 3, state: 'completed', reason: null, stopReason: null, sessionId: '01H9…4RT2', prompt: '/implement\n\nTicket #172: Guardrail defaults must not leak into per-task overrides.\n\nGuardrail defaults are being copied into each task\'s override record at creation, so a later change to the workspace default never reaches tasks that inherited it. Keep the override null when the operator did not set one; resolve against the live default at read time.\n\n## Feedback from the previous attempt\n\nThe critic blocked: defaults still leaked into per-task overrides. Store null, resolve at read.', branch: 'harmonic/task-172', baseBranch: 'develop', usage: usage3, cost: cost3, toolCalls: 63, startedAt: T0 + min(31), finishedAt: T0 + min(90) },
 ] satisfies AttemptSummary[];
 
-const steps3: Step[] = [
-  { id: 1, attemptId: 503, type: 'rebase', position: 0, state: 'passed', command: null, verdict: null, logLocator: null, startedAt: T0 + min(31), endedAt: T0 + min(32) },
-  { id: 2, attemptId: 503, type: 'implementation', position: 1, state: 'passed', command: null, verdict: null, logLocator: null, startedAt: T0 + min(32), endedAt: T0 + min(80) },
-  { id: 3, attemptId: 503, type: 'verification', position: 2, state: 'passed', command: 'pnpm test', verdict: null, logLocator: null, startedAt: T0 + min(80), endedAt: T0 + min(85) },
-  { id: 4, attemptId: 503, type: 'review', position: 3, state: 'passed', command: null, verdict: null, logLocator: null, startedAt: T0 + min(85), endedAt: T0 + min(89) },
-];
+let stepRunSeq = 5000;
+const sr = (o: Partial<StepRun> & Pick<StepRun, 'stepId' | 'kind' | 'startedAt'>): StepRun => ({
+  id: ++stepRunSeq, attemptId: 503, action: o.kind === 'agent' ? 'agent' : o.kind === 'check' ? 'run' : o.kind === 'critic' ? 'critic' : o.kind === 'rebase' ? 'rebase' : 'open-pr',
+  pass: null, position: 0, state: 'pass', outcome: 'pass', summary: null, detail: null, condition: null,
+  outputs: { stdout: '', exitCode: null }, hasPrompt: false, sessionRowId: null, harness: null, model: null, cost: null, endedAt: null, ...o,
+});
+
+export type StepVariant = 'single' | 'passes' | 'running' | 'interrupted' | 'failed';
+
+const PNPM_FAIL = 'RUN  v3.0.5 /home/workspace/harmonic\n\n ✓ tests/guardrail-resolve.test.ts (8 tests) 41ms\n ❯ tests/guardrail-defaults.test.ts (12 tests | 2 failed) 118ms\n   × resolves null override against live default\n     AssertionError: expected 6 to be null\n   × keeps task override when operator set one\n     AssertionError: expected { maxAttempts: 6 } to equal { maxAttempts: 2 }\n\n Test Files  1 failed | 1 passed (2)\n      Tests  2 failed | 18 passed (20)';
+const PNPM_PASS = 'RUN  v3.0.5 /home/workspace/harmonic\n\n ✓ tests/guardrail-resolve.test.ts (8 tests) 41ms\n ✓ tests/guardrail-defaults.test.ts (12 tests) 118ms\n\n Test Files  2 passed (2)\n      Tests  20 passed (20)\n   Duration  3.41s';
+
+const agentRun = (pass: number, from: number, to: number | null, over: Partial<StepRun> = {}) =>
+  sr({ stepId: 'implement', kind: 'agent', pass, position: 1, startedAt: T0 + min(from), endedAt: to === null ? null : T0 + min(to), summary: 'Implemented the resolver change', detail: 'implement', hasPrompt: true, sessionRowId: 1, harness: 'claude', model: 'claude-opus-4-8', cost: { totalUsd: 4.2, byModel: { 'opus-4.8': 4.2 }, incomplete: false }, ...over });
+const verifyRun = (pass: number, from: number, to: number, ok: boolean) =>
+  sr({ stepId: 'verify', kind: 'check', pass, position: 2, startedAt: T0 + min(from), endedAt: T0 + min(to), state: ok ? 'pass' : 'fail', outcome: ok ? 'pass' : 'fail', summary: ok ? 'command exited 0' : 'command exited 1', detail: 'pnpm test', outputs: { stdout: ok ? PNPM_PASS : PNPM_FAIL, exitCode: ok ? 0 : 1 } });
+const criticRun = (pass: number, from: number, to: number) =>
+  sr({ stepId: 'review', kind: 'critic', pass, position: 3, startedAt: T0 + min(from), endedAt: T0 + min(to), summary: 'pass', detail: 'claude-opus-4-8', sessionRowId: 2, harness: 'claude', model: 'claude-opus-4-8', cost: { totalUsd: 0.6, byModel: { critic: 0.6 }, incomplete: false },
+    outputs: { stdout: '', exitCode: null, verdict: 'pass', reason: 'Defaults and overrides behave as specified; the migration test covers both paths.', findings: ['resolveGuardrails layers workspace defaults under a task override', 'Migration test covers inherited and overridden paths'] } });
+const rebaseRun = () => sr({ stepId: 'rebase', kind: 'rebase', position: 0, startedAt: T0 + min(31), endedAt: T0 + min(32), summary: 'rebased onto develop', outputs: { stdout: '', exitCode: null, baseSha: '4be91f07c2d' } });
+const mergeRun = () => sr({ stepId: 'merge', kind: 'publish', position: 4, startedAt: T0 + min(89), endedAt: T0 + min(90), summary: 'opened PR #214', outputs: { stdout: '', exitCode: null, url: 'https://github.com/acme/harmonic-core/pull/214', number: 214, branch: 'harmonic/task-172' } });
+
+export function stepRunsFor(variant: StepVariant): StepRun[] {
+  stepRunSeq = 5000;
+  switch (variant) {
+    case 'single':
+      return [rebaseRun(), agentRun(1, 32, 80), verifyRun(1, 80, 85, true), criticRun(1, 85, 89), mergeRun()];
+    case 'passes':
+      return [rebaseRun(), agentRun(1, 32, 55), verifyRun(1, 55, 60, false), agentRun(2, 60, 80, { summary: 'Fixed the two failing assertions' }), verifyRun(2, 80, 85, true), criticRun(2, 85, 89), mergeRun()];
+    case 'running':
+      return [rebaseRun(), agentRun(1, 32, null, { state: 'running', outcome: null, summary: null })];
+    case 'interrupted':
+      return [rebaseRun(), agentRun(1, 32, 80), sr({ stepId: 'verify', kind: 'check', pass: 1, position: 2, startedAt: T0 + min(80), endedAt: T0 + min(83), state: 'interrupted', outcome: null, summary: 'interrupted by process death', detail: 'pnpm test' })];
+    case 'failed':
+      return [rebaseRun(), agentRun(1, 32, 55), verifyRun(1, 55, 60, false)];
+  }
+}
 
 export const attempts = [
-  { id: 501, taskId: 172, number: 1, state: 'failed', startedAt: T0 + min(3), endedAt: T0 + min(18), feedback: '2 assertions failed', verifiedSha: null, escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: null, steps: [] },
-  { id: 502, taskId: 172, number: 2, state: 'failed', startedAt: T0 + min(20), endedAt: T0 + min(29), feedback: 'defaults leaked', verifiedSha: null, escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: null, steps: [] },
-  { id: 503, taskId: 172, number: 3, state: 'passed', startedAt: T0 + min(31), endedAt: T0 + min(90), feedback: null, verifiedSha: 'e33b4ae', escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: { path: 'continued-session', reason: 'continued-within-limits', contextTokens: 120_000, contextReuseTokenLimit: 400_000, lastActiveAt: T0 + min(89), lastActiveAgeMs: 15_000, warmWindowMs: 20 * 60_000 }, steps: steps3 },
+  { id: 501, taskId: 172, number: 1, state: 'failed', startedAt: T0 + min(3), endedAt: T0 + min(18), feedback: '2 assertions failed', escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, continuation: null, stepRuns: [] },
+  { id: 502, taskId: 172, number: 2, state: 'failed', startedAt: T0 + min(20), endedAt: T0 + min(29), feedback: 'defaults leaked', escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, continuation: null, stepRuns: [] },
+  { id: 503, taskId: 172, number: 3, state: 'passed', startedAt: T0 + min(31), endedAt: T0 + min(90), feedback: null, escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, continuation: { path: 'continued-session', reason: 'continued-within-limits', contextTokens: 120_000, contextReuseTokenLimit: 400_000, lastActiveAt: T0 + min(89), lastActiveAgeMs: 15_000, warmWindowMs: 20 * 60_000 }, stepRuns: stepRunsFor('single') },
 ] satisfies Attempt[];
 
 export const attemptLog = [
@@ -254,11 +284,6 @@ export const diffFiles = [
   },
 ] satisfies DiffFile[];
 
-export const verifierStatuses = [
-  { mechanism: 'command', state: 'passed', reason: null, commands: ['pnpm test'] },
-  { mechanism: 'critic', state: 'passed', reason: null },
-] satisfies VerifierStatus[];
-
 export const criticPrompts: Record<string, string> = {
   'verification/pre-merge/9000/prompt.md': 'First read the referenced ticket #172: "Guardrail defaults must not leak into per-task overrides".\n\nReview the candidate revision a91c4f2, branched from develop. You are NOT handed a diff — run `git diff develop a91c4f2` yourself. You are READ-ONLY: you may read files and make network requests, but must not edit anything.\n\nReply with ONLY a single JSON object: {"verdict":"pass|fail|inconclusive","summary":"<one or two sentences>"}',
   'verification/pre-merge/8001/prompt.md': 'Review the whole-Epic integration branch epic/166 against develop for epic #166 "Consolidate guardrail-ceiling defaults". You are NOT handed a diff — run `git diff develop epic/166` yourself. You are READ-ONLY: you may read files and make network requests, but must not edit anything.\n\nReply with ONLY a single JSON object: {"verdict":"pass|fail|inconclusive","summary":"<one or two sentences>"}',
@@ -290,9 +315,7 @@ const E0 = Date.parse('2026-08-30T09:00:00Z');
 const emin = (n: number) => n * 60_000;
 
 export const epicAttempts = [
-  { id: 8001, number: 1, state: 'passed', reason: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), steps: [], resolverPrompts: [], verificationAttempts: [
-    { id: 8101, attemptId: 8001, seq: 1, ts: E0 + emin(212), mechanism: 'critic', inputOid: 'a1b2c3d', verdict: 'pass', summary: 'Verdict proceed — the integration branch matches the Epic description.', output: '', promptLocator: 'verification/pre-merge/8001/prompt.md', harness: 'claude', hasTranscript: false, outputTruncated: false },
-  ] },
+  { id: 8001, number: 1, state: 'passed', reason: null, usage: null, cost: null, toolCalls: 18, contextTokens: null, startedAt: E0 + emin(200), endedAt: E0 + emin(214), stepRuns: [], resolverPrompts: [] },
 ] satisfies EpicAttempt[];
 
 const boardMember = (o: Partial<EpicMember> & Pick<EpicMember, 'ref'>): EpicMember => ({
@@ -407,7 +430,7 @@ export const boardTasks = [
   }),
   boardTask(435, 'working', {
     summary: 'Consolidate guardrail-ceiling defaults across the workspace config surface',
-    currentStep: 'verification',
+    currentStep: { stepId: 'verify', action: 'run', kind: 'check' },
     contextTokens: 28_000,
     attemptId: 9435,
   }),
@@ -570,7 +593,7 @@ export const epicChildren: Task[] = [
     isEpic: false,
     cost: { totalUsd: 18.9, byModel: { 'gpt-5.1': 18.9 }, incomplete: false }, origin: 'mirrored', trackerRef: '142', issueWorkflow: 'implement',
     wayfinderType: null, mapRef: '166', url: null, mapTitle: null, trackerLabel: null, branch: 'harmonic/task-503', stat: null, runStartedAt: E0 + emin(210), toolCount: 44,
-    attemptId: 9001, currentStep: 'implementation', contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
+    attemptId: 9001, currentStep: { stepId: 'implement', action: 'agent', kind: 'agent' }, contextTokens: 120_000, contextWindow: 400_000, verifiedRef: null, hasCandidate: false, wallClockDeadline: null, skipReason: null, targetWait: null, routing: null, classifier: null, modelOptionOverrides: [],
   },
   {
     id: 504, summary: 'Backfill existing Workspaces onto the new resolver', workspaceId: 1, harness: 'claude', model: 'opus-4.8',
@@ -665,8 +688,7 @@ export const epicResolverAttempts: EpicAttempt[] = [
     contextTokens: null,
     startedAt: E0 + emin(160),
     endedAt: E0 + emin(190),
-    steps: [],
-    verificationAttempts: [],
+    stepRuns: [],
     resolverPrompts: [
       { kind: 'refresh', locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 2, ts: E0 + emin(161) },
       { kind: 'verification', locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 3, ts: E0 + emin(170) },

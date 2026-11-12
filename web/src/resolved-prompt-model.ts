@@ -1,4 +1,5 @@
-export const IMPLEMENTATION_PROMPT_LOCATOR = 'implementation/prompt.md';
+/** Attempt-relative archive locator of a step run's `prompt.md`. */
+export const stepRunPromptLocator = (run: { id: number; pass: number | null; stepId: string }): string => `steps/${run.pass ?? '_'}-${run.stepId}-${run.id}/prompt.md`;
 
 export interface TurnPrompt {
   /** 1-based turn number within the implementation step. */

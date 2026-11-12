@@ -244,7 +244,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
             ) : task.state === 'paused' ? (
               <span className={stateChip(task.state)}>paused</span>
             ) : task.state === 'working' && task.currentStep ? (
-              <span className={stateChip(task.state)}>{task.currentStep}</span>
+              <span className={stateChip(task.state)}>{task.currentStep.stepId}</span>
             ) : null}
           </span>
         </div>

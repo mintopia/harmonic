@@ -11,6 +11,10 @@ afterEach(cleanup);
 
 function step(overrides: Partial<WorkflowStepRun>): WorkflowStepRun {
   return {
+    id: 1,
+    attemptId: null,
+    kind: 'check',
+    sessionRowId: null,
     stepId: 's1',
     action: 'run',
     position: 0,
