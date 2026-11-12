@@ -141,18 +141,18 @@ describe('TaskActions smoke (issue #469)', () => {
 describe('Accept feedback', () => {
   it('explains the overridden step and reports the actual server response', async () => {
     const task = makeTask({ state: 'escalated', hasCandidate: true });
-    const updated = makeTask({ state: 'working', currentStep: 'review' });
+    const updated = makeTask({ state: 'working', currentStep: { stepId: 'review', action: 'critic', kind: 'critic' } });
     const fetch = vi.fn(async () => new Response(JSON.stringify(updated)));
     vi.stubGlobal('fetch', fetch);
     const onChanged = vi.fn();
     const host = await mountComponent(createElement(Fragment, null,
-      createElement(TaskActions, { task, failedStep: 'verification', variant: 'bar', onEdit: () => {}, onChanged }),
+      createElement(TaskActions, { task, workflowNotes: { heading: 'Escalated at step verify', accept: 'marks step verify (run) as pass and continues with review.', retry: '', close: '' }, variant: 'bar', onEdit: () => {}, onChanged }),
       createElement(Toaster),
     ));
-    expect(host.textContent).not.toContain('Override the failed verification step');
-    expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')?.title).toBe('Override the failed verification step and continue with review.');
+    expect(host.textContent).not.toContain('marks step verify');
+    expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept')?.title).toBe('marks step verify (run) as pass and continues with review.');
     await act(async () => {
-      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')!.click();
+      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept')!.click();
       await flush();
     });
     expect(fetch).toHaveBeenCalledWith(`/api/tasks/${task.id}/accept`, { method: 'POST' });

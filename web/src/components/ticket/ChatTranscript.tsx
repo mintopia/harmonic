@@ -184,6 +184,7 @@ export function ChatTranscript({
   baseDir,
   pendingSteers = [],
   turnPrompts = [],
+  embedded = false,
 }: {
   events: AttemptLogEvent[];
   unavailable: boolean;
@@ -204,6 +205,8 @@ export function ChatTranscript({
   pendingSteers?: readonly PendingSteer[];
   /** Resolved Prompts for turn 2 onward, shown where each was sent; turn 1's is shown above the transcript. */
   turnPrompts?: readonly string[];
+  /** Inside a step row: no sticky page-width header. */
+  embedded?: boolean;
 }) {
   const { rows, hidden, lanes, prompts } = useMemo(() => {
     // Chat the main agent's own turns; each spawned Subagent's turns lane under
@@ -239,8 +242,8 @@ export function ChatTranscript({
   const anchored = new Set(rows.flatMap((row) => (row.kind === 'tool' && row.toolCallId && lanes.has(row.toolCallId) ? [row.toolCallId] : [])));
 
   return (
-    <section className="pt-2">
-      <div className="sticky top-0 z-10 -mx-[30px] mb-3 flex items-center justify-between gap-4 border-b border-hairline bg-canvas px-[30px] py-3">
+    <section className={embedded ? '' : 'pt-2'}>
+      <div className={`mb-3 flex items-center justify-between gap-4 ${embedded ? 'pb-2' : 'sticky top-0 z-10 -mx-[30px] border-b border-hairline bg-canvas px-[30px] py-3'}`}>
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <h2 className={CAPS}>Transcript{stepLabel && ` · ${stepLabel}`}</h2>
           {fromArchive ? (

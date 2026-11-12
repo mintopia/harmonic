@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { changedFilesFromNumstat, currentAttemptId, attemptDisplay } from '../web/src/attempt-rail-model.js';
-import type { AttemptSummary, Step } from '../web/src/types.js';
+import type { AttemptSummary, StepRun } from '../web/src/types.js';
 
 function run(over: Partial<AttemptSummary> = {}): AttemptSummary {
   return {
@@ -23,30 +23,21 @@ function run(over: Partial<AttemptSummary> = {}): AttemptSummary {
   };
 }
 
-function step(over: Partial<Step> = {}): Step {
+function step(over: Partial<StepRun> = {}): StepRun {
   return {
-    id: 1,
-    attemptId: 1,
-    type: 'implementation',
-    position: 1,
-    state: 'running',
-    command: null,
-    verdict: null,
-    logLocator: null,
-    startedAt: 1_000,
-    endedAt: null,
-    ...over,
+    id: 1, attemptId: 1, stepId: 'implement', action: 'agent', kind: 'agent', pass: 1, position: 1, state: 'running', outcome: null, summary: null, detail: null, condition: null,
+    outputs: { stdout: '', exitCode: null }, hasPrompt: false, sessionRowId: null, harness: null, model: null, cost: null, startedAt: 1_000, endedAt: null, ...over,
   };
 }
 
 describe('attemptDisplay', () => {
   it('reads a settled terminal state before whatever Step was running when it ended', () => {
-    expect(attemptDisplay(run({ state: 'completed' }), [step({ type: 'review', state: 'passed' })])).toEqual({
+    expect(attemptDisplay(run({ state: 'completed' }), [step({ stepId: 'review', state: 'pass', outcome: 'pass' })])).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,
     });
-    expect(attemptDisplay(run({ state: 'failed' }), [step({ type: 'verification', state: 'failed' })])).toEqual({
+    expect(attemptDisplay(run({ state: 'failed' }), [step({ stepId: 'verify', state: 'fail', outcome: 'fail' })])).toEqual({
       word: 'failed',
       dot: 'fail',
       pulse: false,
@@ -67,20 +58,20 @@ describe('attemptDisplay', () => {
   });
 
   it('never reads a running run as anything but live work — there is no parked human gate', () => {
-    for (const type of ['rebase', 'implementation', 'verification', 'review'] as const) {
-      const steps = [step({ type, state: 'running' })];
+    for (const stepId of ['rebase', 'implement', 'verify', 'review']) {
+      const steps = [step({ stepId, state: 'running' })];
       expect(attemptDisplay(run({ state: 'running' }), steps).pulse).toBe(true);
       expect(attemptDisplay(run({ state: 'running' }), steps).dot).toBe('running');
     }
   });
 
-  it('carries the running Step\'s type as the word on a pulsing amber dot for in-flight work', () => {
-    expect(attemptDisplay(run({ state: 'running' }), [step({ type: 'verification', state: 'running' })])).toEqual({
-      word: 'verification',
+  it('carries the running step id as the word on a pulsing amber dot for in-flight work', () => {
+    expect(attemptDisplay(run({ state: 'running' }), [step({ stepId: 'verify', state: 'running' })])).toEqual({
+      word: 'verify',
       dot: 'running',
       pulse: true,
     });
-    expect(attemptDisplay(run({ state: 'running' }), [step({ type: 'review', state: 'running' })])).toEqual({
+    expect(attemptDisplay(run({ state: 'running' }), [step({ stepId: 'review', state: 'running' })])).toEqual({
       word: 'review',
       dot: 'running',
       pulse: true,
@@ -93,11 +84,11 @@ describe('attemptDisplay', () => {
       dot: 'running',
       pulse: true,
     });
-    expect(attemptDisplay(run({ state: 'running' }), [step({ type: 'implementation', state: 'passed' })]).word).toBe('running');
+    expect(attemptDisplay(run({ state: 'running' }), [step({ state: 'pass', outcome: 'pass' })]).word).toBe('running');
   });
 
   it('reads a completed run as merged whatever Step it ended on', () => {
-    expect(attemptDisplay(run({ state: 'completed' }), [step({ type: 'review', state: 'passed' })])).toEqual({
+    expect(attemptDisplay(run({ state: 'completed' }), [step({ stepId: 'review', state: 'pass', outcome: 'pass' })])).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,

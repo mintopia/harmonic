@@ -677,7 +677,11 @@ function AttemptInspector({
   const pctOf = (ms: number) => ((Math.min(to, Math.max(from, ms)) - from) / span2) * 100;
   const st = styleFor(span.state);
 
-  const stepsWithTime = (attempt?.steps ?? []).filter((s) => s.startedAt !== null);
+  const stepsWithTime = (attempt?.stepRuns ?? []).flatMap((s) => {
+    const type = ({ rebase: 'rebase', agent: 'implementation', check: 'verification', critic: 'review' } as Record<string, string>)[s.kind];
+    const state = s.state === 'pass' ? 'passed' : s.state === 'running' ? 'running' : s.state === 'skipped' ? 'skipped' : 'failed';
+    return type ? [{ id: s.id, type, state, command: s.kind === 'check' ? s.detail : null, startedAt: s.startedAt as number | null, endedAt: s.endedAt }] : [];
+  });
   const activeStep = stepsWithTime.find((s) => cursorMs >= s.startedAt! && cursorMs <= (s.endedAt ?? now));
 
   return (
@@ -790,7 +794,7 @@ function AttemptInspector({
                           {step.state === 'running' && (
                             <span className="mr-1.5 size-1.5 shrink-0 animate-pulse rounded-full bg-running motion-reduce:animate-none" aria-hidden="true" />
                           )}
-                          <span className="truncate">{step.verdict ?? style.label}</span>
+                          <span className="truncate">{style.label}</span>
                         </div>
                       );
                     })}

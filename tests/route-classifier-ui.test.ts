@@ -18,8 +18,8 @@ const abstained = (reason: string): Attempt['classifier'] & Classifier => ({ kin
 const overridden: Classifier = { kind: 'overridden', optionId: null, reason: null, position: null, optionCount: null };
 
 const attempt = (over: Partial<Attempt>): Attempt => ({
-  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null,
-  escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: null, steps: [],
+  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null,
+  escalationReason: null, workingDir: null, harness: null, model: null, classifier: null, routing: null, continuation: null, stepRuns: [],
   ...over,
 });
 const cost = (totalUsd: number) => ({ totalUsd, byModel: {}, incomplete: false });

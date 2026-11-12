@@ -30,8 +30,7 @@ const attempt: EpicAttempt = {
   contextTokens: null,
   startedAt: 1_000,
   endedAt: 2_000,
-  steps: [],
-  verificationAttempts: [],
+  stepRuns: [],
   resolverPrompts: [
     { kind: 'refresh', locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 0, ts: 1_100 },
     { kind: 'verification', locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 1, ts: 1_200 },

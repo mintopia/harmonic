@@ -10,7 +10,7 @@ import { cleanup, mountComponent } from './component-smoke-harness.js';
 afterEach(cleanup);
 
 const step = (stepId: string, attempt: number, outcome: WorkflowStepRun['outcome'], startedAt = 100): WorkflowStepRun => ({
-  stepId, action: 'run', position: 0, attempt, outcome, summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: 0 }, startedAt, endedAt: startedAt + 1,
+  id: 1, attemptId: null, kind: 'check', sessionRowId: null, stepId, action: 'run', position: 0, attempt, outcome, summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: 0 }, startedAt, endedAt: startedAt + 1,
 });
 
 const response = (steps: WorkflowStepRun[], extra: Partial<WorkflowStepsResponse> = {}): WorkflowStepsResponse => ({
@@ -67,15 +67,5 @@ describe('Epic step list', () => {
     expect(preCutoverAttempts(attempts, steps, 'epic@1').map((a) => a.number)).toEqual([1, 2]);
     expect(preCutoverAttempts(attempts, [], null).map((a) => a.number)).toEqual([1, 2, 3]);
     expect(preCutoverAttempts(attempts, [], 'epic@1').map((a) => a.number)).toEqual([1, 2]);
-  });
-});
-
-describe('Pod-run step list', () => {
-  it('numbers the steps and hides the Attempt chrome for a single Attempt', async () => {
-    const execution = { target: 'k8s-prod', podName: 'p', podState: 'running', namespace: 'n', image: 'i', source: 'workflow' } as const;
-    const host = await mountComponent(createElement(WorkflowSteps, { data: response([step('a', 1, 'pass'), step('b', 1, 'fail')]), attemptSelector: true, execution }));
-    expect([...host.querySelectorAll('ol > li [role="img"]')].map((m) => m.textContent)).toEqual(['1', '2']);
-    expect(host.querySelector('h3')).toBeNull();
-    expect(host.querySelector('[aria-label="Attempt"]')).toBeNull();
   });
 });

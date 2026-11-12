@@ -43,7 +43,6 @@ import type {
   WorkflowLabelOverlayEntry,
   ModelOptionOverlayEntry,
   ClassifierEndpoint,
-  VerifierStatus,
   Workspace,
   TrackerKindInfo,
   TrackerDetection,
@@ -475,8 +474,12 @@ export const api = {
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
   attemptGuardrailEvents: (id: number) =>
     request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/attempts/${id}/guardrail-events`),
+  stepRunLog: (id: number) =>
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/step-runs/${id}/log`),
+  stepRunPrompt: (id: number) => requestText(`/api/step-runs/${id}/prompt`, 'Sent prompt unavailable'),
+  stepRunOutputUrl: (id: number) => `/api/step-runs/${id}/output`,
   attemptVerificationAttempts: (id: number) =>
-    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
+    request<{ verificationAttempts: VerificationAttempt[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,

@@ -67,18 +67,13 @@ describe('taskActions', () => {
 });
 
 describe('Accept disposition', () => {
-  it.each([
-    ['rebase', 'Accept & implement'],
-    ['implementation', 'Accept & verify'],
-    ['verification', 'Accept & review'],
-    ['review', 'Accept & merge'],
-    [null, 'Accept'],
-  ] as const)('explains the next action after %s', (step, label) => {
-    expect(acceptPresentation(step).label).toBe(label);
+  it('describes Accept from the workflow escalation notes', () => {
+    expect(acceptPresentation(null).label).toBe('Accept');
+    expect(acceptPresentation({ heading: 'h', accept: 'marks step verify (run) as pass', retry: '', close: '' })).toEqual({ label: 'Accept', description: 'marks step verify (run) as pass' });
   });
 
   it('reports the response outcome rather than claiming every acceptance merges', () => {
-    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: 'verification' })).toBe('continuing with verification');
+    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: { stepId: 'verify', action: 'run', kind: 'check' } })).toBe('continuing with verify');
     expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: null })).toBe('continuing the pipeline');
     expect(acceptedOutcome({ state: 'done', mergeStatus: null, currentStep: null })).toBe('completed');
     expect(acceptedOutcome({ state: 'escalated', mergeStatus: null, currentStep: null })).toBe('needs your attention');

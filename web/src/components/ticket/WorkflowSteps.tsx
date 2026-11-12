@@ -3,79 +3,13 @@ import type { TaskExecution, WorkflowStepOutcome, WorkflowStepRun, WorkflowSteps
 import { newerVersion, parseWorkflowRef } from '../../workflow-ref-model';
 import { checkpointView, stepTarget } from '../../step-target-model';
 import { sectionCaps } from './shared';
+import type { IconKind } from '../../step-run-model';
+import { Chevron, LogBlock, StatusIcon, formatDuration, outputLines, outputsFooter } from './StepRunRows';
 import { CheckpointLine, TargetChip } from './TargetParts';
-
-type IconKind = 'pass' | 'fail' | 'running' | 'pending' | 'skipped';
 
 const OUTCOME_ICON: Record<WorkflowStepOutcome, IconKind> = { pass: 'pass', fail: 'fail', inconclusive: 'fail', conflict: 'fail', skipped: 'skipped' };
 
-const ICON_WORD: Record<IconKind, string> = { pass: 'passed', fail: 'failed', running: 'running', pending: 'pending', skipped: 'skipped' };
-
-const ICON_TEXT: Record<IconKind, string> = { pass: 'text-merged', fail: 'text-fail', running: 'text-running', pending: 'text-faint', skipped: 'text-faint' };
-
 type StepInfo = NonNullable<WorkflowStepsResponse['stepInfo']>[string];
-
-function StatusIcon({ kind, label }: { kind: IconKind; label?: string }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 18 18', role: 'img', 'aria-label': label ?? ICON_WORD[kind], className: `shrink-0 ${ICON_TEXT[kind]}` } as const;
-  if (kind === 'pass') {
-    return (
-      <svg {...common}>
-        <circle cx="9" cy="9" r="8" fill="currentColor" />
-        <path d="M5.3 9.3l2.4 2.4 4.6-4.9" fill="none" stroke="var(--color-surface)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (kind === 'fail') {
-    return (
-      <svg {...common}>
-        <circle cx="9" cy="9" r="8" fill="currentColor" />
-        <path d="M6 6l6 6M12 6l-6 6" stroke="var(--color-surface)" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (kind === 'running') {
-    return (
-      <svg {...common} className={`${common.className} motion-safe:animate-spin`} style={{ animationDuration: '1.1s' }}>
-        <circle cx="9" cy="9" r="7" fill="none" stroke="var(--color-running-tint)" strokeWidth="2.4" />
-        <path d="M9 2a7 7 0 0 1 7 7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      {kind === 'skipped' && <path d="M5.5 9h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />}
-    </svg>
-  );
-}
-
-function Chevron() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90">
-      <path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="var(--color-faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-export function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  return total >= 60 ? `${Math.floor(total / 60)}m ${total % 60}s` : `${total}s`;
-}
-
-function outputsSummary(step: WorkflowStepRun): string {
-  const lines = step.outputs.stdout.split('\n').filter((line) => line.trim() !== '');
-  const exit = step.outputs.exitCode === null ? 'no exit code' : `exit ${step.outputs.exitCode}`;
-  if (lines.length === 0) return `${exit} · no output`;
-  return `${exit} · ${lines.length} line${lines.length === 1 ? '' : 's'} · last: ${lines[lines.length - 1]}`;
-}
-
-const BAD_LINE = /fail|error|assert|exited with code [1-9]|exit(?:ed)? [1-9]/i;
-
-function logLines(step: WorkflowStepRun): string[] {
-  const text = step.outputs.stdout.trim() !== '' ? step.outputs.stdout : (step.summary ?? '');
-  const lines = text.replace(/\n$/, '').split('\n');
-  return text === '' ? [] : lines;
-}
 
 function Chips({ info, fallbackUses }: { info: StepInfo | undefined; fallbackUses: string }) {
   const uses = info?.uses ?? fallbackUses;
@@ -134,18 +68,12 @@ function StepRow({ step, info, child, open, now, execution }: { step: WorkflowSt
             </div>
             {checkpoint && <CheckpointLine view={checkpoint} className={`${indent} pb-2 pl-[42px]`} />}
           </summary>
-          <div className="overflow-x-auto border-t border-hairline bg-sunken py-2 font-data text-[12px] leading-[19px]">
-            {logLines(step).map((line, index) => (
-              <div key={index} className={`grid grid-cols-[52px_1fr] ${failed && BAD_LINE.test(line) ? 'bg-fail-tint text-fail' : 'text-ink'}`}>
-                <span className={`select-none pr-3 text-right ${failed && BAD_LINE.test(line) ? 'text-fail' : 'text-faint'}`}>{index + 1}</span>
-                <span className="whitespace-pre">{line}</span>
-              </div>
-            ))}
-            <p className="break-words px-3.5 pt-1 text-faint">{outputsSummary(step)}</p>
+          <div className="border-t border-hairline bg-sunken px-0 py-0">
+            <LogBlock lines={outputLines(step)} failed={failed} footer={outputsFooter(step)} />
             {step.resolvedPrompt !== null && (
-              <details className="px-3.5 pt-1">
+              <details className="px-3.5 pb-2 pt-1">
                 <summary className="cursor-pointer font-sans text-[12px] font-semibold text-muted">Resolved Prompt</summary>
-                <pre className="mt-1 whitespace-pre-wrap break-words text-[12px] text-ink">{step.resolvedPrompt}</pre>
+                <pre className="mt-1 whitespace-pre-wrap break-words font-data text-[12px] text-ink">{step.resolvedPrompt}</pre>
               </details>
             )}
           </div>
@@ -158,81 +86,6 @@ function StepRow({ step, info, child, open, now, execution }: { step: WorkflowSt
           </div>
           {checkpoint && <CheckpointLine view={checkpoint} className={`${indent} pb-2 pl-[42px]`} />}
         </>
-      )}
-    </li>
-  );
-}
-
-const MARKER_TONE = { done: 'bg-merged-tint text-merged', bad: 'bg-fail-tint text-fail', run: 'bg-running-tint text-running', idle: 'bg-raised text-muted' } as const;
-
-function markerTone(step: WorkflowStepRun | undefined): keyof typeof MARKER_TONE {
-  if (step === undefined || step.outcome === 'skipped') return 'idle';
-  if (step.outcome === null) return 'run';
-  return step.outcome === 'pass' ? 'done' : 'bad';
-}
-
-function kindLabel(info: StepInfo | undefined, fallback: string): string {
-  const uses = info?.uses ?? fallback;
-  const detail = info?.detail ?? null;
-  if (detail === null) return uses;
-  return uses === 'agent' || /^prompt /.test(detail) ? `${uses} · ${detail}` : `${uses}: ${detail}`;
-}
-
-function NumberedStep({ number, last, step, id, info, execution }: { number: number; last: boolean; step: WorkflowStepRun | undefined; id: string; info: StepInfo | undefined; execution: TaskExecution | null | undefined }) {
-  const target = step ? stepTarget(step, execution) : null;
-  const checkpoint = step ? checkpointView(step) : null;
-  const tone = markerTone(step);
-  const hasPane = step !== undefined && step.outcome !== null && step.outcome !== 'skipped';
-  const running = step !== undefined && step.outcome === null;
-  const head = (
-    <div className="flex flex-wrap items-center gap-2 text-[13px]">
-      <span className={`font-semibold ${step?.outcome === 'skipped' ? 'text-faint' : 'text-ink'}`}>{id}</span>
-      <span className="font-data text-[12px] text-faint">{kindLabel(info, step?.action ?? id)}</span>
-      {info?.condition != null && <span className="rounded-full bg-tool-tint px-[7px] font-data text-[10px] font-semibold leading-[18px] text-tool">if: {info.condition}</span>}
-      {target && <TargetChip target={target} />}
-      {step !== undefined && step.outcome !== null && step.outcome !== 'pass' && step.outcome !== 'skipped' && (
-        <span className="rounded-[3px] bg-fail-tint px-[7px] py-px text-[10px] font-bold uppercase tracking-[0.04em] text-fail">{step.outcome}</span>
-      )}
-      {running && <span className="rounded-[3px] bg-running-tint px-[9px] py-[3px] text-[11px] font-semibold text-running">running</span>}
-    </div>
-  );
-  const tail = checkpoint && <CheckpointLine view={checkpoint} className="mt-[3px] pl-0" />;
-  return (
-    <li className={`relative grid grid-cols-[24px_1fr] gap-3 ${last ? '' : 'pb-3 before:absolute before:bottom-0 before:left-[11px] before:top-6 before:w-px before:bg-edge'}`}>
-      <span
-        role="img"
-        aria-label={step === undefined ? 'not started' : running ? 'running' : step.outcome === 'skipped' ? 'skipped' : tone === 'done' ? 'passed' : 'failed'}
-        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${MARKER_TONE[tone]}`}
-      >
-        {number}
-      </span>
-      {hasPane ? (
-        <details className="group min-w-0">
-          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-            {head}
-            {tail}
-          </summary>
-          <div className="mt-2 overflow-x-auto rounded-[3px] bg-sunken py-2 font-data text-[12px] leading-[19px]">
-            {logLines(step).map((line, index) => (
-              <div key={index} className="grid grid-cols-[52px_1fr] text-ink">
-                <span className="select-none pr-3 text-right text-faint">{index + 1}</span>
-                <span className="whitespace-pre">{line}</span>
-              </div>
-            ))}
-            <p className="break-words px-3.5 pt-1 text-faint">{outputsSummary(step)}</p>
-            {step.resolvedPrompt !== null && (
-              <details className="px-3.5 pt-1">
-                <summary className="cursor-pointer font-sans text-[12px] font-semibold text-muted">Resolved Prompt</summary>
-                <pre className="mt-1 whitespace-pre-wrap break-words text-[12px] text-ink">{step.resolvedPrompt}</pre>
-              </details>
-            )}
-          </div>
-        </details>
-      ) : (
-        <div className="min-w-0">
-          {head}
-          {tail}
-        </div>
       )}
     </li>
   );
@@ -349,13 +202,7 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
     return items;
   };
 
-  const numbered = execution != null;
   const renderItems = (items: Item[], openIndex: number) => {
-    if (numbered) {
-      return items.map((item, index) => (
-        <NumberedStep key={item.key} number={index + 1} last={index === items.length - 1} step={item.run} id={item.id} info={info[item.id]} execution={execution} />
-      ));
-    }
     let previousParent: string | undefined;
     return items.map((item, index) => {
       const parent = parentOf.get(item.id);
@@ -371,20 +218,17 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
     });
   };
 
-  const plain = execution != null && numbers.length <= 1;
   const lastGroupIndex = shown.length - 1;
   const cleanupPending = attemptSelector ? cleanup.filter((id) => !ranAnywhere.has(id)) : [];
   const failedStep = (attempt: number) => data.steps.find((step) => step.attempt === attempt && (step.outcome === 'fail' || step.outcome === 'inconclusive' || step.outcome === 'conflict'));
 
   return (
     <section aria-label="Task Execution Workflow steps" className="mt-5 overflow-hidden rounded-lg bg-surface shadow-card">
-      {!plain && (
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-hairline px-3.5 py-3">
-          <h3 className="text-[13px] font-bold text-ink">Steps</h3>
-          <span className="text-[12px] text-muted">{headerText(data.workflowRef, data.latestVersion)}</span>
-        </div>
-      )}
-      {selectable && !plain && <AttemptSelector numbers={numbers} tones={tones} selected={selected} max={max} onSelect={setPicked} />}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-hairline px-3.5 py-3">
+        <h3 className="text-[13px] font-bold text-ink">Steps</h3>
+        <span className="text-[12px] text-muted">{headerText(data.workflowRef, data.latestVersion)}</span>
+      </div>
+      {selectable && <AttemptSelector numbers={numbers} tones={tones} selected={selected} max={max} onSelect={setPicked} />}
       {data.steps.length === 0 ? (
         <p className="px-3.5 py-3 text-[13px] text-muted">No step has run yet.</p>
       ) : (
@@ -394,7 +238,7 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
           const failed = group.attempt === null ? undefined : failedStep(group.attempt);
           return (
             <div key={`${group.attempt ?? 'outside'}:${group.firstIndex}`}>
-              {group.attempt !== null && !plain && (
+              {group.attempt !== null && (
                 <h4 className="flex items-center gap-2 border-b border-hairline bg-sunken px-2.5 py-2 text-[12px] font-semibold text-ink">
                   <span>{selectable && max !== null ? `Attempt ${group.attempt} of ${max}` : `Attempt ${group.attempt}`}</span>
                   <span className="flex-1" />
@@ -412,7 +256,7 @@ export function WorkflowSteps({ data, attemptSelector = false, execution }: { da
                   )}
                 </h4>
               )}
-              <ol className={numbered ? 'px-5 py-5' : undefined}>{renderItems(items, lastLogged)}</ol>
+              <ol>{renderItems(items, lastLogged)}</ol>
             </div>
           );
         })

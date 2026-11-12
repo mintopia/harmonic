@@ -2,71 +2,11 @@
 import { createElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatTranscript } from '../web/src/components/ticket/ChatTranscript.js';
-import { Verification } from '../web/src/components/ticket/Verification.js';
-import type { AttemptSummary, VerificationAttempt, VerifierStatus } from '../web/src/types.js';
 import { cleanup, mountComponent } from './component-smoke-harness.js';
-
-const run: AttemptSummary = {
-  pullRequestUrl: null,
-  id: 1,
-  taskId: 1,
-  number: 1,
-  state: 'completed',
-  reason: null,
-  stopReason: null,
-  sessionId: null,
-  prompt: null,
-  branch: null,
-  baseBranch: null,
-  usage: null,
-  cost: null,
-  startedAt: 0,
-  finishedAt: 1,
-};
-
-const commandAttempt: VerificationAttempt = {
-  id: 1,
-  attemptId: 1,
-  seq: 1,
-  ts: 1,
-  mechanism: 'command',
-  inputOid: 'a'.repeat(40),
-  verdict: 'pass',
-  summary: 'Command passed.',
-  output: 'stdout survives verification completion',
-  promptLocator: null,
-  harness: null,
-  hasTranscript: false,
-  outputTruncated: false,
-};
-
-const statuses: VerifierStatus[] = [{ mechanism: 'command', state: 'passed', reason: null }];
 
 afterEach(cleanup);
 
 describe('verification and steering UI (#537)', () => {
-  it('keeps completed command stdout visible from the persisted verification record', async () => {
-    const host = await mountComponent(createElement(Verification, { attempts: [commandAttempt], statuses, run }));
-
-    expect(host.textContent).toContain('stdout survives verification completion');
-  });
-
-  it('offers the full output only when the command output was truncated, never showing a filesystem path', async () => {
-    const truncated = { ...commandAttempt, id: 9, output: 'head\n…[truncated 300000 chars]…\ntail', outputTruncated: true };
-    const host = await mountComponent(createElement(Verification, { attempts: [truncated], statuses, run }));
-
-    const link = [...host.querySelectorAll('a')].find((a) => a.textContent?.includes('View full output'));
-    expect(link?.getAttribute('href')).toBe('/api/verification-attempts/9/output');
-    expect(link?.getAttribute('target')).toBe('_blank');
-    expect(host.textContent).not.toContain('/output.log');
-  });
-
-  it('offers no full-output control for untruncated output', async () => {
-    const host = await mountComponent(createElement(Verification, { attempts: [commandAttempt], statuses, run }));
-
-    expect(host.textContent).not.toContain('View full output');
-  });
-
   it('shows a sent steer immediately with a pending-delivery marker', async () => {
     const host = await mountComponent(
       createElement(ChatTranscript, {

@@ -1,5 +1,5 @@
-import type { ApiTask, ApiTaskListRow, ApiAttemptSummary, ApiAttempt, ApiAttemptUsage } from '../src/server/dto.js';
-import type { Task, AttemptSummary, Attempt, AttemptUsageEvent } from '../web/src/types.js';
+import type { ApiTask, ApiTaskListRow, ApiAttemptSummary, ApiAttempt, ApiAttemptUsage, ApiStepRun } from '../src/server/dto.js';
+import type { Task, AttemptSummary, Attempt, AttemptUsageEvent, StepRun } from '../web/src/types.js';
 
 type AssertAssignable<Sub extends Sup, Sup> = Sub;
 
@@ -9,3 +9,4 @@ export type _TaskListContract = AssertAssignable<ApiTaskListRow, Omit<Task, 'pro
 export type _AttemptSummaryContract = AssertAssignable<ApiAttemptSummary, AttemptSummary>;
 export type _AttemptTimelineContract = AssertAssignable<ApiAttempt, Attempt>;
 export type _AttemptUsageContract = AssertAssignable<{ attemptId: number } & ApiAttemptUsage, AttemptUsageEvent>;
+export type _StepRunContract = AssertAssignable<ApiStepRun, StepRun>;

@@ -277,7 +277,7 @@ export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) 
                   <ResolvedPromptInline owner={{ attemptId: attempt.id }} locator={prompt.locator} index={prompt.promptIndex} label={EPIC_RESOLVER_LABEL[prompt.kind]} className="mt-1" />
                 </div>
               ))}
-              <EpicVerificationOutput attempts={attempt.verificationAttempts} />
+              <EpicVerificationOutput attempts={[]} />
             </li>
           ))}
         </ol>
