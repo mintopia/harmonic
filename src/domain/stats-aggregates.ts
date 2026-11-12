@@ -1,6 +1,7 @@
 import { parseCost, sumCosts, type Cost } from './pricing.js';
 import { mergeUsage, type AttemptUsage } from '../execution/usage.js';
 import { isExecutionFailure } from './attempt-failure.js';
+import { stepRunKind } from './step-run-kind.js';
 import type {
   GuardrailTripRow,
   SettledTaskAttempt,
@@ -119,6 +120,14 @@ export function verdicts(verifications: VerificationRow[]): Verdicts {
     else if (row.verdict === 'inconclusive') bucket.inconclusive += 1;
   }
   return result;
+}
+
+/** Maps a finished check/critic step run to a verdict row; null for other kinds and skipped runs. */
+export function stepRunVerification(action: string, outcome: string): VerificationRow | null {
+  const kind = stepRunKind(action);
+  if (kind !== 'check' && kind !== 'critic') return null;
+  const verdict = outcome === 'pass' ? 'pass' : outcome === 'fail' || outcome === 'conflict' ? 'fail' : outcome === 'inconclusive' ? 'inconclusive' : null;
+  return verdict && { mechanism: kind === 'critic' ? 'critic' : 'command', verdict };
 }
 
 export interface GateOutcomes {
