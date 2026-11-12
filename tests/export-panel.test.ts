@@ -65,6 +65,14 @@ describe('ExportPanel', () => {
     expect(host.textContent).toContain('This Task predates the Archive');
   });
 
+  it('labels the button Export when nothing was exported yet', async () => {
+    const host = await mount(deps({ load: async () => status({ latest: null }) }));
+    const labels = [...host.querySelectorAll('button')].map((b) => b.textContent?.trim());
+    expect(labels).toContain('Export');
+    expect(labels).not.toContain('Export again');
+    expect(host.textContent).toContain('Export builds one');
+  });
+
   it('renders nothing for an unfinished Task and does not fetch', async () => {
     const load = vi.fn(async () => status());
     const host = await mount(deps({ load }), false);

@@ -79,7 +79,7 @@ export function TicketPage({
   const selectedRun = resolved.kind === 'attempt' ? runForAttempt(runs, { number: resolved.attemptNumber }) : null;
   const selectedRunId = selectedRun?.id ?? null;
 
-  const { events } = useAttemptLogStream(selectedRunId);
+  const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
 
   const { allTasks, detail, timelineEvents, workspaceName, guardrailEvents, workflowSteps } = useTicketPageData(
     task,
@@ -322,6 +322,8 @@ export function TicketPage({
                     snapshot={liveUsage.get(selectedRun.id)}
                     stats={taskStats(statsAttemptsOf([selectedRun], liveUsage))}
                     events={events}
+                    logUnavailable={logUnavailable}
+                    fromArchive={fromArchive}
                     following={following}
                     onToggleFollow={() => setFollowing((f) => !f)}
                     guardrailEvents={guardrailEvents}

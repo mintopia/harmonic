@@ -78,7 +78,7 @@ export function EpicAttemptView({ attempts, workflow }: { attempts: EpicAttempt[
       )}
       {attempt.reason && <p className="mb-2 text-small text-muted">{attempt.reason}</p>}
       {numbers.length > 1 && pass !== null && <PassSelector numbers={numbers} runs={stepRuns} selected={pass} max={workflow?.maxAttempts ?? null} onSelect={setPickedPass} />}
-      {rows.length === 0 ? <p className="text-small text-muted">No step has run yet.</p> : <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />}
+      {rows.length === 0 ? <p className="text-small text-muted">{attempt.state === 'running' ? 'No step has run yet.' : "Recorded before step runs: steps aren't itemised for this Attempt."}</p> : <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />}
       {attempt.resolverPrompts.map((prompt) => (
         <div key={`${prompt.locator}:${prompt.promptIndex}`} className="mt-2">
           <ResolvedPromptInline owner={{ attemptId: attempt.id }} locator={prompt.locator} index={prompt.promptIndex} label={EPIC_RESOLVER_LABEL[prompt.kind]} />

@@ -456,7 +456,7 @@ function TicketStory() {
         onChanged={() => {}}
         onClose={() => {}}
         onOpenTask={() => {}}
-        selection={{ kind: 'none' }}
+        selection={params.get('attempt') ? { kind: 'attempt', attemptNumber: Number(params.get('attempt')) } : { kind: 'none' }}
         onSelect={() => {}}
       />
     </StoryFrame>
