@@ -50,6 +50,7 @@ export class TurnListeners {
       state: TurnState;
       autoDriven: boolean;
       events: RunnerEvents;
+      stepRunId?: number | undefined;
       record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void;
       nextProgressSequence: () => number;
       outstandingAction: (event: ProgressEvent) => void;
@@ -84,6 +85,7 @@ export class TurnListeners {
       attemptId: run.id,
       seq,
       ts: Date.now(),
+      ...(this.input.stepRunId !== undefined ? { stepRunId: this.input.stepRunId } : {}),
       type: 'session_update',
       payload: update,
     });
