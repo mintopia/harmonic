@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { AttemptSummary, EpicAttempt, WorkflowStepsResponse } from '../types';
-import { attemptRows, passNumbers, passTone } from '../step-run-model';
+import { attemptRows, passNumbers } from '../step-run-model';
 import { rowCost } from '../epic-summary-model';
 import { EPIC_RESOLVER_LABEL } from '../epic-timeline-model';
 import { StatePill } from './ticket/shared';
 import { fmtDur } from './ticket/Metrics';
 import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
-import { StatusIcon, StepRunList, type StepRunContext } from './ticket/StepRunRows';
+import { PassSelector, StatusIcon, StepRunList, type StepRunContext } from './ticket/StepRunRows';
 
 const PASS_ICON = { pass: 'pass', fail: 'fail', running: 'running' } as const;
 
@@ -77,18 +77,7 @@ export function EpicAttemptView({ attempts, workflow }: { attempts: EpicAttempt[
         </div>
       )}
       {attempt.reason && <p className="mb-2 text-small text-muted">{attempt.reason}</p>}
-      {numbers.length > 1 && pass !== null && (
-        <div role="group" aria-label="Pass" className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-label font-bold uppercase tracking-[0.1em] text-faint">Pass</span>
-          {numbers.map((n) => (
-            <button key={n} type="button" aria-pressed={n === pass} onClick={() => setPickedPass(n)} className={chip(n === pass)}>
-              <StatusIcon kind={PASS_ICON[passTone(stepRuns, n)]} label={`pass ${passTone(stepRuns, n)}`} />
-              {n}
-              {n === numbers.at(-1) && workflow?.maxAttempts != null ? ` of ${workflow.maxAttempts}` : ''}
-            </button>
-          ))}
-        </div>
-      )}
+      {numbers.length > 1 && pass !== null && <PassSelector numbers={numbers} runs={stepRuns} selected={pass} max={workflow?.maxAttempts ?? null} onSelect={setPickedPass} />}
       {rows.length === 0 ? <p className="text-small text-muted">No step has run yet.</p> : <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />}
       {attempt.resolverPrompts.map((prompt) => (
         <div key={`${prompt.locator}:${prompt.promptIndex}`} className="mt-2">

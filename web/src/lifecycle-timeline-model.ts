@@ -5,7 +5,7 @@ import { harnessLabel } from './task-detail-model.js';
 import { mergeStepRow, type MergeStepEvent } from './merge-progress-model.js';
 import { epicLabel, issueRef, taskKey, taskLabel } from './id-format.js';
 
-export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'sent' | 'received';
+export type LifecycleTimelineTone = 'neutral' | 'running' | 'passed' | 'failed' | 'awaiting' | 'muted' | 'sent' | 'received';
 
 export type ReceiptPillTone = 'done' | 'ready' | 'paused' | 'fail';
 
@@ -96,7 +96,7 @@ export function stepRunRow(data: Record<string, unknown> | null): RowCore | null
   const outcome = STEP_OUTCOME[text(data?.outcome) ?? ''];
   if (kind === 'marker' && outcome?.tone !== 'failed') return null;
   const detail = clip(text(data?.summary));
-  return outcome ? { label: `${stepId} ${outcome.word}`, detail, tone: outcome.tone, tag } : { label: `${stepId} interrupted`, detail, tone: 'awaiting', tag };
+  return outcome ? { label: `${stepId} ${outcome.word}`, detail, tone: outcome.tone, tag } : { label: `${stepId} interrupted`, detail, tone: 'muted', tag };
 }
 
 /**

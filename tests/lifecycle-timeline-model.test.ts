@@ -330,7 +330,7 @@ describe('lifecycleTimelineRows', () => {
     expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
       ['unit started', null, 'running', 'CHECK'],
       ['unit failed', 'exit 1', 'failed', 'CHECK'],
-      ['unit interrupted', null, 'awaiting', 'CHECK'],
+      ['unit interrupted', null, 'muted', 'CHECK'],
     ]);
   });
 });

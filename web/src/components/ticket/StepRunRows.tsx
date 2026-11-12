@@ -3,7 +3,7 @@ import { api } from '../../api';
 import { useLiveEffect } from '../../useLiveEffect';
 import type { AttemptLogEvent, AttemptSummary, GuardrailEvent, StepRun, TaskExecution, WorkflowStepsResponse } from '../../types';
 import { checkpointView, stepTarget } from '../../step-target-model';
-import { criticVerdictWord, defaultOpenKey, eventsForStepRun, iconKind, isFailed, rowSummary, stepRunElapsedMs, type IconKind, type StepRowModel } from '../../step-run-model';
+import { criticVerdictWord, defaultOpenKey, eventsForStepRun, iconKind, isFailed, passTone, rowSummary, stepRunElapsedMs, type IconKind, type PassTone, type StepRowModel } from '../../step-run-model';
 import { harnessLabel } from '../../task-detail-model';
 import { promptSentCount, stepRunPromptLocator } from '../../resolved-prompt-model';
 import { useTurnPrompts } from './useTurnPrompts';
@@ -362,4 +362,27 @@ const USES_KIND: Record<string, string> = { agent: 'agent', run: 'check', comman
 
 function kindOfUses(uses: string): string | null {
   return USES_KIND[uses] ?? null;
+}
+
+const PASS_ICON: Record<PassTone, 'pass' | 'fail' | 'running'> = { pass: 'pass', fail: 'fail', running: 'running' };
+
+export function PassSelector({ numbers, runs, selected, max, onSelect }: { numbers: number[]; runs: readonly StepRun[]; selected: number; max: number | null; onSelect: (pass: number) => void }) {
+  return (
+    <div role="group" aria-label="Pass" className="mt-4 flex flex-wrap items-center gap-2">
+      <span className="text-label font-bold uppercase tracking-[0.1em] text-faint">Pass</span>
+      {numbers.map((n) => (
+        <button
+          key={n}
+          type="button"
+          aria-pressed={n === selected}
+          onClick={() => onSelect(n)}
+          className={`inline-flex min-h-9 items-center gap-1.5 rounded-[3px] border bg-surface px-2.5 py-[3px] text-[12px] tabular-nums ${n === selected ? 'border-accent font-semibold text-ink shadow-[0_0_0_1px_var(--color-accent)]' : 'border-edge font-medium text-muted'}`}
+        >
+          <StatusIcon kind={PASS_ICON[passTone(runs, n)]} label={`pass ${passTone(runs, n)}`} />
+          {n}
+          {n === numbers.at(-1) && max !== null ? ` of ${max}` : ''}
+        </button>
+      ))}
+    </div>
+  );
 }
