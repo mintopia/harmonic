@@ -2,6 +2,10 @@
 // or mutates the shared code-index store.
 process.env.HARMONIC_CODE_INDEX_CLI = 'harmonic-test-no-code-index-cli';
 
+// `npx vitest` exports the operator's user-level allow-scripts as env, which child
+// `npm i --prefix` installs reject (EALLOWSCRIPTS).
+delete process.env.npm_config_allow_scripts;
+
 // Node 22+ ships a global `localStorage` that stays undefined without
 // --localstorage-file, and it shadows the one jsdom would otherwise install.
 // In browser-like (jsdom) test envs, provide a working in-memory Storage.

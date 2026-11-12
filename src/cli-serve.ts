@@ -23,6 +23,12 @@ import { displayUrl, type CliOutcome } from './cli-commands.js';
 import { parseCorsOrigins } from './server/cors.js';
 import { createServiceManager, CURRENT_UNIT_REVISION, unitRevision } from './service-manager.js';
 
+/** A launch via `npx`/npm scripts exports user-level `allow-scripts`, which `npm i --prefix` rejects (EALLOWSCRIPTS). */
+function installEnv(): NodeJS.ProcessEnv {
+  const { npm_config_allow_scripts: _, ...env } = process.env;
+  return env;
+}
+
 export interface SystemdGuardRevisionDeps {
   systemUnitPath: string;
   userUnitPath: string;
@@ -249,7 +255,7 @@ export async function runServer(values: ServeValues, rest: string[]): Promise<Cl
               await installManagedUpgrade({
                 dataDir,
                 target,
-                run: async (file, args) => execFileAsync(file, args),
+                run: async (file, args) => execFileAsync(file, args, { env: installEnv() }),
               });
             },
             verify: async (target) => {

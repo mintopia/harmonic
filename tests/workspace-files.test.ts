@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, fstatSync, readFileSync, statSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -104,8 +104,9 @@ describe('workspace Files API (issue #584)', () => {
   it('closes the file descriptor when the client aborts a raw download mid-stream', async () => {
     const big = join(root, 'big.bin');
     writeFileSync(big, Buffer.alloc(64 * 1024 * 1024));
-    const openFds = () => readdirSync('/proc/self/fd').filter((fd) => {
-      try { return readlinkSync(`/proc/self/fd/${fd}`) === big; } catch { return false; }
+    const { dev, ino } = statSync(big);
+    const openFds = () => Array.from({ length: 4096 }, (_, fd) => fd).filter((fd) => {
+      try { const s = fstatSync(fd); return s.dev === dev && s.ino === ino; } catch { return false; }
     }).length;
     await new Promise<void>((resolve, reject) => {
       const req = request(`${server.baseUrl}/api/fs/raw?workspaceId=1&path=big.bin`, { headers: { cookie: `harmonic_session=${server.sessionToken}` } }, (res) => {

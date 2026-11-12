@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const isLinux = process.platform === 'linux';
+/** macOS lstart is whole seconds, so a member started in our own second can't be told apart from us; Linux ticks are exact. */
+const START_RESOLUTION_MS = isLinux ? 0 : 1000;
 
 /** One numeric/string ps field for a pid, or null if the process is gone (ps exits non-zero). */
 function psField(pid: number, field: 'lstart' | 'pgid'): string | null {
@@ -112,7 +114,7 @@ export function reapTargets(recorded: { pgid: number; start: number }, table: re
   if (leader) {
     return leader.pgid === recorded.pgid && leader.start === recorded.start ? { kind: 'reap', members: inGroup } : { kind: 'skip', outcome: 'identity-mismatch' };
   }
-  const members = inGroup.filter((proc) => proc.start >= recorded.start && proc.start < selfStart);
+  const members = inGroup.filter((proc) => proc.start >= recorded.start && proc.start < selfStart + START_RESOLUTION_MS);
   if (members.length > 0) return { kind: 'reap', members };
   return { kind: 'skip', outcome: inGroup.length > 0 ? 'identity-mismatch' : 'not-running' };
 }

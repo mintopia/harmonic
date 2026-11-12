@@ -66,7 +66,7 @@ describe('ProcGroupReaper', () => {
     const pid = child.pid!;
 
     const reaper = new ProcGroupReaper();
-    const outcome = await reaper.reap({ pgid: pid, startToken: '999999999' }, { termGraceMs: 200, pollMs: 25 });
+    const outcome = await reaper.reap({ pgid: pid, startToken: process.platform === 'linux' ? '999999999' : 'Sat Jan  1 00:00:00 2000' }, { termGraceMs: 200, pollMs: 25 });
 
     expect(outcome).toBe('identity-mismatch');
     expect(readProcStartToken(pid)).not.toBeNull();
