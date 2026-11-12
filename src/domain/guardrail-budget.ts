@@ -1,18 +1,4 @@
-import type { StepType } from '../db/schema.js';
 import type { BudgetGuardrail } from '../config.js';
-
-/**
- * The Step types the wall-clock execution budget counts against. The gap
- * between Steps (notably the merge after the last Step passes, which has its
- * own timeout) is not bounded by this budget.
- */
-export const EXECUTION_BUDGET_STEPS: ReadonlySet<StepType> = new Set(['rebase', 'implementation', 'verification', 'review']);
-
-/** Whether `stepType` counts toward the wall-clock execution budget; `null` (no Step running) never does. */
-export function countsTowardExecutionBudget(stepType: StepType | null): boolean {
-  if (stepType === null) return false;
-  return EXECUTION_BUDGET_STEPS.has(stepType);
-}
 
 /** The wall-clock budget expressed in milliseconds, from the guardrail's minutes. */
 export function wallClockBudgetMs(budget: Pick<BudgetGuardrail, 'wallClockMinutes'>): number {
@@ -26,18 +12,11 @@ export interface WallClockTrip {
   observedMs: number;
 }
 
-/**
- * Decide whether an elapsed duration trips the wall-clock guardrail, given
- * the Step type currently running. Trips iff `stepType` counts toward the
- * execution budget AND `elapsedMs >= wallClockBudgetMs(budget)` (the boundary
- * itself trips). Returns `null` otherwise.
- */
+/** Trips iff `elapsedMs >= wallClockBudgetMs(budget)` (the boundary itself trips). */
 export function wallClockTrip(args: {
   elapsedMs: number;
-  stepType: StepType | null;
   budget: Pick<BudgetGuardrail, 'wallClockMinutes'>;
 }): WallClockTrip | null {
-  if (!countsTowardExecutionBudget(args.stepType)) return null;
   const limitMs = wallClockBudgetMs(args.budget);
   if (args.elapsedMs < limitMs) return null;
   return { dimension: 'wall-clock', limitMs, observedMs: args.elapsedMs };
@@ -87,22 +66,18 @@ function tokenOutcome(limitTokens: number, observedTokens: number | null): Spend
 }
 
 /**
- * Decide whether the live token/cost spend guards trip, given the Step type
- * currently running and this poll's observed usage. Step-scoped like
- * `wallClockTrip`. A priced floor already over the cost cap trips even when
+ * Decide whether the live token/cost spend guards trip, given this
+ * poll's observed usage. A priced floor already over the cost cap trips even when
  * `costIncomplete`; an unpriced or partially-priced cost cap falls back to
  * enforcing the token cap; once cost is fully priced and under the cap, the
  * token cap (if configured) still applies independently.
  */
 export function spendTrip(args: {
-  stepType: StepType | null;
   budget: Pick<BudgetGuardrail, 'tokens' | 'costUsd'>;
   observedTokens: number | null;
   observedUsd: number | null;
   costIncomplete: boolean;
 }): SpendOutcome {
-  if (!countsTowardExecutionBudget(args.stepType)) return { kind: 'ok' };
-
   const { tokens, costUsd } = args.budget;
   const { observedTokens, observedUsd, costIncomplete } = args;
 
