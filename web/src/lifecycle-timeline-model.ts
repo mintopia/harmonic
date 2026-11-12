@@ -72,15 +72,31 @@ function verificationRow(data: Record<string, unknown> | null): RowCore {
   const noun = critic ? 'Review' : 'Verify';
   const tag = critic ? 'CRITIC' : 'VERIFY';
   const summary = text(data?.summary) ?? text(data?.mechanism);
-  const outcome = text(data?.outcome);
-  if (outcome === 'skipped' || outcome === 'disabled') {
-    return { label: `${noun} ${outcome}`, detail: text(data?.command), tone: 'neutral', tag };
-  }
   const verdict = text(data?.verdict);
   if (verdict === 'pass') return { label: `${noun} passed`, detail: summary, tone: 'passed', tag };
   if (verdict === 'fail') return { label: `${noun} failed`, detail: summary, tone: 'failed', tag };
   if (verdict === 'inconclusive') return { label: `${noun} inconclusive`, detail: summary, tone: 'failed', tag };
   return { label: `${noun} recorded`, detail: summary, tone: 'neutral', tag };
+}
+
+const STEP_OUTCOME: Record<string, { word: string; tone: LifecycleTimelineTone }> = {
+  pass: { word: 'passed', tone: 'passed' },
+  fail: { word: 'failed', tone: 'failed' },
+  inconclusive: { word: 'inconclusive', tone: 'failed' },
+  conflict: { word: 'conflicted', tone: 'failed' },
+  skipped: { word: 'skipped', tone: 'neutral' },
+};
+
+/** A workflow step run's start or finish. A finish with no outcome is a run cut short by process death. */
+export function stepRunRow(data: Record<string, unknown> | null): RowCore | null {
+  const stepId = text(data?.stepId) ?? 'step';
+  const kind = text(data?.kind);
+  const tag = kind ? kind.toUpperCase() : null;
+  if (text(data?.phase) === 'started') return kind === 'marker' ? null : { label: `${stepId} started`, detail: null, tone: 'running', tag };
+  const outcome = STEP_OUTCOME[text(data?.outcome) ?? ''];
+  if (kind === 'marker' && outcome?.tone !== 'failed') return null;
+  const detail = clip(text(data?.summary));
+  return outcome ? { label: `${stepId} ${outcome.word}`, detail, tone: outcome.tone, tag } : { label: `${stepId} interrupted`, detail, tone: 'awaiting', tag };
 }
 
 /**
@@ -326,6 +342,10 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
       }
       case 'verification':
         return { ...base, ...verificationRow(data) };
+      case 'step-run': {
+        const row = stepRunRow(data);
+        return row ? { ...base, ...row } : [];
+      }
       case 'guardrail':
         return { ...base, label: 'Guardrail tripped', detail: text(data?.dimension), tone: 'failed', tag: null };
       case 'operator-retry': {

@@ -19,7 +19,6 @@ import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
 import { GlobalDashboard } from '../components/GlobalDashboard';
 import { ExtendGuardrailDialog } from '../components/ExtendGuardrailDialog';
-import { CriticSessions } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
@@ -41,7 +40,7 @@ import { PromptEditStep } from '../components/prompt-library/PromptEdit';
 import { PromptFind } from '../components/prompt-library/PromptFind';
 import { PromptImpact } from '../components/prompt-library/PromptImpact';
 import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
-import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts } from './fixtures';
+import { criticLog, task, boardEpic, boardTasks, doneEpic, timeline } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
   { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
@@ -126,14 +125,6 @@ function TargetWaitCardsStory() {
       <div style={{ paddingBottom: 120 }}>
         <TaskCard task={{ ...ready, id: 487, summary: 'Add pagination to the activity feed', skipReason: 'waiting for k8s-staging (disabled)', targetWait: { target: 'k8s-staging', disabled: true, running: 0, limit: 1, position: 1 } }} onOpen={() => {}} />
       </div>
-    </StoryFrame>
-  );
-}
-
-function CriticPromptsStory() {
-  return (
-    <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
-      <CriticSessions attempts={storyVerificationAttempts} run={runs[2]!} />
     </StoryFrame>
   );
 }
@@ -593,7 +584,6 @@ function RetryStory() {
 const STORIES: Record<string, () => JSX.Element> = {
   'prompt-library': PromptLibraryStory,
   board: BoardStory,
-  'critic-prompts': CriticPromptsStory,
   'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
   'multi-turn': MultiTurnStory,

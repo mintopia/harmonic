@@ -211,6 +211,7 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     );
   }, [authed, activeWorkspaceId, apiImpl]);
 
+  const mergingRef = useRef(new Set<number>());
   useLiveEffect((live) => {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
@@ -220,13 +221,13 @@ export function useAppSync({ authed, route, navigate, onEscalationHandled, apiIm
     const unsubscribe = subscribe((msg) => {
       if (!live()) return;
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
+        if (msg.task.mergeStatus === 'merging' || msg.task.currentStep?.action === 'merge') mergingRef.current.add(msg.task.id);
+        if (msg.task.state === 'done' && mergingRef.current.delete(msg.task.id)) toastSuccess(`${taskLabel(msg.task.id)} merged`);
         const outcomes: (() => void)[] = [];
         let handledEscalation = false;
         setTasks((current) => {
           const prev = (current ?? []).find((t) => t.id === msg.task.id);
-          if (prev?.mergeStatus && !msg.task.mergeStatus && msg.task.state === 'done') {
-            outcomes.push(() => toastSuccess(`${taskLabel(msg.task.id)} merged`));
-          } else if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
+          if (prev && prev.state !== 'escalated' && msg.task.state === 'escalated') {
             outcomes.push(() => toastFail(`${taskLabel(msg.task.id)} escalated — needs a decision`));
           }
           if (prev?.state === 'escalated' && msg.task.state !== 'escalated') handledEscalation = true;
