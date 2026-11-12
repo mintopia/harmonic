@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { workflowStepRuns, type WorkflowStepOutcome, type WorkflowStepRunRow } from '../db/schema.js';
 import type { TrackerRef } from '../tracker/adapter.js';
@@ -38,6 +38,7 @@ export type WorkflowStepRunStart = StepRunOwner & {
   position: number;
   action: string;
   attempt?: number | null;
+  attemptId?: number | null;
 };
 
 export interface WorkflowStepRunFinish {
@@ -46,33 +47,50 @@ export interface WorkflowStepRunFinish {
   summary: string;
 }
 
-export type WorkflowStepRunSeed = StepRunOwner & {
-  workflowRef: string;
-  stepId: string;
-  position: number;
-  action: string;
-  attempt: number | null;
-  outcome: WorkflowStepOutcome;
-  summary: string;
-};
-
 export class WorkflowStepRunStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
   start(input: WorkflowStepRunStart, now: number = Date.now()): Promise<WorkflowStepRunRow> {
-    const { workflowRef, stepId, position, action, attempt } = input;
-    return this.db.write((db) => db.insert(workflowStepRuns).values({ ...ownerColumns(input), workflowRef, stepId, position, action, attempt, startedAt: now }).returning().get());
+    const { workflowRef, stepId, position, action, attempt, attemptId } = input;
+    return this.db.write((db) => db.insert(workflowStepRuns).values({ ...ownerColumns(input), workflowRef, stepId, position, action, attempt, attemptId: attemptId ?? null, startedAt: now }).returning().get());
   }
 
-  async seed(rows: readonly WorkflowStepRunSeed[], now: number = Date.now()): Promise<void> {
-    if (rows.length === 0) return;
-    const outputs = JSON.stringify({ stdout: '', exitCode: null } satisfies WorkflowStepOutputs);
-    await this.db.write(async (db) => {
-      for (const row of rows) {
-        const { workflowRef, stepId, position, action, attempt, outcome, summary } = row;
-        await db.insert(workflowStepRuns).values({ ...ownerColumns(row), workflowRef, stepId, position, action, attempt, outcome, summary, outputs, startedAt: now, endedAt: now }).run();
-      }
-    });
+  async setSession(id: number, input: { sessionRowId?: number; harness?: string; model?: string }): Promise<void> {
+    const { sessionRowId, harness, model } = input;
+    const set = { ...(sessionRowId !== undefined ? { sessionRowId } : {}), ...(harness !== undefined ? { harness } : {}), ...(model !== undefined ? { model } : {}) };
+    if (Object.keys(set).length === 0) return;
+    await this.db.write((db) => db.update(workflowStepRuns).set(set).where(eq(workflowStepRuns.id, id)).run());
+  }
+
+  async setUsage(id: number, usage: unknown): Promise<void> {
+    await this.db.write((db) => db.update(workflowStepRuns).set({ usage: JSON.stringify(usage) }).where(eq(workflowStepRuns.id, id)).run());
+  }
+
+  listForAttempt(attemptId: number): Promise<WorkflowStepRunRow[]> {
+    return this.db.read((db) => db.select().from(workflowStepRuns).where(eq(workflowStepRuns.attemptId, attemptId)).orderBy(asc(workflowStepRuns.id)).all());
+  }
+
+  /** The latest still-running step run (null outcome) of each Attempt, keyed by attempt id. */
+  async runningForAttempts(attemptIds: readonly number[]): Promise<Map<number, WorkflowStepRunRow>> {
+    const latest = new Map<number, WorkflowStepRunRow>();
+    if (attemptIds.length === 0) return latest;
+    const rows = await this.db.read((db) =>
+      db.select().from(workflowStepRuns).where(and(inArray(workflowStepRuns.attemptId, [...attemptIds]), isNull(workflowStepRuns.outcome), isNull(workflowStepRuns.endedAt))).orderBy(desc(workflowStepRuns.id)).all(),
+    );
+    for (const row of rows) if (row.attemptId !== null && !latest.has(row.attemptId)) latest.set(row.attemptId, row);
+    return latest;
+  }
+
+  async closeOrphans(now: number = Date.now()): Promise<number> {
+    const closed = await this.db.write((db) =>
+      db
+        .update(workflowStepRuns)
+        .set({ summary: 'interrupted by process death', endedAt: now })
+        .where(and(isNull(workflowStepRuns.outcome), isNull(workflowStepRuns.endedAt)))
+        .returning({ id: workflowStepRuns.id })
+        .all(),
+    );
+    return closed.length;
   }
 
   async finish(id: number, result: WorkflowStepRunFinish, now: number = Date.now()): Promise<void> {

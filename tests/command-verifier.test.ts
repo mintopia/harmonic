@@ -1,49 +1,17 @@
-import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { trace } from '@opentelemetry/api';
-import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import type { VerificationCommand } from '../src/config.js';
-import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { testSpawnProcessGroup } from './helpers.js';
 import {
-  runCommandVerifier,
-  runCommandVerifierDetached,
-  commandAttemptToInput,
   exitCodeToVerdict,
   createChildProcessSpawn,
   OUTPUT_CHAR_CAP,
   truncationMarker,
   createOutputPreview,
-  type CommandSpawn,
-  type CommandSpawnResult,
 } from '../src/verification/command-verifier.js';
-
-const providers: NodeTracerProvider[] = [];
-
-const git = (dir: string, ...args: string[]) =>
-  execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
-
-async function buildCandidate({ workspaceDir }: { workspaceDir: string }): Promise<string> {
-  git(workspaceDir, 'add', '-A');
-  git(workspaceDir, 'commit', '-m', 'verification fixture');
-  return git(workspaceDir, 'rev-parse', 'HEAD');
-}
-
-function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'harmonic-cmdverify-repo-'));
-  execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
-  git(dir, 'config', 'user.name', 'Test');
-  git(dir, 'config', 'user.email', 'test@example.com');
-  writeFileSync(join(dir, 'README.md'), '# repo\n');
-  git(dir, 'add', '-A');
-  git(dir, 'commit', '-m', 'init');
-  return dir;
-}
 
 function nodeCommand(script: string, over: Partial<VerificationCommand> = {}): VerificationCommand {
   return {
@@ -56,35 +24,11 @@ function nodeCommand(script: string, over: Partial<VerificationCommand> = {}): V
   };
 }
 
-const fakeSpawn = (result: CommandSpawnResult): CommandSpawn => ({
-  async run() {
-    return result;
-  },
-});
-
 describe('command verifier (issue #135)', () => {
   const tmpDirs: string[] = [];
-  const repos: string[] = [];
-  const freshWorktreePath = (): string => {
-    const parent = mkdtempSync(join(tmpdir(), 'harmonic-cmdverify-wt-'));
-    tmpDirs.push(parent);
-    return join(parent, 'wt');
-  };
-  const repoWithCandidate = async (): Promise<{ repo: string; oid: string }> => {
-    const repo = makeRepo();
-    repos.push(repo);
-    writeFileSync(join(repo, 'work.txt'), 'candidate work\n');
-    const oid = await buildCandidate({ workspaceDir: repo });
-    return { repo, oid };
-  };
 
   afterAll(() => {
-    for (const d of [...tmpDirs, ...repos]) rmSync(d, { recursive: true, force: true });
-  });
-
-  afterEach(async () => {
-    trace.disable();
-    await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
+    for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
   });
 
   describe('exitCodeToVerdict table (AC2)', () => {
@@ -125,178 +69,36 @@ describe('command verifier (issue #135)', () => {
     });
   });
 
-  it('AC1/AC3: exit 0 → pass, at the candidate OID, mapped to a persistable attempt', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('process.exit(0)'),
-      spawn: fakeSpawn({ code: 0, signal: null, output: 'ok', stdout: '' }),
+  describe('real spawn', () => {
+    const run = (command: VerificationCommand, over: { timeoutMs?: number; signal?: AbortSignal } = {}) =>
+      createChildProcessSpawn(testSpawnProcessGroup).run({ command, cwd: tmpdir(), timeoutMs: over.timeoutMs ?? 30_000, outputCap: OUTPUT_CHAR_CAP, signal: over.signal });
+
+    it('missing command (ENOENT) → inconclusive', async () => {
+      const verdict = exitCodeToVerdict(await run({ id: 'cmd-not-real', command: 'definitely-not-a-real-command-xyzzy', args: [], env: {}, timeoutSeconds: 30 }));
+      expect(verdict.verdict).toBe('inconclusive');
+      expect(verdict.summary).toMatch(/could not be spawned/);
     });
-    expect(attempt.verdict).toBe('pass');
-    expect(attempt.verifier).toBe('command');
-    expect(attempt.inputOid).toBe(oid);
 
-    const input = commandAttemptToInput(attempt);
-    expect(input).toMatchObject({ mechanism: 'command', verdict: 'pass', inputOid: oid, output: 'ok' });
-  });
-
-  it('opens a verify.command child operation under the run span when a parent context is supplied', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const exporter = new InMemorySpanExporter();
-    const registry = new OperationRegistry();
-    const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
-    provider.register();
-    providers.push(provider);
-    const parent = startOperation({ type: 'attempt', attributes: { 'attempt.id': 7 } });
-
-    const attempt = await parent.run(() =>
-      runCommandVerifier({
-        cwd: repo,
-        verifiedHeadOid: oid,
-        command: nodeCommand('process.exit(1)'),
-        spawn: fakeSpawn({ code: 1, signal: null, output: 'nope', stdout: '' }),
-        parent: parent.spanContext,
-        attributes: { 'task.id': 3, 'attempt.id': 7 },
-      }),
-    );
-    parent.end();
-
-    expect(attempt.verdict).toBe('fail');
-    const spans = exporter.getFinishedSpans();
-    const run = spans.find((span) => span.name === 'harmonic.attempt');
-    const verify = spans.find((span) => span.name === 'harmonic.verify.command');
-    if (!run || !verify) throw new Error('Expected exported run and command verification spans');
-    expect(verify.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
-    expect(verify.attributes).toMatchObject({
-      'verification.mechanism': 'command',
-      'verification.verdict': 'fail',
-      'task.id': 3,
-      'attempt.id': 7,
+    it('a command that overruns its timeout → inconclusive', async () => {
+      const verdict = exitCodeToVerdict(await run(nodeCommand('setTimeout(() => {}, 60000)'), { timeoutMs: 150 }));
+      expect(verdict.verdict).toBe('inconclusive');
+      expect(verdict.summary).toMatch(/timed out/);
     });
-    expect(verify.status.message).toContain('command exited 1');
-  });
 
-  it('AC2: non-zero exit → fail', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('process.exit(1)'),
-      spawn: fakeSpawn({ code: 1, signal: null, output: '', stdout: '' }),
+    it('aborting the signal kills the command → inconclusive', async () => {
+      const ac = new AbortController();
+      setTimeout(() => ac.abort(), 100);
+      const verdict = exitCodeToVerdict(await run(nodeCommand('setTimeout(() => {}, 60000)'), { timeoutMs: 60000, signal: ac.signal }));
+      expect(verdict.verdict).toBe('inconclusive');
+      expect(verdict.summary).toMatch(/cancelled/);
     });
-    expect(attempt.verdict).toBe('fail');
-  });
 
-  it('AC2: missing command (ENOENT) → inconclusive, via the real spawner', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: {
-        id: 'cmd-not-real',
-        command: 'definitely-not-a-real-command-xyzzy',
-        args: [],
-        env: {},
-        timeoutSeconds: 30,
-      },
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
+    it('output beyond the cap is truncated', async () => {
+      const r = await run(nodeCommand(`const s="x".repeat(10000); for(let i=0;i<25;i++) process.stdout.write(s);`));
+      expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
+      expect(r.output).toContain('truncated');
+      expect(exitCodeToVerdict(r).verdict).toBe('pass');
     });
-    expect(attempt.verdict).toBe('inconclusive');
-    expect(attempt.summary).toMatch(/could not be spawned/);
-  });
-
-  it('AC2: a command that overruns its timeout → inconclusive (real spawn)', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('setTimeout(() => {}, 60000)'),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-      timeoutMs: 150,
-    });
-    expect(attempt.verdict).toBe('inconclusive');
-    expect(attempt.summary).toMatch(/timed out/);
-  });
-
-  it('detached: a bad candidate OID (checkout failure) → inconclusive, never throws', async () => {
-    const repo = makeRepo();
-    repos.push(repo);
-    const attempt = await runCommandVerifierDetached({
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-      repoDir: repo,
-      verifiedHeadOid: '0000000000000000000000000000000000000000',
-      worktreePath: freshWorktreePath(),
-      command: nodeCommand('process.exit(0)'),
-    });
-    expect(attempt.verdict).toBe('inconclusive');
-    expect(attempt.summary).toMatch(/could not check out the candidate/);
-  });
-
-  it('cancellation: aborting the signal kills the command → inconclusive (real spawn)', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const ac = new AbortController();
-    setTimeout(() => ac.abort(), 100);
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('setTimeout(() => {}, 60000)'),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-      signal: ac.signal,
-      timeoutMs: 60000,
-    });
-    expect(attempt.verdict).toBe('inconclusive');
-    expect(attempt.summary).toMatch(/cancelled/);
-  });
-
-  it('detached: checks out the candidate tree — a command reading a candidate-only file exits 0 (real spawn)', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifierDetached({
-      repoDir: repo,
-      worktreePath: freshWorktreePath(),
-      verifiedHeadOid: oid,
-      command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-    });
-    expect(attempt.verdict).toBe('pass');
-  });
-
-  it('runs in the given cwd: a command reading a file present in cwd exits 0 (real spawn)', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('require("node:fs").readFileSync("work.txt"); process.exit(0)'),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-    });
-    expect(attempt.verdict).toBe('pass');
-  });
-
-  it('a command that writes to its checkout reports its exit-code verdict', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-    });
-    expect(attempt.verdict).toBe('pass');
-  });
-
-  it('output beyond the cap is truncated (real spawn)', async () => {
-    const { repo, oid } = await repoWithCandidate();
-    const attempt = await runCommandVerifier({
-      cwd: repo,
-      verifiedHeadOid: oid,
-      // Write well past the cap in chunks and let the process exit naturally, so
-      // stdout fully drains to the parent before close (a `process.exit` would
-      // truncate the pipe mid-flush and under-fill the buffer).
-      command: nodeCommand(`const s="x".repeat(10000); for(let i=0;i<25;i++) process.stdout.write(s);`),
-      spawn: createChildProcessSpawn(testSpawnProcessGroup),
-    });
-    expect(attempt.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
-    expect(attempt.output).toContain('truncated');
-    expect(attempt.verdict).toBe('pass');
   });
 
   describe('full output log', () => {
@@ -353,42 +155,12 @@ describe('command verifier (issue #135)', () => {
       expect(await readFile(path, 'utf8')).toBe('two');
     });
 
-    it('an unwritable path does not change the verdict', async () => {
-      const bad = join(logDir(), 'missing', 'output.log');
-      const { repo, oid } = await repoWithCandidate();
-      const attempt = await runCommandVerifier({
-        spawn: createChildProcessSpawn(testSpawnProcessGroup),
-        cwd: repo,
-        verifiedHeadOid: oid,
-        command: nodeCommand(script),
-        outputLog: { path: bad, key: 'verification/pre-merge/x/output.log' },
-      });
-      expect(attempt.verdict).toBe('pass');
-      expect(attempt.output.endsWith('TAIL-MARK')).toBe(true);
-      expect(attempt.fullOutputKey).toBeNull();
-    });
-
     it('an unwritable path reports no saved full output', async () => {
       const bad = join(logDir(), 'missing', 'output.log');
       const r = await run(bad);
       expect(r.output).toContain('truncated');
       expect(r.fullOutputSaved).toBe(false);
       expect(r.output.length).toBeLessThanOrEqual(OUTPUT_CHAR_CAP);
-    });
-
-    it('runCommandVerifier forwards the log path and reports its archive key', async () => {
-      const path = join(logDir(), 'output.log');
-      const { repo, oid } = await repoWithCandidate();
-      const attempt = await runCommandVerifier({
-        spawn: createChildProcessSpawn(testSpawnProcessGroup),
-        cwd: repo,
-        verifiedHeadOid: oid,
-        command: nodeCommand(script),
-        outputLog: { path, key: 'verification/pre-merge/x/output.log' },
-      });
-      expect(attempt.verdict).toBe('pass');
-      expect(attempt.fullOutputKey).toBe('verification/pre-merge/x/output.log');
-      expect((await stat(path)).size).toBe(total);
     });
   });
 

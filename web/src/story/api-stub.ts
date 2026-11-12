@@ -5,10 +5,14 @@ import * as f from './fixtures';
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
 const podParam = new URLSearchParams(window.location.search).get('pod');
 export const runningStory = new URLSearchParams(window.location.search).get('running') === '1';
-const storyRuns = runningStory ? f.runs.map((r, i, all) => (i === all.length - 1 ? { ...r, state: 'running' as const, finishedAt: null, pullRequestUrl: null } : r)) : f.runs;
-const storyAttempts = runningStory
-  ? f.attempts.map((a0) => ({ ...a0, harness: 'claude', model: 'claude-opus-4-8' })).map((a, i, all) => (i === all.length - 1 ? { ...a, state: 'running' as const, endedAt: null, verifiedSha: null, steps: new URLSearchParams(window.location.search).get('nosteps') === '1' ? [] : a.steps.map((s) => (s.type === 'rebase' ? s : s.type === 'implementation' ? { ...s, state: 'running' as const, endedAt: null } : { ...s, state: 'pending' as const, startedAt: null, endedAt: null })) } : a))
-  : f.attempts;
+const q = new URLSearchParams(window.location.search);
+export const stepVariant: f.StepVariant = runningStory ? 'running' : q.get('interrupted') === '1' ? 'interrupted' : q.get('passes') === '1' ? 'passes' : q.get('state') === 'escalated' ? 'failed' : 'single';
+export const noAttemptStory = q.get('noattempt') === '1';
+export const withWorkflowStory = workflowStory || stepVariant !== 'single' || noAttemptStory;
+const lastRun = { running: { state: 'running' as const, finishedAt: null, pullRequestUrl: null, reason: null }, interrupted: { state: 'failed' as const, reason: 'interrupted by process death', pullRequestUrl: null }, failed: { state: 'failed' as const, reason: 'pnpm test failed — 2 assertions in guardrail-defaults.test.ts.', pullRequestUrl: null } } as const;
+const lastAttempt = { running: { state: 'running' as const, endedAt: null }, interrupted: { state: 'failed' as const }, failed: { state: 'escalated' as const, escalationReason: 'escalated to human: verify failed' } } as const;
+const storyRuns = noAttemptStory ? [] : f.runs.map((r, i, all) => (i === all.length - 1 && stepVariant in lastRun ? { ...r, ...lastRun[stepVariant as keyof typeof lastRun] } : r));
+const storyAttempts = noAttemptStory ? [] : f.attempts.map((a, i, all) => (i === all.length - 1 ? { ...a, ...(stepVariant in lastAttempt ? lastAttempt[stepVariant as keyof typeof lastAttempt] : {}), harness: 'claude', model: 'claude-opus-4-8', stepRuns: f.stepRunsFor(stepVariant) } : a));
 export const storyExecution: Task['execution'] = podParam === null ? null : { target: 'k8s-prod', podName: 'harmonic-task-482-7f9c', podState: podParam as 'pending' | 'running' | 'deleted' | 'lost', namespace: 'harmonic-agents', image: 'harmonic-harnesses:2.19.0', source: 'workflow' };
 export const workflowTaskFields = { workflowRef: 'Security review on label@4', workflowChosen: 'label' as const, workflowLabel: 'security', execution: storyExecution };
 import { agentMessageThreads } from './agent-message-fixtures';
@@ -18,6 +22,7 @@ import type {
   ActivityProcess,
   AppConfig,
   Attempt,
+  StepRun,
   AttemptEvent,
   AttemptState,
   Channel,
@@ -37,6 +42,8 @@ import type { WorktreeInventoryEntry } from '../worktree-inventory-model.js';
 
 import { ApiError } from '../api';
 export { ApiError };
+export const onSessionLost = (_listener: () => void) => () => {};
+export const reportIfSessionLost = async () => {};
 
 const storyName = new URLSearchParams(window.location.search).get('story');
 const epicIntegrated = storyName === 'epic-done';
@@ -161,6 +168,11 @@ const timelineSpans = (to: number = TL_REF) => {
   }));
 };
 
+const synStep = (id: number, stepId: string, kind: StepRun['kind'], pass: number | null, state: StepRun['state'], startedAt: number, endedAt: number | null): StepRun => ({
+  id, attemptId: null, stepId, action: kind, kind, pass, position: id, state, outcome: state === 'running' ? null : (state as StepRun['outcome']), summary: null, detail: null, condition: null,
+  outputs: { stdout: '', exitCode: null }, hasPrompt: false, sessionRowId: null, harness: null, model: null, cost: null, startedAt, endedAt,
+});
+
 /** Synthesize one attempt's Steps across its own window, for the Timeline drill-in. */
 const syntheticAttempt = (s: ReturnType<typeof timelineSpans>[number]): Attempt => {
   const start = s.startedAt;
@@ -175,16 +187,15 @@ const syntheticAttempt = (s: ReturnType<typeof timelineSpans>[number]): Attempt 
     startedAt: s.startedAt,
     endedAt: s.endedAt,
     feedback: null,
-    verifiedSha: null,
     workingDir: null,
     escalationReason: s.state === 'escalated' ? 'escalated to human' : null,
-    harness: null, model: null, classifier: null, routing: null, verifierStatuses: [],
+    harness: null, model: null, classifier: null, routing: null,
     continuation: null,
-    steps: [
-      { id: s.attemptId * 10 + 1, attemptId: s.attemptId, type: 'rebase', position: 1, state: 'passed', command: null, verdict: 'clean', logLocator: null, startedAt: at(0), endedAt: at(0.08) },
-      { id: s.attemptId * 10 + 2, attemptId: s.attemptId, type: 'implementation', position: 2, state: s.state === 'running' ? 'passed' : 'passed', command: null, verdict: null, logLocator: null, startedAt: at(0.1), endedAt: at(0.62) },
-      { id: s.attemptId * 10 + 3, attemptId: s.attemptId, type: 'verification', position: 3, state: last, command: 'npm test', verdict: last === 'passed' ? 'pass' : last === 'failed' ? 'fail' : null, logLocator: null, startedAt: at(0.66), endedAt: s.state === 'running' ? null : at(0.94) },
-      { id: s.attemptId * 10 + 4, attemptId: s.attemptId, type: 'review', position: 4, state: s.state === 'passed' ? 'passed' : 'skipped', command: null, verdict: s.state === 'passed' ? 'pass' : null, logLocator: null, startedAt: s.state === 'passed' ? at(0.96) : null, endedAt: s.state === 'passed' ? at(1) : null },
+    stepRuns: [
+      { ...synStep(s.attemptId * 10 + 1, 'rebase', 'rebase', null, 'pass', at(0), at(0.08)) },
+      { ...synStep(s.attemptId * 10 + 2, 'implement', 'agent', 1, 'pass', at(0.1), at(0.62)) },
+      { ...synStep(s.attemptId * 10 + 3, 'verify', 'check', 1, last === 'running' ? 'running' : last === 'passed' ? 'pass' : last === 'failed' ? 'fail' : 'skipped', at(0.66), s.state === 'running' ? null : at(0.94)) },
+      ...(s.state === 'passed' ? [synStep(s.attemptId * 10 + 4, 'review', 'critic', 1, 'pass', at(0.96), at(1))] : []),
     ],
   };
 };
@@ -466,13 +477,23 @@ export const api: typeof RealApi = {
   workflowVars: (_id: number) => ok(storyVars()),
   setWorkflowVars: (_id: number, vars: Record<string, string | number | boolean>) => ok(storyVars(vars)),
   epicWorkflowSteps: (_workspaceId: number, _epicRef: string) => ok({ workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
-  workflowSteps: (_id: number) => ok(workflowStory
-    ? { ...workflowTaskFields, outline: [], cleanupCount: 0, latestVersion: 5, stepInfo: { rebase: { uses: 'rebase', detail: null, condition: null }, install: { uses: 'run', detail: 'npm ci', condition: null }, implement: { uses: 'agent', detail: 'Claude', condition: null } }, steps: [
-      { stepId: 'rebase', action: 'rebase', position: 0, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: 'a41c9e2b07', forced: true, unchanged: false } }, startedAt: 1, endedAt: 2 },
-      { stepId: 'install', action: 'run', position: 1, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: 0, checkpoint: { branch: 'harmonic/task-482', sha: null, forced: false, unchanged: true } }, startedAt: 2, endedAt: 3 },
-      { stepId: 'implement', action: 'agent', position: 2, attempt: 1, outcome: 'pass', summary: null, resolvedPrompt: null, outputs: { stdout: '', exitCode: null, checkpoint: { branch: 'harmonic/task-482', sha: '7be03d1aa0', forced: false, unchanged: false, files: 6 } }, startedAt: 3, endedAt: 4 },
-    ] }
-    : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] }),
+  workflowSteps: (_id: number) => {
+    const last = f.attempts.at(-1);
+    const rows = noAttemptStory || last === undefined ? [] : f.stepRunsFor(stepVariant);
+    return ok(withWorkflowStory
+      ? {
+          ...workflowTaskFields,
+          outline: ['rebase', 'implement', 'verify', 'review', 'merge'].map((id) => ({ id, children: [] as string[] })),
+          cleanupCount: 0,
+          latestVersion: 5,
+          maxAttempts: 3,
+          blockStepIds: ['implement', 'verify', 'review'],
+          cleanupIds: [] as string[],
+          stepInfo: { rebase: { uses: 'rebase', detail: null, condition: null }, implement: { uses: 'agent', detail: 'implement', condition: null }, verify: { uses: 'run', detail: 'pnpm test', condition: null }, review: { uses: 'critic', detail: 'claude-opus-4-8', condition: null }, merge: { uses: 'open-pr', detail: null, condition: null } },
+          steps: rows.map((r) => ({ id: r.id, attemptId: r.attemptId, kind: r.kind, sessionRowId: r.sessionRowId, stepId: r.stepId, action: r.action, position: r.position, attempt: r.pass, outcome: r.outcome, summary: r.summary, resolvedPrompt: null, outputs: r.outputs, startedAt: r.startedAt, endedAt: r.endedAt })),
+        }
+      : { workflowRef: null, workflowChosen: null, outline: [], cleanupCount: 0, latestVersion: null, steps: [] });
+  },
   createTask: (_input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready'; workflow?: string }) => ok(f.task),
   browseFs: (path?: string) => ok(fsListing(path)),
   workspaceFiles: (_workspaceId: number, path = '', offset = 0) => {
@@ -535,8 +556,8 @@ export const api: typeof RealApi = {
   taskAttemptTimeline: (id: number) => {
     const s = timelineSpans().find((x) => x.taskId === id);
     return s
-      ? ok({ attempts: [syntheticAttempt(s)], budgetBase: 0, total: 1 })
-      : ok({ attempts: storyAttempts, budgetBase: 0, total: storyAttempts.length });
+      ? ok({ attempts: [syntheticAttempt(s)], total: 1 })
+      : ok({ attempts: storyAttempts, total: storyAttempts.length });
   },
   taskTimeline: (_id: number) => ok({ events: f.timeline, total: f.timeline.length }),
   taskExport: (_id: number) => ok({ exportable: true, latest: null, earlier: [] }),
@@ -545,7 +566,6 @@ export const api: typeof RealApi = {
   epicExport: (_workspaceId: number, _epicRef: TrackerRef) => ok(epicIntegrated ? f.epicExportFixture : { exportable: true, latest: null, earlier: [] }),
   exportEpicAgain: (_workspaceId: number, _epicRef: TrackerRef) => ok({ outcomes: [], export: { exportable: true, latest: null, earlier: [] } }),
   epicExportDownloadUrl: (workspaceId: number, epicRef: TrackerRef) => `/api/workspaces/${workspaceId}/epics/${epicRef}/export/download`,
-  verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
   resolvedPrompt: (_owner: ResolvedPromptOwner, locator: string, index?: number) =>
     locator === 'routing/classifier/prompt.md'
       ? ok(storyClassifierPrompt)
@@ -554,7 +574,6 @@ export const api: typeof RealApi = {
       : index === 9
         ? Promise.reject(new ApiError(404, 'not archived'))
         : ok(storyResolvedPrompts[index] ?? 'Sample resolved prompt.'),
-  verificationFullOutput: (id: number) => ok(`full output of verification ${id}`),
   taskUsage: (id: number) =>
     ok(f.epicChildUsage[id] ?? { models: {}, agents: {}, toolCalls: {}, totals: null, source: null, cost: null, attemptCount: 0 }),
   attempt: (_id: number) => ok(f.runs[2] ?? f.runs[0]!),
@@ -562,9 +581,9 @@ export const api: typeof RealApi = {
   attemptEvents: (_id: number) => ok<{ events: AttemptEvent[]; total: number }>({ events: [], total: 0 }),
   attemptLog: (_id: number) => ok({ status: 'available' as const, events: f.attemptLog, liveCursor: 999 }),
   attemptGuardrailEvents: (_id: number) => ok({ guardrailEvents: [], total: 0 }),
-  attemptVerificationAttempts: (_id: number) => ok({ verificationAttempts: f.verificationAttempts, verifierStatuses: f.verifierStatuses, total: f.verificationAttempts.length }),
-  verificationAttempt: (_id: number) => ok({ output: '', summary: 'pass', hasTranscript: false }),
-  criticLog: (_id: number) => ok({ status: 'available' as const, events: f.criticLog, liveCursor: 999, fromArchive: storyName === 'x-archive' }),
+  stepRunLog: (id: number) => ok({ status: 'available' as const, events: f.stepRunsFor(stepVariant).find((r) => r.id === id)?.kind === 'critic' ? f.criticLog : f.attemptLog, liveCursor: 999 }),
+  stepRunPrompt: (_id: number) => Promise.resolve('/implement\n\nTicket #172: Guardrail defaults must not leak into per-task overrides.\n\nKeep the override null when the operator did not set one; resolve against the live default at read time.'),
+  stepRunOutputUrl: (id: number) => `/api/step-runs/${id}/output`,
   attemptDiff: (_id: number) => ok({ branch: f.task.branch ?? null, baseBranch: f.task.baseBranch ?? null, stat: f.task.stat }),
   attemptDiffFiles: (_id: number) => ok({ files: f.diffFiles, total: f.diffFiles.length }),
   changePassword: (_currentPassword: string, _newPassword: string) => ok({ ok: true as const }),

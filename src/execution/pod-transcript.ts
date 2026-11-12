@@ -3,10 +3,11 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type { AcpInitializeResult } from '../acp/driver.js';
-import type { StepArchiveWriter } from '../archive/task-archive.js';
+import type { StepArchiveWriter, StepRunArchiveRef } from '../archive/task-archive.js';
 import type { AttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
 import type { SessionStore } from '../domain/sessions.js';
+import type { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { errorMessage } from '../error-handling.js';
 import { logger } from '../logger.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
@@ -141,8 +142,9 @@ export class PodTranscriptMirror {
 export interface PodTranscriptDeps<S extends { workspaceId: number | null }> {
   dir: string;
   sessions: Pick<SessionStore, 'recordDispatch'>;
-  attempts: Pick<AttemptStore, 'get' | 'update' | 'listSteps' | 'updateStep'>;
-  archive?: (task: S, run: AttemptRow, kind: PodStepKind, stepId: string) => StepArchiveWriter | undefined;
+  attempts: Pick<AttemptStore, 'get' | 'update'>;
+  stepRuns: Pick<WorkflowStepRunStore, 'setSession' | 'setUsage'>;
+  archive?: (task: S, run: AttemptRow, step: StepRunArchiveRef) => StepArchiveWriter | undefined;
   locateDelaysMs?: readonly number[];
 }
 
@@ -157,6 +159,8 @@ export interface PodStepTranscriptInput<S> {
   cwd: string;
   kind: PodStepKind;
   stepId: string;
+  stepRunId: number;
+  pass: number | null;
 }
 
 export class PodStepTranscript<S extends { workspaceId: number | null }> {
@@ -210,20 +214,17 @@ export class PodStepTranscript<S extends { workspaceId: number | null }> {
       warn('recording the Session failed', error);
       return null;
     }
-    if (kind === 'agent') {
-      try {
-        await attempts.update(run.id, { sessionId, sessionRowId });
-        const implementation = (await attempts.listSteps(run.id)).find((row) => row.type === 'implementation' && row.state === 'running');
-        if (implementation) await attempts.updateStep(implementation.id, { logLocator: `session:${sessionRowId}` });
-      } catch (error) {
-        warn('binding the Session to the Attempt failed', error);
-      }
+    try {
+      if (kind === 'agent') await attempts.update(run.id, { sessionId, sessionRowId });
+      await this.deps.stepRuns.setSession(this.input.stepRunId, { sessionRowId });
+    } catch (error) {
+      warn('binding the Session failed', error);
     }
     return sessionRowId;
   }
 
   private async record(sessionId: string, path: string): Promise<void> {
-    const { task, run, harnessId, kind, stepId } = this.input;
+    const { task, run, harnessId, kind, stepId, stepRunId, pass } = this.input;
     const { attempts } = this.deps;
     const step = async (label: string, work: () => Promise<unknown>): Promise<void> => {
       try {
@@ -232,16 +233,16 @@ export class PodStepTranscript<S extends { workspaceId: number | null }> {
         warn(label, error);
       }
     };
-    if (kind === 'agent') {
-      await step('recording Usage failed', async () => {
-        const models = adapterFor(harnessId).usage?.modelsFromSessionLog(path, sessionId) ?? {};
-        if (Object.keys(models).length === 0) return;
-        const stored = (await attempts.get(run.id)).usage;
-        const usage = accumulateUsage(stored ? (JSON.parse(stored) as AttemptUsage) : null, usageFromModels(models));
-        await attempts.update(run.id, { usage: JSON.stringify(usage) });
-      });
-    }
-    const writer = this.deps.archive?.(task, run, kind, stepId);
+    await step('recording Usage failed', async () => {
+      const models = adapterFor(harnessId).usage?.modelsFromSessionLog(path, sessionId) ?? {};
+      if (Object.keys(models).length === 0) return;
+      if (kind !== 'agent') return;
+      const turn = usageFromModels(models);
+      await this.deps.stepRuns.setUsage(stepRunId, turn);
+      const stored = (await attempts.get(run.id)).usage;
+      await attempts.update(run.id, { usage: JSON.stringify(accumulateUsage(stored ? (JSON.parse(stored) as AttemptUsage) : null, turn)) });
+    });
+    const writer = this.deps.archive?.(task, run, { pass, stepId, stepRunId });
     if (writer) {
       await step('copying the transcript into the Archive failed', () => writer.copyNative(harnessId, path));
       await step('closing the Archive writer failed', () => writer.close());

@@ -36,7 +36,7 @@ describe('TaskActions smoke (issue #469)', () => {
   });
 
   it('renders the escalated action bar without Delete for an escalated task', async () => {
-    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
+    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true });
 
     await renderActions({ task, variant: 'bar' });
 
@@ -53,14 +53,14 @@ describe('TaskActions smoke (issue #469)', () => {
     expect([...bar.lastElementChild!.querySelectorAll('button')].map((b) => b.textContent?.replace(/ .*/, ''))).toEqual(['Retry…', 'Accept']);
   });
 
-  it('disables Accept when the escalated task has no candidate to merge', async () => {
+  it('does not render Accept when the escalated task has no candidate to merge', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
 
     await renderActions({ task, variant: 'bar' });
 
-    const accept = [...host!.querySelectorAll('button')].find((b) => b.textContent?.includes('Accept'));
-    expect(accept?.disabled).toBe(true);
-    expect(accept?.title).toBe('No candidate commits to accept');
+    const buttons = [...host!.querySelectorAll('button')].map((b) => b.textContent);
+    expect(buttons.some((b) => b?.includes('Accept'))).toBe(false);
+    expect(buttons).toContain('Retry…');
   });
 
   it('disables the escalation actions while an Accept is merging', async () => {
@@ -141,18 +141,18 @@ describe('TaskActions smoke (issue #469)', () => {
 describe('Accept feedback', () => {
   it('explains the overridden step and reports the actual server response', async () => {
     const task = makeTask({ state: 'escalated', hasCandidate: true });
-    const updated = makeTask({ state: 'working', currentStep: 'review' });
+    const updated = makeTask({ state: 'working', currentStep: { stepId: 'review', action: 'critic', kind: 'critic' } });
     const fetch = vi.fn(async () => new Response(JSON.stringify(updated)));
     vi.stubGlobal('fetch', fetch);
     const onChanged = vi.fn();
     const host = await mountComponent(createElement(Fragment, null,
-      createElement(TaskActions, { task, failedStep: 'verification', variant: 'bar', onEdit: () => {}, onChanged }),
+      createElement(TaskActions, { task, workflowNotes: { heading: 'Escalated at step verify', accept: 'marks step verify (run) as pass and continues with review.', retry: '', close: '' }, variant: 'bar', onEdit: () => {}, onChanged }),
       createElement(Toaster),
     ));
-    expect(host.textContent).not.toContain('Override the failed verification step');
-    expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')?.title).toBe('Override the failed verification step and continue with review.');
+    expect(host.textContent).not.toContain('marks step verify');
+    expect([...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept')?.title).toBe('marks step verify (run) as pass and continues with review.');
     await act(async () => {
-      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept & review')!.click();
+      [...host.querySelectorAll('button')].find((button) => button.textContent === 'Accept')!.click();
       await flush();
     });
     expect(fetch).toHaveBeenCalledWith(`/api/tasks/${task.id}/accept`, { method: 'POST' });

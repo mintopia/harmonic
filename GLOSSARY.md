@@ -85,31 +85,38 @@ ADR-0001.
 _Avoid_: job, item, run (deleted concept)
 
 **Attempt**:
-One iteration of a Task's implement→verify loop, and the single execution
-noun: it carries the Session it prompts over, Usage, Cost, guardrail scoping,
-the transcript locator, and its timeline of Steps (Implementation →
-Verification per command → per Critic), ending at a verdict. A failed verdict —
-command fail, critic reject, or `inconclusive` — feeds the next
-Attempt in the same worktree (counter +1); `maxAttempts` reached →
-*escalated*. The Attempt is the history unit on the Ticket page; a
-commit-your-work nudge increments nothing. The system never creates a new
-Ticket in response to failure. Crash recovery reasons about Attempts
-directly. An Epic is workable too — its Verification and resolve loop run as
-Attempts attached to the Epic (see Epic Attempt, ADR-0028).
-_Avoid_: retry, reattempt (old loop mechanisms collapsed into this counter);
-run, phase, candidate, self-heal (all deleted concepts, ADR-0001)
+One run of a Ticket's Task Execution Workflow, like a GitHub Actions run, and
+the single execution noun: it carries the Session it prompts over, Usage, Cost,
+guardrail scoping, the transcript locator, and its list of Step runs, ending at
+a verdict. A start or a Retry creates an Attempt; Accept and Resume continue
+the same one. A failed verdict — command fail, critic reject, or
+`inconclusive` — loops into the next **Pass** of the workflow's `attempts:`
+block inside the same Attempt and worktree; the block's `max` reached →
+*escalated*. The Attempt is the history unit on the Ticket page, shown as a
+header (state, cost, duration, model), a Pass selector, and its Step runs as
+ordered, expandable rows (ADR-0059). A commit-your-work nudge increments
+nothing. The system never creates a new Ticket in response to failure. Crash
+recovery reasons about Attempts directly. An Epic is workable too — see Epic
+Attempt (ADR-0028, ADR-0057).
+_Avoid_: retry, reattempt (use Retry for the operator action, Pass for the
+loop iteration); run, phase, candidate, self-heal (deleted concepts, ADR-0001)
 
-**Step**:
-One individually undertaken step within an Attempt, each a timeline row with
-its own logs and outcome, in this order: the **Rebase Step** (a worktree
-Attempt opens by rebasing the Task branch onto the current base tip; a
-conflict is handed to the agent in the Implementation Step, not failed), the
-**Implementation Step** (the agent implements and commits — only the agent
-ever commits), one **Verification Step** per configured command (ordered,
-fail-fast) and one per **Critic** (parallel), the commands gating the critics
-(ADR-0038). Base movement *after* the Attempt opens is reconciled by the merge
-commit at Merge, never by re-basing the verified work (ADR-0001).
-_Avoid_: task (the board unit), run, phase, stage
+**Pass**:
+One iteration of a workflow's `attempts:` block inside one Attempt, numbered
+from 1 and stored as `workflow_step_runs.attempt`, surfaced as `pass`. A failed
+Pass starts the next; `max` Passes exhausted → *escalated*. The Attempt view
+shows a Pass selector only when more than one Pass ran.
+_Avoid_: attempt (that is the whole run), iteration, round
+
+**Step run**:
+One execution of one workflow step within an Attempt, recorded in
+`workflow_step_runs`, the only step record. It has an outcome (none while
+running), summary, outputs, and for agent and critic steps its Session,
+harness, model and usage. Its kind follows the step's action: rebase, agent,
+check (`run`, `command`, `post-merge-check`), marker (`verify`), critic,
+publish (`merge`, `open-pr`, `artifact`), tracker (`close-ticket`, `comment`),
+cleanup. A Task's `currentStep` is its running Step run (ADR-0059).
+_Avoid_: step (alone, for the record), phase, stage
 
 **Activity Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
@@ -124,7 +131,7 @@ _Avoid_: log line, message, run event (pre-reset name)
 A small, immutable recorded signal an Attempt emits (agent-finish, verdicts,
 guardrail trips, lifecycle transitions) that routing derives from: every
 lifecycle transition is a deterministic function of recorded Facts — agent
-judgment lives inside the Implementation and Verification Steps, never in routing.
+judgment lives inside agent and critic Step runs, never in routing.
 _Avoid_: event (that is the Activity Event stream), log line, marker
 
 **Blocker**:

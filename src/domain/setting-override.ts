@@ -201,24 +201,22 @@ export function resolvePauseMessage(
   return composePauseMessage(resolveScoped('pauseMessage', ws?.pauseMessage, config.pauseMessage), prompts);
 }
 
-/** Resolve the merge-conflict resolution prompts for a Workspace, each `workspace ?? global`. */
+/** Resolve the Epic merge-conflict resolution prompt for a Workspace, `workspace ?? global`. */
 export function resolveMergePrompts(
-  ws: Pick<WorkspaceRow, 'mergeConflictPrompt' | 'mergeEpicConflictPrompt'> | null | undefined,
+  ws: Pick<WorkspaceRow, 'mergeEpicConflictPrompt'> | null | undefined,
   config: Pick<AppConfig, 'merge'>,
-): { conflictPrompt: string; epicConflictPrompt: string } {
+): { epicConflictPrompt: string } {
   return {
-    conflictPrompt: resolveScoped('mergeConflictPrompt', ws?.mergeConflictPrompt, config.merge.conflictPrompt),
     epicConflictPrompt: resolveScoped('mergeEpicConflictPrompt', ws?.mergeEpicConflictPrompt, config.merge.epicConflictPrompt),
   };
 }
 
-/** Resolve the Epic resolver prompts (integration refresh, verification-failure suffix) for a Workspace, each `workspace ?? global`. */
+/** Resolve the Epic integration refresh prompt for a Workspace, `workspace ?? global`. */
 export function resolveEpicResolverPrompts(
-  ws: Pick<WorkspaceRow, 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix'> | null | undefined,
-  config: Pick<AppConfig, 'merge' | 'verify'>,
-): { refreshPrompt: string; resolveSuffix: string } {
+  ws: Pick<WorkspaceRow, 'mergeEpicRefreshPrompt'> | null | undefined,
+  config: Pick<AppConfig, 'merge'>,
+): { refreshPrompt: string } {
   return {
     refreshPrompt: resolveScoped('mergeEpicRefreshPrompt', ws?.mergeEpicRefreshPrompt, config.merge.epicRefreshPrompt),
-    resolveSuffix: resolveScoped('verifyEpicResolveSuffix', ws?.verifyEpicResolveSuffix, config.verify.epic.resolveSuffix),
   };
 }

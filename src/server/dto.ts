@@ -2,13 +2,13 @@ import type {
   AttemptRow,
   TaskAttemptRow,
   AttemptState,
-  StepRow,
-  StepType,
+  WorkflowStepOutcome,
+  WorkflowStepRunRow,
   ConversationRow,
   ConversationState,
-  VerificationAttemptRow,
   TaskRow,
   NotificationRow,
+  MergeStatus,
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { classifierRouteOf, type AttemptClassifier, type TaskClassifier, type TaskRouting } from '../domain/task-routing.js';
@@ -17,7 +17,8 @@ import type { IsolationMode, Priority } from '../config.js';
 import type { Ticket, TrackerRef } from '../tracker/adapter.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import { worktreeId, type WorktreeInventoryEntry } from '../domain/worktree-inventory.js';
-import { NO_CONFIGURED_VERIFIERS, verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
+import { stepRunKind, type StepRunKind } from '../domain/step-run-kind.js';
+import type { WorkflowStepOutputs } from '../domain/workflow-step-runs.js';
 import { parseCost, sumCosts, type Cost } from '../domain/pricing.js';
 import type { AttemptUsage, AttemptUsageSnapshot, ProcessTree } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
@@ -64,17 +65,65 @@ export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSn
 export const worktreesToApi = (worktrees: readonly WorktreeInventoryEntry[]) =>
   worktrees.map((worktree) => ({ id: worktreeId(worktree), ...worktree }));
 
-export interface ApiStep {
+export type ApiStepRunState = WorkflowStepOutcome | 'running' | 'interrupted';
+
+export interface ApiStepRun {
   id: number;
-  attemptId: number;
-  type: StepRow['type'];
+  attemptId: number | null;
+  stepId: string;
+  action: string;
+  kind: StepRunKind;
+  /** The `attempts:` block Pass this run belongs to, 1-based; null outside the block. */
+  pass: number | null;
   position: number;
-  state: StepRow['state'];
-  command: string | null;
-  verdict: string | null;
-  logLocator: string | null;
-  startedAt: number | null;
+  /** `running` has neither outcome nor end time; `interrupted` has an end time but no outcome (process death). */
+  state: ApiStepRunState;
+  outcome: WorkflowStepOutcome | null;
+  summary: string | null;
+  /** What the pinned workflow says the step runs: the command, the prompt name, or the critic model. */
+  detail: string | null;
+  condition: string | null;
+  outputs: WorkflowStepOutputs;
+  hasPrompt: boolean;
+  sessionRowId: number | null;
+  harness: string | null;
+  model: string | null;
+  cost: Cost | null;
+  startedAt: number;
   endedAt: number | null;
+}
+
+export function stepRunState(row: Pick<WorkflowStepRunRow, 'outcome' | 'endedAt'>): ApiStepRunState {
+  return row.outcome ?? (row.endedAt === null ? 'running' : 'interrupted');
+}
+
+export function parseStepRunOutputs(raw: string | null): WorkflowStepOutputs {
+  return raw === null ? { stdout: '', exitCode: null } : (JSON.parse(raw) as WorkflowStepOutputs);
+}
+
+export function stepRunToApi(row: WorkflowStepRunRow, extra: { info?: { detail: string | null; condition: string | null } | undefined; cost: Cost | null }): ApiStepRun {
+  return {
+    id: row.id,
+    attemptId: row.attemptId,
+    stepId: row.stepId,
+    action: row.action,
+    kind: stepRunKind(row.action),
+    pass: row.attempt,
+    position: row.position,
+    state: stepRunState(row),
+    outcome: row.outcome,
+    summary: row.summary,
+    detail: extra.info?.detail ?? null,
+    condition: extra.info?.condition ?? null,
+    outputs: parseStepRunOutputs(row.outputs),
+    hasPrompt: row.resolvedPrompt !== null,
+    sessionRowId: row.sessionRowId,
+    harness: row.harness,
+    model: row.model,
+    cost: extra.cost,
+    startedAt: row.startedAt,
+    endedAt: row.endedAt,
+  };
 }
 
 export interface ApiAttempt {
@@ -85,7 +134,6 @@ export interface ApiAttempt {
   startedAt: number;
   endedAt: number | null;
   feedback: string | null;
-  verifiedSha: string | null;
   escalationReason: string | null;
   workingDir: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
@@ -96,8 +144,7 @@ export interface ApiAttempt {
   classifier: AttemptClassifier | null;
   /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
   routing: { cost: Cost | null; models: string[] } | null;
-  verifierStatuses: VerifierStatus[];
-  steps: ApiStep[];
+  stepRuns: ApiStepRun[];
 }
 
 const attemptContinuationSchema = z.object({
@@ -114,36 +161,13 @@ const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchem
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
-  /** The attempt number the `maxAttempts` budget counts from (`AttemptStore.budgetBase`). */
-  budgetBase: number;
-}
-
-const stepToApi = (step: StepRow): ApiStep => ({
-  id: step.id,
-  attemptId: step.attemptId,
-  type: step.type,
-  position: step.position,
-  state: step.state,
-  command: step.command,
-  verdict: step.verdict,
-  logLocator: step.logLocator,
-  startedAt: step.startedAt,
-  endedAt: step.endedAt,
-});
-
-/** The latest passing verification attempt's `inputOid`; null when nothing passed. */
-export function verifiedShaOf(verificationAttempts: readonly VerificationAttemptRow[]): string | null {
-  const passing = verificationAttempts.filter((v) => v.verdict === 'pass');
-  return passing.length ? passing[passing.length - 1]!.inputOid : null;
 }
 
 export function attemptToTimelineApi(
   attempt: TaskAttemptRow,
-  stepRows: readonly StepRow[],
-  attemptVerifications: readonly VerificationAttemptRow[],
+  stepRuns: ApiStepRun[],
   workingDir: string | null,
 ): ApiAttempt {
-  const stepType = [...stepRows].reverse().find((row) => row.state === 'running')?.type ?? null;
   const escalationReason = attempt.state === 'escalated' ? attempt.reason : null;
   return {
     id: attempt.id,
@@ -153,7 +177,6 @@ export function attemptToTimelineApi(
     startedAt: attempt.startedAt,
     endedAt: attempt.endedAt,
     feedback: attempt.feedback,
-    verifiedSha: verifiedShaOf(attemptVerifications),
     escalationReason,
     workingDir,
     continuation: continuationToApi(attempt.continuation),
@@ -169,8 +192,7 @@ export function attemptToTimelineApi(
         }
       : null,
     routing: attempt.routingUsage ? { cost: parseCost(attempt.routingCost), models: Object.keys(parseUsage(attempt.routingUsage)?.models ?? {}) } : null,
-    verifierStatuses: verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts: attemptVerifications, stepType }),
-    steps: stepRows.map(stepToApi),
+    stepRuns,
   };
 }
 
@@ -178,7 +200,7 @@ export type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
   | 'lifecycle'
-  | 'verification'
+  | 'step-run'
   | 'guardrail'
   | 'operator-retry'
   | 'agent-message'
@@ -266,7 +288,6 @@ export type ApiAttemptSummary = {
   diffHeadOid: string | null;
   stat: string | null;
   verifiedHeadOid: string | null;
-  verifiedRef: string | null;
   /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none. */
   pullRequestUrl: string | null;
   usage: AttemptUsage | null;
@@ -294,8 +315,7 @@ export type ApiEpicAttempt = {
   contextTokens: number | null;
   startedAt: number;
   endedAt: number | null;
-  steps: ApiStep[];
-  verificationAttempts: ApiVerificationAttempt[];
+  stepRuns: ApiStepRun[];
   /** Each Resolved Prompt this Epic Attempt sent to a resolver, read via `GET …/epics/:ref/resolved-prompt`. */
   resolverPrompts: ApiEpicResolverPrompt[];
 };
@@ -316,19 +336,6 @@ export function epicResolverPrompts(events: readonly PersistedAttemptEvent[]): A
     if (payload.event === 'epic-resolve') return [{ kind: payload.kind === 'refresh' ? 'refresh' : 'verification', locator: payload.locator, promptIndex: payload.promptIndex, ts: event.ts }];
     return [];
   });
-}
-
-export type ApiVerificationAttempt = Omit<VerificationAttemptRow, 'transcriptPath' | 'usage' | 'fullOutputKey' | 'promptKey'> & {
-  /** Archive locator of the Resolved Prompt; read it with `GET /api/attempts/:attemptId/resolved-prompt?locator=`. */
-  promptLocator: string | null;
-  hasTranscript: boolean;
-  /** The command output was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
-  outputTruncated: boolean;
-};
-
-export function verificationAttemptToApi(row: VerificationAttemptRow): ApiVerificationAttempt {
-  const { transcriptPath: _transcriptPath, usage: _usage, fullOutputKey, promptKey, ...attempt } = row;
-  return { ...attempt, promptLocator: promptKey, outputTruncated: fullOutputKey !== null, hasTranscript: row.transcriptPath !== null };
 }
 
 function apiAttemptState(state: AttemptState): ApiAttemptSummary['state'] {
@@ -356,7 +363,6 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
     diffHeadOid: run.diffHeadOid,
     stat: run.stat,
     verifiedHeadOid: run.verifiedHeadOid,
-    verifiedRef: run.verifiedRef,
     pullRequestUrl: run.pullRequestUrl,
     usage: parseUsage(run.usage),
     cost: parseCost(run.cost),
@@ -372,8 +378,8 @@ export function attemptToApiSummary(run: TaskAttemptRow, toolCalls: number, cont
 export function epicAttemptToApi(
   run: AttemptRow,
   toolCalls: number,
-  stepRows: readonly StepRow[],
-  verificationAttempts: readonly VerificationAttemptRow[],
+  stepRuns: ApiStepRun[],
+  cost: Cost | null,
   events: readonly PersistedAttemptEvent[],
 ): ApiEpicAttempt {
   return {
@@ -382,13 +388,12 @@ export function epicAttemptToApi(
     state: run.state,
     reason: run.detail ?? run.reason,
     usage: parseUsage(run.usage),
-    cost: parseCost(run.cost),
+    cost,
     toolCalls,
     contextTokens: liveContextTokens(run.liveUsage),
     startedAt: run.startedAt,
     endedAt: run.endedAt,
-    steps: stepRows.map(stepToApi),
-    verificationAttempts: verificationAttempts.map(verificationAttemptToApi),
+    stepRuns,
     resolverPrompts: epicResolverPrompts(events),
   };
 }
@@ -418,6 +423,12 @@ type TrackerFactColumns =
   | 'trackerUrl'
   | 'trackerCreatedAt';
 
+export interface ApiCurrentStep {
+  stepId: string;
+  action: string;
+  kind: StepRunKind;
+}
+
 export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' | 'isolationMode' | 'priority' | 'overrides' | 'archiveId' | 'workflowRequested' | 'classifierEnabled' | 'workflowRoutingUsage' | 'workflowRoutingCost' | TrackerFactColumns> & {
   workspaceId: number;
   /** Ticket-scoped Model Option overrides; empty when none. */
@@ -430,6 +441,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' 
     isolationMode: IsolationMode | null;
     priority: Priority | null;
   };
+  /** Derived from the running step run (`merging`); null at rest. */
+  mergeStatus: MergeStatus | null;
   /** Cost of the workflow classifier call that chose or declined this Ticket's workflow; null when it was not consulted. */
   workflowRouting: { cost: Cost | null } | null;
   /** The Routing Label matching a mirrored Ticket; `applied` is false when an operator's Harness/Model override wins. Null when none matches. */
@@ -455,8 +468,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | 'modelOptionOverrides' 
   toolCount: number | null;
   /** The running attempt's id, so the board can match the `attempt_usage` firehose to this card; null unless running. */
   attemptId: number | null;
-  /** The running attempt's current Step; null unless the Task is running, or between Steps. */
-  currentStep: StepType | null;
+  /** The running Attempt's running step run; null unless the Task is running, or between steps. */
+  currentStep: ApiCurrentStep | null;
   /** The running attempt's context-window occupancy in tokens; null unless running (or unreported). */
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. */
@@ -580,7 +593,7 @@ function stripTrackerFactCols(task: Omit<TaskWithDeps, 'classifierEnabled'>): Om
 /** The ref an operator Accept would merge; null for a direct Attempt, whose work is already on the base branch. */
 export function latestVerifiedRef(run: AttemptRow | undefined): string | null {
   if (!run) return null;
-  return run.verifiedRef ?? (run.verifiedHeadOid && run.branch ? run.branch : null);
+  return run.verifiedHeadOid && run.branch ? run.branch : null;
 }
 
 /** `startedAt` is rewritten on resume, so paused time is excluded. */
@@ -602,7 +615,8 @@ export function taskToApiDto(
   runs: AttemptRow[],
   resolved: {
     toolCount: number | null;
-    currentStep: StepType | null;
+    currentStep: ApiCurrentStep | null;
+    criticCost?: Cost | null;
     hasCandidate: boolean;
     url: string | null;
     mapTitle: string | null;
@@ -633,7 +647,8 @@ export function taskToApiDto(
     modelOptionOverrides: task.modelOptionOverrides ?? [],
     workspaceId: atRestWorkspaceId(task.workspaceId),
     summary: summarize(task.prompt),
-    cost: sumCosts(runs.map((run) => parseCost(run.cost))),
+    cost: sumCosts([...runs.map((run) => parseCost(run.cost)), resolved.criticCost ?? null]),
+    mergeStatus: resolved.currentStep?.action === 'merge' ? 'merging' : null,
     url: resolved.url,
     mapTitle: resolved.mapTitle,
     trackerLabel: resolved.trackerLabel,

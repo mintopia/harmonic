@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { AttemptSummary, Step } from './types.js';
+import type { AttemptSummary, StepRun } from './types.js';
 
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
  * Rule); `neutral` is the un-coloured register (cancelled). */
@@ -22,17 +22,26 @@ export interface AttemptDisplay {
  * `Attempt.number`); pass `[]` when it isn't loaded (e.g. a historical run
  * the gate bar never actually renders `running` for). Pure.
  */
-export function attemptDisplay(run: AttemptSummary, steps: readonly Step[] = []): AttemptDisplay {
+type RailStep = Pick<StepRun, 'stepId' | 'state'> & Partial<Pick<StepRun, 'action' | 'outcome'>>;
+
+const PUBLISH_WORD: Record<string, string> = { merge: 'merged', 'open-pr': 'PR opened', artifact: 'artifact kept' };
+
+/** What a completed Attempt published: its publish step run's result, else `done`. */
+export function publishWord(steps: readonly RailStep[]): string {
+  const publish = steps.findLast((step) => step.action !== undefined && step.action in PUBLISH_WORD && step.outcome === 'pass');
+  return (publish?.action && PUBLISH_WORD[publish.action]) || 'done';
+}
+
+export function attemptDisplay(run: Pick<AttemptSummary, 'state'>, steps: readonly RailStep[] = []): AttemptDisplay {
   switch (run.state) {
     case 'failed':
       return { word: 'failed', dot: 'fail', pulse: false };
     case 'cancelled':
       return { word: 'cancelled', dot: 'neutral', pulse: false };
     case 'completed':
-      return { word: 'merged', dot: 'merged', pulse: false };
+      return { word: publishWord(steps), dot: 'merged', pulse: false };
     case 'running': {
-      const running = steps.find((step) => step.state === 'running');
-      const word = running?.type ?? 'running';
+      const word = steps.find((step) => step.state === 'running')?.stepId ?? 'running';
       return { word, dot: 'running', pulse: true };
     }
   }

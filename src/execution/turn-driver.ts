@@ -28,7 +28,7 @@ import type { AgentMessageRow } from '../db/schema.js';
 import { composeAttemptPrompt, composePeerContext } from './prompt-assembly.js';
 import type { RunnerEvents, RunnerOptions, Workspace } from './runner.js';
 import { TurnListeners, TurnState } from './turn-listeners.js';
-import type { TaskArchive } from '../archive/task-archive.js';
+import type { StepRunArchiveRef, TaskArchive } from '../archive/task-archive.js';
 import { TurnCompletion, noteModelMismatch, type RunEventRecorder, type TurnCompletionDeps } from './turn-completion.js';
 import type { PromptResult } from '../acp/driver.js';
 import type { AgentDriveRequest, AgentDriveResult } from './workflow-engine.js';
@@ -141,12 +141,12 @@ export class TurnDriver {
     const autoDriven = this.deps.autoDrive?.handles(task) ?? false;
     const continueSessionId = req.continueSessionId ?? (task.continuationChoice !== 'condensed' ? run.sessionId : null);
 
-    const spawned = await this.spawnTurn({ task, run, harness, resume: continueSessionId != null, turn, autoDriven });
+    const spawned = await this.spawnTurn({ task, run, harness, resume: continueSessionId != null, turn, autoDriven, stepRun: req.stepRunId === undefined ? undefined : { pass: req.pass ?? null, stepId: req.stepId ?? '_', stepRunId: req.stepRunId } });
     if (!spawned.ok) return haltResult('settled');
     const { workspace, mcpServers, child, stderr } = spawned;
 
     const { active, driver, guardrails, listeners, finalize } = this.createTurnRuntime({
-      task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child,
+      task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child, stepRunId: req.stepRunId,
     });
 
     try {
@@ -161,7 +161,7 @@ export class TurnDriver {
         return haltResult(boundary.reason === 'settled' ? 'settled' : 'paused');
       }
       const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
-        task, run, harness, workspace, mcpServers, turn, driver, listeners, guardrails, autoDriven, continueSessionId, opening: req.prompt, record,
+        task, run, harness, workspace, mcpServers, turn, driver, listeners, guardrails, autoDriven, continueSessionId, opening: req.prompt, record, stepRunId: req.stepRunId,
       });
       const messageStore = this.deps.agentMessages;
       const driven = await this.completion.drivePromptCycle({
@@ -247,12 +247,13 @@ export class TurnDriver {
     resume: boolean;
     turn: TurnState;
     autoDriven: boolean;
+    stepRun: StepRunArchiveRef | undefined;
   }): Promise<SpawnTurnResult> {
-    const { task, run, harness, resume, turn, autoDriven } = input;
+    const { task, run, harness, resume, turn, autoDriven, stepRun } = input;
     const stderr: StderrTail = { tail: '', flushed: Promise.resolve() };
     try {
       const workspace = await this.deps.prepareWorkspace(task, run, resume);
-      turn.archive = this.deps.archive?.implementationStep(task, run.number);
+      turn.archive = stepRun ? this.deps.archive?.stepRun(task, run.number, stepRun) : undefined;
       this.deps.gitBreaker?.recordSuccess(repoKey(task.workingDir));
       let mcpServers: unknown[] = [];
       const mcpUrl = this.deps.mcpUrl();
@@ -312,6 +313,7 @@ export class TurnDriver {
     record: RunEventRecorder;
     flushToolCalls: () => Promise<void>;
     child: ChildProcess;
+    stepRunId: number | undefined;
   }): TurnRuntime {
     const {
       task,
@@ -324,6 +326,7 @@ export class TurnDriver {
       record,
       flushToolCalls,
       child,
+      stepRunId,
     } = input;
     const listeners = new TurnListeners({
       task,
@@ -331,6 +334,7 @@ export class TurnDriver {
       state: turn,
       autoDriven,
       events: this.deps.events,
+      stepRunId,
       record,
       nextProgressSequence: () => this.deps.activeRuns.nextProgressSequence(run.id),
       outstandingAction: (event) => this.deps.activeRuns.setOutstandingProgressAction(run.id, event),
@@ -349,6 +353,7 @@ export class TurnDriver {
     const active: ActiveRun = {
       attemptId: run.id,
       taskId: task.id,
+      ...(stepRunId !== undefined ? { stepRunId } : {}),
       child,
       driver,
       harnessId: task.harness,
@@ -455,6 +460,7 @@ export class TurnDriver {
     continueSessionId: string | null;
     opening: string;
     record: RunEventRecorder;
+    stepRunId: number | undefined;
   }): Promise<{ promptText: string; operatorSeed: string | undefined; heldMessages: AgentMessageRow[] }> {
     const {
       task,
@@ -478,7 +484,7 @@ export class TurnDriver {
       harness,
       workspace,
       mcpServers,
-      attemptAtStart: turn.attemptAtStart,
+      stepRunId: input.stepRunId,
       getSessionInit: () => turn.sessionInit,
       setSessionRowId: (id) => {
         turn.sessionRowId = id;

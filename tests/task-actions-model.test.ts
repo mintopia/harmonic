@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { acceptPresentation, acceptedOutcome, escalationActions, nextUnexecutedStep, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
+import { acceptPresentation, acceptedOutcome, nextUnexecutedStep, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
   it('offers the escalation dispositions on escalated, accept last, delete first', () => {
     expect(taskActions('escalated')).toEqual(['delete', 'close', 'retry', 'accept']);
+  });
+
+  it('hides Accept on escalated when there is no candidate — the server would 409', () => {
+    expect(taskActions('escalated', null, false)).toEqual(['delete', 'close', 'retry']);
+    expect(taskActions('escalated', null, true)).toContain('accept');
   });
 
   it('never offers plain cancel or run on escalated — the dispositions are Retry, Close, Accept', () => {
@@ -61,38 +66,14 @@ describe('taskActions', () => {
   });
 });
 
-describe('escalationActions', () => {
-  it('is null off the escalation surface, even with a candidate', () => {
-    expect(escalationActions({ state: 'ready', hasCandidate: true })).toBeNull();
-    expect(escalationActions({ state: 'working', hasCandidate: true })).toBeNull();
-  });
-
-  it('offers all three when the escalated ticket has a candidate', () => {
-    expect(escalationActions({ state: 'escalated', hasCandidate: true })).toEqual({
-      accept: true,
-      retry: true,
-      close: true,
-    });
-  });
-
-  it('withholds only Accept when the branch has no candidate', () => {
-    expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, retry: true, close: true });
-  });
-});
-
 describe('Accept disposition', () => {
-  it.each([
-    ['rebase', 'Accept & implement'],
-    ['implementation', 'Accept & verify'],
-    ['verification', 'Accept & review'],
-    ['review', 'Accept & merge'],
-    [null, 'Accept'],
-  ] as const)('explains the next action after %s', (step, label) => {
-    expect(acceptPresentation(step).label).toBe(label);
+  it('describes Accept from the workflow escalation notes', () => {
+    expect(acceptPresentation(null).label).toBe('Accept');
+    expect(acceptPresentation({ heading: 'h', accept: 'marks step verify (run) as pass', retry: '', close: '' })).toEqual({ label: 'Accept', description: 'marks step verify (run) as pass' });
   });
 
   it('reports the response outcome rather than claiming every acceptance merges', () => {
-    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: 'verification' })).toBe('continuing with verification');
+    expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: { stepId: 'verify', action: 'run', kind: 'check' } })).toBe('continuing with verify');
     expect(acceptedOutcome({ state: 'working', mergeStatus: null, currentStep: null })).toBe('continuing the pipeline');
     expect(acceptedOutcome({ state: 'done', mergeStatus: null, currentStep: null })).toBe('completed');
     expect(acceptedOutcome({ state: 'escalated', mergeStatus: null, currentStep: null })).toBe('needs your attention');

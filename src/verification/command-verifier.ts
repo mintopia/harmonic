@@ -1,26 +1,8 @@
 import { killProcessGroup, type SpawnProcessGroup } from '../execution/process-groups.js';
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { join } from 'node:path';
-import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { VerificationCommand } from '../config.js';
-import { withDetachedWorktree } from '../execution/detached-worktree.js';
 import { logger } from '../logger.js';
-import { startOperation } from '../telemetry/operations.js';
 import type { Verdict } from './critic-schema.js';
-import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
-
-/** The verdict a command run produced, plus the captured output and the candidate OID. */
-export interface CommandAttempt {
-  verifier: 'command';
-  verdict: Verdict;
-  summary: string;
-  /** Combined stdout+stderr preview: head and tail within {@link OUTPUT_CHAR_CAP}, elided middle marked. */
-  output: string;
-  /** The candidate OID this attempt verified. */
-  inputOid: string;
-  /** Archive key of the full output; null unless `output` was truncated and the log was fully written. */
-  fullOutputKey: string | null;
-}
 
 /** Where a step's full output is written, and the Archive-relative key that locates it later. */
 export interface VerificationOutputLog {
@@ -241,112 +223,4 @@ export function exitCodeToVerdict(r: CommandSpawnResult): { verdict: Verdict; su
   if (r.code === 0) return { verdict: 'pass', summary: 'command exited 0' };
   if (r.code !== null) return { verdict: 'fail', summary: `command exited ${r.code}` };
   return { verdict: 'inconclusive', summary: `command terminated by signal ${r.signal ?? 'unknown'}` };
-}
-
-export interface RunCommandVerifierArgs {
-  /** An existing checkout to run the command in — the candidate is already
-   * materialised here. A Task passes its builder worktree (in place); a surface
-   * with no live checkout at the target commit uses
-   * {@link runCommandVerifierDetached} to carve a disposable one. */
-  cwd: string;
-  /** The commit this attempt verifies — recorded as the attempt's `inputOid`. */
-  verifiedHeadOid: string;
-  command: VerificationCommand;
-  /** Cancellation, wired to Runner shutdown; an abort kills the command child. */
-  signal?: AbortSignal;
-  spawn: CommandSpawn;
-  /** Override the hard timeout (tests); defaults to `command.timeoutSeconds`. */
-  timeoutMs?: number;
-  parent?: SpanContext;
-  attributes?: Attributes;
-  /** Each output chunk as the command produces it, for a live progress view. */
-  onOutput?: (chunk: string) => void;
-  /** Stream the full uncapped output here; its path is forwarded to the spawner when set. */
-  outputLog?: VerificationOutputLog | null | undefined;
-}
-
-/** Run the command verifier in {@link RunCommandVerifierArgs.cwd} and resolve a {@link CommandAttempt}. Never throws for a verdict outcome. */
-export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
-  const operation = args.parent
-    ? startOperation({ type: 'verify.command', parent: args.parent, attributes: { 'verification.mechanism': 'command', ...args.attributes } })
-    : undefined;
-  try {
-    const attempt = operation
-      ? await operation.run(() => runCommandVerifierUnchecked(args))
-      : await runCommandVerifierUnchecked(args);
-    operation?.update({ 'verification.verdict': attempt.verdict });
-    if (attempt.verdict === 'pass') operation?.end();
-    else operation?.fail(attempt.summary);
-    return attempt;
-  } catch (error) {
-    operation?.fail(error instanceof Error ? error.message : String(error));
-    throw error;
-  }
-}
-
-async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
-  const spawner = args.spawn;
-  const timeoutMs = args.timeoutMs ?? args.command.timeoutSeconds * 1000;
-
-  const cwd = args.command.cwd ? join(args.cwd, args.command.cwd) : args.cwd;
-  const result = await spawner.run({
-    command: args.command,
-    cwd,
-    timeoutMs,
-    outputCap: OUTPUT_CHAR_CAP,
-    signal: args.signal,
-    ...(args.outputLog ? { outputLogPath: args.outputLog.path } : {}),
-    ...(args.onOutput ? { onOutput: args.onOutput } : {}),
-  });
-  const mapped = exitCodeToVerdict(result);
-  return {
-    verifier: 'command',
-    verdict: mapped.verdict,
-    summary: mapped.summary,
-    output: result.output,
-    inputOid: args.verifiedHeadOid,
-    fullOutputKey: result.fullOutputSaved && args.outputLog ? args.outputLog.key : null,
-  };
-}
-
-export interface RunCommandVerifierDetachedArgs extends Omit<RunCommandVerifierArgs, 'cwd'> {
-  /** The base repo owning the target commit and object store. */
-  repoDir: string;
-  /** Where to carve the disposable detached worktree for this attempt. */
-  worktreePath: string;
-}
-
-/** Run the command verifier against {@link RunCommandVerifierDetachedArgs.verifiedHeadOid}
- * in a disposable detached worktree carved from `repoDir` — for surfaces with no
- * live checkout at the target commit (Epic integration, crash-recovery
- * post-merge), where the command must not run in a shared checkout. A checkout
- * failure folds into `inconclusive`; never throws for a verdict outcome. */
-export async function runCommandVerifierDetached(args: RunCommandVerifierDetachedArgs): Promise<CommandAttempt> {
-  const { repoDir, worktreePath, ...rest } = args;
-  try {
-    return await withDetachedWorktree(repoDir, args.verifiedHeadOid, worktreePath, (dir) =>
-      runCommandVerifier({ ...rest, cwd: dir }),
-    );
-  } catch (err) {
-    return {
-      verifier: 'command',
-      verdict: 'inconclusive',
-      summary: `command verifier could not check out the candidate: ${err instanceof Error ? err.message : String(err)}`,
-      output: '',
-      inputOid: args.verifiedHeadOid,
-      fullOutputKey: null,
-    };
-  }
-}
-
-/** Map a {@link CommandAttempt} to the persisted {@link VerificationAttemptInput}. */
-export function commandAttemptToInput(attempt: CommandAttempt): VerificationAttemptInput {
-  return {
-    mechanism: attempt.verifier,
-    inputOid: attempt.inputOid,
-    verdict: attempt.verdict,
-    summary: attempt.summary,
-    output: attempt.output,
-    fullOutputKey: attempt.fullOutputKey,
-  };
 }

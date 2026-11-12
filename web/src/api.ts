@@ -38,12 +38,10 @@ import type {
   Notification,
   Task,
   TicketTimelineEvent,
-  VerificationAttempt,
   RoutingLabelOverlayEntry,
   WorkflowLabelOverlayEntry,
   ModelOptionOverlayEntry,
   ClassifierEndpoint,
-  VerifierStatus,
   Workspace,
   TrackerKindInfo,
   TrackerDetection,
@@ -393,10 +391,6 @@ export const api = {
       archiveRetentionDays?: number | null;
       archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
-      drivePrompt?: string | null;
-      driveUnattendedReminder?: string | null;
-      driveContinuePrompt?: string | null;
-      taskPrompt?: string | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
@@ -460,7 +454,7 @@ export const api = {
   /** Lean Attempt summaries, oldest first (retries included). */
   taskAttempts: (id: number) => request<{ attempts: AttemptSummary[]; total: number }>('GET', `/api/tasks/${id}/attempts`),
   /** Ordered durable Attempt/Task history for the ticket page. */
-  taskAttemptTimeline: (id: number) => request<{ attempts: Attempt[]; budgetBase: number; total: number }>('GET', `/api/tasks/${id}/attempts/timeline`),
+  taskAttemptTimeline: (id: number) => request<{ attempts: Attempt[]; total: number }>('GET', `/api/tasks/${id}/attempts/timeline`),
   /** Ticket-wide chronological lifecycle audit projection. */
   taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
   taskExport: (id: number) => request<TaskExportStatus>('GET', `/api/tasks/${id}/export`),
@@ -479,11 +473,10 @@ export const api = {
     request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/attempts/${id}/log`),
   attemptGuardrailEvents: (id: number) =>
     request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/attempts/${id}/guardrail-events`),
-  attemptVerificationAttempts: (id: number) =>
-    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/attempts/${id}/verification-attempts`),
-  verificationAttempt: (id: number) =>
-    request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
-  verificationOutputUrl: (id: number) => `/api/verification-attempts/${id}/output`,
+  stepRunLog: (id: number) =>
+    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/step-runs/${id}/log`),
+  stepRunPrompt: (id: number) => requestText(`/api/step-runs/${id}/prompt`, 'Sent prompt unavailable'),
+  stepRunOutputUrl: (id: number) => `/api/step-runs/${id}/output`,
   resolvedPrompt: (owner: ResolvedPromptOwner, locator: string, index?: number) => {
     const at = `locator=${encodeURIComponent(locator)}${index === undefined ? '' : `&index=${index}`}`;
     return requestText(
@@ -493,12 +486,6 @@ export const api = {
       'Sent prompt unavailable',
     );
   },
-  verificationFullOutput: (id: number) => requestText(`/api/verification-attempts/${id}/output`),
-  criticLog: (attemptId: number) =>
-    request<{ status: 'available'; events: AttemptLogEvent[]; liveCursor: number; fromArchive?: boolean } | { status: 'unavailable'; liveCursor: number }>(
-      'GET',
-      `/api/verification-attempts/${attemptId}/log`,
-    ),
   attemptDiff: (id: number) =>
     request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
       'GET',

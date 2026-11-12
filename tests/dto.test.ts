@@ -4,7 +4,8 @@ import { epicListRowSchema, taskListRowSchema } from '../src/server/routes/tasks
 import {
   summarize,
   firstLineTitle,
-  verifiedShaOf,
+  stepRunState,
+  stepRunToApi,
   latestVerifiedRef,
   costOfAttempts,
   operationsToApi,
@@ -15,7 +16,7 @@ import {
   attemptProcessToApi,
   conversationProcessToApi,
 } from '../src/server/dto.js';
-import type { ConversationRow, TaskAttemptRow, TaskRow, VerificationAttemptRow } from '../src/db/schema.js';
+import type { ConversationRow, TaskAttemptRow, TaskRow, WorkflowStepRunRow } from '../src/db/schema.js';
 import type { TaskWithDeps, TaskOverrides } from '../src/domain/tasks.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import type { Cost } from '../src/domain/pricing.js';
@@ -45,7 +46,6 @@ const attemptRow = (over: Partial<TaskAttemptRow> = {}): TaskAttemptRow => ({
   diffHeadOid: null,
   stat: null,
   verifiedHeadOid: null,
-  verifiedRef: null,
   pullRequestUrl: null,
   startOid: null,
   usage: null,
@@ -89,7 +89,7 @@ const taskRow = (over: Partial<TaskRow> = {}): TaskRow => ({
   wayfinderType: null,
   escalationReason: null,
   escalationCause: null,
-  mergeStatus: null, ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, execution: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
+  ticketClosePending: false, workflowRef: null, workflowRequested: null, workflowChosen: null, workflowLabel: null, execution: null, workflowReason: null, workflowRoutingUsage: null, workflowRoutingCost: null, workflowVarOverrides: null, workflowVars: null,
   mapRef: null,
   baseBranch: null,
   trackerState: null,
@@ -120,24 +120,6 @@ const taskWithDeps = (over: Partial<TaskWithDeps> = {}): TaskWithDeps => ({
   overrides,
   routing: null,
   classifierEnabled: false,
-  ...over,
-});
-
-const verificationAttemptRow = (over: Partial<VerificationAttemptRow> = {}): VerificationAttemptRow => ({
-  id: 1,
-  attemptId: 1,
-  seq: 1,
-  ts: 1_000,
-  mechanism: 'critic',
-  inputOid: 'oid-1',
-  verdict: 'pass',
-  summary: '',
-  output: '',
-  fullOutputKey: null,
-  transcriptPath: null,
-  harness: null,
-  promptKey: null,
-  usage: null,
   ...over,
 });
 
@@ -251,23 +233,30 @@ describe('firstLineTitle', () => {
   });
 });
 
-describe('verifiedShaOf', () => {
-  it('returns null when nothing passed', () => {
-    const attempts = [verificationAttemptRow({ seq: 1, verdict: 'fail' })];
-    expect(verifiedShaOf(attempts)).toBeNull();
+describe('stepRunToApi', () => {
+  const row = (over: Partial<WorkflowStepRunRow> = {}): WorkflowStepRunRow => ({
+    id: 5, taskId: 1, workspaceId: null, epicRef: null, workflowRef: 'implement@1', stepId: 'verify', position: 2, action: 'run',
+    outcome: null, outputs: null, summary: null, resolvedPrompt: null, attempt: 2, startedAt: 100, endedAt: null,
+    attemptId: 9, sessionRowId: null, harness: null, model: null, usage: null, ...over,
   });
 
-  it('returns the last passing attempt\'s inputOid', () => {
-    const attempts = [
-      verificationAttemptRow({ seq: 1, verdict: 'pass', inputOid: 'oid-a' }),
-      verificationAttemptRow({ seq: 2, verdict: 'fail', inputOid: 'oid-b' }),
-      verificationAttemptRow({ seq: 3, verdict: 'pass', inputOid: 'oid-c' }),
-    ];
-    expect(verifiedShaOf(attempts)).toBe('oid-c');
+  it('derives state: running, interrupted, or the outcome', () => {
+    expect(stepRunState(row())).toBe('running');
+    expect(stepRunState(row({ endedAt: 200 }))).toBe('interrupted');
+    expect(stepRunState(row({ endedAt: 200, outcome: 'fail' }))).toBe('fail');
   });
 
-  it('returns null for an empty list', () => {
-    expect(verifiedShaOf([])).toBeNull();
+  it('maps kind, pass, prompt flag, outputs and outline info', () => {
+    const api = stepRunToApi(row({ action: 'critic', resolvedPrompt: 'p', sessionRowId: 3, harness: 'claude', model: 'm', outputs: JSON.stringify({ stdout: '', exitCode: null, verdict: 'pass' }) }), {
+      info: { detail: 'opus', condition: 'x' },
+      cost: cost({ totalUsd: 0.1 }),
+    });
+    expect(api).toMatchObject({ kind: 'critic', pass: 2, hasPrompt: true, sessionRowId: 3, detail: 'opus', condition: 'x', state: 'running', outputs: { verdict: 'pass' } });
+    expect(api.cost).toEqual(cost({ totalUsd: 0.1 }));
+  });
+
+  it('defaults outputs and detail when none were recorded', () => {
+    expect(stepRunToApi(row(), { cost: null })).toMatchObject({ outputs: { stdout: '', exitCode: null }, detail: null, condition: null, hasPrompt: false });
   });
 });
 
@@ -276,19 +265,14 @@ describe('latestVerifiedRef', () => {
     expect(latestVerifiedRef(undefined)).toBeNull();
   });
 
-  it('returns verifiedRef when set', () => {
-    const run = attemptRow({ verifiedRef: 'refs/harmonic/direct/attempt-1', verifiedHeadOid: null, branch: null });
-    expect(latestVerifiedRef(run)).toBe('refs/harmonic/direct/attempt-1');
-  });
-
   it('falls back to branch when verifiedHeadOid and branch are both set', () => {
-    const run = attemptRow({ verifiedRef: null, verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' });
+    const run = attemptRow({ verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' });
     expect(latestVerifiedRef(run)).toBe('harmonic/task-1');
   });
 
-  it('returns null when neither verifiedRef nor a verified branch is available', () => {
-    expect(latestVerifiedRef(attemptRow({ verifiedRef: null, verifiedHeadOid: null, branch: 'harmonic/task-1' }))).toBeNull();
-    expect(latestVerifiedRef(attemptRow({ verifiedRef: null, verifiedHeadOid: 'abc123', branch: null }))).toBeNull();
+  it('returns null when no verified branch is available', () => {
+    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: null, branch: 'harmonic/task-1' }))).toBeNull();
+    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: 'abc123', branch: null }))).toBeNull();
   });
 });
 
@@ -380,7 +364,7 @@ describe('attemptToApiSummary', () => {
 describe('taskToApiDto', () => {
   const resolved = {
     toolCount: 4,
-    currentStep: 'implementation' as const,
+    currentStep: { stepId: 'build', action: 'agent', kind: 'agent' as const },
     hasCandidate: true,
     url: 'https://tracker.example/issues/1',
     mapTitle: 'Some Map',
@@ -407,6 +391,17 @@ describe('taskToApiDto', () => {
     expect(dto.toolCount).toBe(resolved.toolCount);
     expect(dto.currentStep).toBe(resolved.currentStep);
     expect(dto.hasCandidate).toBe(resolved.hasCandidate);
+  });
+
+  it('derives mergeStatus merging from a running merge step, else null', () => {
+    expect(taskToApiDto(taskWithDeps(), [], { ...resolved, currentStep: { stepId: 'merge', action: 'merge', kind: 'publish' } }).mergeStatus).toBe('merging');
+    expect(taskToApiDto(taskWithDeps(), [], resolved).mergeStatus).toBeNull();
+    expect(taskToApiDto(taskWithDeps(), [], { ...resolved, currentStep: null }).mergeStatus).toBeNull();
+  });
+
+  it('adds critic cost to the Task cost', () => {
+    const runs = [attemptRow({ id: 10, number: 1, state: 'passed', cost: JSON.stringify(cost({ totalUsd: 1 })) })];
+    expect(taskToApiDto(taskWithDeps(), runs, { ...resolved, criticCost: cost({ totalUsd: 0.25 }) }).cost?.totalUsd).toBe(1.25);
   });
 
   it('takes attemptId/runStartedAt from the running run', () => {

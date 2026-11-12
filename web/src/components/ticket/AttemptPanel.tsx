@@ -1,46 +1,24 @@
-import { useMemo, useState } from 'react';
-import type {
-  Attempt,
-  AttemptSummary,
-  AttemptLogEvent,
-  AttemptUsageEvent,
-  GuardrailEvent,
-  Step,
-  VerificationAttempt,
-  VerifierStatus,
-} from '../../types';
-import { EmptyState } from '../EmptyState';
+import { useEffect, useState } from 'react';
+import type { Attempt, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, GuardrailEvent, StepRun, TaskExecution, WorkflowStepsResponse } from '../../types';
 import { Icon } from '../Icon';
-import { stateTone } from '../../attempt-timeline-model';
-import {
-  attemptIdentityModel,
-  attemptStepTabs,
-  defaultStepTab,
-  verificationOutputTail,
-  type StepTab,
-  type TaskStats,
-} from '../../task-detail-model';
+import { attemptIdentityModel, type TaskStats } from '../../task-detail-model';
+import { attemptRows, outlineRows, passNumbers } from '../../step-run-model';
 import { ChatTranscript, type PendingSteer } from './ChatTranscript';
-import { SteerBox } from './SteerBox';
-import { Verification, CriticSessions } from './Verification';
 import { AttemptStats, AttemptSummaryCard } from './StatsPanel';
-import { StatePill, NAV_DOT, NAV_WORD } from './shared';
-import { GuardrailAlert } from './ChangesPane';
-import { PromptSent } from './Description';
-import { promptSentCount } from '../../resolved-prompt-model';
-import { useTurnPrompts } from './useTurnPrompts';
+import { StatePill } from './shared';
+import { PassSelector, StepRunList, type StepRunContext } from './StepRunRows';
 
-function attemptPillState(run: AttemptSummary, steps: readonly Step[]): string {
+function attemptPillState(run: AttemptSummary, stepRuns: readonly StepRun[]): string {
   if (run.state === 'completed') return 'passed';
-  if (run.state === 'running') return steps.find((step) => step.state === 'running')?.type ?? 'running';
+  if (run.state === 'running') return stepRuns.find((step) => step.state === 'running')?.stepId ?? 'running';
   return run.state;
 }
 
-function AttemptHeader({ run, steps }: { run: AttemptSummary; steps: readonly Step[] }) {
+function AttemptHeader({ run, stepRuns }: { run: AttemptSummary; stepRuns: readonly StepRun[] }) {
   return (
     <div className="mx-0.5 mb-2.5 mt-4 flex items-center gap-2.5">
       <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Attempt {run.number}</span>
-      <StatePill state={attemptPillState(run, steps)} />
+      <StatePill state={attemptPillState(run, stepRuns)} />
       {run.number > 1 && (
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-faint">
           <Icon name="refresh" className="size-3.5" />
@@ -51,168 +29,88 @@ function AttemptHeader({ run, steps }: { run: AttemptSummary; steps: readonly St
   );
 }
 
-function StepTabsBar({ tabs, active, onSelect }: { tabs: StepTab[]; active: string; onSelect: (id: string) => void }) {
-  return (
-    <div role="tablist" aria-label="Attempt steps" className="mt-4 flex flex-wrap gap-1 border-b border-hairline">
-      {tabs.map((tab) => {
-        const selected = tab.id === active;
-        const tone = stateTone(tab.state);
-        return (
-          <button
-            key={tab.id}
-            role="tab"
-            type="button"
-            aria-selected={selected}
-            onClick={() => onSelect(tab.id)}
-            className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors ${
-              selected ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
-            }`}
-          >
-            {tab.state === 'passed' ? (
-              <Icon name="check" className="size-3.5 text-merged" />
-            ) : tab.state === 'failed' ? (
-              <Icon name="close" className="size-3.5 text-fail" />
-            ) : (
-              <span role="img" aria-label={tab.state} className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
-            )}
-            <span>
-              {tab.label}
-              {tab.detail && <span className="ml-1 font-normal text-faint">· {tab.detail}</span>}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function RebaseStatus({ step, baseBranch }: { step: Step; baseBranch: string | null }) {
-  const tone = stateTone(step.state);
-  return (
-    <div className="mt-5 rounded-lg border border-hairline bg-surface p-4 shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[13px] font-semibold text-ink">
-          Rebase onto <span className="font-data text-[12.5px]">{baseBranch ?? 'base'}</span>
-        </span>
-        <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${NAV_WORD[tone]}`}>
-          <span className={`size-2 rounded-full ${NAV_DOT[tone]}`} />
-          {step.state}
-        </span>
-      </div>
-      {step.verdict && <p className="mt-2 whitespace-pre-wrap break-words text-[13px] text-muted">{step.verdict}</p>}
-    </div>
-  );
-}
-
-function PendingStep({ label }: { label: string }) {
-  return (
-    <EmptyState title={label} className="py-12">
-      This step hasn't run yet.
-    </EmptyState>
-  );
-}
-
 export function AttemptPanel({
   run,
   attempt,
   snapshot,
   stats,
   events,
-  logUnavailable,
-  fromArchive = false,
   following,
   onToggleFollow,
-  verificationAttempts,
-  verifierStatuses,
   guardrailEvents,
-  baseBranch,
+  workflow,
+  showPending,
+  execution,
   primaryModel,
   agent,
   baseDir,
+  logUnavailable = false,
+  fromArchive = false,
 }: {
   run: AttemptSummary;
   attempt: Attempt | undefined;
   snapshot: AttemptUsageEvent | undefined;
   stats: TaskStats;
   events: AttemptLogEvent[];
-  logUnavailable: boolean;
-  fromArchive?: boolean;
   following: boolean;
   onToggleFollow: () => void;
-  verificationAttempts: VerificationAttempt[];
-  verifierStatuses: VerifierStatus[];
   guardrailEvents: GuardrailEvent[];
-  baseBranch: string | null;
+  workflow: WorkflowStepsResponse | null;
+  showPending: boolean;
+  execution?: TaskExecution | null;
   primaryModel: string;
   agent: string;
   baseDir?: string;
+  logUnavailable?: boolean;
+  fromArchive?: boolean;
 }) {
-  const steps = attempt?.steps ?? [];
-  const tabs = attemptStepTabs(steps, attempt?.verifierStatuses ?? verifierStatuses);
-  const [picked, setPicked] = useState<string | null>(null);
+  const stepRuns = attempt?.stepRuns ?? [];
+  const [picked, setPicked] = useState<number | null>(null);
   const [pendingSteers, setPendingSteers] = useState<PendingSteer[]>([]);
-  const active = picked && tabs.some((tab) => tab.id === picked) ? picked : defaultStepTab(tabs);
-  const activeTab = tabs.find((tab) => tab.id === active);
+  const [now, setNow] = useState(() => Date.now());
+  const live = stepRuns.some((step) => step.state === 'running');
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [live]);
 
-  const turnPrompts = useTurnPrompts(run.id, promptSentCount(events));
-  const laterPrompts = useMemo(() => turnPrompts.slice(1), [turnPrompts]);
-  const firstPrompt = turnPrompts[0] ?? run.prompt;
+  const numbers = passNumbers(stepRuns);
+  const pass = picked !== null && numbers.includes(picked) ? picked : (numbers.at(-1) ?? null);
+  const latestPass = pass === numbers.at(-1);
+  const rows = attemptRows({ stepRuns, pass, workflow, showPending: showPending && latestPass });
   const topModel = attemptIdentityModel(primaryModel, stats.byModel);
-  const chat = (
-    <ChatTranscript
-      events={events}
-      unavailable={logUnavailable}
-      fromArchive={fromArchive}
-      pendingSteers={pendingSteers}
-      turnPrompts={laterPrompts}
-      following={following}
-      onToggleFollow={onToggleFollow}
-      steer={run.state === 'running' ? (
-        <SteerBox
-          taskId={run.taskId}
-          onPending={(steer) => setPendingSteers((current) => [...current, steer])}
-          onFailed={(id) => setPendingSteers((current) => current.filter((steer) => steer.id !== id))}
-        />
-      ) : undefined}
-      model={topModel}
-      agent={agent}
-      stepLabel="Implementation"
-      attemptId={run.id}
-      baseDir={baseDir}
-    />
-  );
-  const tabContent =
-    activeTab && active ? (
-      activeTab.pending && !(activeTab.type === 'implementation' && (run.state === 'running' || events.length > 0)) ? (
-        <PendingStep label={activeTab.label} />
-      ) : activeTab.type === 'rebase' ? (
-        <RebaseStatus step={steps.find((s) => s.type === 'rebase')!} baseBranch={baseBranch} />
-      ) : activeTab.type === 'implementation' ? (
-        <>
-          <GuardrailAlert events={guardrailEvents} />
-          {firstPrompt && <PromptSent prompt={firstPrompt} />}
-          {chat}
-        </>
-      ) : activeTab.type === 'verification' ? (
-        <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="command" verifier={`command:${steps.filter((step) => step.type === 'verification').findIndex((step) => `verification:${step.id}` === activeTab.id)}`} steps={steps} liveOutput={verificationOutputTail(events, 'command')} baseDir={baseDir} />
-        </div>
-      ) : (
-        <div className="mt-4">
-          <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={run} only="critic" verifier={`critic:${steps.filter((step) => step.type === 'review').findIndex((step) => `review:${step.id}` === activeTab.id)}`} steps={steps} baseDir={baseDir} />
-          <CriticSessions attempts={verificationAttempts} run={run} baseDir={baseDir} />
-        </div>
-      )
-    ) : (
-      chat
-    );
+  const ctx: StepRunContext = {
+    run,
+    events,
+    attemptRunning: run.state === 'running',
+    guardrailEvents,
+    lastAgentId: stepRuns.filter((step) => step.kind === 'agent').at(-1)?.id ?? null,
+    following,
+    onToggleFollow,
+    baseDir,
+    primaryModel: topModel,
+    agent,
+    execution,
+    pendingSteers,
+    setPendingSteers,
+  };
 
   return (
     <>
-      <AttemptHeader run={run} steps={steps} />
+      <AttemptHeader run={run} stepRuns={stepRuns} />
       <AttemptSummaryCard run={run} snapshot={snapshot} model={topModel} toolCalls={stats.toolCalls} />
-      {tabs.length > 0 && active && <StepTabsBar tabs={tabs} active={active} onSelect={setPicked} />}
-      {tabContent}
+      {numbers.length > 1 && pass !== null && <PassSelector numbers={numbers} runs={stepRuns} selected={pass} max={workflow?.maxAttempts ?? null} onSelect={setPicked} />}
+      {stepRuns.length === 0 && run.state !== 'running' ? (
+        <>
+          <p className="mb-2 mt-4 text-small text-muted">Recorded before step runs: steps aren&apos;t itemised for this Attempt.</p>
+          <ChatTranscript events={events} unavailable={logUnavailable} fromArchive={fromArchive} model={topModel} agent={agent} attemptId={run.id} baseDir={baseDir} embedded />
+        </>
+      ) : rows.length === 0 ? (
+        <p className="mt-4 text-small text-muted">No step has run yet.</p>
+      ) : (
+        <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />
+      )}
       <details className="group mt-8 border-t border-hairline">
         <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
           <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
@@ -223,4 +121,11 @@ export function AttemptPanel({
       </details>
     </>
   );
+}
+
+/** A Ticket with no Attempt yet: its workflow outline as pending rows. */
+export function OutlineSteps({ workflow }: { workflow: WorkflowStepsResponse | null }) {
+  const rows = outlineRows(workflow);
+  if (rows.length === 0) return null;
+  return <StepRunList rows={rows} info={workflow?.stepInfo} now={0} ctx={null} />;
 }

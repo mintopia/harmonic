@@ -17,15 +17,10 @@ export interface BusEvents {
   operations: (event: OperationEvent) => void;
   attempt_event: (event: PersistedAttemptEvent) => void;
   attempt_log_event: (event: LiveAttemptEvent) => void;
-  /** The critic's own live ACP transcript, streamed on its own channel keyed by
-   * the builder Attempt id — kept apart from `attempt_log_event` so the running
-   * critic renders as its own chat without leaking into the Implementation lane. */
-  critic_log_event: (event: LiveAttemptEvent) => void;
   attempt_changed: (run: AttemptRow) => void;
-  /** A Step transitioned within a still-running Attempt (Implementation →
-   * Verify → Review). The Attempt row is unchanged, so `attempt_changed` never
-   * fires here; this is what refreshes the Task-detail timeline mid-Attempt. */
-  step_changed: (payload: { taskId: number }) => void;
+  /** A step run started or finished, or a Task-level event landed. The Attempt row is unchanged,
+   * so `attempt_changed` never fires here; `attemptId` is the Task's latest Attempt when known. */
+  step_changed: (payload: { taskId: number; attemptId?: number | null }) => void;
   /** Live-usage snapshot pushed ~1s while an Attempt tails its native log. */
   attempt_usage: (payload: { attemptId: number; snapshot: AttemptUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;
@@ -72,7 +67,6 @@ export interface BusEvents {
 export class EventBus {
   private emitter = new EventEmitter();
   private readonly attemptLogEvents = new Map<number, LiveAttemptEvent[]>();
-  private readonly criticLogEvents = new Map<number, LiveAttemptEvent[]>();
   private readonly clearTimers = new Map<number, NodeJS.Timeout>();
   private static readonly maxRunLogEvents = 2_048;
 
@@ -113,7 +107,6 @@ export class EventBus {
 
   private clearAttemptLog(attemptId: number): void {
     this.attemptLogEvents.delete(attemptId);
-    this.criticLogEvents.delete(attemptId);
   }
 
   emit<K extends keyof BusEvents>(event: K, ...args: Parameters<BusEvents[K]>): void {
@@ -148,19 +141,6 @@ export class EventBus {
   latestAttemptLogSeq({ attemptId }: { attemptId: number }): number {
     const events = this.attemptLogEvents.get(attemptId);
     return events?.[events.length - 1]?.seq ?? 0;
-  }
-
-  /** The critic's own live ACP transcript channel — same buffer/replay shape as
-   * {@link emitAttemptLog}, in a separate keyspace so it never mixes with the
-   * builder's Implementation stream. */
-  emitCriticLog(event: LiveAttemptEvent): void {
-    EventBus.buffer(this.criticLogEvents, event);
-    this.extendClear(event.attemptId);
-    this.emitter.emit('critic_log_event', event);
-  }
-
-  *replayCriticLog({ attemptId, after }: { attemptId: number; after: number }): IterableIterator<LiveAttemptEvent> {
-    yield* EventBus.replay(this.criticLogEvents, attemptId, after);
   }
 
   on<K extends keyof BusEvents>(event: K, listener: BusEvents[K]): () => void {

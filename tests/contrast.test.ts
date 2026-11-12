@@ -193,8 +193,8 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
 it('uses contrast-safe ink for a selected failed Attempt label', () => {
   const failed: Attempt = {
     id: 1, taskId: 1, number: 1, state: 'failed', startedAt: 0, endedAt: 1,
-    feedback: null, verifiedSha: null, escalationReason: null, workingDir: null,
-    harness: null, model: null, classifier: null, routing: null, verifierStatuses: [], continuation: null, steps: [],
+    feedback: null, escalationReason: null, workingDir: null,
+    harness: null, model: null, classifier: null, routing: null, continuation: null, stepRuns: [],
   };
   const html = renderToStaticMarkup(createElement(AttemptsNav, {
     attempts: [failed], selectedNumber: 1, onSelect: () => {},

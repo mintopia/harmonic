@@ -39,6 +39,12 @@ interface ArchiveManifest {
   [key: string]: unknown;
 }
 
+export interface StepRunArchiveRef {
+  pass: number | null;
+  stepId: string;
+  stepRunId: number;
+}
+
 export interface StepArchiveWriter {
   readonly dir: Promise<string>;
   /** Attempt-relative path of this step's `prompt.md`. */
@@ -51,13 +57,6 @@ export interface StepArchiveWriter {
 }
 
 export type ResolutionKind = 'task-conflict' | 'epic-conflict' | 'epic-resolve' | 'epic-refresh';
-
-export type CriticArchiveStage = 'pre-merge' | 'post-merge';
-
-/** Attempt-relative locator of a critic step's Resolved Prompt, matching the directory `criticStep`/`epicCriticStep` write. */
-export function criticPromptKey(stage: CriticArchiveStage, stepId: string): string {
-  return `verification/${stage}/${stepId}/prompt.md`;
-}
 
 export type OperatorAction = 'steer' | 'retry' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
 export type OperatorActor = 'operator' | 'agent';
@@ -339,36 +338,6 @@ export class TaskArchive {
     return dir;
   }
 
-  private async createOutputLog(root: string, attemptNumber: number, stage: 'pre-merge' | 'post-merge', stepId: string): Promise<VerificationOutputLog> {
-    const key = `verification/${stage}/${safeSegment(stepId)}/output.log`;
-    const path = join(root, 'attempts', String(attemptNumber), key);
-    await mkdir(dirname(path), { recursive: true });
-    return { path, key };
-  }
-
-  async verificationOutputLog(
-    task: TaskRow,
-    attemptNumber: number,
-    stage: 'pre-merge' | 'post-merge',
-    stepId: string,
-  ): Promise<VerificationOutputLog | null> {
-    try {
-      return await this.createOutputLog(await this.ensure(task), attemptNumber, stage, stepId);
-    } catch (err) {
-      warn('archive: verification output directory failed', err, { taskId: task.id, attemptNumber, stage });
-      return null;
-    }
-  }
-
-  async epicVerificationOutputLog(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<VerificationOutputLog | null> {
-    try {
-      return await this.createOutputLog(await this.ensureEpic(workspaceId, epicRef), attemptNumber, stage, commandId);
-    } catch (err) {
-      warn('archive: epic verification output directory failed', err, { workspaceId, epicRef, attemptNumber });
-      return null;
-    }
-  }
-
   /** Archive the Route Classifier's Resolved Prompt at `<attempt>/routing/classifier/prompt.md`. Best-effort: resolves null (never throws) when the write fails. */
   async appendRoutingPrompt(task: TaskRow, attemptNumber: number, prompt: string): Promise<{ locator: string; promptIndex: number } | null> {
     const rel = 'routing/classifier';
@@ -384,8 +353,28 @@ export class TaskArchive {
     }
   }
 
-  implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {
-    return this.stepWriter(this.implementationDir(task, attemptNumber), 'implementation', { taskId: task.id, attemptNumber });
+  private stepRunRel(ref: StepRunArchiveRef): string {
+    return `steps/${ref.pass ?? '_'}-${safeSegment(ref.stepId)}-${ref.stepRunId}`;
+  }
+
+  private stepRunDir(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): Promise<string> {
+    return this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), this.stepRunRel(ref))));
+  }
+
+  /** One archive directory per step run: `attempts/<n>/steps/<pass|_>-<stepId>-<stepRunId>/`. */
+  stepRun(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): StepArchiveWriter {
+    return this.stepWriter(this.stepRunDir(task, attemptNumber, ref), this.stepRunRel(ref), { taskId: task.id, attemptNumber, ...ref });
+  }
+
+  /** Path of the step run's uncapped `output.log`; null when the directory cannot be created. */
+  async stepRunOutputLog(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): Promise<VerificationOutputLog | null> {
+    try {
+      const dir = await this.stepRunDir(task, attemptNumber, ref);
+      return { path: join(dir, 'output.log'), key: `${this.stepRunRel(ref)}/output.log` };
+    } catch (err) {
+      warn('archive: step output directory failed', err, { taskId: task.id, attemptNumber, ...ref });
+      return null;
+    }
   }
 
   /**
@@ -413,18 +402,6 @@ export class TaskArchive {
     }
   }
 
-  criticStep(task: TaskRow, attemptNumber: number, stage: CriticArchiveStage, stepId: string): StepArchiveWriter {
-    const dir = this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', stage, stepId)));
-    return this.stepWriter(dir, `verification/${stage}/${stepId}`, { taskId: task.id, attemptNumber, stage, stepId });
-  }
-
-  epicCriticStep(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, stepId: string): StepArchiveWriter {
-    const dir = this.ensureEpic(workspaceId, epicRef).then((root) =>
-      this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', 'pre-merge', stepId)),
-    );
-    return this.stepWriter(dir, `verification/pre-merge/${stepId}`, { workspaceId, epicRef, attemptNumber, stepId });
-  }
-
   ensureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const key = `epic:${workspaceId}:${epicRef}`;
     const inflight = this.ensuring.get(key);
@@ -442,21 +419,6 @@ export class TaskArchive {
     if (!('epicRef' in owner)) return this.existingDir(owner);
     const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
     return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
-  }
-
-  /** The locator of a critic step's archived `prompt.md`, whichever verification stage wrote it; null when none exists. */
-  async archivedCriticPromptKey(
-    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
-    attemptNumber: number,
-    stepId: string,
-  ): Promise<string | null> {
-    const root = await this.existingOwnerDir(owner);
-    if (!root) return null;
-    for (const stage of ['pre-merge', 'post-merge'] as const) {
-      const key = criticPromptKey(stage, stepId);
-      if (await pathExists(join(root, 'attempts', String(attemptNumber), key))) return key;
-    }
-    return null;
   }
 
   async archivedVerificationOutput(
@@ -591,10 +553,19 @@ export class TaskArchive {
       const attemptDir = join(root, 'attempts', String(attemptNumber), kind);
       const name = nativePath ? basename(nativePath) : null;
       if (kind === 'implementation') {
-        const native = join(attemptDir, 'native');
-        if (name) return (await pathExists(join(native, name))) ? join(native, name) : null;
-        const files = (await readdir(native, { withFileTypes: true })).filter((e) => e.isFile() && e.name.endsWith('.jsonl'));
-        return files.length === 1 ? join(native, files[0]!.name) : null;
+        const natives = [join(attemptDir, 'native')];
+        const stepsDir = join(root, 'attempts', String(attemptNumber), 'steps');
+        for (const entry of await readdir(stepsDir, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory()) natives.push(join(stepsDir, entry.name, 'native'));
+        const found: string[] = [];
+        for (const native of natives) {
+          if (name) {
+            if (await pathExists(join(native, name))) return join(native, name);
+          } else {
+            const files = await readdir(native, { withFileTypes: true }).catch(() => []);
+            found.push(...files.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(native, e.name)));
+          }
+        }
+        return !name && found.length === 1 ? found[0]! : null;
       }
       if (!name) return null;
       const subdirs = async (dir: string) => (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);

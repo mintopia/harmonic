@@ -701,6 +701,14 @@ describe('epic refresh corrective turn (issue #315)', () => {
     expect(attemptStates).toEqual(['running', 'escalated']);
   });
 
+  it('refuses a retry on an Epic that is not held instead of silently doing nothing', async () => {
+    const workspaces = new WorkspaceService(asyncDb, settingsStore);
+    const workspace = await workspaces.create({ name: 'Epic not held', workingDir: repo });
+    const service = new TrackerEpicService(tasks, async () => [workspace], { fireAndForget: executionPlumbing().fireAndForget, integration: 'lifecycle-only', epicAttempts: new AttemptStore(asyncDb) });
+    service.startWorkspace(workspace);
+    await expect(service.retryEpic(workspace.id, trackerRef(5), 'guidance', 'fresh')).resolves.toBeNull();
+  });
+
   it('requeues an escalated Epic with guidance and resets its resolver budget', async () => {
     const workspaces = new WorkspaceService(asyncDb, settingsStore);
     const workspace = await workspaces.create({ name: 'Epic manual resume', workingDir: repo });
@@ -738,7 +746,12 @@ describe('epic refresh corrective turn (issue #315)', () => {
       const row = rows.at(-1);
       return row?.state === 'escalated' ? row : undefined;
     });
-    const holdRecorded = async () => (await service.epicDetail(workspace.id, trackerRef(5)))?.integrate.held ?? undefined;
+    const holdRecorded = async () => {
+      const held = (await service.epicDetail(workspace.id, trackerRef(5)))?.integrate.held ?? undefined;
+      // The hold is only exposed once the escalated row is visible, so an offered Retry always acts.
+      if (held !== undefined) expect((await attempts.currentForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) })).state).toBe('escalated');
+      return held;
+    };
     await waitFor(holdRecorded);
 
     await expect(service.retryEpic(workspace.id, trackerRef(5), 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'escalated' });

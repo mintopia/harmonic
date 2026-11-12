@@ -1,15 +1,17 @@
 import type { TrackerRef } from '../tracker/adapter.js';
 import type { AppContext } from './app.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { AttemptRow, AttemptState, TaskAttemptRow, VerificationAttemptRow, StepType, ConversationRow } from '../db/schema.js';
-import { attempts, steps, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, verificationAttempts } from '../db/schema.js';
-import { and, desc, eq } from 'drizzle-orm';
+import type { AttemptRow, AttemptState, TaskAttemptRow, WorkflowStepRunRow, ConversationRow } from '../db/schema.js';
+import { attempts, guardrailEvents, attemptEvents, isEpicAttempt, isTaskAttempt, workflowStepRuns } from '../db/schema.js';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveAgentMessages } from '../domain/agent-messages.js';
-import { NO_CONFIGURED_VERIFIERS, verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
+import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
+import { stepRunKind } from '../domain/step-run-kind.js';
+import { pinnedWorkflow, stepInfoOf } from './workflow-steps-response.js';
 import { costOfUsages, pricesForHarness, resolveContextWindowForHarness, parseCost, withCriticContribution, withRoutingContribution, type Cost } from '../domain/pricing.js';
 import { DomainError } from '../domain/errors.js';
-import type { AttemptUsageSnapshot } from '../execution/usage.js';
+import type { AttemptUsage, AttemptUsageSnapshot } from '../execution/usage.js';
 import { Git } from '../execution/git.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { adapterFor } from '../execution/harness/registry.js';
@@ -30,7 +32,10 @@ import {
   deriveConversationTitle,
   firstLineTitle,
   taskDisplayTitle,
+  stepRunToApi,
   type ApiAttemptTimeline,
+  type ApiStepRun,
+  type ApiCurrentStep,
   type ApiTicketTimelineEvent,
   type ApiAttemptSummary,
   type ApiEpicAttempt,
@@ -50,13 +55,37 @@ const pricesOf = (ctx: AppContext, harness = 'claude') => {
   return pricesForHarness(harnessFor(config, harness));
 };
 
-/** One DTO builder for REST hydration and live timeline updates. */
+const stepRunStore = (ctx: AppContext) => new WorkflowStepRunStore(ctx.asyncDb);
+
+const usageOf = (row: Pick<WorkflowStepRunRow, 'usage'>): AttemptUsage | null => {
+  try {
+    return parseUsage(row.usage);
+  } catch {
+    return null;
+  }
+};
+
+/** Step runs as API rows: cost derived from each row's recorded usage, detail from its pinned workflow's outline. */
+export async function stepRunsToApi(ctx: AppContext, rows: readonly WorkflowStepRunRow[], fallbackHarness?: string): Promise<ApiStepRun[]> {
+  const infoByRef = new Map<string, ReturnType<typeof stepInfoOf>>();
+  for (const ref of new Set(rows.map((row) => row.workflowRef))) infoByRef.set(ref, stepInfoOf(await pinnedWorkflow(ctx.workflows, ref)));
+  return rows.map((row) => {
+    const usage = usageOf(row);
+    const cost = usage ? costOfUsages([usage], pricesOf(ctx, row.harness ?? fallbackHarness)) : null;
+    return stepRunToApi(row, { info: infoByRef.get(row.workflowRef)?.[row.stepId], cost });
+  });
+}
+
+/** Critic step runs are the only step usage not already folded into the Attempt's own Usage. */
+function criticsOf(ctx: AppContext, rows: readonly WorkflowStepRunRow[], fallbackHarness: string | undefined) {
+  return rows.flatMap((row) => {
+    const usage = row.action === 'critic' ? usageOf(row) : null;
+    return usage ? [{ usage, prices: pricesOf(ctx, row.harness ?? fallbackHarness) }] : [];
+  });
+}
+
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const [task, rows, budgetBase] = await Promise.all([
-    ctx.tasks.get(taskId),
-    ctx.attempts.listForTask(taskId),
-    ctx.attempts.budgetBase(taskId),
-  ]);
+  const [task, rows] = await Promise.all([ctx.tasks.get(taskId), ctx.attempts.listForTask(taskId)]);
   const sessionPaths = task.isolationMode === 'worktree'
     ? await ctx.sessions.worktreePaths(rows.flatMap((attempt) => (attempt.sessionRowId === null ? [] : [attempt.sessionRowId])))
     : new Map<number, string>();
@@ -64,34 +93,32 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
     if (task.isolationMode !== 'worktree') return null;
     return (attempt.sessionRowId === null ? undefined : sessionPaths.get(attempt.sessionRowId)) ?? ctx.runner.worktreePathForTask(task);
   };
+  const stepRunRows = await stepRunStore(ctx).listForTask(taskId);
+  const stepRuns = await stepRunsToApi(ctx, stepRunRows.filter((row) => row.attemptId !== null), task.harness);
+  const byAttempt = new Map<number, ApiStepRun[]>();
+  for (const stepRun of stepRuns) byAttempt.set(stepRun.attemptId!, [...(byAttempt.get(stepRun.attemptId!) ?? []), stepRun]);
   return {
-    budgetBase,
-    attempts: await Promise.all(rows.map(async (attempt) => {
-      const [stepRows, attemptVerifications] = await Promise.all([
-        ctx.attempts.listSteps(attempt.id),
-        ctx.verificationAttempts.list(attempt.id),
-      ]);
-      return attemptToTimelineApi(attempt, stepRows, attemptVerifications, workingDirOf(attempt));
-    })),
+    attempts: rows.map((attempt) => attemptToTimelineApi(attempt, byAttempt.get(attempt.id) ?? [], workingDirOf(attempt))),
   };
 }
 
-/** The configured-or-recorded verifier rows for one Attempt's always-visible read model. */
-export async function verifierStatusesToApi(
-  ctx: AppContext,
-  run: Pick<TaskAttemptRow, 'id' | 'taskId' | 'number'>,
-  recordedAttempts?: readonly VerificationAttemptRow[],
-): Promise<VerifierStatus[]> {
-  const listAttempts = async (): Promise<readonly VerificationAttemptRow[]> => {
-    if (recordedAttempts) return recordedAttempts;
-    const attempt = await ctx.attempts.getForTaskNumber(run.taskId, run.number);
-    return attempt ? ctx.verificationAttempts.list(attempt.id) : [];
-  };
-  const [attempts, stepType] = await Promise.all([
-    listAttempts(),
-    ctx.attempts.currentStepType(run.taskId, run.number),
-  ]);
-  return verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts, stepType });
+/** The running step run of each running Attempt, as the Task DTO's `currentStep`. */
+async function currentSteps(ctx: AppContext, attemptIds: readonly number[]): Promise<Map<number, ApiCurrentStep>> {
+  const running = await stepRunStore(ctx).runningForAttempts(attemptIds);
+  return new Map([...running].map(([attemptId, row]) => [attemptId, { stepId: row.stepId, action: row.action, kind: stepRunKind(row.action) }]));
+}
+
+/** Critic spend per Task, summed over every Attempt's critic step runs. */
+async function criticCostsByTask(ctx: AppContext, tasks: readonly { id: number; harness: string }[]): Promise<Map<number, Cost>> {
+  const harnessOf = new Map(tasks.map((task) => [task.id, task.harness]));
+  const rows = await ctx.asyncDb.read((db) =>
+    db.select().from(workflowStepRuns).where(and(inArray(workflowStepRuns.taskId, [...harnessOf.keys()]), eq(workflowStepRuns.action, 'critic'), isNotNull(workflowStepRuns.usage))).all(),
+  );
+  const critics = new Map<number, ReturnType<typeof criticsOf>>();
+  for (const row of rows) {
+    if (row.taskId !== null) critics.set(row.taskId, [...(critics.get(row.taskId) ?? []), ...criticsOf(ctx, [row], harnessOf.get(row.taskId))]);
+  }
+  return new Map([...critics].flatMap(([id, list]) => { const { cost } = withCriticContribution(null, null, list); return cost ? [[id, cost] as const] : []; }));
 }
 
 type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
@@ -107,37 +134,19 @@ function parsePayload(raw: string): unknown {
 }
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
-  const [taskAttempts, lifecycle, verification, skippedVerification, guardrails, taskLevel] = await Promise.all([
+  const [taskAttempts, lifecycle, stepRunRows, guardrails, taskLevel] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: attemptEvents }).from(attemptEvents).innerJoin(attempts, eq(attemptEvents.attemptId, attempts.id)).where(and(eq(attempts.taskId, taskId), eq(attemptEvents.type, 'lifecycle'))).orderBy(desc(attemptEvents.ts), desc(attemptEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ step: steps }).from(steps).innerJoin(attempts, eq(steps.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(steps.endedAt), desc(steps.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select().from(workflowStepRuns).where(and(eq(workflowStepRuns.taskId, taskId), isNotNull(workflowStepRuns.attemptId))).orderBy(desc(workflowStepRuns.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(attempts, eq(guardrailEvents.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.taskEvents.listRecent(taskId, TICKET_TIMELINE_SOURCE_LIMIT),
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
   const attemptsByNumber = new Map<number, AttemptRow>(taskAttempts.map((a) => [a.number, a]));
-  const verificationByAttempt = new Map<number, VerificationAttemptRow[]>();
-  for (const { attempt: v } of verification) {
-    const rows = verificationByAttempt.get(v.attemptId) ?? [];
-    rows.push(v);
-    verificationByAttempt.set(v.attemptId, rows);
-  }
   const pending: PendingTicketTimelineEvent[] = [];
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
-  await forEachYielding(taskAttempts, async (attempt) => {
-    for (const status of verifierStatuses({ verifiers: NO_CONFIGURED_VERIFIERS, attempts: verificationByAttempt.get(attempt.id) ?? [] })) {
-      if (status.state !== 'disabled') continue;
-      add({
-        attemptId: attempt.id,
-        ts: attempt.endedAt ?? attempt.startedAt,
-        kind: 'verification',
-        data: { outcome: 'disabled', mechanism: status.mechanism, reason: status.reason, derived: true },
-      }, 2);
-    }
-  });
   await forEachYielding(taskAttempts, async (attempt) => {
     add({ attemptId: attempt.id, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
     if (attempt.endedAt !== null) add({ attemptId: attempt.id, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback, reason: attempt.reason } }, 7);
@@ -147,10 +156,10 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     if (prior?.state === 'escalated' && prior.feedback !== null) add({ attemptId: prior.id, ts: attempt.startedAt, kind: 'operator-retry', data: { attempt: prior.number, feedback: prior.feedback } }, 4);
   });
   await forEachYielding(lifecycle, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: parsePayload(event.payload) } }, 3); });
-  await forEachYielding(verification, async ({ attempt }) => { add({ attemptId: attempt.attemptId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid } }, 2); });
-  await forEachYielding(skippedVerification, async ({ step }) => {
-    if (step.type !== 'verification' || step.state !== 'skipped' || step.endedAt === null) return;
-    add({ attemptId: step.attemptId, ts: step.endedAt, kind: 'verification', data: { outcome: 'skipped', command: step.command, verdict: step.verdict } }, 2);
+  await forEachYielding(stepRunRows, async (row) => {
+    const data = { stepRunId: row.id, stepId: row.stepId, action: row.action, kind: stepRunKind(row.action), pass: row.attempt };
+    add({ attemptId: row.attemptId, ts: row.startedAt, kind: 'step-run', data: { ...data, phase: 'started' } }, 1);
+    if (row.endedAt !== null) add({ attemptId: row.attemptId, ts: row.endedAt, kind: 'step-run', data: { ...data, phase: 'finished', outcome: row.outcome, summary: row.summary } }, 6);
   });
   await forEachYielding(guardrails, async ({ event }) => { add({ attemptId: event.attemptId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: parsePayload(event.payload) } }, 2); });
   await forEachYielding(taskLevel, async (event) => { add({ attemptId: null, ts: event.ts, kind: 'lifecycle', data: { type: 'lifecycle', payload: event.payload } }, 3); });
@@ -193,19 +202,15 @@ export async function attemptToApi(ctx: AppContext, run: AttemptRow): Promise<Ap
   if (!isTaskAttempt(run)) throw new DomainError('not_found', `Epic Attempt ${run.id} has no Task summary`);
   // The per-Attempt tool-call total from its native aggregate — one
   // bounded read per Attempt (attempts-per-Task is small), no event replay.
-  const [toolTotals, task, verifications] = await Promise.all([
+  const [toolTotals, task, stepRunRows] = await Promise.all([
     ctx.attempts.listToolCalls(run.id),
     ctx.tasks.get(run.taskId),
-    ctx.verificationAttempts.list(run.id),
+    stepRunStore(ctx).listForAttempt(run.id),
   ]);
   let toolCalls = 0;
   for (const total of toolTotals.values()) toolCalls += total;
   const summary = attemptToApiSummary(run, toolCalls, contextWindowOf(ctx, task.model, task.harness));
-  const critics = verifications.flatMap((row) => {
-    const usage = row.mechanism === 'critic' ? parseUsage(row.usage) : null;
-    return usage ? [{ usage, prices: pricesOf(ctx, row.harness ?? task.harness) }] : [];
-  });
-  const { usage, cost } = withCriticContribution(summary.usage, summary.cost, critics);
+  const { usage, cost } = withCriticContribution(summary.usage, summary.cost, criticsOf(ctx, stepRunRows, task.harness));
   const routing = run.routingUsage ? { cost: parseCost(run.routingCost) } : null;
   return { ...summary, usage, cost: withRoutingContribution(cost, routing) };
 }
@@ -220,15 +225,16 @@ export async function epicAttemptTimelineToApi(
   return {
     attempts: await Promise.all(
       runs.map(async (run) => {
-        const [toolTotals, stepRows, verificationRows, events] = await Promise.all([
+        const [toolTotals, stepRunRows, events] = await Promise.all([
           ctx.attempts.listToolCalls(run.id),
-          ctx.attempts.listSteps(run.id),
-          ctx.verificationAttempts.list(run.id),
+          stepRunStore(ctx).listForAttempt(run.id),
           ctx.attempts.listEvents(run.id),
         ]);
         let toolCalls = 0;
         for (const count of toolTotals.values()) toolCalls += count;
-        return epicAttemptToApi(run, toolCalls, stepRows, verificationRows, events);
+        const harness = ctx.settingsStore.getGlobal().defaults.harness;
+        const { cost } = withCriticContribution(null, parseCost(run.cost), criticsOf(ctx, stepRunRows, harness));
+        return epicAttemptToApi(run, toolCalls, await stepRunsToApi(ctx, stepRunRows, harness), cost, events);
       }),
     ),
   };
@@ -249,9 +255,12 @@ export async function attemptUsageToApi(ctx: AppContext, attemptId: number, snap
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.attempts.listForTask(task.id);
   const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
-  const currentStep = running ? await ctx.attempts.currentStepType(task.id, running.number) : null;
-  const hasCandidate = await hasCandidateFor(task, runs.at(-1));
-  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep, hasCandidate);
+  const [currentStep, criticCosts, hasCandidate] = await Promise.all([
+    running ? currentSteps(ctx, [running.id]).then((steps) => steps.get(running.id) ?? null) : null,
+    criticCostsByTask(ctx, [task]),
+    hasCandidateFor(task, runs.at(-1)),
+  ]);
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null, currentStep, criticCosts.get(task.id) ?? null, hasCandidate);
 }
 
 /** Serialize a task list from its batched Attempts as lean rows (no `prompt`). */
@@ -264,9 +273,10 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
     return run ? [run] : [];
   });
   const attemptIdByTask = await ctx.attempts.idsFor(running.map((run) => ({ taskId: run.taskId, number: run.number })));
-  const [toolCountsByAttempt, currentSteps, hasCandidates] = await Promise.all([
+  const [toolCountsByAttempt, stepsByAttempt, criticCosts, hasCandidates] = await Promise.all([
     ctx.attempts.toolCallCounts([...attemptIdByTask.values()]),
-    ctx.attempts.currentStepTypes(running.map((run) => ({ taskId: run.taskId, number: run.number }))),
+    currentSteps(ctx, running.map((run) => run.id)),
+    criticCostsByTask(ctx, tasks),
     Promise.all(tasks.map((task) => hasCandidateFor(task, (runsByTask.get(task.id) ?? []).at(-1)))),
   ]);
   return tasks.map((task, i) => {
@@ -278,14 +288,15 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
       task,
       runs,
       activeRun ? (activeAttemptId != null ? toolCountsByAttempt.get(activeAttemptId) ?? 0 : 0) : null,
-      activeRun ? currentSteps.get(task.id) ?? null : null,
+      activeRun ? stepsByAttempt.get(activeRun.id) ?? null : null,
+      criticCosts.get(task.id) ?? null,
       hasCandidates[i]!,
     ));
   });
 }
 
-async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
-  let hasCandidate = latestVerifiedRef(lastRun) !== null;
+export async function hasCandidateFor(task: TaskWithDeps, lastRun: AttemptRow | undefined): Promise<boolean> {
+  let hasCandidate = latestVerifiedRef(lastRun) !== null || (task.isolationMode !== 'worktree' && !!lastRun?.verifiedHeadOid);
   if (!hasCandidate && task.state === 'escalated' && task.isolationMode === 'worktree' && lastRun?.branch && lastRun?.baseBranch) {
     hasCandidate = (await Git.commitsAhead(task.workingDir, lastRun.baseBranch, lastRun.branch)) > 0;
   }
@@ -297,12 +308,14 @@ function taskToApiWithRuns(
   task: TaskWithDeps,
   runs: AttemptRow[],
   toolCount: number | null,
-  currentStep: StepType | null,
+  currentStep: ApiCurrentStep | null,
+  criticCost: Cost | null,
   hasCandidate: boolean,
 ): ApiTask {
   return taskToApiDto(task, runs, {
     toolCount,
     currentStep,
+    criticCost,
     hasCandidate,
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),

@@ -1,6 +1,5 @@
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
-import type { Verdict } from '../../src/verification/critic-schema.js';
 
 /** The stored Ticket states; blocked-ness and agent-workability are derived, never stored. */
 export const TASK_STATES = ['draft', 'ready', 'working', 'paused', 'escalated', 'done', 'cancelled'] as const;
@@ -33,8 +32,6 @@ export const MERGE_STATUSES = ['verifying', 'merging', 'resolving-conflicts'] as
 export type MergeStatus = (typeof MERGE_STATUSES)[number];
 
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
-export type StepType = 'rebase' | 'implementation' | 'verification' | 'review';
-export type StepState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
 
 export type WorkflowChosen = 'explicit' | 'label' | 'classifier' | 'workspace' | 'global';
 export type WorkflowStepOutcome = 'pass' | 'fail' | 'inconclusive' | 'conflict' | 'skipped';
@@ -89,6 +86,50 @@ export interface StepCheckpoint {
   forced: boolean;
   unchanged?: boolean;
   files?: number;
+  error?: string;
+}
+
+export type StepRunKind = 'rebase' | 'agent' | 'check' | 'critic' | 'publish' | 'tracker' | 'cleanup' | 'marker';
+/** running = no outcome and no end time; interrupted = end time but no outcome (process death). */
+export type StepRunState = WorkflowStepOutcome | 'running' | 'interrupted';
+
+export interface StepRunOutputs {
+  stdout: string;
+  exitCode: number | null;
+  baseSha?: string;
+  conflictedFiles?: string[];
+  url?: string;
+  number?: number;
+  branch?: string;
+  verdict?: 'pass' | 'fail' | 'inconclusive';
+  reason?: string;
+  findings?: string[];
+  checkpoint?: StepCheckpoint;
+}
+
+/** One execution of one workflow step within an Attempt. */
+export interface StepRun {
+  id: number;
+  attemptId: number | null;
+  stepId: string;
+  action: string;
+  kind: StepRunKind;
+  /** The `attempts:` block Pass, 1-based; null outside the block. */
+  pass: number | null;
+  position: number;
+  state: StepRunState;
+  outcome: WorkflowStepOutcome | null;
+  summary: string | null;
+  detail: string | null;
+  condition: string | null;
+  outputs: StepRunOutputs;
+  hasPrompt: boolean;
+  sessionRowId: number | null;
+  harness: string | null;
+  model: string | null;
+  cost: Cost | null;
+  startedAt: number;
+  endedAt: number | null;
 }
 
 export interface TaskExecution {
@@ -101,6 +142,10 @@ export interface TaskExecution {
 }
 
 export interface WorkflowStepRun {
+  id: number;
+  attemptId: number | null;
+  kind: StepRunKind;
+  sessionRowId: number | null;
   stepId: string;
   action: string;
   position: number;
@@ -110,7 +155,7 @@ export interface WorkflowStepRun {
   outcome: WorkflowStepOutcome | null;
   summary: string | null;
   resolvedPrompt: string | null;
-  outputs: { stdout: string; exitCode: number | null; checkpoint?: StepCheckpoint };
+  outputs: StepRunOutputs;
   startedAt: number | null;
   endedAt: number | null;
 }
@@ -129,19 +174,6 @@ export interface WorkflowStepsResponse {
   steps: WorkflowStepRun[];
 }
 
-export interface Step {
-  id: number;
-  attemptId: number;
-  type: StepType;
-  position: number;
-  state: StepState;
-  command: string | null;
-  verdict: string | null;
-  logLocator: string | null;
-  startedAt: number | null;
-  endedAt: number | null;
-}
-
 export interface Attempt {
   id: number;
   taskId: number;
@@ -151,14 +183,10 @@ export interface Attempt {
   endedAt: number | null;
   /** The failure feedback this attempt closed with — what the next attempt was told to fix. */
   feedback: string | null;
-  /** Branch tip this attempt's verification proved; null until verification ran. */
-  verifiedSha: string | null;
   /** Why this attempt handed the ticket to a human; null unless it escalated. */
   escalationReason: string | null;
   /** The folder the agent worked in (its managed worktree); null in direct mode, where the Task's workingDir applies. */
   workingDir: string | null;
-  /** Read-time command and critic outcomes for this Attempt. */
-  verifierStatuses: VerifierStatus[];
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
     reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens' | 'missing-warm-window';
@@ -175,7 +203,7 @@ export interface Attempt {
   classifier: AttemptClassifier | null;
   /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
   routing: { cost: Cost | null; models: string[] } | null;
-  steps: Step[];
+  stepRuns: StepRun[];
 }
 
 /** A budget dimension a Guardrail can trip on; mirrors
@@ -199,56 +227,6 @@ export interface GuardrailEvent {
   observedValue: number;
   configSource: 'default' | 'workspace';
   payload: unknown;
-}
-
-/** A Verification mechanism: a command verifier runs an
- * argv check against a frozen candidate; a critic verifier is a read-only
- * agent reviewer. Mirrors the server's `VERIFICATION_MECHANISMS`. */
-export type VerificationMechanism = 'critic' | 'command';
-
-/** One verifier category's current read-time status, including categories that did not run. */
-export interface VerifierStatus {
-  mechanism: VerificationMechanism;
-  verifier?: string;
-  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled' | 'unrunnable' | 'planned' | 'running';
-  reason: string | null;
-  /** The ordered command plan; `command` mechanism only. */
-  commands?: string[];
-  /** The resolved review harness that will drive the critic; `critic` mechanism
-   * only. Labels the running critic before its persisted attempt row exists. */
-  harness?: string | null;
-}
-
-/** One persisted Verification-attempt event, as
- * `GET /api/attempts/:id/verification-attempts` serves it — mirrors the server's
- * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Task's
- * self-heal retries append further attempts for the same `mechanism`, so the
- * log is append-only and `seq`-ordered; the latest attempt per mechanism is
- * the one that currently governs the Verification outcome (see
- * `verification-attempts-model.ts`). */
-export interface VerificationAttempt {
-  id: number;
-  /** The Attempt this row is keyed to. */
-  attemptId: number;
-  seq: number;
-  ts: number;
-  mechanism: VerificationMechanism;
-  inputOid: string;
-  verdict: Verdict;
-  summary: string;
-  output: string;
-  /** Archive locator of the critic's Resolved Prompt — read it with
-   * `api.resolvedPrompt(attemptId, promptLocator)`; null for a command verifier
-   * and for rows with no archived prompt. */
-  promptLocator: string | null;
-  /** The critic harness that drove this attempt (may differ from the builder's);
-   * null for a command verifier or a pre-feature row. */
-  harness: string | null;
-  /** Whether a critic-session transcript can be read for this attempt
-   * — fetch it with `api.criticLog(id)`. */
-  hasTranscript: boolean;
-  /** The command output was capped; the full text is served by `api.verificationOutputUrl(id)`. */
-  outputTruncated: boolean;
 }
 
 export type ExportDestinationKind = 'directory' | 's3';
@@ -301,7 +279,7 @@ export type TicketTimelineKind =
   | 'attempt-started'
   | 'attempt-finished'
   | 'lifecycle'
-  | 'verification'
+  | 'step-run'
   | 'guardrail'
   | 'operator-retry'
   | 'agent-message'
@@ -591,20 +569,10 @@ export interface Workspace {
   archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
-  /** Drive overrides, decomposed into independently-inheritable
-   * fields; each `null` inherits the matching global `config.drive.*`. */
-  drivePrompt: string | null;
-  driveUnattendedReminder: string | null;
-  driveContinuePrompt: string | null;
-  driveCommitNudge: string | null;
-  /** Task Prompt override; `null` inherits `config.taskPrompt`. */
-  taskPrompt: string | null;
   /** Pause message override; `null` inherits `config.pauseMessage`. */
   pauseMessage: string | null;
-  mergeConflictPrompt: string | null;
   mergeEpicConflictPrompt: string | null;
   mergeEpicRefreshPrompt: string | null;
-  verifyEpicResolveSuffix: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -779,10 +747,8 @@ export interface Task {
   toolCount: number | null;
   /** The running run's id, so the board can match the `attempt_usage` firehose to this card; null unless the Task is working. */
   attemptId: number | null;
-  /** The running run's current Attempt Step, for the
-   * Board's Active-card status badge; null unless the Task is working, or
-   * between Steps (e.g. mid-merge). */
-  currentStep: StepType | null;
+  /** The running Attempt's running step run; null unless a step is executing. */
+  currentStep: { stepId: string; action: string; kind: StepRunKind } | null;
   /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the attempt_usage firehose. */
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow. */
@@ -869,9 +835,7 @@ export interface EpicAttempt {
   contextTokens: number | null;
   startedAt: number;
   endedAt: number | null;
-  steps: Step[];
-  /** Every command and critic record from this whole-Epic verification. */
-  verificationAttempts: VerificationAttempt[];
+  stepRuns: StepRun[];
   /** Resolved Prompts this Attempt sent to Epic resolvers, oldest first. */
   resolverPrompts: EpicResolverPrompt[];
 }
@@ -967,6 +931,8 @@ export interface AttemptLogEvent {
   id: number;
   /** Present for live WebSocket events; REST transcript hydration is already scoped by URL. */
   attemptId?: number;
+  /** Set once the server tags live events with their step run. */
+  stepRunId?: number;
   seq: number;
   ts: number;
   type: 'session_update';

@@ -19,7 +19,6 @@ import { labelType, mergeStatusPill, statePillShape } from '../ui';
 import { useScrollToPanel } from '../useScrollToPanel';
 import { useTicketAttempts } from './useTicketAttempts';
 import { useAttemptLogStream } from './useAttemptLogStream';
-import { useAttemptVerification } from './useAttemptVerification';
 import { useLiveUsage } from './useLiveUsage';
 import { useTicketPageData } from './useTicketPageData';
 import { StatsPanel, statsAttemptsOf } from './ticket/StatsPanel';
@@ -28,14 +27,12 @@ import { Description } from './ticket/Description';
 import { AgentFact, Metrics, Properties } from './ticket/Metrics';
 import { ExecutionRow } from './ticket/TargetParts';
 import { ModelOptionOverrides } from './ticket/ModelOptionOverrides';
-import { TaskProgressBar } from './ticket/TaskProgressBar';
 import { ExportPanel } from './ticket/ExportPanel';
 import { taskExportTarget } from '../export-targets';
 import { ChangesPane, NoRunsYet } from './ticket/ChangesPane';
 import { AttemptsNav, PanelNav } from './ticket/AttemptsNav';
-import { AttemptPanel } from './ticket/AttemptPanel';
+import { AttemptPanel, OutlineSteps } from './ticket/AttemptPanel';
 import { nextUnexecutedStep, workflowEscalationNotes } from '../task-actions-model';
-import { WorkflowSteps } from './ticket/WorkflowSteps';
 import { TicketVariables } from './WorkflowVarsEditors';
 import { UnconfiguredHarnessGate, UnconfiguredHarnessMessage } from './ticket/UnconfiguredHarnessGate';
 
@@ -83,7 +80,6 @@ export function TicketPage({
   const selectedRunId = selectedRun?.id ?? null;
 
   const { events, logUnavailable, fromArchive } = useAttemptLogStream(selectedRunId);
-  const { verificationAttempts, verifierStatuses } = useAttemptVerification(selectedRunId);
 
   const { allTasks, detail, timelineEvents, workspaceName, guardrailEvents, workflowSteps } = useTicketPageData(
     task,
@@ -141,7 +137,6 @@ export function TicketPage({
   const unconfiguredHarness = task.state === 'escalated' && task.escalationCause?.kind === 'harness_unconfigured' ? task.escalationCause : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForAttempt({ task, runs, selectedAttemptId: selectedRunId });
-  const failedStep = latestAttempt?.steps.slice().reverse().find((step) => step.state === 'failed')?.type ?? null;
   const workflowNotes = task.state === 'escalated' ? workflowSteps ? workflowEscalationNotes(workflowSteps) : null : null;
   const panel = contentPanel(resolved);
   const selectAttempt = (attempt: Attempt) => onSelect({ kind: 'attempt', attemptNumber: attempt.number });
@@ -269,19 +264,18 @@ export function TicketPage({
               </div>
               {workflowNotes && (
                 <dl className="mt-2 grid gap-1 text-small text-ink" aria-label="What each action does">
-                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).map(([name, text]) => (
+                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).filter(([name]) => name !== 'Accept' || task.hasCandidate).map(([name, text]) => (
                     <div key={name}>
                       <dt className="inline font-semibold">{name}</dt> <dd className="inline text-muted">{text}</dd>
                     </div>
                   ))}
-                  {!task.hasCandidate && <div className="text-muted">Accept is unavailable: no candidate commit on the Ticket branch.</div>}
                 </dl>
               )}
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}
               {gateModel.kind !== 'result' && (
                 <TaskActions
                   task={task}
-                  failedStep={failedStep}
+                  workflowNotes={workflowNotes}
                   variant="bar"
                   onEdit={(t) => {
                     onClose();
@@ -302,9 +296,6 @@ export function TicketPage({
               </p>
             )}
 
-            <TaskProgressBar task={task} attempts={runs} attemptDetails={attempts} />
-
-            <WorkflowSteps data={workflowSteps} attemptSelector execution={task.execution} />
             <TicketVariables taskId={task.id} />
 
             <ExportPanel target={taskExportTarget(task.id)} finished={task.state === 'done' || task.state === 'cancelled'} refreshKey={timelineEvents.length} />
@@ -335,17 +326,22 @@ export function TicketPage({
                     fromArchive={fromArchive}
                     following={following}
                     onToggleFollow={() => setFollowing((f) => !f)}
-                    verificationAttempts={verificationAttempts}
-                    verifierStatuses={verifierStatuses}
                     guardrailEvents={guardrailEvents}
-                    baseBranch={task.baseBranch}
+                    workflow={workflowSteps}
+                    showPending={selectedRun.id === latestAttemptId && (selectedRun.state === 'running' || task.state === 'paused')}
+                    execution={task.execution}
                     primaryModel={task.model}
                     agent={harnessLabel(task.harness)}
                     baseDir={attempts.find((a) => a.number === selectedRun.number)?.workingDir ?? task.workingDir}
                   />
                 ) : (
-                  <NoRunsYet task={task} onChanged={onChanged} />
+                  <>
+                    <OutlineSteps workflow={workflowSteps} />
+                    <NoRunsYet task={task} onChanged={onChanged} />
+                  </>
                 )
+              ) : runs.length === 0 ? (
+                <OutlineSteps workflow={workflowSteps} />
               ) : (
                 <StatsPanel stats={taskStats(statsAttemptsOf(runs, liveUsage))} />
               )}
@@ -363,7 +359,7 @@ export function TicketPage({
               selectedNumber={resolved.kind === 'attempt' ? resolved.attemptNumber : null}
               onSelect={selectAttempt}
             />
-            <PanelNav selected={resolved.kind === 'timeline' ? 'timeline' : resolved.kind === 'none' || resolved.kind === 'stats' ? 'stats' : null} onSelect={onSelect} />
+            <PanelNav selected={resolved.kind === 'timeline' ? 'timeline' : (resolved.kind === 'none' || resolved.kind === 'stats') && runs.length > 0 ? 'stats' : null} onSelect={onSelect} />
             <AttemptRail
               worktree={{
                 branch: task.branch,
@@ -383,7 +379,7 @@ export function TicketPage({
           <Gate
             model={gateModel}
             task={task}
-            failedStep={failedStep}
+            workflowNotes={workflowNotes}
             onEdit={(t) => {
               onClose();
               onEdit(t);

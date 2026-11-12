@@ -39,13 +39,6 @@ describe('TaskService.delete (issue #162)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('refuses to delete a Task whose merge is in progress', async () => {
-    const task = await tasksSvc.create({ prompt: 'merging' });
-    await asyncDb.write((d) => d.update(tasks).set({ state: 'escalated', mergeStatus: 'merging' }).where(eq(tasks.id, task.id)).run());
-    await expect(tasksSvc.delete(task.id)).rejects.toThrow(/merging/);
-    expect((await tasksSvc.get(task.id)).id).toBe(task.id);
-  });
-
   it('waits on the Task lock held by an in-flight Accept before deleting', async () => {
     const task = await tasksSvc.create({ prompt: 'locked' });
     let release!: () => void;

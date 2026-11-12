@@ -64,10 +64,10 @@ describe('useTurnPrompts', () => {
   it('keeps a first prompt containing a rule whole and the later prompts in place', async () => {
     const first = 'Ticket body\n\n---\n\nmore body';
     attemptResolvedPrompts.mockResolvedValue([first, 'second']);
-    const Probe = () => createElement('pre', null, JSON.stringify(useTurnPrompts(9, 1)));
+    const Probe = () => createElement('pre', null, JSON.stringify(useTurnPrompts(9, 'steps/1-resolve-5/prompt.md', 1)));
     const host = await mountComponent(createElement(Probe));
     await flush();
-    expect(attemptResolvedPrompts).toHaveBeenCalledWith(9, 'implementation/prompt.md');
+    expect(attemptResolvedPrompts).toHaveBeenCalledWith(9, 'steps/1-resolve-5/prompt.md');
     expect(JSON.parse(host.textContent ?? '[]')).toEqual([first, 'second']);
   });
 
@@ -82,7 +82,7 @@ describe('useTurnPrompts', () => {
       useEffect(() => {
         setSent = set;
       }, [set]);
-      return createElement('pre', null, JSON.stringify(useTurnPrompts(9, sent)));
+      return createElement('pre', null, JSON.stringify(useTurnPrompts(9, 'steps/1-resolve-5/prompt.md', sent)));
     };
     const host = await mountComponent(createElement(Probe));
     await flush();
@@ -90,7 +90,7 @@ describe('useTurnPrompts', () => {
 
     await act(async () => { setSent(3); await flush(); });
     expect(attemptResolvedPrompts).toHaveBeenCalledTimes(1);
-    expect(resolvedPrompt.mock.calls).toEqual([[{ attemptId: 9 }, 'implementation/prompt.md', 2]]);
+    expect(resolvedPrompt.mock.calls).toEqual([[{ attemptId: 9 }, 'steps/1-resolve-5/prompt.md', 2]]);
     expect(JSON.parse(host.textContent ?? '[]')).toEqual(['zero', 'one', 'turn 2']);
 
     await act(async () => { setSent(5); await flush(); });

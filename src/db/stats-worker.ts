@@ -1,11 +1,12 @@
 import { createClient } from '@libsql/client';
-import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
 import { aggregateStats } from '../domain/stats-computation.js';
-import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, verificationAttempts, workspaces } from './schema.js';
+import { stepRunVerification } from '../domain/stats-aggregates.js';
+import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, workflowStepRuns, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
   invalidProbeIterationsReason,
@@ -107,13 +108,28 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
           .where(inArray(attempts.taskId, settledTaskIds))
           .all();
 
-  const verifications = await db
-    .select({ mechanism: verificationAttempts.mechanism, verdict: verificationAttempts.verdict })
-    .from(verificationAttempts)
-    .innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id))
-    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-    .where(and(gte(verificationAttempts.ts, from), lte(verificationAttempts.ts, to), taskScope))
-    .all();
+  const stepRange = (col: typeof workflowStepRuns.endedAt) => and(isNotNull(workflowStepRuns.outcome), ne(workflowStepRuns.outcome, 'skipped'), gte(col, from), lte(col, to));
+  const stepSelect = { action: workflowStepRuns.action, outcome: workflowStepRuns.outcome };
+  const stepRows = [
+    ...(await db
+      .select(stepSelect)
+      .from(workflowStepRuns)
+      .innerJoin(tasks, eq(workflowStepRuns.taskId, tasks.id))
+      .where(and(stepRange(workflowStepRuns.endedAt), taskScope))
+      .all()),
+    ...(await db
+      .select(stepSelect)
+      .from(workflowStepRuns)
+      .where(and(
+        stepRange(workflowStepRuns.endedAt),
+        isNull(workflowStepRuns.taskId),
+        workspaceId === undefined ? undefined : eq(workflowStepRuns.workspaceId, workspaceId),
+        epicRef === undefined ? undefined : eq(workflowStepRuns.epicRef, epicRef),
+      ))
+      .all()),
+  ].flatMap((r) => (r.outcome ? [stepRunVerification(r.action, r.outcome)] : []));
+
+  const verifications = stepRows.filter((r) => r !== null);
 
   const guardrailTrips = await db
     .selectDistinct({ attemptId: guardrailEvents.attemptId, dimension: guardrailEvents.dimension })

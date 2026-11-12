@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrailEvents, tasks, verificationAttempts, workspaces } from '../src/db/schema.js';
+import { attemptEvents, attempts, type AttemptState, attemptToolCalls, guardrailEvents, tasks, workflowStepRuns, workspaces } from '../src/db/schema.js';
 import { type GateReason, type SettledTaskAttempt, type SettleEventRow, StatsWorkerClient } from '../src/db/stats-reader.js';
 import { type AttemptUsage } from '../src/execution/usage.js';
 import { EventLoopMonitor, type StallInfo } from '../src/reliability/event-loop-monitor.js';
 import { attemptsPerTask, byWorkspace, costPerMergedTask, gateOutcomes, guardrailTripsByDimension, tasksMergedByDay, verdicts, type WorkspaceAttempt } from '../src/domain/stats-aggregates.js';
+import { trackerRef } from '../src/tracker/adapter.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
 describe('stats-async-path', () => {
@@ -245,15 +246,11 @@ describe('stats-enriched', () => {
           ])
           .run(),
       );
+      const stepRun = (attemptId: number, action: string, outcome: 'pass' | 'fail') => ({
+        taskId: healed.id, attemptId, workflowRef: 'w', stepId: action, position: 0, action, outcome, startedAt: now, endedAt: now,
+      });
       await ctx.asyncDb.write((d) =>
-        d
-          .insert(verificationAttempts)
-          .values([
-            { attemptId: a1.id, seq: 1, ts: now, mechanism: 'critic', inputOid: 'o1', verdict: 'fail', summary: 's', output: 'o' },
-            { attemptId: a3.id, seq: 1, ts: now, mechanism: 'critic', inputOid: 'o2', verdict: 'pass', summary: 's', output: 'o' },
-            { attemptId: a3.id, seq: 2, ts: now, mechanism: 'command', inputOid: 'o2', verdict: 'pass', summary: 's', output: 'o' },
-          ])
-          .run(),
+        d.insert(workflowStepRuns).values([stepRun(a1.id, 'critic', 'fail'), stepRun(a3.id, 'critic', 'pass'), stepRun(a3.id, 'run', 'pass')]).run(),
       );
       await ctx.asyncDb.write((d) =>
         d
@@ -720,5 +717,66 @@ describe('stats-aggregates', () => {
         { workspaceId: 2, name: 'beta', inputTokens: 4, outputTokens: 3, tasks: 0 },
       ]);
     });
+  });
+});
+
+describe('stats verdicts from step runs', () => {
+  let server: TestServer | undefined;
+  afterEach(async () => {
+    await server?.close();
+  });
+
+  it('counts check and critic step runs, scoped', async () => {
+    server = await startServer(stubHarness());
+    const { ctx } = server.app;
+    const now = Date.now();
+    const ws = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!;
+    const other = await ctx.asyncDb.write((d) =>
+      d.insert(workspaces).values({ name: 'other', workingDir: '/tmp/other', createdAt: now, updatedAt: now }).returning().get(),
+    );
+    const epic1 = trackerRef(901);
+    const mk = (workspaceId: number, mapRef?: string) =>
+      ctx.asyncDb.write((d) =>
+        d.insert(tasks).values({ prompt: 'p', state: 'done', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId, ...(mapRef ? { mapRef: mapRef as never } : {}) }).returning().get(),
+      );
+    const att = (taskId: number) =>
+      ctx.asyncDb.write((d) => d.insert(attempts).values({ taskId, number: 1, state: 'passed', startedAt: now, endedAt: now }).returning().get());
+    await ctx.tasks.syncEpics(ws.id, [{ ref: epic1, kind: 'epic' }]);
+    const t1 = await mk(ws.id, epic1);
+    const t2 = await mk(ws.id, epic1);
+    const t3 = await mk(other.id);
+    const [a1, a3] = [await att(t1.id), await att(t3.id)];
+    await att(t2.id);
+    const run = (owner: object, action: string, outcome: string | null) => ({
+      ...owner, workflowRef: 'w', stepId: action, position: 0, action, outcome: outcome as never, startedAt: now, endedAt: outcome ? now : null,
+    });
+    const task1 = { taskId: t1.id, attemptId: a1.id };
+    await ctx.asyncDb.write((d) =>
+      d.insert(workflowStepRuns).values([
+        run(task1, 'run', 'pass'),
+        run(task1, 'command', 'fail'),
+        run(task1, 'post-merge-check', 'conflict'),
+        run(task1, 'run', null),
+        run(task1, 'run', 'skipped'),
+        run(task1, 'critic', 'pass'),
+        run(task1, 'critic', 'fail'),
+        run(task1, 'critic', 'inconclusive'),
+        run(task1, 'agent', 'pass'),
+        run(task1, 'verify', 'pass'),
+        run({ workspaceId: ws.id, epicRef: epic1 }, 'critic', 'pass'),
+        run({ taskId: t3.id, attemptId: a3.id }, 'run', 'pass'),
+      ]).run(),
+    );
+    const all = (await server.api('GET', `/api/stats?from=0&to=${now + 1000}`)).body;
+    expect(all.verdicts.command).toEqual({ pass: 2, block: 2, inconclusive: 0 });
+    expect(all.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
+
+    const scoped = (await server.api('GET', `/api/stats?from=0&to=${now + 1000}&workspaceId=${ws.id}`)).body;
+    expect(scoped.verdicts.command).toEqual({ pass: 1, block: 2, inconclusive: 0 });
+    expect(scoped.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
+
+    const epic = (await ctx.statsReader.compute({ from: 0, to: now + 1000, epicRef: epic1 })) as any;
+    expect(epic.verdicts.command).toEqual({ pass: 1, block: 2, inconclusive: 0 });
+    expect(epic.verdicts.critic).toEqual({ pass: 2, block: 1, inconclusive: 1 });
   });
 });

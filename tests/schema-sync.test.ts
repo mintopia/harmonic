@@ -49,6 +49,30 @@ describe('schema convergence onto the baseline (ADR-0007)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it('drops the legacy steps and verification_attempts tables and the retired merge_status / verified_ref columns', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-legacy-steps-'));
+    const first = await openAsyncDb(dataDir);
+    await first.close();
+    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await sqlite.execute('CREATE TABLE steps (id integer primary key, attempt_id integer not null, type text not null)');
+    await sqlite.execute('CREATE UNIQUE INDEX steps_attempt_position_unique ON steps (attempt_id, type)');
+    await sqlite.execute('CREATE TABLE verification_attempts (id integer primary key, attempt_id integer not null, seq integer not null)');
+    await sqlite.execute('ALTER TABLE tasks ADD COLUMN merge_status text');
+    await sqlite.execute('ALTER TABLE attempts ADD COLUMN verified_ref text');
+
+    const second = await openAsyncDb(dataDir);
+    await second.close();
+    const tables = (await sqlite.execute("select name from sqlite_master where type = 'table'")).rows.map((r) => String(r.name));
+    expect(tables).not.toContain('steps');
+    expect(tables).not.toContain('verification_attempts');
+    expect(tables).toContain('workflow_step_runs');
+    const cols = async (table: string) => (await sqlite.execute(`pragma table_info(${table})`)).rows.map((r) => String(r.name));
+    expect(await cols('tasks')).not.toContain('merge_status');
+    expect(await cols('attempts')).not.toContain('verified_ref');
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
   it('creates the attempt_events (attempt_id, seq) unique index on an existing data dir', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-events-idx-'));
     const first = await openAsyncDb(dataDir);
@@ -245,11 +269,11 @@ describe('workflow_step_runs Epic owner upgrade', () => {
     const second = await openAsyncDb(dataDir);
     await second.close();
     const columns = (await sqlite.execute('pragma table_info(workflow_step_runs)')).rows;
-    expect(columns.map((r) => String(r.name))).toEqual(expect.arrayContaining(['workspace_id', 'epic_ref']));
+    expect(columns.map((r) => String(r.name))).toEqual(expect.arrayContaining(['workspace_id', 'epic_ref', 'attempt_id', 'session_row_id', 'harness', 'model', 'usage']));
     expect(columns.find((r) => r.name === 'task_id')?.notnull).toBe(0);
     expect((await sqlite.execute('select task_id, workspace_id, epic_ref from workflow_step_runs')).rows.map((r) => [r.task_id, r.workspace_id, r.epic_ref])).toEqual([[taskId, null, null]]);
     const indexes = (await sqlite.execute("select name from sqlite_master where type = 'index' and tbl_name = 'workflow_step_runs'")).rows.map((r) => String(r.name));
-    expect(indexes).toContain('workflow_step_runs_epic_idx');
+    expect(indexes).toEqual(expect.arrayContaining(['workflow_step_runs_epic_idx', 'workflow_step_runs_attempt_idx']));
     sqlite.close();
     rmSync(dataDir, { recursive: true, force: true });
   });

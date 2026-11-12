@@ -9,15 +9,15 @@ describe('lifecycleTimelineRows', () => {
 
   it('keeps the audit chronology and gives verification, escalation, and disposition events operator-readable labels', () => {
     const rows = lifecycleTimelineRows([
-      event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
-      event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
+      lifecycle(10, { event: 'verification', verdict: 'pass', summary: 'checks passed' }),
+      lifecycle(20, { event: 'verification', verdict: 'fail', summary: 'lint failed' }),
       lifecycle(30, { event: 'escalated' }),
       event('operator-retry', 40, { feedback: 'Use the documented timeout.' }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
       [10, 'Verify passed', 'checks passed', 'passed'],
-      [20, 'Verify skipped', 'npm test', 'neutral'],
+      [20, 'Verify failed', 'lint failed', 'failed'],
       [30, 'Escalated → awaiting review', null, 'awaiting'],
       [40, 'Operator retried with guidance', 'Use the documented timeout.', 'awaiting'],
     ]);
@@ -163,13 +163,13 @@ describe('lifecycleTimelineRows', () => {
     expect(rows[0]).toMatchObject({ label: 'Some new signal', tone: 'neutral' });
   });
 
-  it('keeps disabled verification visible and tolerates unrecognised event payloads', () => {
+  it('tolerates unrecognised event payloads', () => {
     const rows = lifecycleTimelineRows([
-      event('verification', 1, { outcome: 'disabled' }),
+      lifecycle(1, { event: 'verification' }),
       event('fact', 2, null),
     ]);
 
-    expect(rows[0]).toMatchObject({ label: 'Verify disabled', tone: 'neutral' });
+    expect(rows[0]).toMatchObject({ label: 'Verify recorded', tone: 'neutral' });
     expect(rows[1]).toMatchObject({ label: 'Ticket fact recorded', detail: null });
   });
 
@@ -226,8 +226,8 @@ describe('lifecycleTimelineRows', () => {
       event('fact', 1, { type: 'task-created', trackerRef: '185', workspace: 'harmonic-core' }),
       event('attempt-started', 2, { attempt: 3 }),
       event('attempt-finished', 3, { attempt: 1, state: 'failed' }),
-      event('verification', 4, { mechanism: 'critic', verdict: 'pass', summary: 'proceed' }),
-      event('verification', 5, { mechanism: 'command', verdict: 'pass', summary: 'pnpm test' }),
+      lifecycle(4, { event: 'verification', mechanism: 'critic', verdict: 'pass', summary: 'proceed' }),
+      lifecycle(5, { event: 'verification', mechanism: 'command', verdict: 'pass', summary: 'pnpm test' }),
     ]);
     expect(rows.map((row) => [row.label, row.tag])).toEqual([
       ['Task created', 'GITHUB'],
@@ -316,5 +316,21 @@ describe('lifecycleTimelineRows', () => {
 
       expect(row).toMatchObject({ detail: 'Task #415 is not in this Workspace', message: { peer: 'to T-415', receipt: { label: 'refused', tone: 'fail' } } });
     });
+  });
+
+  it('renders step-run start and finish, hides passing markers, flags interruption', () => {
+    const run = (phase: string, extra: Record<string, unknown> = {}, kind = 'check') => ({ stepRunId: 1, stepId: 'unit', action: 'run', kind, pass: 1, phase, ...extra });
+    const rows = lifecycleTimelineRows([
+      event('step-run', 1, run('started')),
+      event('step-run', 2, run('finished', { outcome: 'fail', summary: 'exit 1' })),
+      event('step-run', 3, run('finished', { outcome: null })),
+      event('step-run', 4, run('started', {}, 'marker')),
+      event('step-run', 5, run('finished', { outcome: 'pass' }, 'marker')),
+    ]);
+    expect(rows.map((row) => [row.label, row.detail, row.tone, row.tag])).toEqual([
+      ['unit started', null, 'running', 'CHECK'],
+      ['unit failed', 'exit 1', 'failed', 'CHECK'],
+      ['unit interrupted', null, 'muted', 'CHECK'],
+    ]);
   });
 });

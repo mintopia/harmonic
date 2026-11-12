@@ -5,12 +5,12 @@ import { dropIndexForPath } from '../execution/code-index.js';
 import { Git } from '../execution/git.js';
 import { LOCAL_TARGET } from '../execution/execution-targets.js';
 import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
-import type { TaskRow, AttemptRow } from '../db/schema.js';
+import { attempts as attemptsTable, type TaskRow, type AttemptRow } from '../db/schema.js';
+import { desc, eq } from 'drizzle-orm';
 import { CrashRecoveryCoordinator } from '../execution/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
 import { convertEditedEpicFixPrompts } from '../domain/epic-fix-prompt.js';
 import { TaskArchive } from '../archive/task-archive.js';
-import { backfillCriticPromptKeys } from '../archive/critic-prompt-backfill.js';
 import { TranscriptCapture } from '../execution/transcript-capture.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import { ConversationDriver, createHarnessProcessSpawn } from '../execution/conversation-driver.js';
@@ -110,12 +110,14 @@ async function runStartupRecovery(deps: {
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
+  stepRuns: WorkflowStepRunStore;
 }): Promise<void> {
-  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath } = deps;
+  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath, stepRuns } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, {
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
+    stepRuns,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -228,7 +230,7 @@ export async function createRuntime(deps: {
   fireAndForget: FireAndForget;
 }): Promise<Runtime> {
   const { opts, bus, scheduler, asyncDb, worktreesDir, managedWorktreesRoot, distributionMode, runningVersion, fireAndForget } = deps;
-  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, verificationAttempts, sessions: sessionStore, secrets } = deps.stores;
+  const { tasks, attempts, taskEvents, settingsStore, workspaces, conversations, permissionRules, auth, notifier, epicMergeEvents, sessions: sessionStore, secrets } = deps.stores;
   const resolveTracker = createTrackerResolver(secrets);
   const resolveRepository = createRepositoryResolver(secrets);
 
@@ -291,11 +293,12 @@ export async function createRuntime(deps: {
     },
   });
   const promptConfig = () => withLibraryPrompts(settingsStore.getGlobal(), deps.promptLibrary);
-  const transcripts = new TranscriptCapture(sessionStore, verificationAttempts, promptConfig);
+  const transcripts = new TranscriptCapture(sessionStore, promptConfig);
   touchStartupProgress(opts.dataDir);
   await runStartupRecovery({
     attempts, tasks, auth, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
+    stepRuns: new WorkflowStepRunStore(asyncDb),
   });
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {
@@ -352,10 +355,15 @@ export async function createRuntime(deps: {
     events: {
       onAttemptEvent: (event) => bus.emit('attempt_event', event),
       onAttemptLogEvent: (event) => bus.emitAttemptLog(event),
-      onCriticLogEvent: (event) => bus.emitCriticLog(event),
       onAttemptFinished: (run) => bus.emit('attempt_changed', run),
       onAttemptUsage: (payload) => bus.emit('attempt_usage', payload),
-      onStepChanged: (taskId) => bus.emit('step_changed', { taskId }),
+      onStepChanged: (taskId) => fireAndForget(
+        async () => {
+          const latest = await asyncDb.read((db) => db.select({ id: attemptsTable.id }).from(attemptsTable).where(eq(attemptsTable.taskId, taskId)).orderBy(desc(attemptsTable.id)).limit(1).get());
+          bus.emit('step_changed', { taskId, attemptId: latest?.id ?? null });
+        },
+        { op: 'app.stepChanged', level: 'debug', context: { taskId } },
+      ),
       onEpicMergeStep: (payload) => bus.emit('epic_changed', payload),
       onTaskEvent: (taskId) => bus.emit('step_changed', { taskId }),
     },
@@ -397,8 +405,6 @@ export async function createRuntime(deps: {
   await globalPause.rebuild();
   touchStartupProgress(opts.dataDir);
   await runner.backfillUsage();
-  touchStartupProgress(opts.dataDir);
-  await backfillCriticPromptKeys({ db: asyncDb, archive, getTask: (taskId) => tasks.get(taskId) });
   touchStartupProgress(opts.dataDir);
   const escalation = new EscalationService(attempts, tasks, {
     resume: (task, guidance, options) => runner.resumeWithGuidance(task, guidance, options),

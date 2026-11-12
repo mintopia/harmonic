@@ -1,37 +1,12 @@
 import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
-import type { Attempt, AttemptState, Step, StepState, AttemptSummary, VerifierStatus } from './types.js';
+import type { Attempt, AttemptState, AttemptSummary } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
-
-export function stepLabel(step: Step): string {
-  switch (step.type) {
-    case 'rebase': return 'Rebase';
-    case 'implementation': return 'Implementation';
-    case 'verification': return step.command ? `Verify · ${step.command}` : 'Verification';
-    case 'review': return 'Review';
-  }
-}
-
-export function stateTone(state: StepState): TimelineTone {
-  if (state === 'running') return 'running';
-  if (state === 'passed') return 'passed';
-  if (state === 'failed') return 'failed';
-  return 'neutral';
-}
 
 export function attemptTone(state: AttemptState): TimelineTone {
   if (state === 'running') return 'running';
   if (state === 'passed') return 'passed';
   if (state === 'failed' || state === 'escalated') return 'failed';
-  return 'neutral';
-}
-
-/** Failed and inconclusive verification need attention; a review enabled but
- * unrunnable (no model) also needs attention; absent verification stays neutral. */
-export function verifierStatusTone(state: VerifierStatus['state']): TimelineTone {
-  if (state === 'passed') return 'passed';
-  if (state === 'failed' || state === 'inconclusive') return 'failed';
-  if (state === 'unrunnable') return 'failed';
   return 'neutral';
 }
 
@@ -62,11 +37,6 @@ export function continuationDetail(continuation: Attempt['continuation']): strin
   ].join(' · ');
 }
 
-export function verificationAttemptId(locator: string | null): number | null {
-  const match = /^verification_attempt:(\d+)$/.exec(locator ?? '');
-  return match ? Number(match[1]) : null;
-}
-
 /** An Attempt summary carries every corrective turn it drove and `run.number`
  * is the last of them, so the summary that owns Attempt N is the earliest one
  * whose counter reached N. */
@@ -82,19 +52,4 @@ export function runForAttempt(runs: readonly AttemptSummary[], attempt: Pick<Att
 export function runFailureBannerLabel(run: AttemptSummary | null | undefined, attempt: Pick<Attempt, 'continuation'> | null | undefined): string | null {
   if (run?.state !== 'failed' || !run.reason) return null;
   return attempt?.continuation ? 'Resume failed' : 'Attempt failed';
-}
-
-export type StepLogSource =
-  | { kind: 'output'; verificationAttemptId: number }
-  | { kind: 'critic'; verificationAttemptId: number }
-  | { kind: 'run' };
-
-/** Where a step row's log lives: command output and critic transcripts are
- * keyed by their verification attempt; implementation work is the AttemptSummary's own
- * harness transcript (the ACP events the main pane already streams). */
-export function stepLogSource(step: Step): StepLogSource | null {
-  const id = verificationAttemptId(step.logLocator);
-  if (step.type === 'verification') return id === null ? null : { kind: 'output', verificationAttemptId: id };
-  if (step.type === 'review') return id === null ? null : { kind: 'critic', verificationAttemptId: id };
-  return { kind: 'run' };
 }

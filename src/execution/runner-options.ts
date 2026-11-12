@@ -28,7 +28,6 @@ export interface RunnerEvents {
   onAttemptLogEvent?: (event: LiveAttemptEvent) => void;
   /** The critic turn's ACP session updates, on their own channel (same shape as
    * `onAttemptLogEvent`) so a running critic streams as its own chat. */
-  onCriticLogEvent?: (event: LiveAttemptEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onAttemptFinished?: (run: AttemptRow) => void;
   /** Fired ~1s while a run tails its native log. */
@@ -90,14 +89,10 @@ export interface RunnerOptions {
         | 'toolTimeoutMinutes'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
-        | 'taskPrompt'
         | 'pauseMessage'
         | 'agentMessagesEnabled'
-        | 'driveCommitNudge'
-        | 'mergeConflictPrompt'
         | 'mergeEpicConflictPrompt'
         | 'mergeEpicRefreshPrompt'
-        | 'verifyEpicResolveSuffix'
       > &
         Partial<Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository' | 'workflow' | 'workflowLabels' | 'workflowVars' | 'modelOptions'>>)
     | undefined

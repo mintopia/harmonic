@@ -15,6 +15,8 @@ import { baselineConfig } from '../src/config.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 
+const REF = { pass: 1, stepId: 'implement', stepRunId: 1 };
+
 async function openDb(dir: string): Promise<{ db: AsyncDbHandle; tasks: TaskService; settings: SettingsStore }> {
   const db = await openAsyncDb(dir);
   await seedWorkspace(db);
@@ -101,7 +103,7 @@ describe('TaskArchive', () => {
 
   it('writes prompt.md and acp.jsonl in order', async () => {
     const task = await tasks.create({ prompt: 'p' });
-    const writer = archiveFor().implementationStep(task, 2);
+    const writer = archiveFor().stepRun(task, 2, REF);
     writer.appendPrompt('first');
     writer.appendUpdate({ n: 1 });
     writer.appendPrompt('second');
@@ -109,7 +111,7 @@ describe('TaskArchive', () => {
     await writer.close();
     await writer.close();
     const stepDir = await writer.dir;
-    expect(stepDir.endsWith(join('attempts', '2', 'implementation'))).toBe(true);
+    expect(stepDir.endsWith(join('attempts', '2', 'steps', '1-implement-1'))).toBe(true);
     expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('first\n\n---\n\nsecond');
     const lines = readFileSync(join(stepDir, 'acp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => l.update.n)).toEqual([1, 2]);
@@ -118,44 +120,44 @@ describe('TaskArchive', () => {
 
   it('reports each prompt\'s 0-based index, continuing across a reopened writer', async () => {
     const task = await tasks.create({ prompt: 'p' });
-    const first = archiveFor().implementationStep(task, 1);
-    expect(first.promptLocator).toBe('implementation/prompt.md');
+    const first = archiveFor().stepRun(task, 1, REF);
+    expect(first.promptLocator).toBe('steps/1-implement-1/prompt.md');
     expect([await first.appendPrompt('a'), await first.appendPrompt('b')]).toEqual([0, 1]);
     await first.close();
-    const reopened = archiveFor().implementationStep(task, 1);
+    const reopened = archiveFor().stepRun(task, 1, REF);
     expect(await reopened.appendPrompt('c')).toBe(2);
     await reopened.close();
     expect(await reopened.appendPrompt('d')).toBeNull();
-    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'steps/1-implement-1/prompt.md', index);
     expect(await Promise.all([0, 1, 2, 3].map(read))).toEqual(['a', 'b', 'c', null]);
   });
 
   it('reads each prompt back by index even when an earlier prompt contains the separator or multibyte text', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const prompts = ['ticket body\n\n---\n\nwith a rule — é', 'second', '\n\n---\n\n', 'last'];
-    const writer = archiveFor().implementationStep(task, 1);
+    const writer = archiveFor().stepRun(task, 1, REF);
     const indexes = [];
     for (const text of prompts) indexes.push(await writer.appendPrompt(text));
     await writer.close();
     expect(indexes).toEqual([0, 1, 2, 3]);
-    const reopened = archiveFor().implementationStep(task, 1);
+    const reopened = archiveFor().stepRun(task, 1, REF);
     expect(await reopened.appendPrompt('after reopen')).toBe(4);
     await reopened.close();
-    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'implementation/prompt.md', index);
+    const read = (index: number) => archiveFor().readResolvedPrompt(task, 1, 'steps/1-implement-1/prompt.md', index);
     expect(await Promise.all([0, 1, 2, 3, 4, 5].map(read))).toEqual([...prompts, 'after reopen', null]);
   });
 
   describe('prompt sidecar degraded paths', () => {
-    const LOCATOR = 'implementation/prompt.md';
+    const LOCATOR = 'steps/1-implement-1/prompt.md';
     const SEP = '\n\n---\n\n';
 
     it('numbers prompts after a legacy file with no sidecar from the legacy count, and reads every one back', async () => {
       const task = await tasks.create({ prompt: 'p' });
       const dirPath = await archiveFor().ensure(task);
-      const stepPath = join(dirPath, 'attempts', '1', 'implementation');
+      const stepPath = join(dirPath, 'attempts', '1', 'steps', '1-implement-1');
       mkdirSync(stepPath, { recursive: true });
       writeFileSync(join(stepPath, 'prompt.md'), `legacy zero${SEP}legacy one`);
-      const writer = archiveFor().implementationStep(task, 1);
+      const writer = archiveFor().stepRun(task, 1, REF);
       expect(await writer.appendPrompt('new two')).toBe(2);
       expect(await writer.appendPrompt('new three')).toBe(3);
       await writer.close();
@@ -167,13 +169,13 @@ describe('TaskArchive', () => {
 
     it('keeps later indexes aligned when a sidecar line was lost', async () => {
       const task = await tasks.create({ prompt: 'p' });
-      const writer = archiveFor().implementationStep(task, 1);
+      const writer = archiveFor().stepRun(task, 1, REF);
       for (const text of ['zero', 'one\n\n---\n\nwith a rule', 'two']) await writer.appendPrompt(text);
       await writer.close();
       const sidecarPath = join(await writer.dir, 'prompt.index.jsonl');
       const lines = readFileSync(sidecarPath, 'utf8').trim().split('\n');
       writeFileSync(sidecarPath, `${lines[0]}\n${lines[2]}\n`);
-      const reopened = archiveFor().implementationStep(task, 1);
+      const reopened = archiveFor().stepRun(task, 1, REF);
       expect(await reopened.appendPrompt('three')).toBe(3);
       await reopened.close();
       const archive = archiveFor();
@@ -184,12 +186,12 @@ describe('TaskArchive', () => {
 
     it('falls back to separator splitting when the sidecar is corrupt, and still never reuses an index', async () => {
       const task = await tasks.create({ prompt: 'p' });
-      const writer = archiveFor().implementationStep(task, 1);
+      const writer = archiveFor().stepRun(task, 1, REF);
       await writer.appendPrompt('zero');
       await writer.appendPrompt('one');
       await writer.close();
       writeFileSync(join(await writer.dir, 'prompt.index.jsonl'), '{"index":0,"start":0,"length":9999}\nnot json\n');
-      const reopened = archiveFor().implementationStep(task, 1);
+      const reopened = archiveFor().stepRun(task, 1, REF);
       expect(await reopened.appendPrompt('two')).toBe(2);
       await reopened.close();
       expect(await archiveFor().readArchivedPromptSegments(task, 1, LOCATOR)).toEqual(['zero', 'one', 'two']);
@@ -198,7 +200,7 @@ describe('TaskArchive', () => {
 
     it('reads one prompt with a ranged read (sidecar chunk plus the prompt chunk), not the whole 300 KB file', async () => {
       const task = await tasks.create({ prompt: 'p' });
-      const writer = archiveFor().implementationStep(task, 1);
+      const writer = archiveFor().stepRun(task, 1, REF);
       await writer.appendPrompt('small first');
       await writer.appendPrompt('x'.repeat(300_000));
       await writer.appendPrompt('small last');
@@ -230,11 +232,11 @@ describe('TaskArchive', () => {
   it('appends a later turn of the same Attempt to the existing prompt.md and acp.jsonl', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
-    const first = archive.implementationStep(task, 1);
+    const first = archive.stepRun(task, 1, REF);
     first.appendPrompt('first');
     first.appendUpdate({ n: 1 });
     await first.close();
-    const second = archive.implementationStep(task, 1);
+    const second = archive.stepRun(task, 1, REF);
     second.appendPrompt('second');
     second.appendUpdate({ n: 2 });
     await second.close();
@@ -250,11 +252,11 @@ describe('TaskArchive', () => {
     const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
     const turns = ['first prompt', 'steer: use the cache', 'continue the work', 'commit your changes'];
     for (const text of turns) {
-      const step = archive.implementationStep(task, 1);
+      const step = archive.stepRun(task, 1, REF);
       await promptTurn(driver, text, () => {}, step);
       await step.close();
     }
-    const prompt = await archive.readArchivedPrompt(task, 1, 'implementation/prompt.md');
+    const prompt = await archive.readArchivedPrompt(task, 1, 'steps/1-implement-1/prompt.md');
     expect(prompt).toBe(turns.join('\n\n---\n\n'));
   });
 
@@ -263,7 +265,7 @@ describe('TaskArchive', () => {
     const archive = archiveFor();
     const driver = { prompt: async () => ({ stopReason: 'end_turn' }) } as unknown as AcpDriver;
     const recorded: unknown[] = [];
-    const step = archive.implementationStep(task, 1);
+    const step = archive.stepRun(task, 1, REF);
     await promptTurn(driver, 'one', (_type, payload) => recorded.push(payload), step);
     await promptTurn(driver, 'two', (_type, payload) => recorded.push(payload), step);
     await step.close();
@@ -282,7 +284,7 @@ describe('TaskArchive', () => {
     writeFileSync(join(src, 'sess-1', 'subagents', 'agent-a.meta.json'), '{}');
 
     const archive = archiveFor();
-    const writer = archive.implementationStep(task, 1);
+    const writer = archive.stepRun(task, 1, REF);
     await writer.copyNative('claude', join(src, 'sess-1.jsonl'));
     await writer.close();
     const native = join(await writer.dir, 'native');
@@ -291,7 +293,9 @@ describe('TaskArchive', () => {
     expect(existsSync(join(native, 'sess-1', 'subagents', 'agent-a.meta.json'))).toBe(true);
 
     writeFileSync(join(src, 'sess-1.jsonl'), 'root grown\n');
-    await archive.copyNative(task, 1, 'claude', join(src, 'sess-1.jsonl'));
+    const again = archive.stepRun(task, 1, REF);
+    await again.copyNative('claude', join(src, 'sess-1.jsonl'));
+    await again.close();
     expect(readFileSync(join(native, 'sess-1.jsonl'), 'utf8')).toBe('root grown\n');
   });
 
@@ -302,18 +306,33 @@ describe('TaskArchive', () => {
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'sess-1.jsonl'), 'root\n');
-      await archive.copyNative(task, 2, 'claude', join(src, 'sess-1.jsonl'));
-      const expected = join(await archive.ensure(task), 'attempts', '2', 'implementation', 'native', 'sess-1.jsonl');
+      const writer = archive.stepRun(task, 2, REF);
+      await writer.copyNative('claude', join(src, 'sess-1.jsonl'));
+      await writer.close();
+      const expected = join(await archive.ensure(task), 'attempts', '2', 'steps', '1-implement-1', 'native', 'sess-1.jsonl');
       expect(await archive.archivedTranscript(task, 2, 'implementation', '/gone/elsewhere/sess-1.jsonl')).toBe(expected);
       expect(await archive.archivedTranscript(task, 2, 'implementation', null)).toBe(expected);
       expect(await archive.archivedTranscript(task, 2, 'implementation', '/gone/other.jsonl')).toBeNull();
       expect(await archive.archivedTranscript(task, 3, 'implementation', null)).toBeNull();
     });
 
+    it('lays out one directory per step run and still finds a legacy implementation copy', async () => {
+      const task = await tasks.create({ prompt: 'p' });
+      const archive = archiveFor();
+      const src = join(dir, 'src');
+      mkdirSync(src, { recursive: true });
+      writeFileSync(join(src, 'sess-1.jsonl'), 'root\n');
+      const out = await archive.stepRunOutputLog(task, 1, { pass: null, stepId: 'build', stepRunId: 9 });
+      expect(out?.key).toBe('steps/_-build-9/output.log');
+      expect(out?.path.endsWith(join('attempts', '1', 'steps', '_-build-9', 'output.log'))).toBe(true);
+      await archive.copyNative(task, 4, 'claude', join(src, 'sess-1.jsonl'));
+      expect(await archive.archivedTranscript(task, 4, 'implementation', null)).toBe(join(await archive.ensure(task), 'attempts', '4', 'implementation', 'native', 'sess-1.jsonl'));
+    });
+
     it('returns null for a null path when the native dir holds several jsonl files', async () => {
       const task = await tasks.create({ prompt: 'p' });
       const archive = archiveFor();
-      const native = join(await archive.ensure(task), 'attempts', '1', 'implementation', 'native');
+      const native = join(await archive.ensure(task), 'attempts', '1', 'steps', '1-implement-1', 'native');
       mkdirSync(native, { recursive: true });
       writeFileSync(join(native, 'a.jsonl'), 'a');
       writeFileSync(join(native, 'b.jsonl'), 'b');
@@ -326,10 +345,10 @@ describe('TaskArchive', () => {
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'crit.jsonl'), 'c\n');
-      const writer = archive.criticStep(task, 1, 'post-merge', 'critic-9');
-      await writer.copyNative('claude', join(src, 'crit.jsonl'));
-      await writer.close();
-      const expected = join(await writer.dir, 'native', 'crit.jsonl');
+      const native = join(await archive.ensure(task), 'attempts', '1', 'verification', 'post-merge', 'critic-9', 'native');
+      mkdirSync(native, { recursive: true });
+      writeFileSync(join(native, 'crit.jsonl'), 'c\n');
+      const expected = join(native, 'crit.jsonl');
       expect(await archive.archivedTranscript(task, 1, 'verification', '/x/crit.jsonl')).toBe(expected);
       expect(await archive.archivedTranscript(task, 1, 'verification', null)).toBeNull();
       expect(await archive.archivedTranscript(task, 1, 'verification', '/x/../../etc/passwd')).toBeNull();
@@ -342,10 +361,10 @@ describe('TaskArchive', () => {
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'e.jsonl'), 'e\n');
-      const writer = archive.epicCriticStep(1, trackerRef(5), 1, 'critic-1');
-      await writer.copyNative('claude', join(src, 'e.jsonl'));
-      await writer.close();
-      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(await writer.dir, 'native', 'e.jsonl'));
+      const native = join(await archive.ensureEpic(1, trackerRef(5)), 'attempts', '1', 'verification', 'pre-merge', 'critic-1', 'native');
+      mkdirSync(native, { recursive: true });
+      writeFileSync(join(native, 'e.jsonl'), 'e\n');
+      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(native, 'e.jsonl'));
     });
 
     it('keeps Subagent transcripts readable from the archived copy', async () => {
@@ -378,57 +397,19 @@ describe('TaskArchive', () => {
     const archive = archiveFor();
     await archive.copyNative(task, 1, 'claude', null);
     await archive.copyNative(task, 1, 'claude', join(dir, 'nope.jsonl'));
-    const writer = archive.implementationStep(task, 3);
+    const writer = archive.stepRun(task, 3, REF);
     await writer.copyNative('claude', null);
     await writer.copyNative('claude', join(dir, 'nope.jsonl'));
     await writer.close();
     expect(existsSync(join(await writer.dir, 'native'))).toBe(false);
   });
 
-  it('creates a verification output.log directory per stage and step', async () => {
+  it('lays out step runs and keeps concurrent writers separate', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
-    const log = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
-    const root = await archive.ensure(task);
-    expect(log).toEqual({ path: join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'), key: 'verification/post-merge/cmd-lint/output.log' });
-    expect(existsSync(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint'))).toBe(true);
-  });
-
-  it('keeps hostile step ids inside the archive', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const archive = archiveFor();
-    const root = await archive.ensure(task);
-    const stageDir = join(root, 'attempts', '1', 'verification', 'pre-merge');
-    const ids = ['../../x', '', '.', '..', 'a/b', 'a-b'];
-    const logs = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
-    const paths = logs.map((log) => log?.path);
-    for (const path of paths) {
-      expect(path).toBeDefined();
-      expect(dirname(dirname(path!))).toBe(stageDir);
-      expect(existsSync(dirname(path!))).toBe(true);
-    }
-    expect(new Set(paths).size).toBe(ids.length);
-  });
-
-  it('resolves null when the archive cannot be ensured', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const failing = new TaskArchive({
-      dataDir: dir,
-      ensureArchiveId: async () => {
-        throw new Error('no id');
-      },
-      workspaceName: async () => null,
-    });
-    const bare = { ...task, archiveId: null };
-    expect(await failing.verificationOutputLog(bare, 1, 'pre-merge', 'c')).toBeNull();
-  });
-
-  it('lays out a critic step and keeps concurrent critic writers separate', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const archive = archiveFor();
-    const a = archive.criticStep(task, 2, 'pre-merge', 'critic-a');
-    const b = archive.criticStep(task, 2, 'post-merge', 'critic-b');
-    const a2 = archive.criticStep(task, 2, 'pre-merge', 'critic-c');
+    const a = archive.stepRun(task, 2, { pass: 1, stepId: 'critic-a', stepRunId: 1 });
+    const b = archive.stepRun(task, 2, { pass: null, stepId: 'critic-b', stepRunId: 2 });
+    const a2 = archive.stepRun(task, 2, { pass: 1, stepId: 'critic-c', stepRunId: 3 });
     a.appendPrompt('prompt a');
     b.appendPrompt('prompt b');
     for (let n = 0; n < 5; n++) {
@@ -438,8 +419,8 @@ describe('TaskArchive', () => {
     }
     await Promise.all([a.close(), b.close(), a2.close()]);
     const root = await archive.ensure(task);
-    const aDir = join(root, 'attempts', '2', 'verification', 'pre-merge', 'critic-a');
-    const bDir = join(root, 'attempts', '2', 'verification', 'post-merge', 'critic-b');
+    const aDir = join(root, 'attempts', '2', 'steps', '1-critic-a-1');
+    const bDir = join(root, 'attempts', '2', 'steps', '_-critic-b-2');
     expect(await a.dir).toBe(aDir);
     expect(await b.dir).toBe(bDir);
     expect(readFileSync(join(aDir, 'prompt.md'), 'utf8')).toBe('prompt a');
@@ -474,15 +455,6 @@ describe('TaskArchive', () => {
     await archive.ensureEpic(workspaceId, trackerRef(42));
     expect(readFileSync(join(d1, 'archive.json'), 'utf8')).toBe('{"custom":true}');
     expect(readdirSync(d1).filter((n) => n.endsWith('.tmp'))).toEqual([]);
-
-    const writer = archive.epicCriticStep(workspaceId, trackerRef(42), 3, 'critic-x');
-    writer.appendPrompt('epic prompt');
-    writer.appendUpdate({ n: 1 });
-    await writer.close();
-    const stepDir = join(d1, 'attempts', '3', 'verification', 'pre-merge', 'critic-x');
-    expect(await writer.dir).toBe(stepDir);
-    expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('epic prompt');
-    expect(JSON.parse(readFileSync(join(stepDir, 'acp.jsonl'), 'utf8')).update).toEqual({ n: 1 });
   });
 
   describe('operator input record', () => {

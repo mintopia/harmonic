@@ -70,7 +70,7 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
-      if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
+      if ((msg.type === 'step_run_changed' && msg.taskId === task.id) || (msg.type === 'attempt_changed' && msg.run.taskId === task.id)) load();
     }, load);
     return () => {
       unsubscribe();
@@ -121,7 +121,7 @@ export function useTicketPageData(task: Task, selectedAttemptId: number | null, 
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
-      if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'task_changed' && msg.task.id === task.id)) load();
+      if ((msg.type === 'step_run_changed' && msg.taskId === task.id) || (msg.type === 'task_changed' && msg.task.id === task.id)) load();
     }, load);
     return () => {
       unsubscribe();

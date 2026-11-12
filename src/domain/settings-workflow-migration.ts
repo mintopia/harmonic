@@ -17,7 +17,7 @@ import {
   type TaskVerificationCritic,
   type TaskVerificationStage,
 } from './legacy-execution-settings.js';
-import { FRAGMENT_REF, RETIRED_CODES, retiredBaseline, retiredEntryFor, retiredPromptTexts, retiredWorkspaceKey, translateRetiredText, type RetiredCode, type RetiredSettings } from './retired-settings.js';
+import { FRAGMENT_REF, RETIRED_CODES, retiredBaseline, retiredEntryFor, retiredPromptTexts, retiredWorkspaceKey, retiredWorkspacePrompt, type RetiredWorkspacePromptKey, translateRetiredText, type RetiredCode, type RetiredSettings } from './retired-settings.js';
 import { resolveScoped } from './setting-override.js';
 import type { TaskService } from './tasks.js';
 import { MAX_ATTEMPTS_LIMIT, parseWorkflow, WORKFLOW_NAME_PATTERN } from './workflow.js';
@@ -52,6 +52,7 @@ interface ScopeSettings {
 
 function scopeSettings(ws: WorkspaceRow | null, config: AppConfig, legacy: LegacySettings, retired: RetiredSettings): ScopeSettings {
   const execution = resolveLegacyExecution(legacy.global, ws ? legacy.workspaces.get(ws.id) ?? null : null);
+  const own = (key: RetiredWorkspacePromptKey, global: string): string => (ws && retiredWorkspacePrompt(retired, ws.id, key)) ?? global;
   const fragments = retiredPromptTexts(ws ? retired.workspaces[String(ws.id)] : undefined, retired.global);
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
@@ -61,10 +62,10 @@ function scopeSettings(ws: WorkspaceRow | null, config: AppConfig, legacy: Legac
     preMerge: execution.preMerge,
     postMerge: execution.postMerge,
     prompts: {
-      drivePrompt: resolveScoped('drivePrompt', ws?.drivePrompt, config.drive.prompt),
-      unattendedReminder: resolveScoped('driveUnattendedReminder', ws?.driveUnattendedReminder, config.drive.unattendedReminder),
-      taskPrompt: resolveScoped('taskPrompt', ws?.taskPrompt, config.taskPrompt),
-      commitNudge: resolveScoped('driveCommitNudge', ws?.driveCommitNudge, config.drive.commitNudge),
+      drivePrompt: own('drivePrompt', config.drive.prompt),
+      unattendedReminder: own('driveUnattendedReminder', config.drive.unattendedReminder),
+      taskPrompt: own('taskPrompt', config.taskPrompt),
+      commitNudge: own('driveCommitNudge', config.drive.commitNudge),
       selfHeal: fragments.selfHeal,
     },
     fragments,

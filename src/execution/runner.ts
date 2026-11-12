@@ -37,7 +37,6 @@ import type { SessionRetirementHook } from '../domain/session-retirement-coordin
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
 import { SessionContinuation } from './session-continuation.js';
-import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { EpicMergeEventStore } from '../domain/epic-merge-events.js';
 import { MergeCoordinator, BaseBranchUnresolved, EpicBaseNotReady, type EpicIntegrationMergeInput, type MergeCoordinatorDeps } from './merge-coordinator.js';
 export { BaseBranchUnresolved, EpicBaseNotReady };
@@ -59,7 +58,6 @@ import { parseWorkflow } from '../domain/workflow.js';
 import type { WorkflowChosen } from '../db/schema.js';
 import { WorkflowEngine, parseWorkflowRef, type AgentDriveRequest, type AgentDriveResult, type EpicSubject } from './workflow-engine.js';
 import { WorkflowLibrary } from '../domain/workflow-library-store.js';
-import { seedLegacyResume } from './legacy-resume-seeding.js';
 import { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { createPodOpener } from './pod-opener.js';
 import { PodTranscripts } from './pod-transcript.js';
@@ -95,7 +93,6 @@ export class Runner {
   private readonly spawnProcessGroup: RunnerOptions['spawnProcessGroup'];
   private readonly fireAndForget: FireAndForget;
   private readonly urlFor: (task: TaskRow) => string | null;
-  private readonly verificationAttempts: VerificationAttemptStore;
   private readonly guardrailEvents: GuardrailEventStore;
   private readonly sessionStore: SessionStore;
   private readonly attempts: AttemptStore;
@@ -148,10 +145,10 @@ export class Runner {
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.attempts = new AttemptStore(this.asyncDb);
-    this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
-    this.transcripts = new TranscriptCapture(this.sessionStore, this.verificationAttempts, this.getConfig);
+    this.transcripts = new TranscriptCapture(this.sessionStore, this.getConfig);
+    this.stepRuns = new WorkflowStepRunStore(this.asyncDb);
     this.sessionContinuation = new SessionContinuation(
       this.attempts,
       this.sessionStore,
@@ -161,6 +158,7 @@ export class Runner {
       (attemptId) => this.activeRuns.getLastTurnContextTokens(attemptId),
       (task) => this.workspaceProvisioner.dispatchCwd(task),
       this.fireAndForget,
+      this.stepRuns,
     );
     this.usage = new UsageSampler(
       this.attempts,
@@ -202,7 +200,6 @@ export class Runner {
     this.verification = new VerificationCoordinator(this.verificationCoordinatorDeps());
     this.turnDriver = new TurnDriver(this.turnDriverDeps());
     this.workflowLibrary = options.workflows?.library ?? new WorkflowLibrary(null);
-    this.stepRuns = new WorkflowStepRunStore(this.asyncDb);
     this.workflowEngine = this.createWorkflowEngine(options.workflows);
     this.runControl = new RunControl(this.runControlDeps());
     this.usageBackfiller = new UsageBackfiller(this.usageBackfillerDeps());
@@ -232,7 +229,7 @@ export class Runner {
             ? { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch: run.baseBranch!, branch: run.branch! }
             : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'stale-base', detail: outcome.message };
         }
-        return withBaseCheckoutLock(task.workingDir, () =>
+        const merged = await withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () =>
             mergeIntoBase({
               repoDir: task.workingDir,
@@ -245,6 +242,7 @@ export class Runner {
             }),
           ),
         );
+        return !merged.ok && merged.reason === 'conflict' ? this.mergeCoordinator.resolveTicketConflict(task, run, merged.detail) : merged;
       },
       markTicketClosePending: async (task) => {
         await this.taskService.setTicketClosePending(task.id, true);
@@ -269,10 +267,13 @@ export class Runner {
               dir: workflows.podTranscriptDir,
               sessions: this.sessionStore,
               attempts: this.attempts,
-              archive: (task, run, kind, stepId) => (kind === 'agent' ? this.archive?.implementationStep(task, run.number) : this.archive?.criticStep(task, run.number, 'pre-merge', stepId)),
+              stepRuns: this.stepRuns,
+              archive: (task, run, ref) => this.archive?.stepRun(task, run.number, ref),
             }),
           }
         : {}),
+      ...(this.archive ? { stepOutputLog: (task, run, ref) => this.archive!.stepRunOutputLog(task, run.number, ref) } : {}),
+      recordSession: async (task, input) => this.sessionContinuation.recordSession({ ...input, workspaceId: task.workspaceId }),
       escalate: async (task, run, reason) => this.settleEscalated(task, await this.attempts.get(run.id), reason, {}),
       complete: async (task, run) => this.settleAutoCompleted(task, await this.attempts.get(run.id), {}),
       onStepChanged: (owner) => ('taskId' in owner ? this.events.onStepChanged?.(owner.taskId) : this.events.onEpicMergeStep?.(owner)),
@@ -432,11 +433,13 @@ export class Runner {
 
   private emitSteerLog({ attemptId, text, queued }: { attemptId: number; text: string; queued: boolean }): void {
     const seq = this.activeRuns.nextProgressSequence(attemptId);
+    const stepRunId = this.activeRuns.get(attemptId)?.stepRunId;
     this.events.onAttemptLogEvent?.({
       id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
       attemptId,
       seq,
       ts: Date.now(),
+      ...(stepRunId !== undefined ? { stepRunId } : {}),
       type: 'session_update',
       payload: { sessionUpdate: 'operator_message', content: { type: 'text', text }, pending: true, queued },
     });
@@ -510,7 +513,6 @@ export class Runner {
   /** Operator Accept (ADR-0038): overrides the failed workflow step and resumes the workflow after it on the same Attempt. */
   async acceptWorkflowStep(task: TaskRow, run: AttemptRow): Promise<void> {
     const pinned = await this.workflowTaskFor(task);
-    await seedLegacyResume({ library: this.workflowLibrary, stepRuns: this.stepRuns, attempts: this.attempts }, pinned, await this.attempts.get(run.id), true);
     await this.workflowEngine.acceptFailed(pinned);
     const working = await this.taskService.setState(task.id, 'working');
     await this.beginRun(working, undefined, await this.attempts.get(run.id));
@@ -734,7 +736,6 @@ export class Runner {
         this.activeRuns.clearDriving(task.id);
         return bound;
       }
-      if (resumedAttempt) await seedLegacyResume({ library: this.workflowLibrary, stepRuns: this.stepRuns, attempts: this.attempts }, task, bound, false);
       const operation = this.startRunOperation(task, bound, parent);
       if (!(await this.prepareRunWorkspace(task, bound))) {
         this.activeRuns.clearDriving(task.id);

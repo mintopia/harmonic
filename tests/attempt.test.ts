@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { type AppConfig, baselineConfig, type DeepPartial } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { apiKeys } from '../src/db/schema.js';
@@ -6,7 +7,7 @@ import { AttemptSettleCoordinator } from '../src/domain/attempt-settle.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { type SettingsStore } from '../src/server/settings-store.js';
-import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, connectFirehose, seedWorkspace } from './helpers.js';
+import { allWorkspaces, captureRunEnv, makeSettingsStore, startServer, stubHarness, type TestServer, waitFor, seedWorkspace } from './helpers.js';
 import { eq } from 'drizzle-orm';
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -135,37 +136,6 @@ describe('attempt-log', () => {
       const { body } = await server.api('GET', `/api/attempts/${attemptId}/log`);
 
       expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
-    });
-
-    it('reads the Critic log from the Archive copy when the native transcript is gone', async () => {
-      const { attemptId, taskId } = await finishedRun();
-      const { archive, attempts, tasks, verificationAttempts } = server.app.ctx;
-      const attempt = await attempts.get(attemptId);
-      const criticPath = join(logDir, 'critic-proj', 'critic-sess.jsonl');
-      mkdirSync(join(logDir, 'critic-proj'), { recursive: true });
-      writeFileSync(criticPath, transcriptBody);
-      const row = await verificationAttempts.append(attemptId, {
-        mechanism: 'critic',
-        inputOid: 'a'.repeat(40),
-        verdict: 'pass',
-        summary: 's',
-        output: 'o',
-        transcriptPath: criticPath,
-        harness: 'claude',
-      });
-      const writer = archive.criticStep(await tasks.get(taskId), attempt.number, 'pre-merge', 'critic-1');
-      await writer.copyNative('claude', criticPath);
-      await writer.close();
-
-      expect((await server.api('GET', `/api/verification-attempts/${row.id}/log`)).body.status).toBe('available');
-      unlinkSync(criticPath);
-      const { body } = await server.api('GET', `/api/verification-attempts/${row.id}/log`);
-      expect(body.status).toBe('available');
-      expect(body.events).toHaveLength(2);
-      expect(body.events[0].attemptId).toBe(attemptId);
-
-      rmSync(join(server.dataDir, 'archive'), { recursive: true, force: true });
-      expect((await server.api('GET', `/api/verification-attempts/${row.id}/log`)).body).toEqual({ status: 'unavailable', liveCursor: 0 });
     });
   });
 });
@@ -389,21 +359,9 @@ describe('attempt-timeline-route', () => {
       await server.close();
     });
 
-    it('serves the same ordered timeline over REST and WebSocket', async () => {
-      const { messages, close } = await connectFirehose(server);
-
+    it('serves each Attempt with its step runs in execution order', async () => {
       const created = await server.api('POST', '/api/tasks', { prompt: 'timeline parity' });
       const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
-      const implementation = await server.app.ctx.attempts.createStep(attempt.id, {
-        type: 'implementation',
-        logLocator: 'transcript:/tmp/session.jsonl',
-      });
-      await server.app.ctx.attempts.updateStep(implementation.id, {
-        state: 'passed',
-        verdict: 'pass',
-        startedAt: 11,
-        endedAt: 12,
-      });
       await server.app.ctx.attempts.setContinuation(attempt.id, {
         path: 'new-session-condensed',
         reason: 'context-tokens',
@@ -413,72 +371,19 @@ describe('attempt-timeline-route', () => {
         lastActiveAgeMs: 1,
         warmWindowMs: 60 * 60 * 1000,
       });
-      const verification = await server.app.ctx.attempts.createStep(attempt.id, {
-        type: 'verification',
-        command: 'npm test',
-        logLocator: 'verification_attempt:31',
-      });
-      await server.app.ctx.attempts.updateStep(verification.id, {
-        state: 'passed',
-        verdict: 'pass',
-        startedAt: 13,
-        endedAt: 14,
-      });
-      const run = await server.app.ctx.attempts.create(created.body.id);
-      await server.app.ctx.verificationAttempts.append(attempt.id, {
-        mechanism: 'command', inputOid: 'verified-sha', verdict: 'pass', summary: 'checks passed', output: '',
-      });
+      const stepRuns = new WorkflowStepRunStore(server.app.ctx.asyncDb);
+      const build = await stepRuns.start({ taskId: created.body.id, workflowRef: 'implement@1', stepId: 'build', position: 0, action: 'agent', attempt: 1, attemptId: attempt.id }, 11);
+      await stepRuns.finish(build.id, { outcome: 'pass', outputs: { stdout: '', exitCode: null }, summary: 'done' }, 12);
+      const test = await stepRuns.start({ taskId: created.body.id, workflowRef: 'implement@1', stepId: 'test', position: 1, action: 'run', attempt: 1, attemptId: attempt.id }, 13);
       await server.app.ctx.attempts.finish(attempt.id, 'escalated', 15, undefined, 'escalate');
-      server.app.ctx.bus.emit('attempt_changed', run);
-      await waitFor(async () => messages.find(
-        (message) => typeof message === 'object'
-          && message !== null
-          && Reflect.get(message, 'type') === 'attempt_timeline_changed'
-          && Reflect.get(message, 'taskId') === created.body.id,
-      ));
 
-      const event = messages.find(
-        (message) => typeof message === 'object'
-          && message !== null
-          && Reflect.get(message, 'type') === 'attempt_timeline_changed'
-          && Reflect.get(message, 'taskId') === created.body.id,
-      );
       const rest = await server.api('GET', `/api/tasks/${created.body.id}/attempts/timeline`);
 
       expect(rest.status).toBe(200);
-      expect(Reflect.get(event!, 'attempts')).toEqual(rest.body.attempts);
-      expect(rest.body.attempts[0].steps.map((step: { position: number }) => step.position)).toEqual([1, 2]);
-      expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
+      expect(rest.body.attempts[0].stepRuns.map((run: { id: number; state: string }) => [run.id, run.state])).toEqual([[build.id, 'pass'], [test.id, 'running']]);
       expect(rest.body.attempts[0].escalationReason).toBe('escalate');
       expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextTokens: 250_000 });
-      expect(rest.body.attempts[0].verifierStatuses).toEqual([
-        { mechanism: 'command', state: 'passed', reason: null },
-        { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
-      ]);
-      expect(rest.body.attempts[0].steps[1]).not.toHaveProperty('verifiedSha');
-      close();
-    });
-
-    it('broadcasts the timeline when a Step transitions mid-Attempt', async () => {
-      const { messages, close } = await connectFirehose(server);
-
-      const created = await server.api('POST', '/api/tasks', { prompt: 'live phase' });
-      const attempt = await server.app.ctx.attempts.ensureForRun(created.body.id, 1, 10);
-      const verification = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
-      await server.app.ctx.attempts.updateStep(verification.id, { state: 'running', startedAt: 11 });
-
-      // The Attempt row never changes when Implementation gives way to Verify, so
-      // only `step_changed` can carry the live phase to the Task-detail timeline.
-      server.app.ctx.bus.emit('step_changed', { taskId: created.body.id });
-
-      const message = await waitFor(async () => messages.find(
-        (m) => typeof m === 'object' && m !== null
-          && Reflect.get(m, 'type') === 'attempt_timeline_changed'
-          && Reflect.get(m, 'taskId') === created.body.id,
-      ));
-      const steps = (Reflect.get(message!, 'attempts') as { steps: { type: string; state: string }[] }[])[0]!.steps;
-      expect(steps).toEqual([{ ...steps[0], type: 'verification', state: 'running' }]);
-      close();
+      for (const removed of ['steps', 'verifierStatuses', 'verifiedSha']) expect(rest.body.attempts[0]).not.toHaveProperty(removed);
     });
   });
 });

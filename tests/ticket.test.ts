@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { baselineConfig } from '../src/config.js';
 import { type AsyncDbHandle, openAsyncDb } from '../src/db/async.js';
 import { attemptEvents } from '../src/db/schema.js';
@@ -28,15 +29,13 @@ describe('ticket-timeline-route', () => {
     it('folds all persisted ticket events into chronological order', async () => {
       const task = await server.api('POST', '/api/tasks', { prompt: 'timeline target' });
       const attempt = await server.app.ctx.attempts.create(task.body.id);
-      const skipped = await server.app.ctx.attempts.createStep(attempt.id, { type: 'verification', command: 'npm test' });
-      await server.app.ctx.attempts.updateStep(skipped.id, { state: 'skipped', endedAt: 400 });
+      const stepRuns = new WorkflowStepRunStore(server.app.ctx.asyncDb);
+      const stepRun = await stepRuns.start({ taskId: task.body.id, workflowRef: 'implement@1', stepId: 'test', position: 1, action: 'run', attempt: 1, attemptId: attempt.id }, 300);
+      await stepRuns.finish(stepRun.id, { outcome: 'fail', outputs: { stdout: '', exitCode: 1 }, summary: 'exit 1' }, 400);
       await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
       await server.app.ctx.attempts.update(attempt.id, { startedAt: 100, endedAt: 900 });
       await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } });
       await server.app.ctx.attempts.appendEvent(attempt.id, { type: 'permission_request', payload: { reason: 'outside the timeline' } });
-      await server.app.ctx.verificationAttempts.append(attempt.id, {
-        mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '',
-      }, 200);
       await server.app.ctx.guardrailEvents.append(attempt.id, {
         dimension: 'wall-clock', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
       }, 250);
@@ -48,16 +47,16 @@ describe('ticket-timeline-route', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-        'attempt-started', 'verification', 'guardrail', 'verification', 'verification', 'attempt-finished', 'fact', 'lifecycle',
+        'attempt-started', 'guardrail', 'step-run', 'step-run', 'attempt-finished', 'fact', 'lifecycle',
       ]);
-      expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 200, 250, 400, 900, 900, expect.any(Number), expect.any(Number)]);
+      expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([100, 250, 300, 400, 900, expect.any(Number), expect.any(Number)]);
       expect(response.body.events.find((event: { kind: string }) => event.kind === 'fact')).toMatchObject({ data: { type: 'task-created' } });
       expect(response.body.events.every((event: { attemptId: number | null }) => event.attemptId === null || event.attemptId === attempt.id)).toBe(true);
-      expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
-        verdict: 'pass', summary: 'checks passed', mechanism: 'command',
-      } });
-      expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });
-      expect(response.body.events.filter((event: { data: { outcome?: string } }) => event.data.outcome === 'disabled')).toHaveLength(1);
+      expect(response.body.events.filter((event: { kind: string }) => event.kind === 'step-run').map((event: { data: unknown }) => event.data)).toEqual([
+        { stepRunId: stepRun.id, stepId: 'test', action: 'run', kind: 'check', pass: 1, phase: 'started' },
+        { stepRunId: stepRun.id, stepId: 'test', action: 'run', kind: 'check', pass: 1, phase: 'finished', outcome: 'fail', summary: 'exit 1' },
+      ]);
+      expect(response.body.events.some((event: { data: { outcome?: string } }) => event.data.outcome === 'disabled')).toBe(false);
       expect(response.body.events.filter((event: { kind: string }) => event.kind === 'lifecycle')).toMatchObject([
         { data: { type: 'lifecycle', payload: { event: 'progress-nudge', pattern: 'monologue' } } },
       ]);

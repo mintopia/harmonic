@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { parse, stringify } from 'yaml';
 import type { CorsPolicy } from '../src/server/cors.js';
+import { safeSegment } from '../src/archive/task-archive.js';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { copyFileSync, mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -573,7 +575,12 @@ export function executionPlumbing() {
 export async function withArchivedPrompt<T extends { taskId: number | null; number: number; prompt: string | null } | undefined>(server: TestServer, run: T, containing?: string): Promise<T extends undefined ? undefined : NonNullable<T>> {
   if (!run || run.taskId === null) return run as never;
   const task = await server.app.ctx.tasks.get(run.taskId);
-  const prompts = await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, 'implementation/prompt.md');
+  const stepRuns = await new WorkflowStepRunStore(server.app.ctx.asyncDb).listForAttempt((run as unknown as { id: number }).id);
+  const prompts: string[] = [];
+  for (const step of stepRuns.filter((row) => row.action === 'agent')) {
+    const locator = `steps/${step.attempt ?? '_'}-${safeSegment(step.stepId)}-${step.id}/prompt.md`;
+    prompts.push(...((await server.app.ctx.archive.readArchivedPromptSegments(task, run.number, locator)) ?? []));
+  }
   return { ...run, prompt: (containing === undefined ? prompts?.at(-1) : prompts?.findLast((prompt) => prompt.includes(containing))) ?? null } as never;
 }
 

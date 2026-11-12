@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type AttemptRow, type StepType } from '../src/db/schema.js';
+import { type AttemptRow } from '../src/db/schema.js';
 import { type GuardrailEventInput } from '../src/domain/guardrail-events.js';
 import { type ProgressEvent } from '../src/domain/stall-detector.js';
 import { type GuardrailDeps, GuardrailSupervisor, type GuardrailTurn, PROGRESS_NUDGE_TEXT } from '../src/execution/guardrail-supervisor.js';
@@ -89,13 +89,12 @@ describe('guardrail-supervisor', () => {
     abort: ReturnType<typeof vi.fn>;
     kill: ReturnType<typeof vi.fn>;
     steer: string[];
-    state: { attempt: AttemptRow; stepType: StepType | null; settled: boolean; finishing: boolean; snapshot: AttemptUsageSnapshot | null };
+    state: { attempt: AttemptRow; settled: boolean; finishing: boolean; snapshot: AttemptUsageSnapshot | null };
     progressTrace: ProgressEvent[];
   }
 
   function makeSupervisor(opts: {
     config: GuardrailSnapshot;
-    stepType?: StepType | null;
     startedAt?: number;
     snapshot?: AttemptUsageSnapshot | null;
     workspace?: { guardrailBudget?: string | null; guardrailProgress?: string | null };
@@ -114,7 +113,6 @@ describe('guardrail-supervisor', () => {
 
     const state = {
       attempt,
-      stepType: opts.stepType === undefined ? ('implementation' as StepType) : opts.stepType,
       settled: false,
       finishing: false,
       snapshot: opts.snapshot ?? null,
@@ -131,7 +129,6 @@ describe('guardrail-supervisor', () => {
     const deps: GuardrailDeps = {
       attempts: {
         get: async () => state.attempt,
-        currentStepType: async () => state.stepType,
       },
       guardrailEvents: {
         append: (async (attemptId: number, event: GuardrailEventInput) => {
@@ -241,7 +238,6 @@ describe('guardrail-supervisor', () => {
       const h = makeSupervisor({
         config: budgetSnapshot({}),
         startedAt: Date.now() - 46 * 60_000,
-        stepType: 'implementation' as StepType,
       });
       await h.sup.prime();
       await h.sup.evaluateWallClock();
@@ -253,24 +249,10 @@ describe('guardrail-supervisor', () => {
       expect(h.kill).toHaveBeenCalledTimes(1);
     });
 
-    it('treats a missing Step row as the agent turn and trips', async () => {
-      const h = makeSupervisor({
-        config: budgetSnapshot({}),
-        startedAt: Date.now() - 46 * 60_000,
-        stepType: null,
-      });
-      await h.sup.prime();
-      await h.sup.evaluateWallClock();
-
-      expect(h.appended).toHaveLength(1);
-      expect(h.settles).toHaveLength(1);
-    });
-
     it('extending the cap keeps a run that was over-budget from tripping', async () => {
       const h = makeSupervisor({
         config: budgetSnapshot({}),
         startedAt: Date.now() - 46 * 60_000,
-        stepType: 'implementation' as StepType,
       });
       await h.sup.prime();
 
@@ -286,7 +268,6 @@ describe('guardrail-supervisor', () => {
     it('trips on the oldest outstanding tool call past the bound', async () => {
       const h = makeSupervisor({
         config: { ...budgetSnapshot({}), progress: true, toolTimeoutMinutes: 0.001 },
-        stepType: 'implementation' as StepType,
       });
       await h.sup.prime();
       h.sup.observeTool({ sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Run tests' });
@@ -301,7 +282,7 @@ describe('guardrail-supervisor', () => {
     });
 
     it('does not track tools when the progress guardrail is off', async () => {
-      const h = makeSupervisor({ config: budgetSnapshot({}), stepType: 'implementation' as StepType });
+      const h = makeSupervisor({ config: budgetSnapshot({}) });
       await h.sup.prime();
       h.sup.observeTool({ sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'Run tests' });
       await new Promise((r) => setTimeout(r, 10));

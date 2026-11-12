@@ -6,7 +6,7 @@ import '../index.css';
 import { TicketPage } from '../components/TicketPage';
 import { ChatTranscript } from '../components/ticket/ChatTranscript';
 import { PromptSent } from '../components/ticket/Description';
-import type { AttemptLogEvent, VerifierStatus } from '../types';
+import type { AttemptLogEvent } from '../types';
 import { EpicPage } from '../components/EpicPage';
 import { StatsPage } from '../components/StatsPage';
 import { TimelinePage } from '../components/TimelinePage';
@@ -19,7 +19,6 @@ import { FilesPage } from '../components/FilesPage';
 import { CodeViewer } from '../components/CodeViewer';
 import { GlobalDashboard } from '../components/GlobalDashboard';
 import { ExtendGuardrailDialog } from '../components/ExtendGuardrailDialog';
-import { CriticSessions, Verification } from '../components/ticket/Verification';
 import { LifecycleTimeline } from '../components/ticket/LifecycleTimeline';
 import { MergeProgress } from '../components/MergeProgress';
 import { EpicIntegrationBar } from '../components/EpicIntegrationBar';
@@ -36,12 +35,12 @@ import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor
 import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { WorkflowsPage } from '../components/workflows/WorkflowsPage';
-import { runningStory, workflowStory, workflowTaskFields } from './api-stub';
+import { runningStory, withWorkflowStory, workflowTaskFields } from './api-stub';
 import { PromptEditStep } from '../components/prompt-library/PromptEdit';
 import { PromptFind } from '../components/prompt-library/PromptFind';
 import { PromptImpact } from '../components/prompt-library/PromptImpact';
 import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
-import { criticLog, task, boardEpic, boardTasks, doneEpic, runs, timeline, verificationAttempts as storyVerificationAttempts, verifierStatuses } from './fixtures';
+import { criticLog, task, boardEpic, boardTasks, doneEpic, timeline } from './fixtures';
 
 const mergedSteps: MergeStepEvent[] = [
   { step: 'started', baseBranch: 'develop', taskBranch: 'task/handoff-10-merge-visibility' },
@@ -130,24 +129,6 @@ function TargetWaitCardsStory() {
   );
 }
 
-function CriticRunningStory() {
-  const runningCritic: VerifierStatus[] = [{ mechanism: 'critic', state: 'running', reason: null, harness: 'claude' }];
-  return (
-    <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
-      <Verification attempts={[]} statuses={runningCritic} run={runs[2]!} only="critic" />
-    </StoryFrame>
-  );
-}
-
-function CriticPromptsStory() {
-  return (
-    <StoryFrame style={{ padding: 30, maxWidth: 900 }}>
-      <Verification attempts={storyVerificationAttempts} statuses={verifierStatuses} run={runs[2]!} only="critic" />
-      <CriticSessions attempts={storyVerificationAttempts} run={runs[2]!} />
-    </StoryFrame>
-  );
-}
-
 function ResolvedPromptsStory() {
   const ev = (i: number, payload: AttemptLogEvent['payload']): AttemptLogEvent => ({ id: i, seq: i, ts: 1_756_000_000_000 + i * 1000, type: 'session_update', payload });
   const lifecycle = (i: number, payload: Record<string, unknown>) => ({ ...ev(i, { sessionUpdate: '' }), type: 'lifecycle', payload }) as unknown as AttemptLogEvent;
@@ -209,11 +190,11 @@ function MultiTurnStory() {
     lifecycle(4, 'steer_delivered', { text: 'Use the existing cache helper.' }),
     lifecycle(5, 'prompt_sent'),
     say(6, 'Switched to the cache helper.'),
-    lifecycle(7, 'continue', { attempt: 1, locator: 'implementation/prompt.md', promptIndex: 2 }),
+    lifecycle(7, 'continue', { attempt: 1, locator: 'steps/1-resolve-5/prompt.md', promptIndex: 2 }),
     lifecycle(8, 'prompt_sent'),
     say(9, 'Ran the tests; they pass. Changes are not committed yet.'),
     lifecycle(10, 'finished', { stopReason: 'end_turn' }),
-    lifecycle(11, 'commit-nudge', { locator: 'implementation/prompt.md', promptIndex: 3 }),
+    lifecycle(11, 'commit-nudge', { locator: 'steps/1-resolve-5/prompt.md', promptIndex: 3 }),
     lifecycle(12, 'prompt_sent'),
     say(13, 'Committed the work.'),
   ];
@@ -451,7 +432,7 @@ function EpicStory() {
 
 function TicketStory() {
   const routed = params.get('routing');
-  const baseTask = workflowStory ? { ...task, ...workflowTaskFields } : task;
+  const baseTask = withWorkflowStory ? { ...task, ...workflowTaskFields } : task;
   const routedTask = routed ? { ...baseTask, routing: { applied: routed === 'applied', label: 'reasoning' } as never } : baseTask;
   const withOverrides = params.get('overrides') === '1'
     ? { ...routedTask, modelOptionOverrides: [{ id: 'cheap-fix', harness: 'claude', model: 'claude-haiku-5-5' }] }
@@ -475,7 +456,7 @@ function TicketStory() {
         onChanged={() => {}}
         onClose={() => {}}
         onOpenTask={() => {}}
-        selection={{ kind: 'none' }}
+        selection={params.get('attempt') ? { kind: 'attempt', attemptNumber: Number(params.get('attempt')) } : { kind: 'none' }}
         onSelect={() => {}}
       />
     </StoryFrame>
@@ -603,8 +584,6 @@ function RetryStory() {
 const STORIES: Record<string, () => JSX.Element> = {
   'prompt-library': PromptLibraryStory,
   board: BoardStory,
-  'critic-running': CriticRunningStory,
-  'critic-prompts': CriticPromptsStory,
   'epic-critic-prompt': EpicStory,
   transcript: TranscriptStory,
   'multi-turn': MultiTurnStory,

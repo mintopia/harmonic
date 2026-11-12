@@ -3,9 +3,8 @@ import { act, createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../web/src/api.js';
 import { GlobalDefaultWorkflow, WorkflowLabelOverlayEditor, WorkflowLabelsEditor, WorkspaceDefaultWorkflow } from '../web/src/components/WorkflowLabelsEditor.js';
-import { WorkflowSteps } from '../web/src/components/ticket/WorkflowSteps.js';
 import { Properties } from '../web/src/components/ticket/Metrics.js';
-import type { AppConfig, WorkflowLabelOverlayEntry, WorkflowStepsResponse } from '../web/src/types.js';
+import type { AppConfig, WorkflowLabelOverlayEntry } from '../web/src/types.js';
 import { cleanup, flush, makeConfig, makeTask, mountComponent } from './component-smoke-harness.js';
 
 const library = [
@@ -173,20 +172,5 @@ describe('Ticket Workflow fact', () => {
     expect(await text({ workflowRef: 'Docs only@2', workflowChosen: 'explicit' })).toContain('Docs only v2 — operator choice on this Ticket');
     expect(await text({ workflowRef: 'Migrated (harmonic)@1', workflowChosen: 'workspace' })).toContain('Migrated (harmonic) v1 — Workspace default');
     expect(await text({ workflowRef: 'Migrated (global)@2', workflowChosen: 'global' }, 2)).toMatch(/Migrated \(global\) v2 — global default$/);
-  });
-});
-
-describe('WorkflowSteps header', () => {
-  const data = (latestVersion: number | null): WorkflowStepsResponse => ({ workflowRef: 'Security review on label@4', workflowChosen: 'label', outline: [], cleanupCount: 0, latestVersion, steps: [] });
-
-  it('notes a newer Library version', async () => {
-    const host = await mountComponent(createElement(WorkflowSteps, { data: data(5) }));
-    expect(host.textContent).toContain('Security review on label v4 · snapshotted v4; v5 exists and applies from the next Retry');
-  });
-
-  it('is plain when the snapshot is current', async () => {
-    const host = await mountComponent(createElement(WorkflowSteps, { data: data(4) }));
-    expect(host.textContent).toContain('Security review on label v4');
-    expect(host.textContent).not.toContain('snapshotted');
   });
 });

@@ -30,12 +30,15 @@ describe('GET /api/workspaces/:workspaceId/epics/:epicRef/workflow-steps', () =>
     await server.app.ctx.tasks.setEpicWorkflowRef(workspaceId, ref, workflowRef);
     await server.app.ctx.attempts.createForEpic({ workspaceId, epicRef: ref });
     const store = new WorkflowStepRunStore(server.app.ctx.asyncDb);
-    await store.seed([
-      { workspaceId, epicRef: ref, workflowRef, stepId: 'resolve', position: 0, action: 'agent', attempt: 1, outcome: 'skipped', summary: 'if: false' },
-      { workspaceId, epicRef: ref, workflowRef, stepId: 'verify', position: 1, action: 'command', attempt: 1, outcome: 'fail', summary: 'exit 1' },
-      { workspaceId, epicRef: ref, workflowRef, stepId: 'resolve', position: 0, action: 'agent', attempt: 2, outcome: 'pass', summary: '' },
-      { workspaceId, epicRef: ref, workflowRef: 'epic@0', stepId: 'stale', position: 0, action: 'run', attempt: null, outcome: 'pass', summary: '' },
-    ]);
+    const owner = { workspaceId, epicRef: ref };
+    const record = async (workflowRef: string, stepId: string, position: number, action: string, attempt: number | null, outcome: 'pass' | 'fail' | 'skipped', summary: string) => {
+      const row = await store.start({ ...owner, workflowRef, stepId, position, action, attempt });
+      await store.finish(row.id, { outcome, outputs: { stdout: '', exitCode: null }, summary });
+    };
+    await record(workflowRef, 'resolve', 0, 'agent', 1, 'skipped', 'if: false');
+    await record(workflowRef, 'verify', 1, 'command', 1, 'fail', 'exit 1');
+    await record(workflowRef, 'resolve', 0, 'agent', 2, 'pass', '');
+    await record('epic@0', 'stale', 0, 'run', null, 'pass', '');
 
     const { status, body } = await server.api('GET', url(802));
     expect(status).toBe(200);
@@ -49,6 +52,9 @@ describe('GET /api/workspaces/:workspaceId/epics/:epicRef/workflow-steps', () =>
     ]);
     const attempts = await server.api('GET', `/api/workspaces/${workspaceId}/epics/802/attempts`);
     expect(attempts.body.attempts).toHaveLength(1);
+    expect(attempts.body.attempts[0]).toMatchObject({ stepRuns: [] });
+    expect(attempts.body.attempts[0]).not.toHaveProperty('steps');
+    expect(attempts.body.attempts[0]).not.toHaveProperty('verificationAttempts');
   });
 
   it('404s for an unknown Workspace', async () => {

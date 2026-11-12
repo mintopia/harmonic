@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EpicAttemptsTimeline } from '../web/src/components/EpicPage.js';
+import { EpicAttemptView } from '../web/src/components/EpicAttemptView.js';
 import { EpicTimeline } from '../web/src/components/EpicTimeline.js';
 import { epicTimelineRows } from '../web/src/epic-timeline-model.js';
 import type { Epic } from '../web/src/epic-model.js';
@@ -30,8 +30,7 @@ const attempt: EpicAttempt = {
   contextTokens: null,
   startedAt: 1_000,
   endedAt: 2_000,
-  steps: [],
-  verificationAttempts: [],
+  stepRuns: [],
   resolverPrompts: [
     { kind: 'refresh', locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 0, ts: 1_100 },
     { kind: 'verification', locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 1, ts: 1_200 },
@@ -63,7 +62,7 @@ const epic = (): Epic => ({
 
 describe('Epic resolver prompts on the Epic page', () => {
   it('shows each resolver prompt inline under its Epic Attempt row with the resolver label', async () => {
-    const host = await mountComponent(createElement(EpicAttemptsTimeline, { attempts: [attempt] }));
+    const host = await mountComponent(createElement(EpicAttemptView, { attempts: [attempt], workflow: null }));
     const blocks = [...host.querySelectorAll('[data-testid="prompt-sent"]')];
     expect(blocks).toHaveLength(3);
     expect(blocks.map((b) => b.firstElementChild?.textContent)).toEqual([

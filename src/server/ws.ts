@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from './app.js';
 import { requestIsOperator } from './auth.js';
-import { attemptTimelineToApi, conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
+import { conversationToApi, attemptToApi, attemptUsageToApi, taskToApi } from './serialize.js';
 import { operationEventToApi, scheduledJobsToApi, notificationToApi, worktreesToApi, type ApiAttemptSummary, type ApiConversation, type ApiTask } from './dto.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { isTaskAttempt, type AttemptRow, type ConversationRow, type TaskRow } from '../db/schema.js';
@@ -42,19 +42,9 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     const send = (msg: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
-    const sendAttemptTimeline = (taskId: number) => {
-      ctx.fireAndForget(
-        async () => {
-          const { attempts, budgetBase } = await attemptTimelineToApi(ctx, taskId);
-          send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase });
-        },
-        { op: 'ws.sendAttemptTimeline', level: 'warn', context: { taskId } },
-      );
-    };
     // ws echoes back the client's first offered subprotocol, so this is the token the client authenticated the upgrade with.
     const hasWriteScope = await requestIsOperator(req, ctx.auth, socket.protocol || undefined);
     let unsubscribeAttemptLog: (() => void) | undefined;
-    let unsubscribeCriticLog: (() => void) | undefined;
     const fileSubscriptions = new Map<number, () => void>();
     const taskChanged = latestChangeSender<TaskRow, ApiTask>((task) => ctx.tasks.withDeps(task).then((withDeps) => taskToApi(ctx, withDeps)));
     const attemptChanged = latestChangeSender<AttemptRow, ApiAttemptSummary>((run) => attemptToApi(ctx, run));
@@ -64,12 +54,11 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       ctx.bus.on('attempt_changed', (run) => {
         if (isTaskAttempt(run)) {
           ctx.fireAndForget(() => attemptChanged.send(run.id, run, (api) => send({ type: 'attempt_changed', run: api })), { op: 'ws.attemptChanged', level: 'debug', context: { attemptId: run.id } });
-          sendAttemptTimeline(run.taskId);
         } else if (run.workspaceId !== null && run.epicRef !== null) {
           send({ type: 'epic_changed', workspaceId: run.workspaceId, epicRef: run.epicRef });
         }
       }),
-      ctx.bus.on('step_changed', ({ taskId }) => sendAttemptTimeline(taskId)),
+      ctx.bus.on('step_changed', ({ taskId, attemptId }) => send({ type: 'step_run_changed', taskId, attemptId: attemptId ?? null })),
       ctx.bus.on('attempt_usage', ({ attemptId, snapshot }) => {
         ctx.fireAndForget(async () => send({ type: 'attempt_usage', attemptId, ...(await attemptUsageToApi(ctx, attemptId, snapshot)) }), { op: 'ws.attemptUsage', level: 'debug', context: { attemptId } });
       }),
@@ -136,26 +125,21 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
       }
       const sub = logSubscription(message);
       if (!sub) return;
-      const channel = sub.type === 'critic_log_subscribe' ? 'critic_log_event' : 'attempt_log_event';
-      const replaySource = channel === 'critic_log_event' ? ctx.bus.replayCriticLog.bind(ctx.bus) : ctx.bus.replayAttemptLog.bind(ctx.bus);
-      if (channel === 'critic_log_event') unsubscribeCriticLog?.();
-      else unsubscribeAttemptLog?.();
+      unsubscribeAttemptLog?.();
       const queued: Array<ReturnType<typeof ctx.bus.replayAttemptLog> extends IterableIterator<infer Event> ? Event : never> = [];
       let replaying = true;
-      const unsubscribe = ctx.bus.on(channel, (event) => {
+      unsubscribeAttemptLog = ctx.bus.on('attempt_log_event', (event) => {
         if (event.attemptId !== sub.attemptId || event.seq <= sub.after) return;
         if (replaying) queued.push(event);
-        else send({ type: channel, event });
+        else send({ type: 'attempt_log_event', event });
       });
-      if (channel === 'critic_log_event') unsubscribeCriticLog = unsubscribe;
-      else unsubscribeAttemptLog = unsubscribe;
       if (sub.replay !== false) {
-        await forEachYielding(replaySource({ attemptId: sub.attemptId, after: sub.after }), (event) => {
-          send({ type: channel, event });
+        await forEachYielding(ctx.bus.replayAttemptLog({ attemptId: sub.attemptId, after: sub.after }), (event) => {
+          send({ type: 'attempt_log_event', event });
         });
       }
       while (queued.length > 0) {
-        await forEachYielding(queued.splice(0), (event) => send({ type: channel, event }));
+        await forEachYielding(queued.splice(0), (event) => send({ type: 'attempt_log_event', event }));
       }
       replaying = false;
     });
@@ -172,7 +156,6 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
     socket.on('close', () => {
       clearInterval(heartbeat);
       unsubscribeAttemptLog?.();
-      unsubscribeCriticLog?.();
       for (const release of fileSubscriptions.values()) release();
       fileSubscriptions.clear();
       unsubscribes.forEach((u) => u());
@@ -180,17 +163,15 @@ export async function wsRoutes(fastify: FastifyInstance, ctx: AppContext): Promi
   });
 }
 
-/** The builder's transient ACP transcript and the critic's own live channel
- * share one subscription shape; the `type` selects the bus channel. */
-function logSubscription(message: unknown): { type: 'attempt_log_subscribe' | 'critic_log_subscribe'; attemptId: number; after: number; replay?: boolean } | null {
+function logSubscription(message: unknown): { attemptId: number; after: number; replay?: boolean } | null {
   if (typeof message !== 'object' || message === null) return null;
   const type = Reflect.get(message, 'type');
   const attemptId = Reflect.get(message, 'attemptId');
   const after = Reflect.get(message, 'after');
   const replay = Reflect.get(message, 'replay');
-  if (type !== 'attempt_log_subscribe' && type !== 'critic_log_subscribe') return null;
+  if (type !== 'attempt_log_subscribe') return null;
   if (typeof attemptId !== 'number' || !Number.isInteger(attemptId)) return null;
   if (typeof after !== 'number' || !Number.isInteger(after) || after < 0) return null;
   if (replay !== undefined && typeof replay !== 'boolean') return null;
-  return { type, attemptId, after, ...(replay === undefined ? {} : { replay }) };
+  return { attemptId, after, ...(replay === undefined ? {} : { replay }) };
 }

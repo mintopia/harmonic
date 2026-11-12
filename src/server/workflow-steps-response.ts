@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { WORKFLOW_CHOSEN, WORKFLOW_STEP_OUTCOMES, type WorkflowChosen, type WorkflowStepRunRow } from '../db/schema.js';
-import type { WorkflowStepOutputs } from '../domain/workflow-step-runs.js';
+import { stepRunKind } from '../domain/step-run-kind.js';
+import { parseStepRunOutputs } from './dto.js';
+import { stepRunOutputsSchema } from './schemas.js';
 import { parseWorkflow, resolveAttemptsMax, type WorkflowDefinition, type WorkflowStepDefinition } from '../domain/workflow.js';
 import { parseWorkflowRef } from '../execution/workflow-engine.js';
 
@@ -24,6 +26,10 @@ export const workflowStepsResponseSchema = z.object({
   maxAttempts: z.number().int().nullable().meta({ description: 'The `attempts:` block bound with vars resolved; null without a block or when it does not resolve.', example: 3 }),
   steps: z.array(
     z.object({
+      id: z.number().int().meta({ example: 73 }),
+      attemptId: z.number().int().nullable().meta({ example: 19 }),
+      kind: z.enum(['rebase', 'agent', 'check', 'critic', 'publish', 'tracker', 'cleanup', 'marker']).meta({ example: 'check' }),
+      sessionRowId: z.number().int().nullable().meta({ example: 12 }),
       stepId: z.string().meta({ example: 'lint' }),
       action: z.string().meta({ example: 'run' }),
       position: z.number().int().meta({ example: 0 }),
@@ -31,23 +37,7 @@ export const workflowStepsResponseSchema = z.object({
       outcome: z.enum(WORKFLOW_STEP_OUTCOMES).nullable().meta({ description: 'Null while the step is running.', example: 'pass' }),
       summary: z.string().nullable().meta({ example: 'command exited 0' }),
       resolvedPrompt: z.string().nullable().meta({ description: 'The prompt an agent step sent, Prompt Library includes expanded; null for other actions.' }),
-      outputs: z
-        .object({
-          stdout: z.string().meta({ example: 'ok\n' }),
-          exitCode: z.number().int().nullable().meta({ example: 0 }),
-          checkpoint: z
-            .object({
-              branch: z.string().meta({ example: 'harmonic/task-42' }),
-              sha: z.string().nullable().meta({ description: 'The commit the Ticket branch was pushed at; null when the push failed.', example: '3f2a9c1' }),
-              forced: z.boolean().meta({ description: 'True when the push rewrote history already on the remote, as after a rebase.', example: false }),
-              unchanged: z.boolean().meta({ description: 'True when the step left the branch where the previous checkpoint put it.', example: false }),
-              files: z.number().int().optional().meta({ description: 'How many files this step\'s commits changed against the previous remote tip; absent when unchanged or unknown.', example: 6 }),
-              error: z.string().optional().meta({ description: 'Why the push failed.' }),
-            })
-            .optional()
-            .meta({ description: 'The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.' }),
-        })
-        .meta({ description: 'Secret values are masked.' }),
+      outputs: stepRunOutputsSchema,
       startedAt: z.number().meta({ example: 1784030400000 }),
       endedAt: z.number().nullable().meta({ example: 1784030401000 }),
     }),
@@ -71,13 +61,16 @@ interface WorkflowLibrary {
 
 const SHORT_NAME = /^[\w-]+$/;
 
-function describeStep(step: WorkflowStepDefinition): { uses: string; detail: string | null; condition: string | null } {
+export function describeStep(step: WorkflowStepDefinition): { uses: string; detail: string | null; condition: string | null } {
   const uses = step.run !== undefined ? 'command' : (step.uses ?? 'command');
   const text = (key: string): string | null => (typeof step.with?.[key] === 'string' ? (step.with[key] as string) : null);
   const prompt = text('prompt');
   const detail = step.run !== undefined ? step.run : uses === 'agent' ? (prompt !== null && SHORT_NAME.test(prompt) ? `prompt ${prompt}` : null) : uses === 'critic' ? text('model') : uses === 'cleanup' ? text('run') : null;
   return { uses, detail, condition: step.if?.replace(/^\$\{\{\s*|\s*\}\}$/g, '') ?? null };
 }
+
+export const stepInfoOf = (definition: WorkflowDefinition | null) =>
+  Object.fromEntries([...(definition?.steps ?? []), ...(definition?.cleanup ?? [])].flatMap((step) => [step, ...(step.parallel ?? [])].map((entry) => [entry.id, describeStep(entry)] as const)));
 
 export async function workflowStepsResponse(
   library: WorkflowLibrary,
@@ -90,7 +83,7 @@ export async function workflowStepsResponse(
     workflowChosen: input.workflowChosen,
     outline: (definition?.steps ?? []).map((step) => ({ id: step.id, children: (step.parallel ?? []).map((child) => child.id) })),
     cleanupCount: definition?.cleanup?.length ?? 0,
-    stepInfo: Object.fromEntries([...(definition?.steps ?? []), ...(definition?.cleanup ?? [])].flatMap((step) => [step, ...(step.parallel ?? [])].map((entry) => [entry.id, describeStep(entry)] as const))),
+    stepInfo: stepInfoOf(definition),
     blockStepIds: definition === null ? [] : definition.steps.slice(definition.attempts.start, definition.attempts.end).flatMap((step) => [step.id, ...(step.parallel ?? []).map((child) => child.id)]),
     cleanupIds: (definition?.cleanup ?? []).map((step) => step.id),
     maxAttempts: definition === null || definition.attempts.end <= definition.attempts.start ? null : (() => {
@@ -101,6 +94,10 @@ export async function workflowStepsResponse(
     steps: rows
       .filter((row) => row.workflowRef === workflowRef)
       .map((row) => ({
+        id: row.id,
+        attemptId: row.attemptId,
+        kind: stepRunKind(row.action),
+        sessionRowId: row.sessionRowId,
         stepId: row.stepId,
         action: row.action,
         position: row.position,
@@ -108,7 +105,7 @@ export async function workflowStepsResponse(
         outcome: row.outcome,
         summary: row.summary,
         resolvedPrompt: row.resolvedPrompt,
-        outputs: row.outputs === null ? { stdout: '', exitCode: null } : (JSON.parse(row.outputs) as WorkflowStepOutputs),
+        outputs: parseStepRunOutputs(row.outputs),
         startedAt: row.startedAt,
         endedAt: row.endedAt,
       })),

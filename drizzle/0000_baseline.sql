@@ -80,7 +80,6 @@ CREATE TABLE `attempts` (
 	`diff_head_oid` text,
 	`stat` text,
 	`verified_head_oid` text,
-	`verified_ref` text,
 	`usage` text,
 	`cost` text,
 	`routing_usage` text,
@@ -290,21 +289,6 @@ CREATE TABLE `settings` (
 	`value` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `steps` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`attempt_id` integer NOT NULL,
-	`type` text NOT NULL,
-	`position` integer NOT NULL,
-	`state` text DEFAULT 'pending' NOT NULL,
-	`command` text,
-	`verdict` text,
-	`log_locator` text,
-	`started_at` integer,
-	`ended_at` integer,
-	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `steps_attempt_position_unique` ON `steps` (`attempt_id`,`position`);--> statement-breakpoint
 CREATE TABLE `task_channels` (
 	`task_id` integer NOT NULL,
 	`channel_id` integer NOT NULL,
@@ -360,7 +344,6 @@ CREATE TABLE `tasks` (
 	`wayfinder_type` text,
 	`escalation_reason` text,
 	`escalation_cause` text,
-	`merge_status` text,
 	`ticket_close_pending` integer DEFAULT false NOT NULL,
 	`map_ref` text,
 	`base_branch` text,
@@ -406,25 +389,6 @@ CREATE TABLE `tracker_dismissals` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `tracker_dismissals_ws_ref_idx` ON `tracker_dismissals` (`workspace_id`,`tracker_ref`);--> statement-breakpoint
-CREATE TABLE `verification_attempts` (
-	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`attempt_id` integer NOT NULL,
-	`seq` integer NOT NULL,
-	`ts` integer NOT NULL,
-	`mechanism` text NOT NULL,
-	`input_oid` text NOT NULL,
-	`verdict` text NOT NULL,
-	`summary` text NOT NULL,
-	`output` text NOT NULL,
-	`full_output_key` text,
-	`prompt_key` text,
-	`transcript_path` text,
-	`harness` text,
-	`usage` text,
-	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `verification_attempts_attempt_seq_unique` ON `verification_attempts` (`attempt_id`,`seq`);--> statement-breakpoint
 CREATE TABLE `workflow_step_runs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`task_id` integer,
@@ -441,11 +405,19 @@ CREATE TABLE `workflow_step_runs` (
 	`attempt` integer,
 	`started_at` integer NOT NULL,
 	`ended_at` integer,
+	`attempt_id` integer,
+	`session_row_id` integer,
+	`harness` text,
+	`model` text,
+	`usage` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`workspace_id`, `epic_ref`) REFERENCES `epics`(`workspace_id`, `tracker_ref`) ON UPDATE no action ON DELETE cascade,
 	CHECK ((`task_id` IS NOT NULL AND `workspace_id` IS NULL AND `epic_ref` IS NULL) OR (`task_id` IS NULL AND `workspace_id` IS NOT NULL AND `epic_ref` IS NOT NULL))
 );
 --> statement-breakpoint
+CREATE INDEX `workflow_step_runs_attempt_idx` ON `workflow_step_runs` (`attempt_id`,`id`);--> statement-breakpoint
 CREATE INDEX `workflow_step_runs_task_idx` ON `workflow_step_runs` (`task_id`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE INDEX `workflow_step_runs_epic_idx` ON `workflow_step_runs` (`workspace_id`,`epic_ref`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (

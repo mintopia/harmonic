@@ -8,6 +8,7 @@ import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { AttemptStore } from '../src/domain/attempts.js';
+import { WorkflowStepRunStore } from '../src/domain/workflow-step-runs.js';
 import { CrashRecoveryCoordinator } from '../src/execution/crash-recovery.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
@@ -62,6 +63,24 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
     await coord.reconcile();
 
     expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death' });
+  });
+
+  it('closes step runs left running by the crash as inconclusive', async () => {
+    const created = await tasks.create({ prompt: 'p', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+    await tasks.setState(created.id, 'working');
+    const run = await attempts.create(created.id);
+    const stepRuns = new WorkflowStepRunStore(asyncDb);
+    const base = { taskId: created.id, workflowRef: 'w@1', position: 0, action: 'run', attemptId: run.id };
+    const done = await stepRuns.start({ ...base, stepId: 'a' });
+    await stepRuns.finish(done.id, { outcome: 'pass', outputs: { stdout: '', exitCode: 0 }, summary: 'ok' });
+    await stepRuns.start({ ...base, stepId: 'b' });
+
+    await new CrashRecoveryCoordinator(attempts, tasks, { stepRuns }).reconcile();
+
+    expect((await stepRuns.listForAttempt(run.id)).map((r) => [r.stepId, r.outcome, r.summary])).toEqual([
+      ['a', 'pass', 'ok'],
+      ['b', null, 'interrupted by process death'],
+    ]);
   });
 
   it('settles an interrupted Epic Attempt and notifies the Epic reconciler so its next poll can retry verification', async () => {

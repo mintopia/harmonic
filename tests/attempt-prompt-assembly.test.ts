@@ -20,7 +20,7 @@ function continuation(): SessionContinuation {
     listEvents: async () => [{}, {}, {}],
   };
   const sessions = { get: async () => ({ harness: 'claude', model: 'sonnet', harnessSessionId: 'sess-1' }) };
-  return new SessionContinuation(attempts as never, sessions as never, {} as never, (() => ({})) as never, {} as never, () => undefined, () => '', (() => {}) as never);
+  return new SessionContinuation(attempts as never, sessions as never, {} as never, (() => ({})) as never, {} as never, () => undefined, () => '', (() => {}) as never, {} as never);
 }
 
 describe('the bundled engine prompts at defaults reproduce the prior Attempt prompt text byte-for-byte', () => {

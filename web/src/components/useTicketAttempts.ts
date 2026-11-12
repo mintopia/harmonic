@@ -21,9 +21,7 @@ export function useTicketAttempts(taskId: number): { runs: AttemptSummary[]; att
       }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_timeline_changed' && msg.taskId === taskId) {
-        setAttempts(msg.attempts);
-      }
+      if ((msg.type === 'step_run_changed' && msg.taskId === taskId) || (msg.type === 'attempt_changed' && msg.run.taskId === taskId)) load();
     }, load);
     return () => {
       unsubscribe();

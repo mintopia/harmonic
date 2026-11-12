@@ -25,11 +25,10 @@ describe('run log firehose', () => {
   describe('buffer release', () => {
     afterEach(() => vi.useRealTimers());
 
-    it('frees the builder and critic buffers shortly after the Attempt ends', () => {
+    it('frees the replay buffer shortly after the Attempt ends', () => {
       vi.useFakeTimers();
       const bus = new EventBus(1_000);
       bus.emitAttemptLog(event(1));
-      bus.emitCriticLog(event(1));
       bus.emit('attempt_changed', { id: 42, endedAt: null } as AttemptRow);
       vi.advanceTimersByTime(5_000);
       expect([...bus.replayAttemptLog({ attemptId: 42, after: 0 })]).toHaveLength(1);
@@ -39,7 +38,6 @@ describe('run log firehose', () => {
       expect([...bus.replayAttemptLog({ attemptId: 42, after: 0 })]).toHaveLength(1);
       vi.advanceTimersByTime(1);
       expect([...bus.replayAttemptLog({ attemptId: 42, after: 0 })]).toEqual([]);
-      expect([...bus.replayCriticLog({ attemptId: 42, after: 0 })]).toEqual([]);
       expect(bus.latestAttemptLogSeq({ attemptId: 42 })).toBe(0);
     });
 

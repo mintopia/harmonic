@@ -4,6 +4,7 @@ import { modelTotal, type TaskModelStats, type TaskStats } from '../../task-deta
 import type { AttemptSummary, AttemptUsageEvent } from '../../types';
 import type { StatsAttempt } from '../../task-detail-model';
 import { card } from '../../ui';
+import { fmtDur } from './Metrics';
 import { BarChart, type Bar } from '../BarChart';
 import { Donut, type DonutSegment } from '../Donut';
 import { EmptyState } from '../EmptyState';
@@ -68,15 +69,6 @@ export interface AttemptSummaryCardProps {
   snapshot: AttemptUsageEvent | undefined;
   model: string;
   toolCalls: number;
-}
-
-function fmtDur(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-  return `${seconds}s`;
 }
 
 export function AttemptSummaryCard({ run, snapshot, model, toolCalls }: AttemptSummaryCardProps) {

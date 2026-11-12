@@ -42,15 +42,14 @@ async function renderTicket(task: Task, selection: { kind: 'none' } | { kind: 'a
 }
 
 describe('TicketPage smoke (issue #469)', () => {
-  it('renders the ticket header, progress bar and empty stats panel with no attempts', async () => {
+  it('renders the ticket header and the no-attempt panel, without a progress bar with no attempts', async () => {
     const task = makeTask();
 
     await renderTicket(task);
 
     expect(host!.textContent).toContain('Fix the flaky retry test');
-    expect(host!.querySelector('ol[aria-label="Task progress"]')).not.toBeNull();
+    expect(host!.querySelector('ol[aria-label="Task progress"]')).toBeNull();
     expect(host!.querySelector('section[aria-label="Attempt history"]')?.textContent).toContain("hasn't been attempted yet");
-    expect(host!.textContent).toContain("The Task's AI-usage breakdown will appear here once an Attempt has run.");
   });
 
   it('shows the No attempts yet empty state when an attempt is selected but none exist', async () => {
@@ -63,7 +62,7 @@ describe('TicketPage smoke (issue #469)', () => {
   });
 
   it('shows the escalated banner for an escalated task', async () => {
-    const task = makeTask({ id: 44, state: 'escalated', escalationReason: 'escalated to human: repeated verification failures' });
+    const task = makeTask({ id: 44, state: 'escalated', hasCandidate: true, escalationReason: 'escalated to human: repeated verification failures' });
 
     await renderTicket(task);
 

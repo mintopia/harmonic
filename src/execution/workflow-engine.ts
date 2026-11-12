@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AppConfig, HarnessId, VerificationCommand } from '../config.js';
+import type { AcpInitializeResult } from '../acp/driver.js';
+import type { AppConfig, HarnessConfig, HarnessId, VerificationCommand } from '../config.js';
 import type { AttemptRow, TaskOrigin, TaskRow, WorkflowStepOutcome } from '../db/schema.js';
 import type { TrackerRef } from '../tracker/adapter.js';
 import type { VarRecord } from '../domain/workflow-vars.js';
@@ -17,6 +18,7 @@ import { errorMessage } from '../error-handling.js';
 import type { CriticDriveRequest, CriticDriveResult } from '../verification/critic.js';
 import { exitCodeToVerdict, OUTPUT_CHAR_CAP, type CommandSpawn } from '../verification/command-verifier.js';
 import type { MergeIntoBaseOutcome } from './branch-merge.js';
+import type { StepRunArchiveRef } from '../archive/task-archive.js';
 import { Git } from './git.js';
 import { HARNESS_CREDENTIALS, LOCAL_TARGET } from './execution-targets.js';
 import { ticketBranch, type PodOpener } from './pod-opener.js';
@@ -66,11 +68,13 @@ const DEFAULT_RUN_TIMEOUT_SECONDS = 600;
 const ESCALATION_OUTPUT_CHARS = 4000;
 const POD_GIT_TIMEOUT_MS = 60_000;
 
-/** An agent step carries `task`, `run` and `stepRowId` so the driver can run a full session turn; a critic request carries none. */
+/** An agent step carries `task`, `run` and `stepRunId` so the driver can run a full session turn; a critic request carries none. */
 export interface AgentDriveRequest<S extends EngineSubject = TaskRow> extends CriticDriveRequest {
   task?: S;
   run?: AttemptRow;
-  stepRowId?: number;
+  stepRunId?: number;
+  stepId?: string;
+  pass?: number | null;
 }
 
 export interface AgentDriveResult extends CriticDriveResult {
@@ -115,6 +119,8 @@ export interface WorkflowEngineDeps<S extends EngineSubject = TaskRow> {
   };
   runTimeoutMs?: number;
   pods?: PodOpener<S>;
+  stepOutputLog?: (task: S, run: AttemptRow, ref: StepRunArchiveRef) => Promise<{ path: string } | null>;
+  recordSession?: (task: S, input: { harness: HarnessConfig; harnessId: string; model: string; cwd: string; harnessSessionId: string; initialize: AcpInitializeResult }) => Promise<number | null>;
   podTranscripts?: PodTranscripts<S>;
 }
 
@@ -394,7 +400,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     const prior = latest.get(step.id)?.outcome;
     if (prior === 'pass' || prior === 'skipped') return null;
     const action = step.run !== undefined ? 'run' : step.uses!;
-    const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt });
+    const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt, attemptId: run.id });
     this.deps.onStepChanged?.(stepRunOwner(task));
     let result: StepResult;
     let losses = 0;
@@ -422,10 +428,10 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
           }
           result =
             resolved.uses === 'agent'
-              ? await this.executeAgent(stepCtx, resolved, row.id, pod)
+              ? await this.executeAgent(stepCtx, resolved, row.id, attempt, pod)
               : resolved.uses === 'critic'
-                ? await this.executeCritic(stepCtx, resolved, row.id, pod)
-                : await this.execute(task, run, resolved, env, secrets, pod);
+                ? await this.executeCritic(stepCtx, resolved, row.id, attempt, pod)
+                : await this.execute(task, run, resolved, env, secrets, { pass: attempt, stepId: step.id, stepRunId: row.id }, pod);
         }
       } catch (error) {
         result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
@@ -520,7 +526,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     };
   }
 
-  private async executeCritic(ctx: RunContext<S>, step: WorkflowStepDefinition, rowId: number, pod?: PodSession): Promise<StepResult> {
+  private async executeCritic(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, pass: number | null, pod?: PodSession): Promise<StepResult> {
     const { task, secrets, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
@@ -541,11 +547,12 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       if (missing) return missing;
       const cwd = pod ? pod.repoDir : this.deps.cwdFor(task);
       const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route, cwd), context), agent.prompts());
-      await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
+      await this.deps.stepRuns.setResolvedPrompt(stepRunId, mask(prompt));
       this.deps.onStepChanged?.(stepRunOwner(task));
+      await this.deps.stepRuns.setSession(stepRunId, { harness: route.harness, model: route.model });
       const before = await markGit(cwd, pod);
       const dirtyBefore = await isDirty(cwd, pod);
-      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run: ctx.run, harnessId: route.harness, model: route.model, cwd, kind: 'critic', stepId: step.id }) : undefined;
+      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run: ctx.run, harnessId: route.harness, model: route.model, cwd, kind: 'critic', stepId: step.id, stepRunId, pass }) : undefined;
       let result: CriticDriveResult;
       try {
         result = await agent.drive.run({
@@ -557,11 +564,15 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
           timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
           readOnly: true,
           ...(pod ? { pod } : {}),
-          ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
+          onSessionCreated: transcript?.onSessionCreated ?? (async (harnessSessionId, initialize) => {
+            const sessionRowId = await this.deps.recordSession?.(task, { harness: route.config, harnessId: route.harness, model: route.model, cwd, harnessSessionId, initialize });
+            if (sessionRowId != null) await this.deps.stepRuns.setSession(stepRunId, { sessionRowId });
+          }),
         });
       } finally {
         await transcript?.finish();
       }
+      if (result.usage) await this.deps.stepRuns.setUsage(stepRunId, result.usage);
       const output = mask(result.output);
       const after = await markGit(cwd, pod);
       const changed = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits || (!dirtyBefore && (await isDirty(cwd, pod)));
@@ -656,8 +667,12 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     if (action === 'merge') {
       if (!this.deps.mergeBranch) return done('inconclusive', 'merge is not available');
       const merged = await this.deps.mergeBranch(task, run);
-      if (merged.ok) return done('pass', `merged ${run.branch} into ${run.baseBranch}`, { branch: run.branch });
-      return done(merged.reason === 'conflict' ? 'conflict' : 'fail', merged.detail);
+      if (merged.ok) {
+        const { resolved } = merged;
+        const via = resolved ? ` after ${resolved.turns} conflict resolve ${resolved.turns === 1 ? 'turn' : 'turns'}` : '';
+        return done('pass', `merged ${run.branch} into ${run.baseBranch}${via}`, { branch: run.branch, ...(resolved ? { conflictedFiles: resolved.files } : {}) });
+      }
+      return done(merged.reason === 'conflict' ? 'conflict' : 'fail', merged.detail, merged.conflictedFiles ? { conflictedFiles: merged.conflictedFiles } : undefined);
     }
     if (!this.deps.openPullRequest) return done('inconclusive', 'open-pr is not available');
     const url = await this.deps.openPullRequest(task, run);
@@ -674,7 +689,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return { route: resolveRoute(this.deps.agent.getConfig(), resolved.option.harness, resolved.option.model, null) };
   }
 
-  private async executeAgent(ctx: RunContext<S>, step: WorkflowStepDefinition, rowId: number, pod?: PodSession): Promise<StepResult> {
+  private async executeAgent(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, pass: number | null, pod?: PodSession): Promise<StepResult> {
     const { task, run, secrets, agentState: state, context } = ctx;
     const mask = (text: string): string => maskSecrets(text, secrets);
     const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
@@ -704,13 +719,14 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       const cwd = pod ? pod.repoDir : this.deps.cwdFor(task);
       const fields = await this.promptFields(task, context, route, cwd);
       const prompt = options.prompt === undefined ? await agent.resolvePrompt(task.prompt) : await this.renderPrompt(options.prompt, fields, context);
-      await this.deps.stepRuns.setResolvedPrompt(rowId, mask(prompt));
+      await this.deps.stepRuns.setResolvedPrompt(stepRunId, mask(prompt));
       this.deps.onStepChanged?.(stepRunOwner(task));
+      await this.deps.stepRuns.setSession(stepRunId, { harness: route.harness, model: route.model });
       const key = `${route.harness}\u0000${route.model}`;
       let output = '';
       let text = prompt;
       const nudges = options.continueAttempts ?? 0;
-      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run, harnessId: route.harness, model: route.model, cwd, kind: 'agent', stepId: step.id }) : undefined;
+      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run, harnessId: route.harness, model: route.model, cwd, kind: 'agent', stepId: step.id, stepRunId, pass }) : undefined;
       try {
         for (let turn = 0; ; turn++) {
           const result = await agent.drive.run({
@@ -722,7 +738,9 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
             timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
             task,
             run,
-            stepRowId: rowId,
+            stepRunId,
+            stepId: step.id,
+            pass,
             ...(pod ? { pod } : {}),
             ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
             ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
@@ -790,14 +808,16 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return done('pass', 'the tracker refused to close the ticket; the close will be retried');
   }
 
-  private async runGuarded(task: S, command: VerificationCommand, mask: (text: string) => string): Promise<StepResult> {
+  private async runGuarded(task: S, run: AttemptRow, command: VerificationCommand, ref: StepRunArchiveRef, mask: (text: string) => string): Promise<StepResult> {
     const cwd = this.deps.cwdFor(task);
+    const outputLog = await this.deps.stepOutputLog?.(task, run, ref);
     const before = await markGit(cwd);
     const result = await this.deps.spawn.run({
       command,
       cwd: command.cwd ? join(cwd, command.cwd) : cwd,
       timeoutMs: this.deps.runTimeoutMs ?? command.timeoutSeconds * 1000,
       outputCap: OUTPUT_CHAR_CAP,
+      ...(outputLog ? { outputLogPath: outputLog.path } : {}),
     });
     const after = await markGit(cwd);
     const verdict = exitCodeToVerdict(result);
@@ -811,7 +831,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     };
   }
 
-  private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[], pod?: PodSession): Promise<StepResult> {
+  private async execute(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[], ref: StepRunArchiveRef, pod?: PodSession): Promise<StepResult> {
     const mask = (text: string): string => maskSecrets(text, secrets);
     try {
       if (step.uses === 'rebase') return await (pod ? this.rebaseInPod(pod, mask) : this.rebase(task, mask));
@@ -824,7 +844,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
         return { outcome: 'inconclusive', summary: 'action not yet supported', stdout: '', exitCode: null, output: '' };
       }
       const command: VerificationCommand = { id: step.id, command: 'sh', args: ['-c', step.run], env, timeoutSeconds: DEFAULT_RUN_TIMEOUT_SECONDS };
-      return await (pod ? this.runInPod(pod, step, env, mask) : this.runGuarded(task, command, mask));
+      return await (pod ? this.runInPod(pod, step, env, mask) : this.runGuarded(task, run, command, ref, mask));
     } catch (error) {
       return { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
     }

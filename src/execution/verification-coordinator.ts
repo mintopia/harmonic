@@ -13,7 +13,7 @@ import { pricesForHarness } from '../domain/pricing.js';
 import { runTimedCriticDrive, type CriticHarnessDrive } from '../verification/critic.js';
 import type { AgentDriveRequest, AgentDriveResult, EpicSubject } from './workflow-engine.js';
 
-export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent' | 'onCriticLogEvent'>;
+export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent'>;
 
 export interface VerificationCoordinatorDeps {
   attempts: AttemptStore;
@@ -33,7 +33,7 @@ export class VerificationCoordinator {
     const { workspaceId, epicRef } = task;
     const { harness, harnessId, model, cwd } = req;
     const branch = integrationBranchName(epicRef);
-    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId, epicRef }, run.number, 'epic-resolve', req.stepRowId ?? 1, req.prompt);
+    const archived = await this.deps.archive?.appendResolutionPrompt({ workspaceId, epicRef }, run.number, 'epic-resolve', req.stepRunId ?? 1, req.prompt);
     await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'epic-resolve', kind: 'verification', ...archived } }).then((event) => this.deps.events.onAttemptEvent?.(event)).catch((err: unknown) => {
       logger.warn('epic-resolve event failed', { attemptId: run.id, error: err instanceof Error ? err.message : String(err) });
     });
@@ -41,7 +41,7 @@ export class VerificationCoordinator {
     this.deps.activeRuns.setToolCallTotals(run.id, toolCalls);
     const onUpdate = (update: { sessionUpdate: string; [key: string]: unknown }): void => {
       const seq = this.deps.activeRuns.nextProgressSequence(run.id);
-      this.deps.events.onAttemptLogEvent?.({ id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq, attemptId: run.id, seq, ts: Date.now(), type: 'session_update', payload: update });
+      this.deps.events.onAttemptLogEvent?.({ id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq, attemptId: run.id, seq, ts: Date.now(), ...(req.stepRunId !== undefined ? { stepRunId: req.stepRunId } : {}), type: 'session_update', payload: update });
       if (update.sessionUpdate !== 'tool_call') return;
       const name = toolCallName(update, (payload) => adapterFor(harnessId).usage?.toolName(payload) ?? null);
       toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);

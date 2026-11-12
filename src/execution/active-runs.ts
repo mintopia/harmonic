@@ -26,6 +26,7 @@ export interface ActiveRun {
   agentFinished: boolean;
   escalateReason: string | null;
   steerQueue: SteerEntry[];
+  stepRunId?: number;
   idle: boolean;
   externallySettled: boolean;
   steerable: boolean;
@@ -52,7 +53,6 @@ export class ActiveRuns {
   private readonly pendingManualResume = new Map<number, AttemptRow>();
   private readonly progressTraces = new Map<number, ProgressEvent[]>();
   private readonly progressSequences = new Map<number, number>();
-  private readonly criticLogSequences = new Map<number, number>();
   private readonly outstandingProgressActions = new Map<number, ProgressEvent>();
 
   get(attemptId: number): ActiveRun | undefined {
@@ -122,12 +122,6 @@ export class ActiveRuns {
   nextProgressSequence(attemptId: number): number {
     const seq = (this.progressSequences.get(attemptId) ?? 0) + 1;
     this.progressSequences.set(attemptId, seq);
-    return seq;
-  }
-
-  nextCriticLogSequence(attemptId: number): number {
-    const seq = (this.criticLogSequences.get(attemptId) ?? 0) + 1;
-    this.criticLogSequences.set(attemptId, seq);
     return seq;
   }
 
@@ -250,7 +244,6 @@ export class ActiveRuns {
     this.lastTurnContextTokens.delete(attemptId);
     this.progressTraces.delete(attemptId);
     this.progressSequences.delete(attemptId);
-    this.criticLogSequences.delete(attemptId);
     this.outstandingProgressActions.delete(attemptId);
   }
 }

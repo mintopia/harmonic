@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import {
   ATTEMPT_STATES,
-  STEP_STATES,
-  STEP_TYPES,
+  WORKFLOW_STEP_OUTCOMES,
   CONVERSATION_STATES,
 } from '../db/schema.js';
 import { listResponse } from './pagination.js';
@@ -35,33 +34,6 @@ export const okResponseSchema = z
 /** A numeric `:id` path param, coerced from the route string. */
 export const idParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 4821 }) });
 
-/** One persisted step in an Attempt's ordered ticket timeline. */
-export const stepSchema = z
-  .object({
-    id: z.number().meta({ example: 73 }),
-    attemptId: z.number().meta({ example: 19 }),
-    type: z.enum(STEP_TYPES).meta({ example: 'verification' }),
-    position: z.number().int().positive().meta({ example: 2 }),
-    state: z.enum(STEP_STATES).meta({ example: 'passed' }),
-    command: z.string().nullable().meta({ example: 'npm test' }),
-    verdict: z.string().nullable().meta({ example: 'pass' }),
-    logLocator: z.string().nullable().meta({ example: 'verification_attempt:31' }),
-    startedAt: z.number().nullable().meta({ example: 1784032140000 }),
-    endedAt: z.number().nullable().meta({ example: 1784032200000 }),
-  })
-  .meta({ id: 'Step' });
-
-/** One configured verifier category's reconciled read-time state. */
-export const verifierStatusSchema = z
-  .object({
-    mechanism: z.enum(['command', 'critic']).meta({ example: 'critic' }),
-    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled', 'unrunnable', 'planned', 'running']).meta({ example: 'passed' }),
-    reason: z.string().nullable().meta({ example: null }),
-    commands: z.array(z.string()).optional().meta({ example: ['npm test'] }),
-    harness: z.string().nullable().optional().meta({ example: 'claude' }),
-  })
-  .meta({ id: 'VerifierStatus' });
-
 /** The dollar value of Usage, derived on read from the live price table (domain/pricing.ts `Cost`). */
 export const costSchema = z
   .object({
@@ -74,6 +46,58 @@ export const costSchema = z
   })
   .meta({ id: 'Cost' });
 
+export const stepRunOutputsSchema = z
+  .object({
+    stdout: z.string().meta({ example: 'ok\n' }),
+    exitCode: z.number().int().nullable().meta({ example: 0 }),
+    baseSha: z.string().optional().meta({ description: 'Rebase: the base the branch was rebased onto.' }),
+    conflictedFiles: z.array(z.string()).optional().meta({ description: 'Rebase or merge: files left in conflict.' }),
+    url: z.string().optional().meta({ description: 'Publish: the PR or MR URL.' }),
+    number: z.number().int().optional().meta({ description: 'Publish: the PR or MR number.' }),
+    branch: z.string().optional().meta({ description: 'Publish: the branch pushed.' }),
+    verdict: z.enum(['pass', 'fail', 'inconclusive']).optional().meta({ description: 'Critic: its verdict.' }),
+    reason: z.string().optional().meta({ description: 'Critic: why.' }),
+    findings: z.array(z.string()).optional().meta({ description: 'Critic: the findings.' }),
+    checkpoint: z
+      .object({
+        branch: z.string().meta({ example: 'harmonic/task-42' }),
+        sha: z.string().nullable().meta({ description: 'The commit the Ticket branch was pushed at; null when the push failed.', example: '3f2a9c1' }),
+        forced: z.boolean().meta({ description: 'True when the push rewrote history already on the remote, as after a rebase.', example: false }),
+        unchanged: z.boolean().meta({ description: 'True when the step left the branch where the previous checkpoint put it.', example: false }),
+        files: z.number().int().optional().meta({ description: 'How many files this step\'s commits changed against the previous remote tip; absent when unchanged or unknown.', example: 6 }),
+        error: z.string().optional().meta({ description: 'Why the push failed.' }),
+      })
+      .optional()
+      .meta({ description: 'The checkpoint push after a step that ran in a Kubernetes pod; absent for steps that ran locally.' }),
+  })
+  .meta({ description: 'Secret values are masked.', id: 'StepRunOutputs' });
+
+/** One execution of one workflow step within an Attempt. */
+export const stepRunSchema = z
+  .object({
+    id: z.number().int().meta({ example: 73 }),
+    attemptId: z.number().int().nullable().meta({ example: 19 }),
+    stepId: z.string().meta({ example: 'verify' }),
+    action: z.string().meta({ description: '`run` for a `run:` step, else the `uses:` action.', example: 'run' }),
+    kind: z.enum(['rebase', 'agent', 'check', 'critic', 'publish', 'tracker', 'cleanup', 'marker']).meta({ example: 'check' }),
+    pass: z.number().int().nullable().meta({ description: 'The `attempts:` block Pass this run belongs to, 1-based; null outside the block.', example: 1 }),
+    position: z.number().int().meta({ example: 2 }),
+    state: z.enum([...WORKFLOW_STEP_OUTCOMES, 'running', 'interrupted']).meta({ description: '`running` has neither outcome nor end time; `interrupted` has an end time but no outcome.', example: 'pass' }),
+    outcome: z.enum(WORKFLOW_STEP_OUTCOMES).nullable().meta({ example: 'pass' }),
+    summary: z.string().nullable().meta({ example: 'command exited 0' }),
+    detail: z.string().nullable().meta({ description: 'What the step runs: the command, the Prompt Library name of an agent step, or the model of a critic.', example: 'npm test' }),
+    condition: z.string().nullable().meta({ description: 'The step\'s `if:` expression.', example: null }),
+    outputs: stepRunOutputsSchema,
+    hasPrompt: z.boolean().meta({ description: 'Read the prompt from `GET /api/step-runs/:id/prompt`.', example: false }),
+    sessionRowId: z.number().int().nullable().meta({ description: 'The Session an agent or critic step ran in.', example: 12 }),
+    harness: z.string().nullable().meta({ example: 'claude' }),
+    model: z.string().nullable().meta({ example: 'claude-opus-5-5' }),
+    cost: costSchema.nullable(),
+    startedAt: z.number().meta({ example: 1784032140000 }),
+    endedAt: z.number().nullable().meta({ example: 1784032200000 }),
+  })
+  .meta({ id: 'StepRun' });
+
 /** One implementation-to-verification iteration and its ordered work rows. */
 export const attemptSchema = z
   .object({
@@ -85,8 +109,6 @@ export const attemptSchema = z
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
     /** The failure feedback this attempt closed with — what the next attempt was told to fix. */
     feedback: z.string().nullable().meta({ example: 'The rate limiter must be shared across workers.' }),
-    /** The branch tip this attempt's verification proved (its `verified-head` fact); null until verification ran. */
-    verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     /** Why this attempt handed the ticket to a human (its `escalate` settle fact); null unless it escalated. */
     escalationReason: z.string().nullable().meta({ example: 'escalated to human: verification failed after 3 attempt(s)' }),
     /** The folder this Attempt's agent worked in (its managed worktree); null in direct mode, where the Task's own working directory applies. */
@@ -109,20 +131,15 @@ export const attemptSchema = z
       .meta({ example: { kind: 'routed', optionId: 'opus-deep', reason: 'Cross-cutting refactor; needs deep reasoning.' } }),
     /** The Route Classifier call's own Cost and the Models it ran on, separate from the Attempt's Cost; null when the call reported no usage. */
     routing: z.object({ cost: costSchema.nullable(), models: z.array(z.string()) }).nullable(),
-    /** One row per verifier category, including skipped and disabled states. */
-    verifierStatuses: z.array(verifierStatusSchema),
-    steps: z.array(stepSchema),
+    /** This Attempt's step runs, in execution order. */
+    stepRuns: z.array(stepRunSchema),
   })
   .meta({ id: 'Attempt' });
 
 /** The ticket timeline shape shared by REST and the WebSocket firehose; the firehose omits the REST-only `total`. */
 export const attemptTimelineResponseSchema = listResponse('attempts', attemptSchema)
-  .extend({
-    /** The attempt number the `maxAttempts` budget counts from: the last escalated Attempt, or 0. History numbering never resets, the budget does. */
-    budgetBase: z.number().int().nonnegative().meta({ example: 0 }),
-  })
   .meta({ id: 'AttemptTimelineResponse' })
-  .describe('Ordered attempt timeline, with each attempt task and its outcome, plus the attempt number the budget counts from.');
+  .describe('Ordered attempt timeline, with each attempt task and its outcome.');
 
 /** Per-model token counters (execution/usage.ts `ModelUsage`) — the four counters Cost prices. */
 export const modelUsageSchema = z

@@ -18,6 +18,8 @@ export interface WorkspaceSeed {
   name: string;
   overrides?: LegacyWorkspaceOverrides;
   retired?: Record<string, string>;
+  /** Removed Workspace prompt override keys exactly as stored (e.g. `driveUnattendedReminder`). */
+  retiredKeys?: Record<string, string>;
 }
 
 export interface Seed {
@@ -58,7 +60,7 @@ export const EDITED_GLOBAL: LegacyConfigOverrides = {
 export const EDITED_RETIRED_GLOBAL: Record<string, string> = { selfHeal: `${retiredBaseline('selfHeal')}\nBe concise.` };
 
 export const FIXTURE_WORKSPACES: WorkspaceSeed[] = [
-  { name: 'Alpha App', overrides: { maxAttempts: 5, driveMergeFate: 'artifact', driveUnattendedReminder: 'Alpha runs unattended.' } },
+  { name: 'Alpha App', overrides: { maxAttempts: 5, driveMergeFate: 'artifact' }, retiredKeys: { driveUnattendedReminder: 'Alpha runs unattended.' } },
   { name: 'Plain', overrides: { priority: 'high' } },
   {
     name: 'Beta Service',
@@ -90,10 +92,11 @@ function writeRetired(dir: string, seed: Seed, ids: number[]): void {
   stored.global ??= {};
   if (seed.retiredGlobal) stored.global[RETIRED_GLOBAL_KEY] = seed.retiredGlobal;
   for (const [i, workspace] of (seed.workspaces ?? []).entries()) {
-    if (!workspace.retired) continue;
+    if (!workspace.retired && !workspace.retiredKeys) continue;
     stored.workspaces ??= {};
     const entry = (stored.workspaces[String(ids[i])] ??= {});
-    for (const [code, text] of Object.entries(workspace.retired)) entry[retiredWorkspaceKey(code)] = text;
+    for (const [code, text] of Object.entries(workspace.retired ?? {})) entry[retiredWorkspaceKey(code)] = text;
+    Object.assign(entry, workspace.retiredKeys);
   }
   writeFileSync(file, stringify(stored));
 }

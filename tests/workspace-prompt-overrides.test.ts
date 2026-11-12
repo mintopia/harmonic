@@ -43,7 +43,7 @@ describe('Workspace prompt text overrides', () => {
   it('renders one inheriting textarea per key, stores an edit, and reverts to null', async () => {
     const container = await mountComponent(createElement(Harness, { onChange: (w: Workspace) => { latest = w; } }));
     const areas = container.querySelectorAll('textarea');
-    expect(areas).toHaveLength(10);
+    expect(areas).toHaveLength(3);
     const pause = container.querySelector<HTMLTextAreaElement>('#workspace-prompt-pauseMessage')!;
     expect(pause.value).toBe('Global pause.');
     expect(latest.pauseMessage).toBeNull();

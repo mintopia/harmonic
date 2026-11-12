@@ -3,7 +3,7 @@
 import { splitPathTail } from './path.js';
 import type { RailSelection } from './router-model.js';
 import { ROOT_AGENT, totalTokens } from './stats-model.js';
-import type { Attempt, AttemptLogEvent, AttemptSummary, Step, StepState, StepType, Task, TaskState, ToolTokenAttribution, VerificationMechanism, VerifierStatus } from './types.js';
+import type { AttemptSummary, TaskState, ToolTokenAttribution } from './types.js';
 
 /**
  * What the operator has selected in the navigation sidebar, normalised for the
@@ -65,94 +65,6 @@ export function contentPanel(selection: ContentSelection): ContentPanel {
     case 'timeline':
       return { kind: 'timeline', title: 'Timeline' };
   }
-}
-
-/**
- * The six ordered nodes of a Task's whole lifecycle, as the Task-progress bar
- * renders them. Every Attempt's own Steps (rebase, verification, review/critic)
- * collapse into the single `implementation` node — the Attempt-level review is
- * never a Task step.
- */
-export type LifecycleStepKey =
-  | 'worktree'
-  | 'implementation'
-  | 'merge'
-  | 'postMergeCheck'
-  | 'closeIssue'
-  | 'retire';
-
-export type LifecycleStepStatus = 'done' | 'current' | 'awaiting' | 'pending' | 'failed' | 'skipped';
-
-export interface LifecycleStep {
-  key: LifecycleStepKey;
-  label: string;
-  status: LifecycleStepStatus;
-  /** The post-merge check with no command verifier configured — a vacuous gate the UI renders muted. */
-  disabled?: boolean;
-}
-
-/** The Task-progress bar's six nodes and the phase containing the Task. */
-export interface TaskLifecycle {
-  steps: LifecycleStep[];
-  current: LifecycleStepKey;
-}
-
-const LIFECYCLE_STEPS: readonly { key: LifecycleStepKey; label: string }[] = [
-  { key: 'worktree', label: 'Worktree' },
-  { key: 'implementation', label: 'Implement & verify' },
-  { key: 'merge', label: 'Merge' },
-  { key: 'postMergeCheck', label: 'Post-merge check' },
-  { key: 'closeIssue', label: 'Close issue' },
-  { key: 'retire', label: 'Retire' },
-];
-
-/** Whole-Task progress uses the persisted worktree, Attempt and Step facts. */
-export function taskLifecycle(
-  task: Pick<Task, 'state' | 'isolationMode' | 'branch' | 'trackerRef' | 'mergeStatus'>,
-  attempts: readonly Pick<AttemptSummary, 'number' | 'state'>[],
-  attemptDetails: readonly Pick<Attempt, 'number' | 'steps'>[],
-): TaskLifecycle {
-  const direct = task.isolationMode === 'direct';
-  const latest = attempts.at(-1);
-  const latestSteps = attemptDetails.find((attempt) => attempt.number === latest?.number)?.steps;
-  const attemptGateFailed = latestSteps?.some((step) => step.state === 'failed' || step.state === 'cancelled');
-  const implementationStep = latestSteps?.find((step) => step.type === 'implementation');
-  const allStepsSettled = latestSteps?.every((step) => step.state === 'passed' || step.state === 'skipped');
-  const implementationPassed = !attemptGateFailed && (
-    (latest?.state === 'completed' && (!implementationStep || implementationStep.state === 'passed'))
-    || (latest !== undefined && task.mergeStatus !== null)
-    || (latest?.state === 'failed' && implementationStep?.state === 'passed' && allStepsSettled)
-  );
-  const implementationFailed = attemptGateFailed || (latest?.state === 'failed' && !implementationPassed);
-  const finished = task.state === 'done';
-  const stopped = task.state === 'escalated' || task.state === 'cancelled';
-  const started = task.state === 'working';
-  const worktreeDone = !direct && task.branch !== null;
-  const merging = !direct && (task.mergeStatus !== null || implementationPassed);
-  const current: LifecycleStepKey = !direct && !worktreeDone
-    ? 'worktree'
-    : !implementationPassed || direct
-      ? 'implementation'
-      : finished ? 'retire' : 'merge';
-
-  const statuses: Record<LifecycleStepKey, LifecycleStepStatus> = {
-    worktree: direct ? 'skipped' : worktreeDone ? 'done' : started ? 'current' : 'pending',
-    implementation: implementationPassed ? 'done' : finished && !latest ? 'skipped'
-      : stopped && (implementationFailed || latest?.state === 'cancelled') ? 'failed'
-        : started && (direct || worktreeDone) ? 'current' : 'pending',
-    merge: direct ? 'skipped' : finished && implementationPassed ? 'done'
-      : merging && task.state === 'escalated' ? 'awaiting'
-        : merging && started ? 'current' : 'pending',
-    postMergeCheck: direct ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
-    closeIssue: direct || task.trackerRef === null ? 'skipped' : finished && implementationPassed ? 'done' : 'pending',
-    retire: direct ? 'skipped' : finished && implementationPassed && worktreeDone ? 'done' : 'pending',
-  };
-  if (stopped && !direct && !worktreeDone && !latest) statuses.worktree = 'failed';
-  if (task.state === 'cancelled' && implementationPassed && !direct) statuses.merge = 'failed';
-  const steps = LIFECYCLE_STEPS.map(({ key, label }): LifecycleStep => ({
-    key, label, status: statuses[key],
-  }));
-  return { steps, current };
 }
 
 /** The `usage` + `cost` an Attempt contributes to the Stats breakdown — the
@@ -337,99 +249,6 @@ export function taskStats(attempts: readonly StatsAttempt[]): TaskStats {
   };
 }
 
-/** One tab of the Attempt panel — a Step *type*, not an individual Step: an
- * Attempt with several `verification` command steps still shows a single Verify
- * tab whose content lists them all. `state` is the type's rolled-up status for
- * the tab's dot; `pending` is true only when every Step of the type is still
- * pending, which is what renders the empty placeholder. */
-export interface StepTab {
-  id: string;
-  type: StepType;
-  label: string;
-  /** A short qualifier shown after the label — the verification command
-   * (`pnpm test`) or the review mechanism (`critic`); absent for rebase and
-   * implementation, which need no qualifier. */
-  detail: string | null;
-  state: StepState;
-  pending: boolean;
-}
-
-const STEP_TAB_ORDER: readonly StepType[] = ['rebase', 'implementation', 'verification', 'review'];
-
-const STEP_TAB_LABEL: Record<StepType, string> = {
-  rebase: 'Rebase',
-  implementation: 'Implementation',
-  verification: 'Verify',
-  review: 'Review',
-};
-
-const STEP_STATE_PRECEDENCE: readonly StepState[] = ['running', 'failed', 'passed', 'cancelled', 'skipped', 'pending'];
-
-function rolledUpState(steps: readonly Step[]): StepState {
-  for (const state of STEP_STATE_PRECEDENCE) {
-    if (steps.some((step) => step.state === state)) return state;
-  }
-  return 'pending';
-}
-
-function stepTabDetail(type: StepType, ofType: readonly Step[]): string | null {
-  if (type === 'verification') return ofType.map((step) => step.command).find((command): command is string => !!command) ?? null;
-  return null;
-}
-
-function mechanismPlanned(verifierStatuses: readonly VerifierStatus[], mechanism: VerificationMechanism): boolean {
-  const status = verifierStatuses.find((s) => s.mechanism === mechanism);
-  return status !== undefined && status.state !== 'disabled';
-}
-
-function typePlanned(type: StepType, verifierStatuses: readonly VerifierStatus[]): boolean {
-  if (type === 'rebase' || type === 'implementation') return true;
-  if (type === 'verification') return mechanismPlanned(verifierStatuses, 'command');
-  return mechanismPlanned(verifierStatuses, 'critic');
-}
-
-function plannedTabDetail(type: StepType, verifierStatuses: readonly VerifierStatus[]): string | null {
-  if (type !== 'verification') return null;
-  return verifierStatuses.find((s) => s.mechanism === 'command')?.commands?.[0] ?? null;
-}
-
-export function attemptStepTabs(steps: readonly Step[], verifierStatuses: readonly VerifierStatus[] = []): StepTab[] {
-  return STEP_TAB_ORDER.flatMap<StepTab>((type) => {
-    const ofType = steps.filter((step) => step.type === type);
-    if (ofType.length === 0) {
-      if (!typePlanned(type, verifierStatuses)) return [];
-      return [{ id: type, type, label: STEP_TAB_LABEL[type], detail: plannedTabDetail(type, verifierStatuses), state: 'pending' as StepState, pending: true }];
-    }
-    if (type === 'verification' || type === 'review') {
-      return ofType.map((step) => ({
-        id: `${type}:${step.id}`,
-        type,
-        label: type === 'verification' ? 'Verify' : 'Critic',
-        detail: type === 'verification' ? step.command : null,
-        state: step.state,
-        pending: step.state === 'pending',
-      }));
-    }
-    return [{ id: type, type, label: STEP_TAB_LABEL[type], detail: stepTabDetail(type, ofType), state: rolledUpState(ofType), pending: ofType.every((step) => step.state === 'pending') }];
-  });
-}
-
-/**
- * The tail of a verifier's live output — the `verification_output` updates the
- * Runner relays onto the Attempt's log stream while a check runs — joined and
- * capped to the last `cap` characters. Null when nothing has streamed yet.
- */
-export function verificationOutputTail(events: readonly AttemptLogEvent[], mechanism: VerificationMechanism, cap = 6_000): string | null {
-  let text = '';
-  for (const event of events) {
-    const payload = event.payload as { sessionUpdate?: string; mechanism?: string; content?: { text?: unknown } };
-    if (payload.sessionUpdate !== 'verification_output' || payload.mechanism !== mechanism) continue;
-    if (typeof payload.content?.text === 'string') text += payload.content.text;
-  }
-  if (!text) return null;
-  return text.length > cap ? text.slice(-cap) : text;
-}
-
 /**
  * The panel a Ticket opens on when the operator picked nothing: a working
  * Task shows its live Attempt, an escalated one the Attempt awaiting review
@@ -446,25 +265,6 @@ export function defaultSelection(
   }
   if (taskState === 'escalated') return { kind: 'attempt', attemptNumber: attempts[attempts.length - 1]!.number };
   return { kind: 'stats' };
-}
-
-/**
- * The tab to open by default when an Attempt is selected: the live Step wins
- * (that's where the operator's attention is), else a failed Step (what an
- * escalated Attempt needs reviewed), else the Implementation tab once it has
- * content, else the furthest-progressed tab, else Implementation, else the first. Null only when
- * the Attempt has no Steps at all.
- */
-export function defaultStepTab(tabs: readonly StepTab[]): string | null {
-  if (tabs.length === 0) return null;
-  const running = tabs.find((tab) => tab.state === 'running');
-  if (running) return running.id;
-  const failed = tabs.find((tab) => tab.state === 'failed');
-  if (failed) return failed.id;
-  const implementation = tabs.find((tab) => tab.type === 'implementation' && !tab.pending);
-  if (implementation) return implementation.id;
-  const progressed = [...tabs].reverse().find((tab) => !tab.pending);
-  return (progressed ?? tabs.find((tab) => tab.type === 'implementation') ?? tabs[0]!).id;
 }
 
 /** The PR/MR link for a Task page: the newest Attempt's opened PR/MR URL, or null when no Attempt opened one. */

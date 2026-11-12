@@ -15,7 +15,6 @@ import { SessionStore } from '../domain/sessions.js';
 import { WorktreeReconciler } from '../domain/worktree-reconciler.js';
 import { WorktreeInventory } from '../domain/worktree-inventory.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -111,7 +110,6 @@ export interface AppContext {
   autoRunner: AutoRunner;
   globalPause: GlobalPause;
   guardrailEvents: GuardrailEventStore;
-  verificationAttempts: VerificationAttemptStore;
   trackerManager: TrackerPollerManager;
   epicService: EpicService;
   scheduler: Scheduler;
@@ -146,7 +144,6 @@ export type PersistenceContext = Pick<
   | 'conversations'
   | 'permissionRules'
   | 'guardrailEvents'
-  | 'verificationAttempts'
   | 'auth'
   | 'channels'
   | 'secrets'
@@ -168,7 +165,6 @@ export type ExecutionContext = Pick<
   | 'autoRunner'
   | 'globalPause'
   | 'guardrailEvents'
-  | 'verificationAttempts'
   | 'auth'
   | 'notifier'
   | 'bus'
@@ -187,13 +183,13 @@ export interface AppContexts {
 }
 
 export function createPersistenceContext(ctx: AppContext): PersistenceContext {
-  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, executionTargets, notifications } = ctx;
-  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, verificationAttempts, auth, channels, secrets, executionTargets, notifications };
+  const { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, auth, channels, secrets, executionTargets, notifications } = ctx;
+  return { asyncDb, statsReader, settingsStore, workspaces, tasks, attempts, taskEvents, sessions, conversations, permissionRules, guardrailEvents, auth, channels, secrets, executionTargets, notifications };
 }
 
 export function createExecutionContext(ctx: AppContext): ExecutionContext {
-  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt } = ctx;
-  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, verificationAttempts, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt };
+  const { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt } = ctx;
+  return { tasks, settingsStore, workspaces, attempts, sessions, runner, conversations, conversationDriver, escalation, autoRunner, globalPause, guardrailEvents, auth, notifier, bus, worktreeInventory, forceCleanupWorktree, dirtyWorktreeFiles, worktreesReconciledAt };
 }
 
 export function createTrackingContext(ctx: AppContext): TrackingContext {

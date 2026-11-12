@@ -57,9 +57,12 @@ const styleFor = (state: string) => STATE_STYLE[state] ?? STATE_STYLE.cancelled!
 
 const STEP_LANES: { type: string; label: string }[] = [
   { type: 'rebase', label: 'Rebase' },
-  { type: 'implementation', label: 'Implement' },
-  { type: 'verification', label: 'Verify' },
-  { type: 'review', label: 'Review' },
+  { type: 'agent', label: 'Agent' },
+  { type: 'check', label: 'Checks' },
+  { type: 'critic', label: 'Critic' },
+  { type: 'publish', label: 'Publish' },
+  { type: 'tracker', label: 'Tracker' },
+  { type: 'cleanup', label: 'Cleanup' },
 ];
 const STEP_STYLE: Record<string, { bar: string; dot: string; text: string; label: string }> = {
   running: { bar: 'border-running bg-running-tint', dot: 'bg-running', text: 'text-running', label: 'Running' },
@@ -677,7 +680,11 @@ function AttemptInspector({
   const pctOf = (ms: number) => ((Math.min(to, Math.max(from, ms)) - from) / span2) * 100;
   const st = styleFor(span.state);
 
-  const stepsWithTime = (attempt?.steps ?? []).filter((s) => s.startedAt !== null);
+  const stepsWithTime = (attempt?.stepRuns ?? []).flatMap((s) => {
+    if (s.kind === 'marker') return [];
+    const state = s.state === 'pass' ? 'passed' : s.state === 'running' ? 'running' : s.state === 'skipped' ? 'skipped' : s.state === 'interrupted' ? 'cancelled' : 'failed';
+    return [{ id: s.id, type: s.kind as string, stepId: s.stepId, state, command: s.kind === 'check' ? s.detail : null, startedAt: s.startedAt as number | null, endedAt: s.endedAt }];
+  });
   const activeStep = stepsWithTime.find((s) => cursorMs >= s.startedAt! && cursorMs <= (s.endedAt ?? now));
 
   return (
@@ -738,7 +745,7 @@ function AttemptInspector({
             <span className="flex items-center gap-2.5 text-small">
               <span className={`size-2 rounded-full ${stepStyleFor(activeStep.state).dot}`} aria-hidden="true" />
               <span className="font-medium text-ink">
-                {STEP_LANES.find((l) => l.type === activeStep.type)?.label ?? activeStep.type}
+                {activeStep.stepId}
               </span>
               <span className={stepStyleFor(activeStep.state).text}>{stepStyleFor(activeStep.state).label.toLowerCase()}</span>
               {activeStep.command && <span className="truncate font-data text-data text-muted">{activeStep.command}</span>}
@@ -783,14 +790,14 @@ function AttemptInspector({
                       return (
                         <div
                           key={step.id}
-                          title={`${lane.label} · ${style.label} · ${fmtClockSec(step.startedAt!)}–${step.endedAt ? fmtClockSec(step.endedAt) : 'now'}${step.command ? ` · ${step.command}` : ''}`}
+                          title={`${step.stepId} · ${style.label} · ${fmtClockSec(step.startedAt!)}–${step.endedAt ? fmtClockSec(step.endedAt) : 'now'}${step.command ? ` · ${step.command}` : ''}`}
                           className={`absolute flex items-center overflow-hidden whitespace-nowrap rounded-md border-l-[3px] px-2 text-small font-medium text-ink ${style.bar}`}
                           style={{ left: `${left}%`, width: `${width}%`, top: 5, height: ROW_H - 8 }}
                         >
                           {step.state === 'running' && (
                             <span className="mr-1.5 size-1.5 shrink-0 animate-pulse rounded-full bg-running motion-reduce:animate-none" aria-hidden="true" />
                           )}
-                          <span className="truncate">{step.verdict ?? style.label}</span>
+                          <span className="truncate">{step.stepId}</span>
                         </div>
                       );
                     })}
