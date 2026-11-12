@@ -1,6 +1,7 @@
 import type { Attempt } from '../../types';
 import { harnessLabel, type ContentSelection } from '../../task-detail-model';
 import { attemptTone } from '../../attempt-timeline-model';
+import { publishWord } from '../../attempt-rail-model';
 import { railSectionHead, railSectionCount, railNavButton, railNavSelected, railNavIdle, codeChip } from '../../ui';
 import { formatCost } from '../../cost';
 import { Icon } from '../Icon';
@@ -40,7 +41,7 @@ export function AttemptsNav({
                 >
                   <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${NAV_DOT[tone]}`} />
                   <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
-                  <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${selected && tone === 'failed' ? 'text-ink' : NAV_WORD[tone]}`}>{attempt.state}</span>
+                  <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${selected && tone === 'failed' ? 'text-ink' : NAV_WORD[tone]}`}>{attemptWord(attempt)}</span>
                   <AttemptRoute attempt={attempt} harnessChanged={harnessChanged} />
                 </button>
               </li>
@@ -50,6 +51,11 @@ export function AttemptsNav({
       )}
     </section>
   );
+}
+
+function attemptWord(attempt: Attempt): string {
+  if (attempt.state === 'running') return attempt.stepRuns.findLast((step) => step.state === 'running')?.stepId ?? 'running';
+  return attempt.state === 'passed' ? publishWord(attempt.stepRuns) : attempt.state;
 }
 
 function AttemptRoute({ attempt, harnessChanged }: { attempt: Attempt; harnessChanged: boolean }) {

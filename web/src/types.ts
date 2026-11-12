@@ -331,6 +331,7 @@ export type TicketTimelineKind =
   | 'attempt-finished'
   | 'lifecycle'
   | 'verification'
+  | 'step-run'
   | 'guardrail'
   | 'operator-retry'
   | 'agent-message'

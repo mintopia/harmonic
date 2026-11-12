@@ -233,11 +233,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
           <span className="font-data text-small text-faint"><TicketRowId task={task} /></span>
           <span className="ml-auto flex items-center gap-1.5">
             {task.openBlockerCount > 0 && <BlockerBadge count={task.openBlockerCount} blockedOnFailed={task.blockedOnFailed} />}
-            {task.mergeStatus === 'resolving-conflicts' ? (
-              <span className={stateChip('escalated')}>resolving conflicts</span>
-            ) : task.mergeStatus === 'verifying' ? (
-              <span className={`${stateChip('working')} motion-safe:animate-pulse`}>verifying</span>
-            ) : task.mergeStatus === 'merging' ? (
+            {task.mergeStatus === 'merging' ? (
               <span className={`${stateChip('working')} motion-safe:animate-pulse`}>merging</span>
             ) : task.state === 'escalated' ? (
               <span className={stateChip(task.state)}>escalated</span>
