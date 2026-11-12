@@ -339,10 +339,7 @@ export function TicketPage({
                   </>
                 )
               ) : runs.length === 0 ? (
-                <>
-                  <OutlineSteps workflow={workflowSteps} />
-                  <NoRunsYet task={task} onChanged={onChanged} />
-                </>
+                <OutlineSteps workflow={workflowSteps} />
               ) : (
                 <StatsPanel stats={taskStats(statsAttemptsOf(runs, liveUsage))} />
               )}
@@ -360,7 +357,7 @@ export function TicketPage({
               selectedNumber={resolved.kind === 'attempt' ? resolved.attemptNumber : null}
               onSelect={selectAttempt}
             />
-            <PanelNav selected={resolved.kind === 'timeline' ? 'timeline' : resolved.kind === 'none' || resolved.kind === 'stats' ? 'stats' : null} onSelect={onSelect} />
+            <PanelNav selected={resolved.kind === 'timeline' ? 'timeline' : (resolved.kind === 'none' || resolved.kind === 'stats') && runs.length > 0 ? 'stats' : null} onSelect={onSelect} />
             <AttemptRail
               worktree={{
                 branch: task.branch,
