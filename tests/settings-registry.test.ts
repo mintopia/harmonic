@@ -44,10 +44,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
     'guardrailBudget',
     'guardrailProgress',
     'toolTimeoutMinutes',
-    'drivePrompt',
-    'driveUnattendedReminder',
-    'driveContinuePrompt',
-    'taskPrompt',
+    'pauseMessage',
     'exportEnabled',
     'exportDirectoryPath',
     'exportS3Endpoint',
@@ -73,12 +70,7 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
   });
 
   it('declares every reclassified drive/task-prompt field overridable (#339)', () => {
-    for (const key of [
-      'drivePrompt',
-      'driveUnattendedReminder',
-      'driveContinuePrompt',
-      'taskPrompt',
-    ] as const) {
+    for (const key of ['pauseMessage', 'mergeEpicConflictPrompt', 'mergeEpicRefreshPrompt'] as const) {
       expect(isOverridable(key), `'${key}' should be overridable`).toBe(true);
     }
   });
@@ -122,19 +114,8 @@ describe('tab taxonomy — settings group into Settings UI tabs', () => {
     expect(execution).not.toContain('chatHarness');
   });
 
-  it('settingsForTab("prompts") returns the drive + task prompt fields (#339)', () => {
-    expect(settingsForTab('prompts')).toEqual([
-      'drivePrompt',
-      'driveUnattendedReminder',
-      'driveContinuePrompt',
-      'taskPrompt',
-      'pauseMessage',
-      'driveCommitNudge',
-      'mergeConflictPrompt',
-      'mergeEpicConflictPrompt',
-      'mergeEpicRefreshPrompt',
-      'verifyEpicResolveSuffix',
-    ]);
+  it('settingsForTab("prompts") returns the live Workspace prompt overrides', () => {
+    expect(settingsForTab('prompts')).toEqual(['pauseMessage', 'mergeEpicConflictPrompt', 'mergeEpicRefreshPrompt']);
   });
 
   it('settingsForTab returns only registry-declared fields per tab', () => {

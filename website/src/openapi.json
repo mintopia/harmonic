@@ -8361,73 +8361,7 @@
             ],
             "example": null
           },
-          "drivePrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveUnattendedReminder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveContinuePrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "taskPrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "pauseMessage": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveCommitNudge": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "mergeConflictPrompt": {
             "anyOf": [
               {
                 "type": "string"
@@ -8450,17 +8384,6 @@
             "example": null
           },
           "mergeEpicRefreshPrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "verifyEpicResolveSuffix": {
             "anyOf": [
               {
                 "type": "string"
@@ -8769,16 +8692,9 @@
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
-          "drivePrompt",
-          "driveUnattendedReminder",
-          "driveContinuePrompt",
-          "taskPrompt",
           "pauseMessage",
-          "driveCommitNudge",
-          "mergeConflictPrompt",
           "mergeEpicConflictPrompt",
           "mergeEpicRefreshPrompt",
-          "verifyEpicResolveSuffix",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -19917,73 +19833,7 @@
             ],
             "example": null
           },
-          "drivePrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveUnattendedReminder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveContinuePrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "taskPrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
           "pauseMessage": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "driveCommitNudge": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "mergeConflictPrompt": {
             "anyOf": [
               {
                 "type": "string"
@@ -20006,17 +19856,6 @@
             "example": null
           },
           "mergeEpicRefreshPrompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": null
-          },
-          "verifyEpicResolveSuffix": {
             "anyOf": [
               {
                 "type": "string"
@@ -20326,16 +20165,9 @@
           "guardrailBudget",
           "guardrailProgress",
           "toolTimeoutMinutes",
-          "drivePrompt",
-          "driveUnattendedReminder",
-          "driveContinuePrompt",
-          "taskPrompt",
           "pauseMessage",
-          "driveCommitNudge",
-          "mergeConflictPrompt",
           "mergeEpicConflictPrompt",
           "mergeEpicRefreshPrompt",
-          "verifyEpicResolveSuffix",
           "exportEnabled",
           "exportDirectoryPath",
           "exportS3Endpoint",
@@ -28802,78 +28634,11 @@
                       }
                     ]
                   },
-                  "drivePrompt": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "driveUnattendedReminder": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "driveContinuePrompt": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "taskPrompt": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "pauseMessage": {
                     "anyOf": [
                       {
                         "type": "string",
                         "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "driveCommitNudge": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "mergeConflictPrompt": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "## Merge conflict resolution (turn {turn})"
                       },
                       {
                         "type": "null"
@@ -28898,18 +28663,6 @@
                         "type": "string",
                         "minLength": 1,
                         "example": "## Epic integration refresh"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "verifyEpicResolveSuffix": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "example": "Work in the checked-out integration branch `{branch}`."
                       },
                       {
                         "type": "null"

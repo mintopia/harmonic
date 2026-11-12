@@ -62,10 +62,7 @@ export type WorkspaceRow = WorkspaceIdentityRow & {
   classifierTypesafeModel: string | null; classifierTypesafeSecret: string | null; classifierHarness: string | null; classifierModel: string | null;
   classifierEndpoint: string | null;
   guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
-  drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
-  taskPrompt: string | null; pauseMessage: string | null;
-  driveCommitNudge: string | null; mergeConflictPrompt: string | null; mergeEpicConflictPrompt: string | null;
-  mergeEpicRefreshPrompt: string | null; verifyEpicResolveSuffix: string | null;
+  pauseMessage: string | null; mergeEpicConflictPrompt: string | null; mergeEpicRefreshPrompt: string | null;
   exportEnabled: boolean | null; exportDirectoryPath: string | null; exportRedactPatterns: string | null;
   exportS3Endpoint: string | null; exportS3Region: string | null; exportS3Bucket: string | null; exportS3Prefix: string | null;
   exportS3ForcePathStyle: boolean | null; exportS3AccessKeyId: string | null; exportS3SecretAccessKey: string | null;

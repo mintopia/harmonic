@@ -393,10 +393,6 @@ export const api = {
       archiveRetentionDays?: number | null;
       archiveRetentionMaxTotalMB?: number | null;
       toolTimeoutMinutes?: number | null;
-      drivePrompt?: string | null;
-      driveUnattendedReminder?: string | null;
-      driveContinuePrompt?: string | null;
-      taskPrompt?: string | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,

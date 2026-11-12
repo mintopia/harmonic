@@ -129,9 +129,7 @@ function grid(className: string, nodes: FieldNode[], ctx: RenderCtx): ReactNode 
   return <div className={className}>{nodes.map((node) => renderField(node, ctx))}</div>;
 }
 
-type PromptColumn =
-  | 'drivePrompt' | 'driveUnattendedReminder' | 'driveContinuePrompt' | 'taskPrompt' | 'pauseMessage'
-  | 'driveCommitNudge' | 'mergeConflictPrompt' | 'mergeEpicConflictPrompt' | 'mergeEpicRefreshPrompt' | 'verifyEpicResolveSuffix';
+type PromptColumn = 'pauseMessage' | 'mergeEpicConflictPrompt' | 'mergeEpicRefreshPrompt';
 
 function promptOverride(key: PromptColumn, inherited: (c: AppConfig) => string): OverridableDescriptor {
   return {
@@ -154,16 +152,9 @@ function promptOverride(key: PromptColumn, inherited: (c: AppConfig) => string):
 }
 
 export const PROMPT_OVERRIDES: OverridableDescriptor[] = [
-  promptOverride('drivePrompt', (c) => c.drive.prompt),
-  promptOverride('driveUnattendedReminder', (c) => c.drive.unattendedReminder),
-  promptOverride('driveContinuePrompt', (c) => c.drive.continuePrompt),
-  promptOverride('taskPrompt', (c) => c.taskPrompt),
   promptOverride('pauseMessage', (c) => c.pauseMessage),
-  promptOverride('driveCommitNudge', (c) => c.drive.commitNudge),
-  promptOverride('mergeConflictPrompt', (c) => c.merge.conflictPrompt),
   promptOverride('mergeEpicConflictPrompt', (c) => c.merge.epicConflictPrompt),
   promptOverride('mergeEpicRefreshPrompt', (c) => c.merge.epicRefreshPrompt),
-  promptOverride('verifyEpicResolveSuffix', (c) => c.verify.epic.resolveSuffix),
 ];
 
 const chatHarness = scalar(

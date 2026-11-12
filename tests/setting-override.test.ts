@@ -92,10 +92,9 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 describe('Prompt Library includes in the merge prompts', () => {
   it('resolves the merge conflict prompts per Workspace', () => {
     const global = { ...baselineConfig() };
-    const inherit = { mergeConflictPrompt: null, mergeEpicConflictPrompt: null };
-    expect(resolveMergePrompts(inherit, global).conflictPrompt).toBe(global.merge.conflictPrompt);
-    const own = resolveMergePrompts({ ...inherit, mergeConflictPrompt: 'WS A', mergeEpicConflictPrompt: 'WS B' }, global);
-    expect([own.conflictPrompt, own.epicConflictPrompt]).toEqual(['WS A', 'WS B']);
+    const inherit = { mergeEpicConflictPrompt: null };
+    expect(resolveMergePrompts(inherit, global).epicConflictPrompt).toBe(global.merge.epicConflictPrompt);
+    expect(resolveMergePrompts({ mergeEpicConflictPrompt: 'WS B' }, global).epicConflictPrompt).toBe('WS B');
   });
 
   it('is defined once in the baseline and expands in more than one prompt', () => {

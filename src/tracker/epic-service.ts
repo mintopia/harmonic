@@ -24,6 +24,8 @@ import {
 } from '../execution/epic-coordinator.js';
 import type { MemberMergeState } from '../domain/epic-integrate-decision.js';
 import { isMergeStep } from '../domain/epic-merge-events.js';
+import { epicVerifyFacts, type EpicVerifyFacts } from '../domain/epic-verify-facts.js';
+import { resolveEpicWorkflow } from '../domain/workflow-assignment.js';
 import { EpicWorktreePool } from '../execution/epic-worktree-pool.js';
 import { Git } from '../execution/git.js';
 import type { CommandSpawn } from '../verification/command-verifier.js';
@@ -303,8 +305,7 @@ export class TrackerEpicService implements EpicService {
     const { mirrored, tickets, rows, formatRef } = await this.epicData(workspaceId);
     const rowByRef = new Map(rows.map((row) => [row.trackerRef, row] as const));
     const baseBranch = await this.epicBaseBranch(workspaceId);
-    const configured = await this.verificationConfigured(workspaceId);
-    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false, formatRef).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef, configured)));
+    return Promise.all(this.surfacedEpics(rows, tickets, mirrored, false, formatRef).map((epic) => this.composeOne(workspaceId, epic, tickets, mirrored, baseBranch, rowByRef)));
   }
 
   async listEpicTickets(workspaceId: number): Promise<Ticket[]> {
@@ -319,7 +320,7 @@ export class TrackerEpicService implements EpicService {
     if (!row) return null;
     const epic = this.isHistorical(row) ? this.storedToDerived(row, tickets, mirrored, formatRef) : this.liveEpics(tickets, mirrored).get(epicRef);
     if (!epic) return null;
-    return this.composeOne(workspaceId, epic, tickets, mirrored, await this.epicBaseBranch(workspaceId), new Map(rows.map((item) => [item.trackerRef, item] as const)), await this.verificationConfigured(workspaceId));
+    return this.composeOne(workspaceId, epic, tickets, mirrored, await this.epicBaseBranch(workspaceId), new Map(rows.map((item) => [item.trackerRef, item] as const)));
   }
 
   async epicDiff(workspaceId: number, epicRef: TrackerRef): Promise<string> {
@@ -380,14 +381,14 @@ export class TrackerEpicService implements EpicService {
     const ticket = tickets.find((candidate) => candidate.ref === row.trackerRef);
     return { ref: row.trackerRef, title: ticket?.title ?? mirrored.find((task) => task.trackerRef === row.trackerRef)?.trackerTitle ?? `Epic ${formatRef(row.trackerRef)}`, body: ticket?.body ?? '', url: ticket?.url ?? '', members: [...(row.memberRefs ?? [])], ready: [] };
   }
-  private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>, configured: boolean): Promise<Epic> {
+  private async composeOne(workspaceId: number, epic: DerivedEpic, tickets: Ticket[], mirrored: TaskRow[], baseBranch: string | null, rows: ReadonlyMap<TrackerRef, EpicRow>): Promise<Epic> {
     const titles = new Map(tickets.map((ticket) => [ticket.ref, ticket.title])); const tasks = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef !== null) tasks.set(task.trackerRef, task);
     const ticket = tickets.find((candidate) => candidate.ref === epic.ref); const row = rows.get(epic.ref);
     const meta: EpicMeta = { description: ticket?.body ?? '', createdAt: ticket ? Date.parse(ticket.createdAt) || 0 : 0, baseBranch, dependsOn: (ticket?.blockedBy ?? []).map((blocker) => blocker.ref), kind: row?.kind === 'map' ? 'map' : 'spec', state: row?.state ?? 'open' };
-    return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref, configured), meta);
+    return composeEpicView(epic, tasks, titles, await this.epicFacts(workspaceId, epic.ref), meta);
   }
-  private async epicFacts(workspaceId: number, epicRef: TrackerRef, configured: boolean): Promise<EpicFacts> {
+  private async epicFacts(workspaceId: number, epicRef: TrackerRef): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef); const integrate = this.entries.get(workspaceId)?.epicIntegrate;
     const integration = integrate ? await integrate.integrationFacts(epicRef) : { exists: false, tip: null };
     const timelineEvents: EpicTimelineEvent[] = this.epicMergeEvents
@@ -396,13 +397,31 @@ export class TrackerEpicService implements EpicService {
     const lastStartedIndex = timelineEvents.map((event) => event.step.step).lastIndexOf('started');
     const currentIntegration = lastStartedIndex === -1 ? timelineEvents : timelineEvents.slice(lastStartedIndex);
     const mergeSteps = currentIntegration.map((event) => event.step).filter(isMergeStep);
-    const verifiers = this.integration !== 'lifecycle-only' ? this.integration.getConfig().verify.epic.preMerge : { commands: [], critics: [] };
-    const status = integrate?.verificationStatus(epicRef) ?? null;
-    const labels = [...verifiers.commands.map((command) => [command.command, ...command.args].join(' ')), ...verifiers.critics.map((_, index) => `Critic ${index + 1}`)];
-    return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: await this.escalationHold(workspaceId, epicRef), phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
+    const { configured, status: ranStatus, labels } = await this.verifyFacts(workspaceId, epicRef);
+    const inFlight = integrate?.isInFlight(epicRef) ?? false;
+    const status = ranStatus ?? (inFlight ? 'pending' : null);
+    return { integration: { branch, ...integration }, verification: { status, configured, stages: configured ? [{ label: 'Epic workflow', status, verifiers: labels }] : [] }, integrate: { inFlight, held: await this.escalationHold(workspaceId, epicRef), phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
-  private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && this.integration.getConfig().verify.epic.preMerge.commands.length > 0; }
+  private async verifyFacts(workspaceId: number, epicRef: TrackerRef): Promise<EpicVerifyFacts> {
+    const none: EpicVerifyFacts = { configured: false, status: null, labels: [] };
+    if (this.integration === 'lifecycle-only') return none;
+    const { library, stepRuns } = this.integration.workflows;
+    const pinned = await this.tasks.epicWorkflowRef(workspaceId, epicRef);
+    try {
+      if (pinned !== null) {
+        const [name = '', version = ''] = pinned.split('@');
+        const entry = await library.getVersion(name, Number(version));
+        return epicVerifyFacts(entry.text, await stepRuns.latestByStep({ workspaceId, epicRef }, pinned));
+      }
+      const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId);
+      const usable = new Set(library.list().filter((entry) => entry.subject === 'epic').map((entry) => entry.name));
+      return epicVerifyFacts(library.get(resolveEpicWorkflow(workspace ?? null, this.integration.getConfig(), (name) => usable.has(name)).name).text, new Map());
+    } catch (error) {
+      this.onError?.(`epic verification facts for ${workspaceId}/${epicRef}: ${error instanceof Error ? error.message : String(error)}`);
+      return none;
+    }
+  }
 }
 
 function historicalEpicTicket(epic: DerivedEpic): Ticket {

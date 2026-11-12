@@ -98,22 +98,11 @@ const workspaceSchema = z
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
     toolTimeoutMinutes: z.number().nullable().meta({ example: null }),
-    // Drive.* overrides: each null ⇒ inherit the matching `config.drive.*`.
-    drivePrompt: z.string().nullable().meta({ example: null }),
-    driveUnattendedReminder: z.string().nullable().meta({ example: null }),
-    driveContinuePrompt: z.string().nullable().meta({ example: null }),
-    /** Task Prompt override; null inherits `config.taskPrompt`. */
-    taskPrompt: z.string().nullable().meta({ example: null }),
     /** Pause message override; null inherits `config.pauseMessage`. */
     pauseMessage: z.string().nullable().meta({ example: null }),
-    /** Commit nudge override; null inherits `config.drive.commitNudge`. */
-    driveCommitNudge: z.string().nullable().meta({ example: null }),
-    /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
-    mergeConflictPrompt: z.string().nullable().meta({ example: null }),
     /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
     mergeEpicConflictPrompt: z.string().nullable().meta({ example: null }),
     mergeEpicRefreshPrompt: z.string().nullable().meta({ example: null }),
-    verifyEpicResolveSuffix: z.string().nullable().meta({ example: null }),
     exportEnabled: z.boolean().nullable().meta({ example: null }),
     exportDirectoryPath: z.string().nullable().meta({ example: null }),
     exportS3Endpoint: z.string().nullable().meta({ example: null }),

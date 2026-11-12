@@ -28,31 +28,31 @@ export const PROMPT_TEMPLATES: Readonly<Record<PromptTemplateId, PromptTemplateS
     label: 'Task prompt',
     help: "Wraps a native Task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead.",
     config: ['taskPrompt'],
-    workspace: 'taskPrompt',
+    workspace: null,
   },
   drivePrompt: {
     label: 'Drive prompt',
     help: 'The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task.',
     config: ['drive', 'prompt'],
-    workspace: 'drivePrompt',
+    workspace: null,
   },
   unattendedReminder: {
     label: 'Unattended reminder',
     help: 'Appended to every auto-driven turn: the checkpoint reminder and the finish/escalate signals.',
     config: ['drive', 'unattendedReminder'],
-    workspace: 'driveUnattendedReminder',
+    workspace: null,
   },
   continuePrompt: {
     label: 'Continue prompt',
     help: 'The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.',
     config: ['drive', 'continuePrompt'],
-    workspace: 'driveContinuePrompt',
+    workspace: null,
   },
   commitNudge: {
     label: 'Commit nudge',
     help: 'Sent when an Attempt finishes its turn with uncommitted changes. No placeholders.',
     config: ['drive', 'commitNudge'],
-    workspace: 'driveCommitNudge',
+    workspace: null,
   },
   pauseMessage: {
     label: 'Pause message',
@@ -64,7 +64,7 @@ export const PROMPT_TEMPLATES: Readonly<Record<PromptTemplateId, PromptTemplateS
     label: 'Merge conflict resolver',
     help: 'Opens each turn of the agent that resolves a Task merge conflict.',
     config: ['merge', 'conflictPrompt'],
-    workspace: 'mergeConflictPrompt',
+    workspace: null,
   },
   epicConflictPrompt: {
     label: 'Epic merge conflict resolver',
@@ -88,6 +88,6 @@ export const PROMPT_TEMPLATES: Readonly<Record<PromptTemplateId, PromptTemplateS
     label: 'Epic verification resolver suffix',
     help: 'Appended to the Epic resolve prompt when the agent fixes a failing Epic verification.',
     config: ['verify', 'epic', 'resolveSuffix'],
-    workspace: 'verifyEpicResolveSuffix',
+    workspace: null,
   },
 };

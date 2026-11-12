@@ -5,6 +5,8 @@ Date: 2026-10-30
 
 Amended 2026-11-01 (#967): the ten higher-level engine prompts that the settings registry marks overridable (`drivePrompt`, `driveUnattendedReminder`, `driveContinuePrompt`, `taskPrompt`, `pauseMessage`, `driveCommitNudge`, `mergeConflictPrompt`, `mergeEpicConflictPrompt`, `mergeEpicRefreshPrompt`, `verifyEpicResolveSuffix`) may be overridden per Workspace and inherit the global text otherwise. This replaces only the "No per-Workspace" clause below for those keys; Prompt Library entries stay global and per-Ticket text stays out.
 
+Amended 2026-11-12: seven of those ten have no runtime reader (workflow steps resolve prompts from the Library, ADR-0053), so per-Workspace overrides of `drivePrompt`, `driveUnattendedReminder`, `driveContinuePrompt`, `taskPrompt`, `driveCommitNudge`, `mergeConflictPrompt` and `verifyEpicResolveSuffix` are removed from the settings UI, registry and API. Only `pauseMessage`, `mergeEpicConflictPrompt` and `mergeEpicRefreshPrompt` stay overridable per Workspace. Stored values are left on disk untouched (ADR-0055 two-release rule), ignored at runtime and read only by the settings-to-workflow migrations. The global texts remain: they feed the Library `edited-*` and converted entries.
+
 Prompts become entries in a **Prompt Library**: named prompts, each with a
 code and a description. A Task Execution Workflow step (ADR-0053) uses a prompt
 by its code or as literal text, and a prompt can include another by code. The
