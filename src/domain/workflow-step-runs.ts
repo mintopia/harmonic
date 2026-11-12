@@ -85,7 +85,7 @@ export class WorkflowStepRunStore {
     const latest = new Map<number, WorkflowStepRunRow>();
     if (attemptIds.length === 0) return latest;
     const rows = await this.db.read((db) =>
-      db.select().from(workflowStepRuns).where(and(inArray(workflowStepRuns.attemptId, [...attemptIds]), isNull(workflowStepRuns.outcome))).orderBy(desc(workflowStepRuns.id)).all(),
+      db.select().from(workflowStepRuns).where(and(inArray(workflowStepRuns.attemptId, [...attemptIds]), isNull(workflowStepRuns.outcome), isNull(workflowStepRuns.endedAt))).orderBy(desc(workflowStepRuns.id)).all(),
     );
     for (const row of rows) if (row.attemptId !== null && !latest.has(row.attemptId)) latest.set(row.attemptId, row);
     return latest;
@@ -95,8 +95,8 @@ export class WorkflowStepRunStore {
     const closed = await this.db.write((db) =>
       db
         .update(workflowStepRuns)
-        .set({ outcome: 'inconclusive', summary: 'interrupted by process death', endedAt: now })
-        .where(isNull(workflowStepRuns.outcome))
+        .set({ summary: 'interrupted by process death', endedAt: now })
+        .where(and(isNull(workflowStepRuns.outcome), isNull(workflowStepRuns.endedAt)))
         .returning({ id: workflowStepRuns.id })
         .all(),
     );

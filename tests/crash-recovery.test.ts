@@ -79,7 +79,7 @@ describe('CrashRecoveryCoordinator (ADR-0001)', () => {
 
     expect((await stepRuns.listForAttempt(run.id)).map((r) => [r.stepId, r.outcome, r.summary])).toEqual([
       ['a', 'pass', 'ok'],
-      ['b', 'inconclusive', 'interrupted by process death'],
+      ['b', null, 'interrupted by process death'],
     ]);
   });
 

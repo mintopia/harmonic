@@ -73,7 +73,8 @@ describe('WorkflowStepRunStore Attempt records', () => {
     await start('b', attemptIds[1]!);
     expect(await store.closeOrphans(5)).toBe(1);
     expect((await store.listForAttempt(attemptIds[0]!))[0]).toMatchObject({ outcome: 'fail', summary: 'bad' });
-    expect((await store.listForAttempt(attemptIds[1]!))[0]).toMatchObject({ outcome: 'inconclusive', summary: 'interrupted by process death', endedAt: 5 });
+    expect((await store.listForAttempt(attemptIds[1]!))[0]).toMatchObject({ outcome: null, summary: 'interrupted by process death', endedAt: 5 });
     expect(await store.closeOrphans()).toBe(0);
+    expect((await store.runningForAttempts([attemptIds[1]!])).size).toBe(0);
   });
 });
