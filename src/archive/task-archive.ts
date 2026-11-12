@@ -58,13 +58,6 @@ export interface StepArchiveWriter {
 
 export type ResolutionKind = 'task-conflict' | 'epic-conflict' | 'epic-resolve' | 'epic-refresh';
 
-export type CriticArchiveStage = 'pre-merge' | 'post-merge';
-
-/** Attempt-relative locator of a critic step's Resolved Prompt, matching the directory `criticStep`/`epicCriticStep` write. */
-export function criticPromptKey(stage: CriticArchiveStage, stepId: string): string {
-  return `verification/${stage}/${stepId}/prompt.md`;
-}
-
 export type OperatorAction = 'steer' | 'retry' | 'accept' | 'pause' | 'resume' | 'close' | 'cancel';
 export type OperatorActor = 'operator' | 'agent';
 
@@ -409,18 +402,6 @@ export class TaskArchive {
     }
   }
 
-  criticStep(task: TaskRow, attemptNumber: number, stage: CriticArchiveStage, stepId: string): StepArchiveWriter {
-    const dir = this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', stage, stepId)));
-    return this.stepWriter(dir, `verification/${stage}/${stepId}`, { taskId: task.id, attemptNumber, stage, stepId });
-  }
-
-  epicCriticStep(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, stepId: string): StepArchiveWriter {
-    const dir = this.ensureEpic(workspaceId, epicRef).then((root) =>
-      this.makeDir(join(root, 'attempts', String(attemptNumber), 'verification', 'pre-merge', stepId)),
-    );
-    return this.stepWriter(dir, `verification/pre-merge/${stepId}`, { workspaceId, epicRef, attemptNumber, stepId });
-  }
-
   ensureEpic(workspaceId: number, epicRef: TrackerRef): Promise<string> {
     const key = `epic:${workspaceId}:${epicRef}`;
     const inflight = this.ensuring.get(key);
@@ -438,21 +419,6 @@ export class TaskArchive {
     if (!('epicRef' in owner)) return this.existingDir(owner);
     const dir = this.epicDir(owner.workspaceId, owner.epicRef, await this.deps.workspaceName(owner.workspaceId));
     return (await pathExists(join(dir, 'archive.json'))) ? dir : null;
-  }
-
-  /** The locator of a critic step's archived `prompt.md`, whichever verification stage wrote it; null when none exists. */
-  async archivedCriticPromptKey(
-    owner: TaskRow | { workspaceId: number; epicRef: TrackerRef },
-    attemptNumber: number,
-    stepId: string,
-  ): Promise<string | null> {
-    const root = await this.existingOwnerDir(owner);
-    if (!root) return null;
-    for (const stage of ['pre-merge', 'post-merge'] as const) {
-      const key = criticPromptKey(stage, stepId);
-      if (await pathExists(join(root, 'attempts', String(attemptNumber), key))) return key;
-    }
-    return null;
   }
 
   async archivedVerificationOutput(

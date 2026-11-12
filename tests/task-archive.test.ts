@@ -345,10 +345,10 @@ describe('TaskArchive', () => {
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'crit.jsonl'), 'c\n');
-      const writer = archive.criticStep(task, 1, 'post-merge', 'critic-9');
-      await writer.copyNative('claude', join(src, 'crit.jsonl'));
-      await writer.close();
-      const expected = join(await writer.dir, 'native', 'crit.jsonl');
+      const native = join(await archive.ensure(task), 'attempts', '1', 'verification', 'post-merge', 'critic-9', 'native');
+      mkdirSync(native, { recursive: true });
+      writeFileSync(join(native, 'crit.jsonl'), 'c\n');
+      const expected = join(native, 'crit.jsonl');
       expect(await archive.archivedTranscript(task, 1, 'verification', '/x/crit.jsonl')).toBe(expected);
       expect(await archive.archivedTranscript(task, 1, 'verification', null)).toBeNull();
       expect(await archive.archivedTranscript(task, 1, 'verification', '/x/../../etc/passwd')).toBeNull();
@@ -361,10 +361,10 @@ describe('TaskArchive', () => {
       const src = join(dir, 'src');
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, 'e.jsonl'), 'e\n');
-      const writer = archive.epicCriticStep(1, trackerRef(5), 1, 'critic-1');
-      await writer.copyNative('claude', join(src, 'e.jsonl'));
-      await writer.close();
-      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(await writer.dir, 'native', 'e.jsonl'));
+      const native = join(await archive.ensureEpic(1, trackerRef(5)), 'attempts', '1', 'verification', 'pre-merge', 'critic-1', 'native');
+      mkdirSync(native, { recursive: true });
+      writeFileSync(join(native, 'e.jsonl'), 'e\n');
+      expect(await archive.archivedTranscript(owner, 1, 'verification', '/x/e.jsonl')).toBe(join(native, 'e.jsonl'));
     });
 
     it('keeps Subagent transcripts readable from the archived copy', async () => {
@@ -404,12 +404,12 @@ describe('TaskArchive', () => {
     expect(existsSync(join(await writer.dir, 'native'))).toBe(false);
   });
 
-  it('lays out a critic step and keeps concurrent critic writers separate', async () => {
+  it('lays out step runs and keeps concurrent writers separate', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();
-    const a = archive.criticStep(task, 2, 'pre-merge', 'critic-a');
-    const b = archive.criticStep(task, 2, 'post-merge', 'critic-b');
-    const a2 = archive.criticStep(task, 2, 'pre-merge', 'critic-c');
+    const a = archive.stepRun(task, 2, { pass: 1, stepId: 'critic-a', stepRunId: 1 });
+    const b = archive.stepRun(task, 2, { pass: null, stepId: 'critic-b', stepRunId: 2 });
+    const a2 = archive.stepRun(task, 2, { pass: 1, stepId: 'critic-c', stepRunId: 3 });
     a.appendPrompt('prompt a');
     b.appendPrompt('prompt b');
     for (let n = 0; n < 5; n++) {
@@ -419,8 +419,8 @@ describe('TaskArchive', () => {
     }
     await Promise.all([a.close(), b.close(), a2.close()]);
     const root = await archive.ensure(task);
-    const aDir = join(root, 'attempts', '2', 'verification', 'pre-merge', 'critic-a');
-    const bDir = join(root, 'attempts', '2', 'verification', 'post-merge', 'critic-b');
+    const aDir = join(root, 'attempts', '2', 'steps', '1-critic-a-1');
+    const bDir = join(root, 'attempts', '2', 'steps', '_-critic-b-2');
     expect(await a.dir).toBe(aDir);
     expect(await b.dir).toBe(bDir);
     expect(readFileSync(join(aDir, 'prompt.md'), 'utf8')).toBe('prompt a');
@@ -455,15 +455,6 @@ describe('TaskArchive', () => {
     await archive.ensureEpic(workspaceId, trackerRef(42));
     expect(readFileSync(join(d1, 'archive.json'), 'utf8')).toBe('{"custom":true}');
     expect(readdirSync(d1).filter((n) => n.endsWith('.tmp'))).toEqual([]);
-
-    const writer = archive.epicCriticStep(workspaceId, trackerRef(42), 3, 'critic-x');
-    writer.appendPrompt('epic prompt');
-    writer.appendUpdate({ n: 1 });
-    await writer.close();
-    const stepDir = join(d1, 'attempts', '3', 'verification', 'pre-merge', 'critic-x');
-    expect(await writer.dir).toBe(stepDir);
-    expect(readFileSync(join(stepDir, 'prompt.md'), 'utf8')).toBe('epic prompt');
-    expect(JSON.parse(readFileSync(join(stepDir, 'acp.jsonl'), 'utf8')).update).toEqual({ n: 1 });
   });
 
   describe('operator input record', () => {
