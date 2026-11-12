@@ -266,6 +266,25 @@ function totalsFromAcp(usage: Record<string, unknown> | undefined): AttemptUsage
   };
 }
 
+/** Canonical step-run Usage from raw ACP prompt-result totals, attributed to `model`. */
+export function usageFromAcp(acp: Record<string, unknown>, model: string): AttemptUsage {
+  const { totalTokens, ...mu } = totalsFromAcp(acp)!;
+  return { models: { [model]: mu }, totals: { ...mu, totalTokens }, toolCalls: {}, source: 'acp' };
+}
+
+/** Read a stored step-run usage: canonical, or legacy raw ACP totals; malformed or empty is null. */
+export function normalizeStepRunUsage(raw: string | null, model: string | null): AttemptUsage | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!v || typeof v !== 'object') return null;
+    if (v.models && typeof v.models === 'object') return v as unknown as AttemptUsage;
+    return usageFromAcp(v, model ?? 'unknown');
+  } catch {
+    return null;
+  }
+}
+
 function sessionLogFile(input: CollectUsageInput): string | null {
   const collector = adapterFor(input.harnessId).usage;
   if (!collector) return null;
