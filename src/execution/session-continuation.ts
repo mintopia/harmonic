@@ -13,6 +13,7 @@ import {
 } from '../domain/session-continuation.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
 import type { SessionStore } from '../domain/sessions.js';
+import type { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import { bestEffort, orFallback, reportFailure, type FireAndForget } from '../error-handling.js';
 import { renderPrompt } from './prompt-template.js';
 import { adapterFor, adapterVersion } from './harness/registry.js';
@@ -31,7 +32,7 @@ export interface PersistSessionContext {
   harness: HarnessConfig;
   workspace: Workspace;
   mcpServers: unknown[];
-  attemptAtStart: AttemptRow;
+  stepRunId?: number | undefined;
   getSessionInit: () => AcpInitializeResult | undefined;
   setSessionRowId: (id: number) => void;
 }
@@ -52,6 +53,7 @@ export class SessionContinuation {
     private readonly getLastTurnContextTokens: (attemptId: number) => number | undefined,
     private readonly dispatchCwd: (task: TaskRow) => string,
     private readonly fireAndForget: FireAndForget,
+    private readonly stepRuns: Pick<WorkflowStepRunStore, 'setSession'>,
   ) {}
 
   async resolveContinuationSource(
@@ -171,53 +173,27 @@ export class SessionContinuation {
   }
 
   async persistSession(harnessSessionId: string, ctx: PersistSessionContext): Promise<void> {
-    const { task, run, harness, workspace, mcpServers, attemptAtStart } = ctx;
+    const { task, run, harness, workspace, mcpServers, stepRunId } = ctx;
     this.fireAndForget(() => this.attempts.update(run.id, { sessionId: harnessSessionId }), {
       op: 'runner.persistSession.bindSessionId',
       level: 'warn',
       context: { attemptId: run.id, harnessSessionId },
     });
     try {
-      const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
-      const transcriptPath = await transcriptResolver?.({
-        sessionLogDir: harness.sessionLogDir,
-        sessionId: harnessSessionId,
-      });
-      const session = await this.sessionStore.recordDispatch({
-        harness: task.harness,
-        harnessSessionId,
-        model: task.model,
-        cwd: workspace.cwd,
-        workspaceId: task.workspaceId,
-        ...(transcriptPath !== undefined ? { transcriptPath } : {}),
-        mcpTemplates: mcpServers,
-        capabilities: ctx.getSessionInit(),
-        adapterVersion: adapterVersion(task.harness),
-        now: Date.now(),
-      });
+      const sessionRowId = await this.recordSession({ harness, harnessId: task.harness, model: task.model, cwd: workspace.cwd, workspaceId: task.workspaceId, harnessSessionId, mcpServers, initialize: ctx.getSessionInit() });
+      if (sessionRowId === null) return;
+      const session = { id: sessionRowId };
       ctx.setSessionRowId(session.id);
       this.fireAndForget(() => this.attempts.update(run.id, { sessionRowId: session.id }), {
         op: 'runner.persistSession.bindSessionRow',
         level: 'error',
         context: { attemptId: run.id, sessionRowId: session.id },
       });
-      this.fireAndForget(
-        async () => {
-          const steps = await this.attempts.listSteps(attemptAtStart.id);
-          const implementation = steps.find((row) => row.type === 'implementation' && row.state === 'running');
-          if (implementation) await this.attempts.updateStep(implementation.id, { logLocator: `session:${session.id}` });
-        },
-        {
-          op: 'runner.persistSession.linkStepLog',
+      if (stepRunId !== undefined) {
+        this.fireAndForget(() => this.stepRuns.setSession(stepRunId, { sessionRowId: session.id }), {
+          op: 'runner.persistSession.bindStepRun',
           level: 'warn',
-          context: { attemptId: attemptAtStart.id, sessionRowId: session.id },
-        },
-      );
-      if (transcriptPath === null && transcriptResolver) {
-        this.fireAndForget(() => this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver }), {
-          op: 'runner.persistSession.captureTranscript',
-          level: 'warn',
-          context: { sessionRowId: session.id },
+          context: { stepRunId, sessionRowId: session.id },
         });
       }
     } catch (err) {
@@ -233,6 +209,47 @@ export class SessionContinuation {
           cwd: workspace.cwd,
         },
       });
+    }
+  }
+
+  /** Records a dispatched Session row and schedules its native transcript capture; null when recording fails. */
+  async recordSession(input: {
+    harness: HarnessConfig;
+    harnessId: string;
+    model: string;
+    cwd: string;
+    workspaceId: number | null;
+    harnessSessionId: string;
+    mcpServers?: unknown[];
+    initialize: AcpInitializeResult | undefined;
+  }): Promise<number | null> {
+    const { harness, harnessId, model, cwd, workspaceId, harnessSessionId, initialize } = input;
+    try {
+      const transcriptResolver = adapterFor(harnessId).usage?.resolveTranscriptPath;
+      const transcriptPath = await transcriptResolver?.({ sessionLogDir: harness.sessionLogDir, sessionId: harnessSessionId });
+      const session = await this.sessionStore.recordDispatch({
+        harness: harnessId,
+        harnessSessionId,
+        model,
+        cwd,
+        workspaceId,
+        ...(transcriptPath !== undefined ? { transcriptPath } : {}),
+        mcpTemplates: input.mcpServers ?? [],
+        capabilities: initialize,
+        adapterVersion: adapterVersion(harnessId),
+        now: Date.now(),
+      });
+      if (transcriptPath === null && transcriptResolver) {
+        this.fireAndForget(() => this.transcripts.captureSessionTranscript({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver }), {
+          op: 'runner.persistSession.captureTranscript',
+          level: 'warn',
+          context: { sessionRowId: session.id },
+        });
+      }
+      return session.id;
+    } catch (err) {
+      reportFailure(err, { op: 'runner.recordSession', level: 'error', context: { harness: harnessId, harnessSessionId, cwd } });
+      return null;
     }
   }
 

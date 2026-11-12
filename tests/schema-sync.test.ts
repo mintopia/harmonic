@@ -245,11 +245,11 @@ describe('workflow_step_runs Epic owner upgrade', () => {
     const second = await openAsyncDb(dataDir);
     await second.close();
     const columns = (await sqlite.execute('pragma table_info(workflow_step_runs)')).rows;
-    expect(columns.map((r) => String(r.name))).toEqual(expect.arrayContaining(['workspace_id', 'epic_ref']));
+    expect(columns.map((r) => String(r.name))).toEqual(expect.arrayContaining(['workspace_id', 'epic_ref', 'attempt_id', 'session_row_id', 'harness', 'model', 'usage']));
     expect(columns.find((r) => r.name === 'task_id')?.notnull).toBe(0);
     expect((await sqlite.execute('select task_id, workspace_id, epic_ref from workflow_step_runs')).rows.map((r) => [r.task_id, r.workspace_id, r.epic_ref])).toEqual([[taskId, null, null]]);
     const indexes = (await sqlite.execute("select name from sqlite_master where type = 'index' and tbl_name = 'workflow_step_runs'")).rows.map((r) => String(r.name));
-    expect(indexes).toContain('workflow_step_runs_epic_idx');
+    expect(indexes).toEqual(expect.arrayContaining(['workflow_step_runs_epic_idx', 'workflow_step_runs_attempt_idx']));
     sqlite.close();
     rmSync(dataDir, { recursive: true, force: true });
   });

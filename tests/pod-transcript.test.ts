@@ -67,7 +67,7 @@ describe('PodTranscriptMirror', () => {
     expect(readFileSync(path!).equals(readFileSync(source))).toBe(true);
   });
 
-  it('binds the Session and step log to the live mirror before the step ends', async () => {
+  it('binds the Session and step run to the live mirror before the step ends', async () => {
     writeFileSync(source, '{"line":"live"}\n');
     const recorded: { transcriptPath?: string | null }[] = [];
     const updates: object[] = [];
@@ -79,18 +79,17 @@ describe('PodTranscriptMirror', () => {
         attempts: {
           get: async () => ({ usage: null }),
           update: async (_id: number, patch: object) => (updates.push(patch), {}),
-          listSteps: async () => [{ id: 3, type: 'implementation', state: 'running' }],
-          updateStep: async (_id: number, patch: object) => (stepLinks.push(patch), {}),
         } as never,
+        stepRuns: { setSession: async (id: number, patch: object) => (stepLinks.push({ id, ...patch }), undefined), setUsage: async () => undefined } as never,
       },
-      { pod, task: { workspaceId: null }, run: { id: 1 } as never, harnessId: 'claude', model: 'm', cwd: '/w', kind: 'agent', stepId: 's' },
+      { pod, task: { workspaceId: null }, run: { id: 1 } as never, harnessId: 'claude', model: 'm', cwd: '/w', kind: 'agent', stepId: 's', stepRunId: 3, pass: 1 },
     );
     await transcript.onSessionCreated(SESSION, {} as never);
 
     await until(() => stepLinks.length > 0, 'the step log to be linked while the step runs');
     expect(recorded[0]?.transcriptPath).toBe(mirrorFile());
     expect(updates[0]).toEqual({ sessionId: SESSION, sessionRowId: 7 });
-    expect(stepLinks[0]).toEqual({ logLocator: 'session:7' });
+    expect(stepLinks[0]).toEqual({ id: 3, sessionRowId: 7 });
     expect(mirrored().toString('utf8')).toContain('live');
     await transcript.finish();
   });

@@ -39,6 +39,12 @@ interface ArchiveManifest {
   [key: string]: unknown;
 }
 
+export interface StepRunArchiveRef {
+  pass: number | null;
+  stepId: string;
+  stepRunId: number;
+}
+
 export interface StepArchiveWriter {
   readonly dir: Promise<string>;
   /** Attempt-relative path of this step's `prompt.md`. */
@@ -384,8 +390,28 @@ export class TaskArchive {
     }
   }
 
-  implementationStep(task: TaskRow, attemptNumber: number): StepArchiveWriter {
-    return this.stepWriter(this.implementationDir(task, attemptNumber), 'implementation', { taskId: task.id, attemptNumber });
+  private stepRunRel(ref: StepRunArchiveRef): string {
+    return `steps/${ref.pass ?? '_'}-${safeSegment(ref.stepId)}-${ref.stepRunId}`;
+  }
+
+  private stepRunDir(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): Promise<string> {
+    return this.ensure(task).then((root) => this.makeDir(join(root, 'attempts', String(attemptNumber), this.stepRunRel(ref))));
+  }
+
+  /** One archive directory per step run: `attempts/<n>/steps/<pass|_>-<stepId>-<stepRunId>/`. */
+  stepRun(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): StepArchiveWriter {
+    return this.stepWriter(this.stepRunDir(task, attemptNumber, ref), this.stepRunRel(ref), { taskId: task.id, attemptNumber, ...ref });
+  }
+
+  /** Path of the step run's uncapped `output.log`; null when the directory cannot be created. */
+  async stepRunOutputLog(task: TaskRow, attemptNumber: number, ref: StepRunArchiveRef): Promise<VerificationOutputLog | null> {
+    try {
+      const dir = await this.stepRunDir(task, attemptNumber, ref);
+      return { path: join(dir, 'output.log'), key: `${this.stepRunRel(ref)}/output.log` };
+    } catch (err) {
+      warn('archive: step output directory failed', err, { taskId: task.id, attemptNumber, ...ref });
+      return null;
+    }
   }
 
   /**
@@ -591,10 +617,19 @@ export class TaskArchive {
       const attemptDir = join(root, 'attempts', String(attemptNumber), kind);
       const name = nativePath ? basename(nativePath) : null;
       if (kind === 'implementation') {
-        const native = join(attemptDir, 'native');
-        if (name) return (await pathExists(join(native, name))) ? join(native, name) : null;
-        const files = (await readdir(native, { withFileTypes: true })).filter((e) => e.isFile() && e.name.endsWith('.jsonl'));
-        return files.length === 1 ? join(native, files[0]!.name) : null;
+        const natives = [join(attemptDir, 'native')];
+        const stepsDir = join(root, 'attempts', String(attemptNumber), 'steps');
+        for (const entry of await readdir(stepsDir, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory()) natives.push(join(stepsDir, entry.name, 'native'));
+        const found: string[] = [];
+        for (const native of natives) {
+          if (name) {
+            if (await pathExists(join(native, name))) return join(native, name);
+          } else {
+            const files = await readdir(native, { withFileTypes: true }).catch(() => []);
+            found.push(...files.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(native, e.name)));
+          }
+        }
+        return !name && found.length === 1 ? found[0]! : null;
       }
       if (!name) return null;
       const subdirs = async (dir: string) => (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);

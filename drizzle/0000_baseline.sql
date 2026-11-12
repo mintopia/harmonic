@@ -441,11 +441,19 @@ CREATE TABLE `workflow_step_runs` (
 	`attempt` integer,
 	`started_at` integer NOT NULL,
 	`ended_at` integer,
+	`attempt_id` integer,
+	`session_row_id` integer,
+	`harness` text,
+	`model` text,
+	`usage` text,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`attempt_id`) REFERENCES `attempts`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`session_row_id`) REFERENCES `sessions`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`workspace_id`, `epic_ref`) REFERENCES `epics`(`workspace_id`, `tracker_ref`) ON UPDATE no action ON DELETE cascade,
 	CHECK ((`task_id` IS NOT NULL AND `workspace_id` IS NULL AND `epic_ref` IS NULL) OR (`task_id` IS NULL AND `workspace_id` IS NOT NULL AND `epic_ref` IS NOT NULL))
 );
 --> statement-breakpoint
+CREATE INDEX `workflow_step_runs_attempt_idx` ON `workflow_step_runs` (`attempt_id`,`id`);--> statement-breakpoint
 CREATE INDEX `workflow_step_runs_task_idx` ON `workflow_step_runs` (`task_id`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE INDEX `workflow_step_runs_epic_idx` ON `workflow_step_runs` (`workspace_id`,`epic_ref`,`workflow_ref`,`step_id`);--> statement-breakpoint
 CREATE TABLE `workspaces` (

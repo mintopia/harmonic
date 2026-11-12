@@ -354,7 +354,16 @@ export const workflowStepRuns = sqliteTable('workflow_step_runs', {
   attempt: integer('attempt'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
+  /** The Attempt row this run belongs to; null only for rows from before it was recorded. */
+  attemptId: integer('attempt_id').references(() => attempts.id),
+  /** Agent and critic steps: the Session that ran the step. */
+  sessionRowId: integer('session_row_id').references(() => sessions.id),
+  harness: text('harness'),
+  model: text('model'),
+  /** JSON usage snapshot; cost is derived on read. */
+  usage: text('usage'),
 }, (t) => [
+  index('workflow_step_runs_attempt_idx').on(t.attemptId, t.id),
   index('workflow_step_runs_task_idx').on(t.taskId, t.workflowRef, t.stepId),
   index('workflow_step_runs_epic_idx').on(t.workspaceId, t.epicRef, t.workflowRef, t.stepId),
   check(

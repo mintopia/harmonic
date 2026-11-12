@@ -110,12 +110,14 @@ async function runStartupRecovery(deps: {
   bus: EventBus;
   archive: TaskArchive;
   sessionTranscriptPath: (sessionRowId: number) => Promise<string | null>;
+  stepRuns: WorkflowStepRunStore;
 }): Promise<void> {
-  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath } = deps;
+  const { attempts, tasks, auth, bus, archive, sessionTranscriptPath, stepRuns } = deps;
   const crashRecovery = new CrashRecoveryCoordinator(attempts, tasks, {
     onEpicAttemptInterrupted: (attempt) => { bus.emit('attempt_changed', attempt); },
     archive,
     sessionTranscriptPath,
+    stepRuns,
   });
   await crashRecovery.reconcile();
   for (const orphan of await tasks.list({ state: 'working' })) {
@@ -296,6 +298,7 @@ export async function createRuntime(deps: {
   await runStartupRecovery({
     attempts, tasks, auth, bus, archive,
     sessionTranscriptPath: (id) => transcripts.ensureSessionTranscript(id),
+    stepRuns: new WorkflowStepRunStore(asyncDb),
   });
   touchStartupProgress(opts.dataDir);
   const getWorkspaceRow = async (id: number | null) => {

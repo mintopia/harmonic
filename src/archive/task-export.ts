@@ -270,7 +270,7 @@ function readme(args: {
     '| `operator-inputs.json` | Guidance and answers the operator gave during the Task |',
     '| `agent-messages.json` | Agent Messages the Task sent or received, with recipients and receipts |',
     '| `archive.json` | The Archive identity and its Export history |',
-    '| `attempts/<n>/implementation/` | Prompt, ACP updates and native transcripts for Attempt n |',
+    '| `attempts/<n>/steps/<pass>-<stepId>-<stepRunId>/` | Prompt, ACP updates, native transcripts and `run:` output of one step run of Attempt n |',
     '',
   ].join('\n');
 }

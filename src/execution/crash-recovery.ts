@@ -1,5 +1,6 @@
 import { isEpicAttempt, isTaskAttempt, type EpicAttemptRow, type TaskAttemptRow } from '../db/schema.js';
 import type { AttemptStore } from '../domain/attempts.js';
+import type { WorkflowStepRunStore } from '../domain/workflow-step-runs.js';
 import type { TaskService } from '../domain/tasks.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
@@ -22,6 +23,7 @@ export class CrashRecoveryCoordinator {
       onEpicAttemptInterrupted?: (attempt: EpicAttemptRow) => Promise<void> | void;
       yieldOptions?: YieldOptions;
       archive?: TaskArchive;
+      stepRuns?: Pick<WorkflowStepRunStore, 'closeOrphans'>;
       sessionTranscriptPath?: (sessionRowId: number) => Promise<string | null>;
     },
   ) {}
@@ -40,6 +42,7 @@ export class CrashRecoveryCoordinator {
   private async reconcileInterrupted(): Promise<void> {
     await this.reconcileMergedButUnsettled();
     const interrupted = await this.attempts.markInterrupted();
+    await this.deps.stepRuns?.closeOrphans();
     await forEachYielding(
       interrupted.filter(isEpicAttempt),
       async (attempt) => { await this.deps.onEpicAttemptInterrupted?.(attempt); },

@@ -123,7 +123,7 @@ describe('a Ticket that was mid-pipeline when the workflow upgrade shipped', () 
     await waitFor(async () => (await server!.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
     const byStep = (await rowsOf(server, taskId)).filter((row) => row.stepId === 'verify-1');
-    expect(byStep.map((row) => row.outcome)).toEqual([null, 'pass']);
+    expect(byStep.map((row) => row.outcome)).toEqual(['inconclusive', 'pass']);
     expect(readFileSync(verifyLog, 'utf8')).toBe('ran\n');
     expect((await rowsOf(server, taskId)).filter((row) => row.stepId === 'build')).toHaveLength(1);
     expect(git(repo, 'show', 'main:done.txt')).toBe('done');
