@@ -63,7 +63,7 @@ export function StatusIcon({ kind, label }: { kind: IconKind; label?: string }) 
 
 export function Chevron({ prompt = false }: { prompt?: boolean }) {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={`shrink-0 transition-transform ${prompt ? 'group-open/prompt:rotate-90' : 'group-open:rotate-90'}`}>
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={`shrink-0 transition-transform ${prompt ? 'group-open/prompt:rotate-90' : 'group-open/step:rotate-90'}`}>
       <path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="var(--color-faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -340,7 +340,7 @@ export function StepRunList({
                   const open = e.currentTarget.open;
                   setToggled((current) => (current[row.key] === open ? current : { ...current, [row.key]: open }));
                 }}
-                className="group"
+                className="group/step"
               >
                 <summary className="cursor-pointer list-none hover:bg-sunken [&::-webkit-details-marker]:hidden">
                   <div className={`${ROW} ${indent}`}>

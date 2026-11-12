@@ -172,9 +172,9 @@ export function ExportPanel({
           <p className="mt-3 pb-3.5 text-small text-muted">Nothing has been exported for this {target.noun} yet. Export builds one, or Download saves a copy.</p>
         )}
         {earlier.length > 0 && (
-          <details className="group border-t border-hairline">
+          <details className="group/export border-t border-hairline">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-small [&::-webkit-details-marker]:hidden">
-              <Icon name="chevron-down" className="size-3 -rotate-90 text-faint transition-transform duration-150 group-open:rotate-0" />
+              <Icon name="chevron-down" className="size-3 -rotate-90 text-faint transition-transform duration-150 group-open/export:rotate-0" />
               <span className="font-semibold text-muted">Earlier Exports ({earlier.length})</span>
               <span className="ml-auto" />
               <span className={statePill(earlier[0]!.disposition)}>{humanState(earlier[0]!.disposition)}</span>
