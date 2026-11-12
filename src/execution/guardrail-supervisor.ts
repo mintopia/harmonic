@@ -290,8 +290,6 @@ export class GuardrailSupervisor {
     await this.tripSpend(now, event, formatBudgetReason(trip));
   }
 
-  /** One tool-timeout watchdog fire: trip on the oldest outstanding tool call
-   * that has been open past the bound, */
   async evaluateToolTimeout(): Promise<void> {
     if (!this.toolTimeoutMs) return;
     if (this.turn.isSettled()) return;

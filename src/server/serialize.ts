@@ -84,7 +84,6 @@ function criticsOf(ctx: AppContext, rows: readonly WorkflowStepRunRow[], fallbac
   });
 }
 
-/** One DTO builder for REST hydration. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
   const [task, rows] = await Promise.all([ctx.tasks.get(taskId), ctx.attempts.listForTask(taskId)]);
   const sessionPaths = task.isolationMode === 'worktree'
