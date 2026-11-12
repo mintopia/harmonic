@@ -738,6 +738,8 @@ describe('epic refresh corrective turn (issue #315)', () => {
       const row = rows.at(-1);
       return row?.state === 'escalated' ? row : undefined;
     });
+    const holdRecorded = async () => (await service.epicDetail(workspace.id, trackerRef(5)))?.integrate.held ?? undefined;
+    await waitFor(holdRecorded);
 
     await expect(service.retryEpic(workspace.id, trackerRef(5), 'Keep the public API compatible.', 'fresh')).resolves.toMatchObject({ status: 'escalated' });
     const rows = await attempts.listForEpic({ workspaceId: workspace.id, epicRef: trackerRef(5) });

@@ -3,7 +3,7 @@ import { buildHeatmap, heatLevel, HEATMAP_WEEKS } from '../web/src/components/he
 import type { DayCost } from '../web/src/components/costChart-model';
 
 const day = (iso: string): number => {
-  const d = new Date(iso);
+  const d = new Date(iso + "T00:00:00");
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 };

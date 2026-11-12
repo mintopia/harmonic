@@ -402,8 +402,10 @@ present (the positive opt-in gate, re-synced from labels on every re-poll,
 issue #230) AND no open Blockers AND no Epic Hold. Never stored. **HITL is not in Harmonic**:
 a mirrored issue without the label is a human-only Ticket — it stays visible
 on the board (it may block others; rendered muted with a distinct HITL icon)
-but takes no actions and is updated only by mirroring until the tracker
-closes it. Assignment is never consulted. Ticket closure is a tracker act,
+but the Auto-Runner never picks it up and it is updated only by mirroring until
+the tracker closes it. The operator may still start it manually with **Run now**
+once it has no open Blockers; an Epic member gets its integration branch for
+that run like any agent-workable member. Assignment is never consulted. Ticket closure is a tracker act,
 mirrored in as an **output side-effect, never a control path** (ADR-0004): success is the verification
 verdict plus merge.
 _Avoid_: drive, afk, hitl (as stored modes — all deleted), mode, assignee

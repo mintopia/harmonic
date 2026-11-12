@@ -40,7 +40,7 @@ import {
 import { issueRef } from "../id-format.js";
 import { useLiveEffect } from "../useLiveEffect";
 
-const compact = new Intl.NumberFormat(undefined, {
+const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });

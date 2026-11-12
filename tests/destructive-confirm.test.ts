@@ -37,7 +37,7 @@ async function click(el: HTMLElement) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  permissionRules.mockResolvedValue({ rules: [{ id: 3, kind: 'bash', workingDir: '/w', createdAt: Date.UTC(2026, 9, 12) }], total: 1 });
+  permissionRules.mockResolvedValue({ rules: [{ id: 3, kind: 'bash', workingDir: '/w', createdAt: Date.UTC(2026, 9, 12, 12) }], total: 1 });
 });
 afterEach(cleanup);
 

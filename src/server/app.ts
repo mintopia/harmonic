@@ -191,7 +191,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   const exporter = registerAppExports({ ctx, dataDir: opts.dataDir, epicMergeEvents: stores.epicMergeEvents });
 
-  const app = Fastify({ loggerInstance: fastifyLogger() }) as unknown as App;
+  const app = Fastify({ loggerInstance: fastifyLogger(), maxParamLength: 4096 }) as unknown as App;
   app.decorate('ctx', ctx);
   const registeredRoutes: RegisteredRoute[] = [];
   app.decorate('registeredRoutes', registeredRoutes);

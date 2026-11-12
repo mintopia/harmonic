@@ -5,6 +5,7 @@ import type { AppConfig, ModelOption, Task, Workspace } from '../../types';
 import { btnGhost, btnPrimary, codeChip, labelType } from '../../ui';
 import { DiscoveryModelPicker } from '../DiscoveryModelPicker';
 import { formatModelLabel, providerLabel } from '../TaskIdentity';
+import { Icon } from '../Icon';
 
 type Override = Task['modelOptionOverrides'][number];
 
@@ -68,6 +69,7 @@ export function ModelOptionOverrides({ task, onChanged }: { task: Task; onChange
   const workspace = workspaces.data?.workspaces.find((w) => w.id === task.workspaceId) ?? null;
   const choices = cfg ? availableOptions(workspace, cfg).filter((o) => !draft.some((d) => d.id === o.id)) : [];
   const dirty = !same(draft, saved);
+  if (draft.length === 0 && saved.length === 0 && !config.error && choices.length === 0) return null;
   const edit = (index: number, next: Override) => {
     setDraft((rows) => rows.map((r, i) => (i === index ? next : r)));
     setError(null);
@@ -87,12 +89,16 @@ export function ModelOptionOverrides({ task, onChanged }: { task: Task; onChange
   };
 
   return (
-    <section aria-label="Model Option overrides" className="mt-4">
-      <h3 className={`mb-1 ${labelType} text-faint`}>Model Option overrides</h3>
+    <details aria-label="Model Option overrides" className="group mt-4" open={draft.length > 0 || undefined}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open:rotate-0" />
+        <h3 className="text-title font-semibold">Model Option overrides</h3>
+        <span className="text-small text-muted tabular-nums">{saved.length === 0 ? 'none' : `${saved.length} on this Ticket`}</span>
+      </summary>
+      <div className="pb-2 pl-[22px]">
       <p className="mb-2 text-small text-muted">
         Overrides apply to this Ticket only; each code keeps its Workspace or global Harness and Model elsewhere.
       </p>
-      {draft.length === 0 && <p className="text-small text-muted">No overrides. Every Model Option uses its Workspace or global Harness and Model.</p>}
       <ul className="space-y-3">
         {draft.map((row, index) => {
           const rowError = error?.index === index ? error.text : null;
@@ -160,21 +166,20 @@ export function ModelOptionOverrides({ task, onChanged }: { task: Task; onChange
       {editable && (
         <div className="mt-3 space-y-2">
           {config.error && <ErrorMsg>{`Could not load Model Options: ${config.error}`}</ErrorMsg>}
-          {cfg && (
+          {cfg && choices.length > 0 && (
             <label className="block">
               <span className={`mb-1 block ${labelType} text-muted`}>Add override</span>
               <select
                 aria-label="Add override"
                 className={selectCls}
                 value=""
-                disabled={choices.length === 0}
                 onChange={(e) => {
                   const option = choices.find((o) => o.id === e.target.value);
                   if (option) setDraft((rows) => [...rows, { id: option.id, harness: option.harness, model: option.model }]);
                   setError(null);
                 }}
               >
-                <option value="">{choices.length === 0 ? 'No more codes to override' : 'Choose a Model Option code…'}</option>
+                <option value="">Choose a Model Option code…</option>
                 {choices.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.id}
@@ -196,6 +201,7 @@ export function ModelOptionOverrides({ task, onChanged }: { task: Task; onChange
           )}
         </div>
       )}
-    </section>
+      </div>
+    </details>
   );
 }

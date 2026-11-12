@@ -85,14 +85,15 @@ describe('task-steering', () => {
       const created = await server.api('POST', '/api/tasks', { prompt: 'quick task', workingDir: repo, isolationMode: 'worktree' });
       expect(created.status).toBe(201);
       const taskId = created.body.id;
-      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-      expect(started.status).toBe(201);
-      const attemptId = started.body.id;
+      const runHeldByPrepHook = server.api('POST', `/api/tasks/${taskId}/run`);
 
       await waitFor(async () => existsSync(held));
       const steered = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'mind the parser' });
       expect(steered.status).toBe(200);
       writeFileSync(release, '');
+      const started = await runHeldByPrepHook;
+      expect(started.status).toBe(201);
+      const attemptId = started.body.id;
 
       await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);

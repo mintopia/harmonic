@@ -1,4 +1,4 @@
-import { constants, createReadStream } from 'node:fs';
+import { constants, createReadStream, type Stats } from 'node:fs';
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
@@ -230,15 +230,25 @@ export async function streamWorkspaceFile({ root, path }: { root: string; path: 
   return { stream: createReadStream(file.target), mime: file.mime, size: file.size };
 }
 
+/** /proc/self/fd exists only on Linux. */
+async function openedPath(fd: number, target: string, opened: Stats): Promise<string> {
+  if (process.platform === 'linux') return realpath(`/proc/self/fd/${fd}`);
+  const resolved = await realpath(target);
+  const now = await stat(resolved);
+  if (now.dev !== opened.dev || now.ino !== opened.ino) validation('path must stay within the workspace');
+  return resolved;
+}
+
 export async function writeWorkspaceFile({ root, path, text }: { root: string; path: string; text: string }): Promise<WorkspaceFile> {
   const location = await workspacePath(root, path);
   if (!(await stat(location.target)).isFile()) validation('path is not a file');
   try {
     const handle = await open(location.target, constants.O_WRONLY | constants.O_NOFOLLOW);
     try {
-      const openedTarget = await realpath(`/proc/self/fd/${handle.fd}`);
+      const opened = await handle.stat();
+      if (!opened.isFile()) validation('path is not a file');
+      const openedTarget = await openedPath(handle.fd, location.target, opened);
       if (!inside(location.root, openedTarget)) validation('path must stay within the workspace');
-      if (!(await handle.stat()).isFile()) validation('path is not a file');
       await handle.truncate();
       await handle.writeFile(text, 'utf8');
     } finally {

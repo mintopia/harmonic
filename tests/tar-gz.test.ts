@@ -36,7 +36,7 @@ async function extract(archive: string): Promise<string> {
 
 async function list(archive: string): Promise<string[]> {
   const { stdout } = await run('tar', ['-tzf', archive], { maxBuffer: 1 << 24 });
-  return stdout.split('\n').filter(Boolean);
+  return stdout.split('\n').filter(Boolean).map((n) => n.normalize('NFC')); // bsdtar lists NFD on macOS
 }
 
 describe('TarGzWriter', () => {

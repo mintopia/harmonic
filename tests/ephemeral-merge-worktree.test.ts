@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +25,7 @@ function makeRepo(): string {
 }
 
 function leaveMergeWorktree(repo: string, ageMs = 0): { tempDir: string; adminPath: string } {
-  const tempDir = mkdtempSync(join(tmpdir(), 'harmonic-merge-'));
+  const tempDir = mkdtempSync(join(realpathSync(tmpdir()), 'harmonic-merge-'));
   tmpDirs.push(tempDir);
   const adminPath = join(tempDir, 'admin');
   git(repo, 'worktree', 'add', '--detach', adminPath, 'HEAD');

@@ -86,6 +86,13 @@ describe('Model Option overrides panel', () => {
     expect(host.querySelector('button')).toBeNull();
   });
 
+  it('renders nothing for an editable Ticket when no Model Option exists to override', async () => {
+    vi.spyOn(api, 'config').mockResolvedValue({ ...cfg(), modelOptions: [] });
+    vi.spyOn(api, 'workspaces').mockResolvedValue({ workspaces: [makeWorkspace({ id: ws.id, modelOptions: null })], total: 1 });
+    const host = await mount();
+    expect(host.textContent).toBe('');
+  });
+
   it('renders nothing for a locked Ticket with no overrides', async () => {
     const host = await mount(makeTask({ state: 'working', workspaceId: ws.id }));
     expect(host.textContent).toBe('');
