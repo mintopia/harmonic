@@ -767,9 +767,9 @@ export class EpicLifecycle {
     this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
     const byRef = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef != null) byRef.set(task.trackerRef, task);
-    // Unblocked human-only members stay manually runnable (Run now), so they need the branch too.
-    const manual = new Set(mirroredWithDeps.filter((t) => t.humanOnly && t.openBlockerCount === 0 && t.state === 'ready' && t.trackerRef !== null).map((t) => t.trackerRef));
-    for (const epic of epics) epic.ready = epic.members.filter((ref) => epic.ready.includes(ref) || manual.has(ref));
+    const isRunNowOnly = (t: (typeof mirroredWithDeps)[number]) => t.humanOnly && t.openBlockerCount === 0 && t.state === 'ready' && t.trackerRef !== null;
+    const runNowOnlyRefs = new Set(mirroredWithDeps.filter(isRunNowOnly).map((t) => t.trackerRef));
+    for (const epic of epics) epic.ready = epic.members.filter((ref) => epic.ready.includes(ref) || runNowOnlyRefs.has(ref));
     const readyRefs = new Set<TrackerRef>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     this.readyMemberRefs = readyRefs;
