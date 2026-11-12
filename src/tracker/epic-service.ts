@@ -282,7 +282,7 @@ export class TrackerEpicService implements EpicService {
     return coordinator.submit({ ref: epicRef, members, memberRefs });
   }
 
-  /** The hold reason only once the escalated Attempt row is also written: the one fact both `integrate.held` and `retryEpic` read, so the UI never offers a retry the server would refuse. */
+  /** Held only once the escalated Attempt row exists too; `integrate.held` and `retryEpic` both read this. */
   private async escalationHold(workspaceId: number, epicRef: TrackerRef): Promise<string | null> {
     const held = this.entries.get(workspaceId)?.epicIntegrate?.heldReason(epicRef) ?? null;
     if (held === null || !this.epicAttempts) return null;
