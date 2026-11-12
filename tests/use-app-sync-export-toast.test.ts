@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ROUTE } from '../web/src/router-model.js';
 import { useAppSync } from '../web/src/useAppSync.js';
 import { cleanup, mountComponent } from './component-smoke-harness.js';
 
-const { handlers, toastFail } = vi.hoisted(() => ({ handlers: [] as ((msg: unknown) => void)[], toastFail: vi.fn() }));
+const { handlers, toastFail, toastSuccess } = vi.hoisted(() => ({ handlers: [] as ((msg: unknown) => void)[], toastFail: vi.fn(), toastSuccess: vi.fn() }));
 
 vi.mock('../web/src/ws.js', () => ({
   subscribe: (handler: (msg: unknown) => void) => {
@@ -13,12 +13,13 @@ vi.mock('../web/src/ws.js', () => ({
     return () => undefined;
   },
 }));
-vi.mock('../web/src/toast.js', () => ({ toastFail, toastError: vi.fn(), toastSuccess: vi.fn() }));
+vi.mock('../web/src/toast.js', () => ({ toastFail, toastError: vi.fn(), toastSuccess }));
 
 afterEach(() => {
   cleanup();
   handlers.length = 0;
   toastFail.mockReset();
+  toastSuccess.mockReset();
 });
 
 const pending = new Proxy({}, { get: () => () => new Promise(() => undefined) }) as never;
@@ -52,5 +53,27 @@ describe('useAppSync export_failed toast', () => {
     await pushExportFailed({ owner: { kind: 'epic', epicRef: 42, workspaceId: 1 }, retry: 3 });
 
     expect(toastFail).toHaveBeenCalledWith('Export of Epic #42 to S3 failed — retries exhausted');
+  });
+});
+
+describe('useAppSync merged toast', () => {
+  const task = (over: Record<string, unknown>) => ({ id: 7, workspaceId: 1, state: 'working', mergeStatus: null, currentStep: null, ...over });
+  async function push(...tasks: Record<string, unknown>[]): Promise<void> {
+    function Probe() {
+      useAppSync({ authed: true, route: { ...DEFAULT_ROUTE, scope: { kind: 'workspace' as const, workspaceId: 1 } }, navigate: () => undefined, apiImpl: pending, storage: { getItem: () => null, setItem: () => undefined } });
+      return null;
+    }
+    await mountComponent(createElement(Probe));
+    for (const t of tasks) await act(async () => handlers.forEach((handler) => handler({ type: 'task_changed', task: t })));
+  }
+
+  it('fires once a Task that ran a merge step reaches done', async () => {
+    await push(task({ currentStep: { stepId: 'merge', action: 'merge', kind: 'publish' } }), task({ state: 'done' }));
+    expect(toastSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet for a Task done without a merge step', async () => {
+    await push(task({ currentStep: { stepId: 'implement', action: 'agent', kind: 'agent' } }), task({ state: 'done' }));
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 });

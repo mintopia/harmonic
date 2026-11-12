@@ -4,8 +4,7 @@ import { api, ApiError } from '../api';
 import { subscribe } from '../ws';
 import { useLiveEffect } from '../useLiveEffect';
 import { useScrollToPanel } from '../useScrollToPanel';
-import type { DiffFile, EpicAttempt, Task, ModelUsage, VerificationAttempt, WorkflowStepsResponse } from '../types';
-import { preCutoverAttempts } from '../epic-attempt-history-model';
+import type { DiffFile, EpicAttempt, Task, ModelUsage, WorkflowStepsResponse } from '../types';
 import type { Epic, EpicStage, IntegrationStepState } from '../epic-model';
 import { epicLifecycleSteps } from '../epic-model';
 import type { Stats } from '../stats-model';
@@ -41,13 +40,10 @@ import { TokenTypeBar, TokenTypeLegend } from './TokenTypeBar';
 import { formatModelKey, ModelLabel, ProviderChip } from './TaskIdentity';
 import { ChangedFilesNav, changedFileKind } from './ticket/ChangedFilesNav';
 import { Fact } from './Fact';
-import { CriticSessions } from './ticket/Verification';
 import { ExportPanel } from './ticket/ExportPanel';
 import { epicExportTarget } from '../export-targets';
 import { EpicTimeline } from './EpicTimeline';
-import { WorkflowSteps } from './ticket/WorkflowSteps';
-import { ResolvedPromptInline } from './ticket/ResolvedPromptInline';
-import { EPIC_RESOLVER_LABEL } from '../epic-timeline-model';
+import { EpicAttemptView } from './EpicAttemptView';
 
 const sectionCaps = 'text-label font-bold uppercase tracking-[0.1em] text-faint';
 
@@ -235,66 +231,6 @@ function UsageCard({ stats, epic }: { stats: Stats; epic: Epic }) {
           </div>
         </div>
       )}
-    </section>
-  );
-}
-
-function EpicVerificationOutput({ attempts }: { attempts: VerificationAttempt[] }) {
-  if (attempts.length === 0) return null;
-  return (
-    <div className="mt-3 w-full border-t border-hairline pt-3">
-      <h4 className={sectionCaps}>Verification output</h4>
-      <div className="mt-2 flex flex-col gap-3">
-        {attempts.filter((attempt) => attempt.mechanism === 'command').map((attempt) => (
-          <div key={attempt.id}>
-            <p className="text-small text-muted">Command · {attempt.verdict} · {attempt.summary}</p>
-            {attempt.output && <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-hairline bg-sunken px-3 py-2 font-data text-[11.5px] leading-[1.55] text-muted">{attempt.output}</pre>}
-          </div>
-        ))}
-        <CriticSessions attempts={attempts} />
-      </div>
-    </div>
-  );
-}
-
-export function EpicAttemptsTimeline({ attempts }: { attempts: EpicAttempt[] }) {
-  return (
-    <section>
-      {attempts.length > 0 && (
-        <ol className={`${card} divide-y divide-hairline`} aria-label="Epic attempt timeline">
-          {attempts.map((attempt) => (
-            <li key={attempt.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-              <span className="font-data text-muted">Attempt {attempt.number}</span>
-              <span className={`${stateChip(attempt.state === 'passed' ? 'done' : attempt.state === 'running' ? 'working' : attempt.state === 'escalated' ? 'escalated' : 'cancelled')} capitalize`}>{attempt.state}</span>
-              <span className="text-small text-muted">{fmtTime(attempt.startedAt)}</span>
-              <span className="ml-auto text-data text-muted tabular-nums">{rowCost(attempt.cost)}</span>
-              {attempt.usage?.totals?.totalTokens != null && (
-                <span className="text-data text-faint tabular-nums">{attempt.usage.totals.totalTokens.toLocaleString()} tokens</span>
-              )}
-              {attempt.reason && <p className="w-full text-small text-muted">{attempt.reason}</p>}
-              {attempt.resolverPrompts.map((prompt) => (
-                <div key={`${prompt.locator}:${prompt.promptIndex}`} className="w-full">
-                  <ResolvedPromptInline owner={{ attemptId: attempt.id }} locator={prompt.locator} index={prompt.promptIndex} label={EPIC_RESOLVER_LABEL[prompt.kind]} className="mt-1" />
-                </div>
-              ))}
-              <EpicVerificationOutput attempts={[]} />
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
-}
-
-function EarlierEpicAttempts({ attempts }: { attempts: EpicAttempt[] }) {
-  if (attempts.length === 0) return null;
-  return (
-    <section className="mb-6" aria-label="Earlier Epic attempts">
-      <div className={`${sectionCaps} mb-3`}>Earlier Epic attempts (before the cutover)</div>
-      <p className={`${card} mb-3 px-3 py-2.5 text-small text-muted`}>
-        Epic verifications that ran before the workflow cutover stay listed here as history, one row per verify pass, read-only.
-      </p>
-      <EpicAttemptsTimeline attempts={attempts} />
     </section>
   );
 }
@@ -808,11 +744,8 @@ export function EpicPage({
                   </div>
 
                   <div className="mb-8">
-                    {epicAttempts && workflowSteps ? (
-                      <>
-                        <EarlierEpicAttempts attempts={preCutoverAttempts(epicAttempts, workflowSteps.steps, workflowSteps.workflowRef)} />
-                        <WorkflowSteps data={workflowSteps} attemptSelector />
-                      </>
+                    {epicAttempts ? (
+                      <EpicAttemptView attempts={epicAttempts} workflow={workflowSteps} />
                     ) : (
                       <p className="text-muted">Loading Epic steps…</p>
                     )}

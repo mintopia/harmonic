@@ -249,6 +249,9 @@ export const timeline = [
   { attemptId: 502, ts: T0 + min(20), kind: 'attempt-started', data: { attempt: 2 } },
   { attemptId: 502, ts: T0 + min(29), kind: 'attempt-finished', data: { attempt: 2, state: 'failed' } },
   { attemptId: 503, ts: T0 + min(31), kind: 'attempt-started', data: { attempt: 3 } },
+  { attemptId: 503, ts: T0 + min(80), kind: 'step-run', data: { stepRunId: 1, stepId: 'verify', action: 'run', kind: 'check', pass: 1, phase: 'started' } },
+  { attemptId: 503, ts: T0 + min(83), kind: 'step-run', data: { stepRunId: 1, stepId: 'verify', action: 'run', kind: 'check', pass: 1, phase: 'finished', outcome: 'fail', summary: 'command exited 1' } },
+  { attemptId: 503, ts: T0 + min(84), kind: 'step-run', data: { stepRunId: 2, stepId: 'review', action: 'critic', kind: 'critic', pass: 1, phase: 'finished', outcome: null } },
   { attemptId: 503, ts: T0 + min(85), kind: 'verification', data: { verdict: 'pass', summary: 'defaults and overrides behave as specified', mechanism: 'critic' } },
   { attemptId: 503, ts: T0 + min(89), kind: 'attempt-finished', data: { attempt: 3, state: 'passed' } },
   { attemptId: 503, ts: T0 + min(89) + 10_000, kind: 'lifecycle', data: { type: 'lifecycle', payload: { event: 'merge-step', step: { step: 'started', baseBranch: 'develop', taskBranch: 'task/185' } } } },
@@ -433,6 +436,13 @@ export const boardTasks = [
     currentStep: { stepId: 'verify', action: 'run', kind: 'check' },
     contextTokens: 28_000,
     attemptId: 9435,
+  }),
+  boardTask(436, 'working', {
+    summary: 'Merge the credential reveal flow onto develop',
+    currentStep: { stepId: 'merge', action: 'merge', kind: 'publish' },
+    mergeStatus: 'merging',
+    contextTokens: 41_000,
+    attemptId: 9436,
   }),
   boardTask(441, 'done', { summary: 'Land the schema sync that unblocks the hold' }),
   boardTask(442, 'ready', {
@@ -688,7 +698,7 @@ export const epicResolverAttempts: EpicAttempt[] = [
     contextTokens: null,
     startedAt: E0 + emin(160),
     endedAt: E0 + emin(190),
-    stepRuns: [],
+    stepRuns: stepRunsFor('passes').map((run) => ({ ...run, attemptId: 9001 })),
     resolverPrompts: [
       { kind: 'refresh', locator: 'resolution/epic-refresh-1/prompt.md', promptIndex: 2, ts: E0 + emin(161) },
       { kind: 'verification', locator: 'resolution/epic-resolve-1/prompt.md', promptIndex: 3, ts: E0 + emin(170) },

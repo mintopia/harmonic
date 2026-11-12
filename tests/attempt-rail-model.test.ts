@@ -33,7 +33,7 @@ function step(over: Partial<StepRun> = {}): StepRun {
 describe('attemptDisplay', () => {
   it('reads a settled terminal state before whatever Step was running when it ended', () => {
     expect(attemptDisplay(run({ state: 'completed' }), [step({ stepId: 'review', state: 'pass', outcome: 'pass' })])).toEqual({
-      word: 'merged',
+      word: 'done',
       dot: 'merged',
       pulse: false,
     });
@@ -87,12 +87,14 @@ describe('attemptDisplay', () => {
     expect(attemptDisplay(run({ state: 'running' }), [step({ state: 'pass', outcome: 'pass' })]).word).toBe('running');
   });
 
-  it('reads a completed run as merged whatever Step it ended on', () => {
-    expect(attemptDisplay(run({ state: 'completed' }), [step({ stepId: 'review', state: 'pass', outcome: 'pass' })])).toEqual({
-      word: 'merged',
-      dot: 'merged',
-      pulse: false,
-    });
+  it('reads a completed run by its publish step run', () => {
+    const publish = (action: string, outcome: StepRun['outcome'] = 'pass') => step({ stepId: 'ship', action, kind: 'publish', state: outcome ?? 'running', outcome });
+    const word = (steps: StepRun[]) => attemptDisplay(run({ state: 'completed' }), steps).word;
+    expect(word([publish('merge')])).toBe('merged');
+    expect(word([publish('open-pr')])).toBe('PR opened');
+    expect(word([publish('artifact')])).toBe('artifact kept');
+    expect(word([step({ state: 'pass', outcome: 'pass' })])).toBe('done');
+    expect(word([publish('merge', 'fail')])).toBe('done');
   });
 });
 
