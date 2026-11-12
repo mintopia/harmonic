@@ -15,6 +15,7 @@ import type { RunnerEvents } from './runner-options.js';
 import type { TaskArchive } from '../archive/task-archive.js';
 import type { EnginePrompts } from '../domain/bundled-prompts.js';
 import { resolveMergePrompts } from '../domain/setting-override.js';
+import type { MergeIntoBaseOutcome } from './branch-merge.js';
 import { renderConflictPrompt } from './prompt-assembly.js';
 
 export const RESOLVE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -65,7 +66,7 @@ export interface MergeCoordinatorDeps {
   getWorkspace?: RunnerOptions['getWorkspace'];
   postMerge: RunnerOptions['postMerge'];
   listWorkingTasks: () => Promise<TaskRow[]>;
-  routing: Pick<RoutingService, 'epicRoute'>;
+  routing: Pick<RoutingService, 'epicRoute' | 'ticketRoute'>;
   onEpicMergeStep: (payload: { workspaceId: number; epicRef: TrackerRef }) => void;
 }
 
@@ -195,6 +196,50 @@ export class MergeCoordinator {
       return { ...outcome, message: `${route.reason} It cannot run the conflict resolution turn. ${outcome.message}` };
     }
     return outcome;
+  }
+
+  /**
+   * Retry a Ticket branch merge that conflicted: up to `task.conflictResolveTurns`
+   * agent resolve turns, each followed by a merge re-check. Caller must not hold
+   * the base-checkout lock (the policy takes it to publish).
+   */
+  async resolveTicketConflict(task: TaskRow, run: AttemptRow, conflictDetail: string): Promise<MergeIntoBaseOutcome> {
+    const turns = task.conflictResolveTurns;
+    if (turns <= 0) return { ok: false, reason: 'conflict', detail: conflictDetail };
+    const baseBranch = run.baseBranch!;
+    const branch = run.branch!;
+    const route = await this.deps.routing.ticketRoute(task);
+    if (!route.ok) return { ok: false, reason: 'conflict', detail: `${route.reason} It cannot run the conflict resolution turn. ${conflictDetail}` };
+    const config = this.deps.getConfig();
+    const files = new Set<string>();
+    let turnsUsed = 0;
+    const deps: MergePolicyDeps = {
+      resolveConflictTurn: async (ctx) => {
+        turnsUsed = ctx.turn;
+        ctx.unmergedPaths.forEach((path) => files.add(path));
+        try {
+          const prompt = renderConflictPrompt(config.merge.conflictPrompt, this.deps.prompts(), ctx);
+          const archived = await this.deps.archive?.appendResolutionPrompt(task, run.number, 'task-conflict', ctx.turn, prompt);
+          this.deps.onAttemptEvent?.(await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'merge-conflict-resolve', turn: ctx.turn, ...archived } }));
+          await runTimedCriticDrive(
+            this.deps.criticDrive,
+            { harness: route.config, harnessId: route.harness, model: route.model, cwd: ctx.baseDir, prompt, timeoutMs: RESOLVE_TURN_TIMEOUT_MS },
+            (ms) => this.deps.attempts.addAgentDuration(run.id, ms),
+          );
+        } catch (err) {
+          reportFailure(err, { op: 'runner.resolveTicketConflict.turn', level: 'warn', context: { taskId: task.id, attemptId: run.id, turn: ctx.turn } });
+        }
+      },
+      runPostMergeCheck: async () => ({ pass: true, output: '' }),
+      escalate: async () => {},
+    };
+    const outcome = await runMergePolicy({ baseDir: task.workingDir, baseBranch, taskBranch: branch, conflictResolveTurns: turns, postMergeCheck: false }, deps);
+    const conflictedFiles = [...files];
+    if (outcome.kind === 'merged') {
+      await this.deps.postMerge?.({ repoDir: task.workingDir, baseBranch });
+      return { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch, branch, resolved: { turns: turnsUsed, files: conflictedFiles } };
+    }
+    return { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'stale-base', detail: outcome.message, conflictedFiles };
   }
 
   private async recordEpicEvent(attemptId: number, payload: Record<string, unknown>): Promise<void> {

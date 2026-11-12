@@ -69,8 +69,8 @@ export function defaultBranchPostMerge(
 }
 
 export type MergeIntoBaseOutcome =
-  | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
-  | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'stale-base' | 'fallback-pr-manual'; detail: string };
+  | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string; resolved?: { turns: number; files: string[] } }
+  | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'stale-base' | 'fallback-pr-manual'; detail: string; conflictedFiles?: string[] };
 
 type IsolatedMergeResult =
   | { kind: 'merged'; oid: string }

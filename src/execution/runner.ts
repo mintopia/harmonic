@@ -232,7 +232,7 @@ export class Runner {
             ? { ok: true, mode: 'cas', oid: outcome.mergeOid, baseBranch: run.baseBranch!, branch: run.branch! }
             : { ok: false, reason: outcome.reason === 'conflict' ? 'conflict' : 'stale-base', detail: outcome.message };
         }
-        return withBaseCheckoutLock(task.workingDir, () =>
+        const merged = await withBaseCheckoutLock(task.workingDir, () =>
           withRepoLock(task.workingDir, async () =>
             mergeIntoBase({
               repoDir: task.workingDir,
@@ -245,6 +245,7 @@ export class Runner {
             }),
           ),
         );
+        return !merged.ok && merged.reason === 'conflict' ? this.mergeCoordinator.resolveTicketConflict(task, run, merged.detail) : merged;
       },
       markTicketClosePending: async (task) => {
         await this.taskService.setTicketClosePending(task.id, true);

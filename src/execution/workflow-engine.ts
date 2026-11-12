@@ -656,8 +656,12 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     if (action === 'merge') {
       if (!this.deps.mergeBranch) return done('inconclusive', 'merge is not available');
       const merged = await this.deps.mergeBranch(task, run);
-      if (merged.ok) return done('pass', `merged ${run.branch} into ${run.baseBranch}`, { branch: run.branch });
-      return done(merged.reason === 'conflict' ? 'conflict' : 'fail', merged.detail);
+      if (merged.ok) {
+        const { resolved } = merged;
+        const via = resolved ? ` after ${resolved.turns} conflict resolve ${resolved.turns === 1 ? 'turn' : 'turns'}` : '';
+        return done('pass', `merged ${run.branch} into ${run.baseBranch}${via}`, { branch: run.branch, ...(resolved ? { conflictedFiles: resolved.files } : {}) });
+      }
+      return done(merged.reason === 'conflict' ? 'conflict' : 'fail', merged.detail, merged.conflictedFiles ? { conflictedFiles: merged.conflictedFiles } : undefined);
     }
     if (!this.deps.openPullRequest) return done('inconclusive', 'open-pr is not available');
     const url = await this.deps.openPullRequest(task, run);
