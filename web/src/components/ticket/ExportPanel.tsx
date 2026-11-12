@@ -149,7 +149,7 @@ export function ExportPanel({
           <span className="ml-auto" />
           <button type="button" className={`${btnGhost} gap-1.5`} disabled={busy} aria-busy={busy} onClick={exportAgain}>
             <Icon name="refresh" className={`size-4 ${busy ? 'motion-safe:animate-spin' : ''}`} />
-            {busy ? 'Exporting…' : 'Export again'}
+            {busy ? 'Exporting…' : latest ? 'Export again' : 'Export'}
           </button>
           <a href={target.downloadUrl} download className={`${btnPrimary} gap-1.5 no-underline`}>
             <Icon name="download" className="size-4" />
@@ -169,7 +169,7 @@ export function ExportPanel({
         {latest ? (
           <Latest latest={latest} noun={target.noun} />
         ) : (
-          <p className="mt-3 pb-3.5 text-small text-muted">Nothing has been exported for this {target.noun} yet. Export again builds one, or Download saves a copy.</p>
+          <p className="mt-3 pb-3.5 text-small text-muted">Nothing has been exported for this {target.noun} yet. Export builds one, or Download saves a copy.</p>
         )}
         {earlier.length > 0 && (
           <details className="group border-t border-hairline">

@@ -3,7 +3,7 @@ import type { Attempt, AttemptSummary, AttemptLogEvent, AttemptUsageEvent, Guard
 import { Icon } from '../Icon';
 import { attemptIdentityModel, type TaskStats } from '../../task-detail-model';
 import { attemptRows, outlineRows, passNumbers } from '../../step-run-model';
-import type { PendingSteer } from './ChatTranscript';
+import { ChatTranscript, type PendingSteer } from './ChatTranscript';
 import { AttemptStats, AttemptSummaryCard } from './StatsPanel';
 import { StatePill } from './shared';
 import { PassSelector, StepRunList, type StepRunContext } from './StepRunRows';
@@ -44,6 +44,8 @@ export function AttemptPanel({
   primaryModel,
   agent,
   baseDir,
+  logUnavailable = false,
+  fromArchive = false,
 }: {
   run: AttemptSummary;
   attempt: Attempt | undefined;
@@ -59,6 +61,8 @@ export function AttemptPanel({
   primaryModel: string;
   agent: string;
   baseDir?: string;
+  logUnavailable?: boolean;
+  fromArchive?: boolean;
 }) {
   const stepRuns = attempt?.stepRuns ?? [];
   const [picked, setPicked] = useState<number | null>(null);
@@ -97,7 +101,12 @@ export function AttemptPanel({
       <AttemptHeader run={run} stepRuns={stepRuns} />
       <AttemptSummaryCard run={run} snapshot={snapshot} model={topModel} toolCalls={stats.toolCalls} />
       {numbers.length > 1 && pass !== null && <PassSelector numbers={numbers} runs={stepRuns} selected={pass} max={workflow?.maxAttempts ?? null} onSelect={setPicked} />}
-      {rows.length === 0 ? (
+      {stepRuns.length === 0 && run.state !== 'running' ? (
+        <>
+          <p className="mb-2 mt-4 text-small text-muted">Recorded before step runs: steps aren&apos;t itemised for this Attempt.</p>
+          <ChatTranscript events={events} unavailable={logUnavailable} fromArchive={fromArchive} model={topModel} agent={agent} attemptId={run.id} baseDir={baseDir} embedded />
+        </>
+      ) : rows.length === 0 ? (
         <p className="mt-4 text-small text-muted">No step has run yet.</p>
       ) : (
         <StepRunList rows={rows} info={workflow?.stepInfo} now={now} ctx={ctx} />

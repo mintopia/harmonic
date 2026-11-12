@@ -61,6 +61,19 @@ describe('Attempt step list', () => {
     expect(host.textContent).not.toContain('second');
   });
 
+  it('shows the whole-Attempt transcript for a finished Attempt with no step runs', async () => {
+    const host = await mount([], { run: { ...run, state: 'completed' }, events: [{ id: 1, seq: 1, ts: 1, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'legacy reply text' } } }] });
+    expect(host.textContent).toContain("Recorded before step runs: steps aren't itemised for this Attempt.");
+    expect(host.textContent).toContain('legacy reply text');
+    expect(host.textContent).not.toContain('No step has run yet.');
+  });
+
+  it('keeps "No step has run yet." for a running Attempt without steps', async () => {
+    const host = await mount([]);
+    expect(host.textContent).toContain('No step has run yet.');
+    expect(host.textContent).not.toContain('Recorded before');
+  });
+
   it('renders unrun outline steps as pending rows while the Attempt is current', async () => {
     const host = await mount([step({ stepId: 'implement', kind: 'agent', action: 'agent', state: 'running', outcome: null, endedAt: null })], { showPending: true });
     const pending = [...host.querySelectorAll('li')].filter((li) => li.querySelector('[aria-label="not started"]'));
