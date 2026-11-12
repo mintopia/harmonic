@@ -62,8 +62,10 @@ the running Attempt with no outcome). Merge status is derived from the running
 step's action (`merge` reads as merging); the stored column is dropped.
 
 **Crash recovery.** At boot, in the same pass that marks interrupted Attempts,
-step runs with no outcome are closed `inconclusive` with the summary
-`interrupted by process death`.
+step runs with no outcome get an end time and the summary `interrupted by
+process death`, but keep a null outcome so crash resume re-runs the step in
+the same Pass instead of counting it as a failed one. A step run is running
+only while it has neither an outcome nor an end time.
 
 **Archive layout.** Per-step-run directories replace the per-Step ones:
 `attempts/<n>/steps/<pass|_>-<stepId>-<stepRunId>/`, holding that step run's
