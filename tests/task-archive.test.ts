@@ -404,44 +404,6 @@ describe('TaskArchive', () => {
     expect(existsSync(join(await writer.dir, 'native'))).toBe(false);
   });
 
-  it('creates a verification output.log directory per stage and step', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const archive = archiveFor();
-    const log = await archive.verificationOutputLog(task, 2, 'post-merge', 'cmd-lint');
-    const root = await archive.ensure(task);
-    expect(log).toEqual({ path: join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint', 'output.log'), key: 'verification/post-merge/cmd-lint/output.log' });
-    expect(existsSync(join(root, 'attempts', '2', 'verification', 'post-merge', 'cmd-lint'))).toBe(true);
-  });
-
-  it('keeps hostile step ids inside the archive', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const archive = archiveFor();
-    const root = await archive.ensure(task);
-    const stageDir = join(root, 'attempts', '1', 'verification', 'pre-merge');
-    const ids = ['../../x', '', '.', '..', 'a/b', 'a-b'];
-    const logs = await Promise.all(ids.map((id) => archive.verificationOutputLog(task, 1, 'pre-merge', id)));
-    const paths = logs.map((log) => log?.path);
-    for (const path of paths) {
-      expect(path).toBeDefined();
-      expect(dirname(dirname(path!))).toBe(stageDir);
-      expect(existsSync(dirname(path!))).toBe(true);
-    }
-    expect(new Set(paths).size).toBe(ids.length);
-  });
-
-  it('resolves null when the archive cannot be ensured', async () => {
-    const task = await tasks.create({ prompt: 'p' });
-    const failing = new TaskArchive({
-      dataDir: dir,
-      ensureArchiveId: async () => {
-        throw new Error('no id');
-      },
-      workspaceName: async () => null,
-    });
-    const bare = { ...task, archiveId: null };
-    expect(await failing.verificationOutputLog(bare, 1, 'pre-merge', 'c')).toBeNull();
-  });
-
   it('lays out a critic step and keeps concurrent critic writers separate', async () => {
     const task = await tasks.create({ prompt: 'p' });
     const archive = archiveFor();

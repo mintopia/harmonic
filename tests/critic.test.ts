@@ -10,7 +10,6 @@ import {
   runCritic,
   runTimedCriticDrive,
   createAcpCriticDrive,
-  criticAttemptToInput,
   type CriticHarnessDrive,
   type CriticDriveRequest,
 } from '../src/verification/critic.js';
@@ -20,12 +19,8 @@ import type { DriveFields } from '../src/execution/prompt-template.js';
 import { RouteClassifier } from '../src/domain/route-classifier.js';
 import { combineVerdicts } from '../src/verification/combine.js';
 import type { VerifierVerdict } from '../src/verification/combine.js';
-import { openAsyncDb } from '../src/db/async.js';
-import { TaskService } from '../src/domain/tasks.js';
-import { AttemptStore } from '../src/domain/attempts.js';
-import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { testSpawnProcessGroup, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
+import { testSpawnProcessGroup } from './helpers.js';
 
 const DEFAULT_PROMPTS = bundledEnginePrompts();
 
@@ -419,50 +414,6 @@ describe('runCritic (issue #136)', () => {
       const verifierVerdict: VerifierVerdict = { verifier: attempt.verifier, verdict: attempt.verdict };
       expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: c.outcome, reason: expect.any(String) });
     }
-  });
-
-  it('AC5 end-to-end: a runCritic attempt persists to the store and the read-back row feeds combineVerdicts', async () => {
-    const { repo, oid } = await makeCandidate('refs/harmonic/direct/attempt-critic-persist');
-    const drive: CriticHarnessDrive = {
-      run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
-    };
-    const attempt = await runCritic({
-      prompts: DEFAULT_PROMPTS,
-      cwd: repo,
-      verifiedHeadOid: oid,
-      fields: FIELDS,
-      critic: { prompt: 'Review the diff.', harness: 'claude', model: 'stub-model' },
-      harness: FAKE_HARNESS,
-      harnessId: 'claude',
-      drive,
-    });
-
-    const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
-    tmpDirs.push(dbDir);
-    const asyncDb = await openAsyncDb(dbDir);
-    await seedWorkspace(asyncDb);
-    const settingsStore = await makeSettingsStore(dbDir);
-    const tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
-    const attempts = new AttemptStore(asyncDb);
-    const store = new VerificationAttemptStore(asyncDb);
-    const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
-    const attemptId = (await attempts.create(task.id)).id;
-
-    await store.append(attemptId, criticAttemptToInput(attempt));
-
-    const [row, ...rest] = await store.list(attemptId);
-    expect(rest).toHaveLength(0);
-    expect(row).toMatchObject({
-      mechanism: 'critic',
-      verdict: 'fail',
-      summary: 'the diff drops a null check',
-      inputOid: oid,
-    });
-
-    const verifierVerdict: VerifierVerdict = { verifier: row!.mechanism, verdict: row!.verdict as VerifierVerdict['verdict'] };
-    expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: 'block', reason: expect.any(String) });
-
-    await asyncDb.close();
   });
 });
 

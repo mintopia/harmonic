@@ -47,16 +47,6 @@ export interface WorkflowStepRunFinish {
   summary: string;
 }
 
-export type WorkflowStepRunSeed = StepRunOwner & {
-  workflowRef: string;
-  stepId: string;
-  position: number;
-  action: string;
-  attempt: number | null;
-  outcome: WorkflowStepOutcome;
-  summary: string;
-};
-
 export class WorkflowStepRunStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
@@ -101,17 +91,6 @@ export class WorkflowStepRunStore {
         .all(),
     );
     return closed.length;
-  }
-
-  async seed(rows: readonly WorkflowStepRunSeed[], now: number = Date.now()): Promise<void> {
-    if (rows.length === 0) return;
-    const outputs = JSON.stringify({ stdout: '', exitCode: null } satisfies WorkflowStepOutputs);
-    await this.db.write(async (db) => {
-      for (const row of rows) {
-        const { workflowRef, stepId, position, action, attempt, outcome, summary } = row;
-        await db.insert(workflowStepRuns).values({ ...ownerColumns(row), workflowRef, stepId, position, action, attempt, outcome, summary, outputs, startedAt: now, endedAt: now }).run();
-      }
-    });
   }
 
   async finish(id: number, result: WorkflowStepRunFinish, now: number = Date.now()): Promise<void> {

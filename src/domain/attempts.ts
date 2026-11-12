@@ -3,14 +3,11 @@ import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
   attempts,
-  steps,
   attemptEvents,
   attemptToolCalls,
   tasks,
   type AttemptRow,
   type AttemptState,
-  type StepRow,
-  type StepType,
   type AttemptEventRow,
   type EpicAttemptRow,
   type TaskAttemptRow,
@@ -35,12 +32,6 @@ export interface AttemptGuardrailSnapshot {
 export interface EpicAttemptOwner {
   workspaceId: number;
   epicRef: TrackerRef;
-}
-
-export interface StepInput {
-  type: StepType;
-  command?: string | null;
-  logLocator?: string | null;
 }
 
 /** What `appendEvent` needs to persist one Attempt event — everything on
@@ -314,17 +305,6 @@ export class AttemptStore {
           .run(),
       );
     }
-    // A crash mid-Step would otherwise leave it forever `running`, reading as still-active in the timeline.
-    if (orphans.length > 0) {
-      const ids = orphans.map((attempt) => attempt.id);
-      await this.db.write((db) =>
-        db
-          .update(steps)
-          .set({ state: 'failed', endedAt: Date.now() })
-          .where(and(inArray(steps.attemptId, ids), eq(steps.state, 'running')))
-          .run(),
-      );
-    }
     return orphans;
   }
 
@@ -433,74 +413,9 @@ export class AttemptStore {
     return result;
   }
 
-  listSteps(attemptId: number): Promise<StepRow[]> {
-    return this.db.read((db) => db.select().from(steps).where(eq(steps.attemptId, attemptId)).orderBy(asc(steps.position)).all());
-  }
-
-  /** The Step type currently `running` for one Task's Attempt, or `null` when none is (the gap between Steps). */
-  async currentStepType(taskId: number, number: number): Promise<StepType | null> {
-    const attempt = await this.getForTaskNumber(taskId, number);
-    if (!attempt) return null;
-    const rows = await this.listSteps(attempt.id);
-    return [...rows].reverse().find((row) => row.state === 'running')?.type ?? null;
-  }
-
-  /** The batched form of {@link currentStepType}, keyed by `taskId`. */
-  async currentStepTypes(taskAttempts: readonly { taskId: number; number: number }[]): Promise<Map<number, StepType | null>> {
-    const result = new Map<number, StepType | null>();
-    if (taskAttempts.length === 0) return result;
-    const numberByTask = new Map(taskAttempts.map((t) => [t.taskId, t.number]));
-    const attemptRows = await this.db.read((db) =>
-      db.select().from(attempts).where(inArray(attempts.taskId, taskAttempts.map((t) => t.taskId))).all(),
-    );
-    const wanted = attemptRows.filter(isTaskAttempt).filter((attempt) => numberByTask.get(attempt.taskId) === attempt.number);
-    if (wanted.length === 0) return result;
-    const stepRows = await this.db.read((db) =>
-      db.select().from(steps).where(inArray(steps.attemptId, wanted.map((a) => a.id))).orderBy(asc(steps.position)).all(),
-    );
-    const stepsByAttempt = new Map<number, StepRow[]>();
-    for (const row of stepRows) {
-      const list = stepsByAttempt.get(row.attemptId) ?? [];
-      list.push(row);
-      stepsByAttempt.set(row.attemptId, list);
-    }
-    for (const attempt of wanted) {
-      const running = [...(stepsByAttempt.get(attempt.id) ?? [])].reverse().find((row) => row.state === 'running');
-      result.set(attempt.taskId, running?.type ?? null);
-    }
-    return result;
-  }
-
-  /**
-   * The attempt number the `maxAttempts` budget counts from: the latest
-   * escalated Attempt, or 0 when the ticket never escalated. Attempts keep
-   * their history numbering; only the budget restarts.
-   */
-  async budgetBase(taskId: number): Promise<number> {
-    const row = await this.db.read((db) =>
-      db
-        .select({ n: sql<number>`coalesce(max(${attempts.number}), 0)` })
-        .from(attempts)
-        .where(and(eq(attempts.taskId, taskId), eq(attempts.state, 'escalated')))
-        .get(),
-    );
-    return row?.n ?? 0;
-  }
-
   /** Record the operator's guidance on the Attempt it answers (the escalated one). */
   setFeedback(attemptId: number, feedback: string): Promise<AttemptRow> {
     return this.db.write((db) => db.update(attempts).set({ feedback }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
-  }
-
-  createStep(attemptId: number, input: StepInput): Promise<StepRow> {
-    return this.db.write(async (db) => {
-      const position = ((await db.select({ n: sql<number>`coalesce(max(${steps.position}), 0)` }).from(steps).where(eq(steps.attemptId, attemptId)).get())?.n ?? 0) + 1;
-      return db.insert(steps).values({ attemptId, position, type: input.type, command: input.command ?? null, logLocator: input.logLocator ?? null }).returning().get();
-    });
-  }
-
-  updateStep(id: number, patch: Partial<Pick<StepRow, 'state' | 'verdict' | 'logLocator' | 'startedAt' | 'endedAt'>>): Promise<StepRow> {
-    return this.db.write((db) => db.update(steps).set(patch).where(eq(steps.id, id)).returning().get()) as Promise<StepRow>;
   }
 
   /**

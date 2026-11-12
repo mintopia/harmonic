@@ -26,8 +26,7 @@ function label(names: string[]): string {
 
 /**
  * Combine per-verifier verdicts: any `inconclusive` → `escalate`; else any `fail` → `block`; else all `pass`
- * (including the empty set) → `proceed`; else `escalate`. Shared by `src` and `web` (imported directly by
- * `web/src/verification-attempts-model.ts`).
+ * (including the empty set) → `proceed`; else `escalate`.
  */
 export function combineVerdicts(verdicts: VerifierVerdict[]): VerificationDecision {
   const inconclusive = namesWith(verdicts, 'inconclusive');

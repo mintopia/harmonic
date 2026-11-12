@@ -20,7 +20,6 @@ import {
   type TaskExecution,
   type WorkflowChosen,
   type TaskState,
-  type MergeStatus,
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
@@ -983,7 +982,6 @@ export class TaskService {
         state: 'ready',
         escalationReason: null,
         escalationCause: null,
-        mergeStatus: null,
         updatedAt: Date.now(),
         feedback: null,
         continuationChoice: continuation ?? null,
@@ -1020,7 +1018,7 @@ export class TaskService {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ state: 'escalated', escalationReason: reason, escalationCause: cause ?? null, mergeStatus: null, updatedAt: Date.now() })
+          .set({ state: 'escalated', escalationReason: reason, escalationCause: cause ?? null, updatedAt: Date.now() })
           .where(eq(tasks.id, id))
           .returning()
           .get(),
@@ -1097,7 +1095,7 @@ export class TaskService {
       const row = await this.db.write((db) =>
         db
           .update(tasks)
-          .set({ state, mergeStatus: null, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null, escalationCause: null }) })
+          .set({ state, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null, escalationCause: null }) })
           .where(eq(tasks.id, id))
           .returning()
           .get(),
@@ -1115,14 +1113,6 @@ export class TaskService {
       }
       return task;
     });
-  }
-
-  /** Set the live merge indicator (`merging` / `resolving-conflicts`, or null at rest) and broadcast it. Orthogonal to `state`; every `setState`/`escalate`/`requeue` clears it. */
-  async setMergeStatus(id: number, mergeStatus: MergeStatus | null): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db.update(tasks).set({ mergeStatus, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
-    );
-    return await this.changed(row!);
   }
 
   /**

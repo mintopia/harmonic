@@ -345,36 +345,6 @@ export class TaskArchive {
     return dir;
   }
 
-  private async createOutputLog(root: string, attemptNumber: number, stage: 'pre-merge' | 'post-merge', stepId: string): Promise<VerificationOutputLog> {
-    const key = `verification/${stage}/${safeSegment(stepId)}/output.log`;
-    const path = join(root, 'attempts', String(attemptNumber), key);
-    await mkdir(dirname(path), { recursive: true });
-    return { path, key };
-  }
-
-  async verificationOutputLog(
-    task: TaskRow,
-    attemptNumber: number,
-    stage: 'pre-merge' | 'post-merge',
-    stepId: string,
-  ): Promise<VerificationOutputLog | null> {
-    try {
-      return await this.createOutputLog(await this.ensure(task), attemptNumber, stage, stepId);
-    } catch (err) {
-      warn('archive: verification output directory failed', err, { taskId: task.id, attemptNumber, stage });
-      return null;
-    }
-  }
-
-  async epicVerificationOutputLog(workspaceId: number, epicRef: TrackerRef, attemptNumber: number, commandId: string, stage: 'pre-merge' | 'post-merge' = 'pre-merge'): Promise<VerificationOutputLog | null> {
-    try {
-      return await this.createOutputLog(await this.ensureEpic(workspaceId, epicRef), attemptNumber, stage, commandId);
-    } catch (err) {
-      warn('archive: epic verification output directory failed', err, { workspaceId, epicRef, attemptNumber });
-      return null;
-    }
-  }
-
   /** Archive the Route Classifier's Resolved Prompt at `<attempt>/routing/classifier/prompt.md`. Best-effort: resolves null (never throws) when the write fails. */
   async appendRoutingPrompt(task: TaskRow, attemptNumber: number, prompt: string): Promise<{ locator: string; promptIndex: number } | null> {
     const rel = 'routing/classifier';

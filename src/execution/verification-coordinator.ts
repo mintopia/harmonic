@@ -13,7 +13,7 @@ import { pricesForHarness } from '../domain/pricing.js';
 import { runTimedCriticDrive, type CriticHarnessDrive } from '../verification/critic.js';
 import type { AgentDriveRequest, AgentDriveResult, EpicSubject } from './workflow-engine.js';
 
-export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent' | 'onCriticLogEvent'>;
+export type VerificationEvents = Pick<RunnerEvents, 'onAttemptEvent' | 'onAttemptLogEvent'>;
 
 export interface VerificationCoordinatorDeps {
   attempts: AttemptStore;

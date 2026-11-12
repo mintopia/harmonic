@@ -340,8 +340,6 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         const tone: LifecycleTimelineTone = state === 'passed' ? 'passed' : state === 'failed' ? 'failed' : 'neutral';
         return { ...base, label: n !== null ? `Attempt ${n} · ${state ?? 'ended'}` : 'Attempt ended', detail: clip(text(data?.reason) ?? text(data?.feedback)), tone, tag: null };
       }
-      case 'verification':
-        return { ...base, ...verificationRow(data) };
       case 'step-run': {
         const row = stepRunRow(data);
         return row ? { ...base, ...row } : [];

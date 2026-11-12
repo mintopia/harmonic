@@ -137,11 +137,8 @@ tests/transcript-timeline-model.test.ts
 tests/turn-listeners.test.ts
 tests/ui-primitives.test.ts
 tests/unified-diff.test.ts
-tests/verification-attempts-model.test.ts
-tests/verification-attempts.test.ts
 tests/verification-combine.test.ts
 tests/verification-override-model.test.ts
-tests/verifier-status.test.ts
 tests/waitfor-timeout.test.ts
 tests/work-context-key.test.ts
 tests/work-ordering.test.ts

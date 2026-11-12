@@ -793,18 +793,11 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 340
-          },
-          "budgetBase": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "example": 0
           }
         },
         "required": [
           "attempts",
-          "total",
-          "budgetBase"
+          "total"
         ]
       },
       "ModelUsageInput": {
@@ -5873,17 +5866,6 @@
             ],
             "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
           },
-          "verifiedRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "refs/harmonic/direct/attempt-9137"
-          },
           "pullRequestUrl": {
             "anyOf": [
               {
@@ -5970,7 +5952,6 @@
           "branch",
           "baseBranch",
           "verifiedHeadOid",
-          "verifiedRef",
           "pullRequestUrl",
           "usage",
           "toolCalls",
@@ -12162,18 +12143,11 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "example": 340
-          },
-          "budgetBase": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "example": 0
           }
         },
         "required": [
           "attempts",
-          "total",
-          "budgetBase"
+          "total"
         ],
         "additionalProperties": false
       },
@@ -17302,17 +17276,6 @@
             ],
             "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
           },
-          "verifiedRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "example": "refs/harmonic/direct/attempt-9137"
-          },
           "pullRequestUrl": {
             "anyOf": [
               {
@@ -17399,7 +17362,6 @@
           "branch",
           "baseBranch",
           "verifiedHeadOid",
-          "verifiedRef",
           "pullRequestUrl",
           "usage",
           "toolCalls",
@@ -25461,7 +25423,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Ordered attempt timeline, with each attempt task and its outcome, plus the attempt number the budget counts from.",
+            "description": "Ordered attempt timeline, with each attempt task and its outcome.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25546,7 +25508,6 @@
                               "attempt-started",
                               "attempt-finished",
                               "lifecycle",
-                              "verification",
                               "step-run",
                               "guardrail",
                               "operator-retry",
@@ -26349,278 +26310,6 @@
         }
       }
     },
-    "/api/attempts/{id}/verification-attempts": {
-      "get": {
-        "tags": [
-          "Attempts"
-        ],
-        "description": "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Key scopes: full, attempt, read.",
-        "parameters": [
-          {
-            "schema": {
-              "example": 50,
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 200
-            },
-            "in": "query",
-            "name": "limit",
-            "required": false
-          },
-          {
-            "schema": {
-              "example": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "in": "query",
-            "name": "offset",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 4821
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The attempt's verification attempts in sequence order.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "verificationAttempts": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "number",
-                            "example": 4210
-                          },
-                          "attemptId": {
-                            "type": "number",
-                            "example": 61
-                          },
-                          "seq": {
-                            "type": "number",
-                            "example": 1
-                          },
-                          "ts": {
-                            "type": "number",
-                            "example": 1784032140000
-                          },
-                          "mechanism": {
-                            "type": "string",
-                            "enum": [
-                              "critic",
-                              "command"
-                            ],
-                            "example": "command"
-                          },
-                          "inputOid": {
-                            "type": "string",
-                            "example": "a1b2c3d4"
-                          },
-                          "verdict": {
-                            "type": "string",
-                            "enum": [
-                              "pass",
-                              "fail",
-                              "inconclusive"
-                            ],
-                            "example": "pass"
-                          },
-                          "summary": {
-                            "type": "string",
-                            "example": "all checks passed"
-                          },
-                          "output": {
-                            "type": "string",
-                            "example": ""
-                          },
-                          "promptLocator": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "example": "verification/pre-merge/12/prompt.md"
-                          },
-                          "harness": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "example": "claude"
-                          },
-                          "hasTranscript": {
-                            "type": "boolean",
-                            "example": false
-                          },
-                          "outputTruncated": {
-                            "type": "boolean",
-                            "example": false
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "attemptId",
-                          "seq",
-                          "ts",
-                          "mechanism",
-                          "inputOid",
-                          "verdict",
-                          "summary",
-                          "output",
-                          "promptLocator",
-                          "harness",
-                          "hasTranscript",
-                          "outputTruncated"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "total": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991,
-                      "example": 340
-                    }
-                  },
-                  "required": [
-                    "verificationAttempts",
-                    "total"
-                  ],
-                  "additionalProperties": false,
-                  "description": "The attempt's verification attempts in sequence order."
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No attempt has that id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/verification-attempts/{id}": {
-      "get": {
-        "tags": [
-          "Attempts"
-        ],
-        "description": "Read a verification task outcome and its captured command output. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 4821
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The verification task's captured command output and summary, and whether a critic transcript exists.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "output": {
-                      "type": "string"
-                    },
-                    "summary": {
-                      "type": "string"
-                    },
-                    "hasTranscript": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "output",
-                    "summary",
-                    "hasTranscript"
-                  ],
-                  "additionalProperties": false,
-                  "description": "The verification task's captured command output and summary, and whether a critic transcript exists."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/verification-attempts/{id}/output": {
-      "get": {
-        "tags": [
-          "Attempts"
-        ],
-        "description": "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 4821
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The full combined stdout+stderr of the verify command.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "The full combined stdout+stderr of the verify command."
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such verification attempt, or no archived full output.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/attempts/{id}/resolved-prompt": {
       "get": {
         "tags": [
@@ -26691,126 +26380,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/verification-attempts/{id}/log": {
-      "get": {
-        "tags": [
-          "Attempts"
-        ],
-        "description": "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991,
-              "example": 4821
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The critic session transcript events, or an explicit unavailable state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "available"
-                          ]
-                        },
-                        "events": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "number",
-                                "example": 55210
-                              },
-                              "attemptId": {
-                                "type": "number",
-                                "example": 61
-                              },
-                              "seq": {
-                                "type": "number",
-                                "example": 42
-                              },
-                              "ts": {
-                                "type": "number",
-                                "example": 1784032140000
-                              },
-                              "type": {
-                                "type": "string",
-                                "example": "lifecycle"
-                              },
-                              "payload": {
-                                "example": {
-                                  "event": "merged",
-                                  "oid": "0f758cd2200565e7605902a86c2827c65ad25ce0"
-                                }
-                              }
-                            },
-                            "required": [
-                              "id",
-                              "attemptId",
-                              "seq",
-                              "ts",
-                              "type",
-                              "payload"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "liveCursor": {
-                          "type": "number"
-                        },
-                        "fromArchive": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "status",
-                        "events",
-                        "liveCursor"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "unavailable"
-                          ]
-                        },
-                        "liveCursor": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "status",
-                        "liveCursor"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ],
-                  "description": "The critic session transcript events, or an explicit unavailable state."
                 }
               }
             }

@@ -1,12 +1,12 @@
 import { createClient } from '@libsql/client';
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notExists, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
 import { aggregateStats } from '../domain/stats-computation.js';
 import { stepRunVerification } from '../domain/stats-aggregates.js';
-import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, verificationAttempts, workflowStepRuns, workspaces } from './schema.js';
+import { attemptEvents, attempts, guardrailEvents, isTaskAttempt, tasks, workflowStepRuns, workspaces } from './schema.js';
 import * as schema from './schema.js';
 import {
   invalidProbeIterationsReason,
@@ -129,20 +129,7 @@ async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promis
       .all()),
   ].flatMap((r) => (r.outcome ? [stepRunVerification(r.action, r.outcome)] : []));
 
-  // Legacy rows count only for Tasks with no step runs, so dual-written history is not doubled.
-  const legacyRows = await db
-    .select({ mechanism: verificationAttempts.mechanism, verdict: verificationAttempts.verdict })
-    .from(verificationAttempts)
-    .innerJoin(attempts, eq(verificationAttempts.attemptId, attempts.id))
-    .innerJoin(tasks, eq(attempts.taskId, tasks.id))
-    .where(and(
-      gte(verificationAttempts.ts, from),
-      lte(verificationAttempts.ts, to),
-      taskScope,
-      notExists(db.select({ one: sql`1` }).from(workflowStepRuns).where(eq(workflowStepRuns.taskId, attempts.taskId))),
-    ))
-    .all();
-  const verifications = [...stepRows.filter((r) => r !== null), ...legacyRows];
+  const verifications = stepRows.filter((r) => r !== null);
 
   const guardrailTrips = await db
     .selectDistinct({ attemptId: guardrailEvents.attemptId, dimension: guardrailEvents.dimension })

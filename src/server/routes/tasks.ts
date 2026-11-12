@@ -17,7 +17,6 @@ import {
   WAYFINDER_TYPES,
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
-  VERIFICATION_MECHANISMS,
   TASK_EXECUTION_POD_STATES,
   WORKFLOW_CHOSEN,
   isEpicAttempt,
@@ -34,7 +33,7 @@ import { mergeUsage, type AttemptUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage, type TranscriptLog } from '../../execution/transcript-log.js';
 import { adapterFor } from '../../execution/harness/registry.js';
 import { attemptTimelineToApi, attemptToApi, taskToApi, tasksToApi, ticketTimelineToApi } from '../serialize.js';
-import { atRestWorkspaceId, costOfAttempts, epicToListRow, verificationAttemptToApi } from '../dto.js';
+import { atRestWorkspaceId, costOfAttempts, epicToListRow } from '../dto.js';
 import type { ApiTaskListItem } from '../dto.js';
 import { escalationCauseSchema, taskClassifierSchema, taskRoutingSchema } from '../../domain/task-routing.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, attemptUsageSchema, okResponseSchema } from '../schemas.js';
@@ -351,9 +350,8 @@ const attemptSchema = z
     /** Worktree mode: the attempt's branch and the branch it was cut from. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     baseBranch: z.string().nullable().meta({ example: 'main' }),
-    /** The verified head OID and the private ref it is pinned to; null when no verified head was produced. */
+    /** The verified head OID; null when no verified head was produced. */
     verifiedHeadOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
-    verifiedRef: z.string().nullable().meta({ example: 'refs/harmonic/direct/attempt-9137' }),
     /** The PR/MR the open-PR Merge Fate opened for this Attempt; null when none was opened (other fates, or a Code Repository that opens none). */
     pullRequestUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/pull/812' }),
     usage: attemptUsageSchema.nullable(),
@@ -387,7 +385,7 @@ const eventsListResponseSchema = listResponse('events', attemptEventSchema);
 const ticketTimelineEventSchema = z.object({
   attemptId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'verification', 'step-run', 'guardrail', 'operator-retry', 'agent-message', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'lifecycle', 'step-run', 'guardrail', 'operator-retry', 'agent-message', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -416,35 +414,6 @@ const guardrailEventSchema = z.object({
 });
 
 const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardrailEventSchema);
-
-/** One persisted verification attempt as the REST API serves it. */
-const verificationAttemptSchema = z.object({
-  id: z.number().meta({ example: 4210 }),
-  /** The Attempt this row is keyed to (`verification_attempts.attempt_id`). */
-  attemptId: z.number().meta({ example: 61 }),
-  seq: z.number().meta({ example: 1 }),
-  ts: z.number().meta({ example: 1784032140000 }),
-  /** Which verifier produced this attempt. */
-  mechanism: z.enum(VERIFICATION_MECHANISMS).meta({ example: 'command' }),
-  /** The tree oid the verifier ran against. */
-  inputOid: z.string().meta({ example: 'a1b2c3d4' }),
-  /** This verifier's verdict for the attempt. */
-  verdict: z.enum(['pass', 'fail', 'inconclusive']).meta({ example: 'pass' }),
-  /** Short human summary of the outcome. */
-  summary: z.string().meta({ example: 'all checks passed' }),
-  /** Raw verifier output, capped to a head and tail with the elided middle marked. The full text, when kept, is reported by `outputTruncated`. */
-  output: z.string().meta({ example: '' }),
-  /** Archive locator of the critic's Resolved Prompt, read with `GET /api/attempts/:attemptId/resolved-prompt?locator=`; null for a command verifier or an older row. */
-  promptLocator: z.string().nullable().meta({ example: 'verification/pre-merge/12/prompt.md' }),
-  /** The critic harness that produced the transcript; null for a command verifier or an older row. */
-  harness: z.string().nullable().meta({ example: 'claude' }),
-  /** Whether a critic transcript is available; fetch the parsed log from `GET /api/verification-attempts/:id/log`. */
-  hasTranscript: z.boolean().meta({ example: false }),
-  /** Whether the output above was capped; the full text is at `GET /api/verification-attempts/:id/output`. */
-  outputTruncated: z.boolean().meta({ example: false }),
-});
-
-const verificationAttemptsListResponseSchema = listResponse('verificationAttempts', verificationAttemptSchema);
 
 const usageResponseSchema = attemptUsageSchema.extend({
   cost: costSchema.nullable(),
@@ -924,8 +893,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => {
-      const task = await ctx.tasks.addDependency(req.params.id, req.body.dependsOnId);
-      return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
+      return await taskToApi(ctx, await ctx.tasks.addDependency(req.params.id, req.body.dependsOnId));
     },
   );
 
@@ -940,8 +908,7 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       },
     },
     async (req) => {
-      const task = await ctx.tasks.removeDependency(req.params.id, req.params.depId);
-      return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
+      return await taskToApi(ctx, await ctx.tasks.removeDependency(req.params.id, req.params.depId));
     },
   );
 
@@ -1105,9 +1072,9 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       const { limit, offset } = req.query;
-      const { attempts, budgetBase } = await attemptTimelineToApi(ctx, req.params.id);
+      const { attempts } = await attemptTimelineToApi(ctx, req.params.id);
       const { items, total } = paginate(attempts, { limit, offset });
-      return { attempts: items, total, budgetBase };
+      return { attempts: items, total };
     },
   );
 
@@ -1391,82 +1358,6 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
   );
 
   app.get(
-    '/attempts/:id/verification-attempts',
-    {
-      schema: {
-        tags: ['Attempts'],
-        description:
-          "Replay an attempt's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109).",
-        params: idParamsSchema,
-        querystring: paginationQuerySchema,
-        response: {
-          200: verificationAttemptsListResponseSchema.describe("The attempt's verification attempts in sequence order."),
-          404: errorResponse('No attempt has that id.'),
-        },
-      },
-    },
-    async (req) => {
-      const run = await ctx.attempts.get(req.params.id);
-      if (!isTaskAttempt(run)) throw new DomainError('not_found', `Epic Attempt ${run.id} has no task verification status`);
-      const { limit, offset } = req.query;
-      const attempts = await ctx.verificationAttempts.list(run.id);
-      const { items, total } = paginate(
-        attempts.map(verificationAttemptToApi),
-        { limit, offset },
-      );
-      return { verificationAttempts: items, total };
-    },
-  );
-
-  app.get(
-    '/verification-attempts/:id',
-    {
-      schema: {
-        tags: ['Attempts'],
-        description: 'Read a verification task outcome and its captured command output.',
-        params: idParamsSchema,
-        response: {
-          200: z
-            .object({ output: z.string(), summary: z.string(), hasTranscript: z.boolean() })
-            .describe("The verification task's captured command output and summary, and whether a critic transcript exists."),
-        },
-      },
-    },
-    async (req) => {
-      const attempt = await ctx.verificationAttempts.get(req.params.id);
-      if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
-      return { output: attempt.output, summary: attempt.summary, hasTranscript: attempt.transcriptPath !== null };
-    },
-  );
-
-  app.get(
-    '/verification-attempts/:id/output',
-    {
-      schema: {
-        tags: ['Attempts'],
-        description:
-          "Stream a command verification attempt's full, uncapped output from the Archive (text/plain). 404 when the attempt's output was not truncated or the Archive no longer holds it.",
-        params: idParamsSchema,
-        response: {
-          200: z.any().describe('The full combined stdout+stderr of the verify command.'),
-          404: errorResponse('No such verification attempt, or no archived full output.'),
-        },
-      },
-    },
-    async (req, reply) => {
-      const attempt = await ctx.verificationAttempts.get(req.params.id);
-      if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
-      const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
-      const owner = run ? await archiveOwner(run) : null;
-      const file = attempt.fullOutputKey && run && owner ? await ctx.archive.archivedVerificationOutput(owner, run.number, attempt.fullOutputKey) : null;
-      if (!file) throw new DomainError('not_found', `no archived full output for verification attempt ${attempt.id}`);
-      const stream = createReadStream(file);
-      reply.raw.once('close', () => stream.destroy());
-      return reply.header('content-type', 'text/plain; charset=utf-8').send(stream);
-    },
-  );
-
-  app.get(
     '/attempts/:id/resolved-prompt',
     {
       schema: {
@@ -1499,40 +1390,6 @@ export async function taskRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
       const text = run && owner ? await ctx.archive.readResolvedPrompt(owner, run.number, req.query.locator, req.query.index) : null;
       if (text === null) throw new DomainError('not_found', `no archived resolved prompt for attempt ${req.params.id} at that locator/index`);
       return reply.header('content-type', 'text/plain; charset=utf-8').send(text);
-    },
-  );
-
-  app.get(
-    '/verification-attempts/:id/log',
-    {
-      schema: {
-        tags: ['Attempts'],
-        description:
-          "Read a critic verification attempt's native harness transcript — what the critic itself read, ran, and reasoned. Falls back to the Archive's copy when the native transcript is missing or unreadable; unavailable only when neither can be read.",
-        params: idParamsSchema,
-        response: {
-          200: attemptLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
-        },
-      },
-    },
-    async (req) => {
-      const attempt = await ctx.verificationAttempts.get(req.params.id);
-      if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
-      const range = { startedAt: 0, finishedAt: null };
-      let log = await readTranscriptLog({ harness: attempt.harness, path: attempt.transcriptPath, ...range });
-      let fromArchive = false;
-      if (log.status !== 'available') {
-        const run = await ctx.attempts.get(attempt.attemptId).catch(() => null);
-        const owner = run ? await archiveOwner(run) : null;
-        const archived = run && owner ? await ctx.archive.archivedTranscript(owner, run.number, 'verification', attempt.transcriptPath) : null;
-        if (archived) {
-          log = await readTranscriptLog({ harness: attempt.harness, path: archived, ...range });
-          fromArchive = log.status === 'available';
-        }
-      }
-      return log.status === 'available'
-        ? { ...log, liveCursor: 0, ...(fromArchive ? { fromArchive: true } : {}), events: log.events.map((event) => ({ ...event, attemptId: attempt.attemptId })) }
-        : { ...log, liveCursor: 0 };
     },
   );
 

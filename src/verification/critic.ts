@@ -9,7 +9,6 @@ import { adapterFor } from '../execution/harness/registry.js';
 import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from '../execution/prompt-assembly.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
-import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 import { startOperation } from '../telemetry/operations.js';
 import { logger } from '../logger.js';
 import type { StepArchiveWriter } from '../archive/task-archive.js';
@@ -397,19 +396,5 @@ async function runCriticArchived(args: RunCriticArgs, archive: StepArchiveWriter
     harness: args.harnessId,
     sessionId,
     ...(usage ? { usage } : {}),
-  };
-}
-
-/** Map a {@link CriticAttempt} to the persisted {@link VerificationAttemptInput}. */
-export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemptInput {
-  return {
-    mechanism: attempt.verifier,
-    inputOid: attempt.inputOid,
-    verdict: attempt.verdict,
-    summary: attempt.summary,
-    output: attempt.output,
-    transcriptPath: attempt.transcriptPath,
-    harness: attempt.harness,
-    promptKey: attempt.promptKey,
   };
 }
