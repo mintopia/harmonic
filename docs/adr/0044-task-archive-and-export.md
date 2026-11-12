@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-09-30
 
+Amended 2026-11-12 by ADR-0059: the "teed per Step" archive layout is replaced by one directory per step run, `attempts/<n>/steps/<pass|_>-<stepId>-<stepRunId>/`; verify output is kept per `run:` step run.
+
 Current status (2026-10-02): The file Archive and Export paths are implemented
 in `src/archive/task-archive.ts` and `src/archive/task-export.ts`. This ADR
 supersedes only ADR-0007's no-copy/no-retention clause; the database still

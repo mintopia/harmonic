@@ -3,6 +3,8 @@
 Status: accepted
 Date: 2026-10-31
 
+Amended 2026-11-12 by ADR-0059: a "step-run attempt" is now a Pass; one Epic Attempt per run, shown in the same Attempt view as Tickets.
+
 Epics execute through the same engine as Tickets (ADR-0053). A bundled
 workflow `epic`, declaring `subject: epic`, expresses what ADR-0028 hardcodes
 today: Epic Pre-Merge Verification, the bounded resolve loop, and the Merge of

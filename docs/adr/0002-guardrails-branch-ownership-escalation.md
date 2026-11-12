@@ -4,6 +4,8 @@ Status: accepted
 Date: 2026-08-28
 Reconciled: 2026-10-02. Escalation actions follow ADR-0038; guardrails and branch ownership remain current.
 
+Amended 2026-11-12 by ADR-0059: "Step" in the escalation actions means a workflow step run.
+
 Part of the 2026-08-28 ADR reset (see README.md).
 
 ## Guardrails are runtime limits that trip to Escalation

@@ -4,6 +4,8 @@ Status: accepted
 Date: 2026-08-28
 Reconciled: 2026-10-02. Staged verifier lists follow ADR-0028/0037; merge-time checkout placement follows ADR-0039.
 
+Amended 2026-11-12 by ADR-0059: per-verifier status and the always-visible verification block are realised as check and critic step runs; the critic transcript is the critic step run's Session. The verdict and `inconclusive` rules stand.
+
 Part of the 2026-08-28 ADR reset (see README.md). The in-place critic is
 implemented (#385): the provisioned checkout, its index management, the mutation
 fingerprint, and merge-cleanliness are gone; restraint is by prompt instruction.

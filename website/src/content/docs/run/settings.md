@@ -18,8 +18,6 @@ whole instance:
 - model prices (so cost is accurate),
 - prompts, in the Prompt Library (how Harmonic talks to
   agents and how agents talk to each other),
-- the verification checks that run before a merge (commands and named
-  critics, in the order you set),
 - Routing Labels (see [Routing Labels](#routing-labels)),
 - notification channels,
 - permission rules,
@@ -67,25 +65,24 @@ A prompt can include another by its code, written `${{ prompts.<code> }}`, so
 shared text such as **Conflict resolution** is defined once and reused. The
 library covers:
 
-- **Task prompt**: wraps a native Task's own prompt. The default, a bare
-  `{prompt}`, sends the prompt as written.
-- **Drive prompt**: the prompt for a mirrored ticket that Harmonic runs
-  unattended, with **Unattended reminder** added to every auto-driven turn.
-- **Continue prompt**: the re-prompt sent when a turn ends without the task
-  finishing or escalating.
-- **Commit nudge**: sent when a turn ends with uncommitted changes.
+- **Workflow prompts**: the prompts that workflow steps send, such as the
+  implement prompts, **Continue prompt** and **Commit nudge**. Workflows pick
+  them by code, so to change one, duplicate it and point the step at your copy.
 - **Pause message**: sent to a running Task when you pause it, asking the agent
   to finish its turn and wait.
-- **Merge conflict resolver**, **Epic merge conflict resolver** and **Epic
-  refresh resolver**: the turns that resolve a merge conflict, or a conflict
-  when an Epic branch is refreshed from the default branch.
-- **Epic resolve prompt** and **Epic verification resolver suffix**: the turns
-  that fix a failing Epic verification.
+- **Epic merge conflict resolver** and **Epic refresh resolver**: the turns
+  that resolve a conflict when an Epic is merged, or refreshed from the default
+  branch.
 - Shared pieces such as **Conflict resolution**, **Self-heal**, **Operator
   message**, **Prior session**, the peer message prompts that shape how Attempts
   see each other's messages, and the Critic prompts such as **Critic role**.
 
-Each Critic's own prompt is set on that Critic on the Verification tab.
+A Critic's own prompt is set on its `critic` step in
+[Workflows](/work/workflows/#configure-the-critic).
+
+Only **Pause message**, **Epic merge conflict resolver** and **Epic refresh
+resolver** can be overridden per Workspace. Everything else is customised
+through the Prompt Library and workflows.
 
 A prompt already sent is not rewritten. Edits apply the next time Harmonic
 sends that prompt. To see the prompt an Attempt was sent, read its archive on
@@ -244,14 +241,8 @@ already customised their list.
   ticket's timeline records a *Route changed* event.
 - An Epic's own turns (resolving it, Refresh, and merge conflicts) route by
   the Epic's own labels, not by whichever Member happens to be running.
-- Verification Critics aren't routed by labels. Each Critic has its own
-  Harness and Model, and has no fallback to the Workspace or global default
-  Harness. A Critic's Model is picked from its Harness's model list, and saving
-  a Critic whose Model isn't in that list is rejected with an error naming both.
-- Critics saved before this rule were migrated when Harmonic loaded its
-  config. A Critic with no Harness got the one Harness whose model catalog
-  lists its Model. If none or several matched, it got the global default
-  Harness and a warning naming the Critic was logged. No Critic was removed.
+- Critics aren't routed by labels. Each `critic` step names its own Harness and
+  Model, with no fallback to the Workspace or global default Harness.
 
 ### What you see
 
@@ -276,21 +267,17 @@ and the Harness and offers two ways out:
 - **Retry** requeues the ticket and starts a new Attempt once the problem is
   fixed. See [Steering the fleet](/work/steering-the-fleet/#retry-accept-and-close).
 
-## Unattended drive
+## Merge-conflict turns
 
-These settings are on the **Execution** tab, under **Unattended drive**. They
-apply to mirrored tickets that Harmonic runs without anyone watching.
+On the **Running Tickets** tab, under **Bounding an Attempt**, **Merge-conflict
+turns** sets how many agent turns resolve a merge conflict before the work is
+escalated. It applies to a Ticket workflow's `merge` step and to Epic
+integration, and can be overridden per Workspace and per Ticket.
 
-- **Merge fate**: what happens to a finished Attempt's work. **Merge
-  automatically** (the default) merges the branch. **Open a pull request**
-  pushes the branch and opens one. **Leave the branch** keeps the branch for you
-  or CI to pick up. Merge fate applies to worktree-isolated Tasks, which have a
-  branch of their own.
-- **Continue attempts**: how many times an unfinished auto-driven Attempt is
-  re-prompted before it is treated as unresolved. The default is 10.
-
-Each can be overridden per Workspace. The text of the prompts these settings
-work with is on the [Prompts](#prompts) tab.
+What happens to finished work (merge, open a pull request, or leave the
+branch) is set by the workflow's publish step, not by a setting. See
+[Reviewing and merging](/work/reviewing-and-merging/). The text of the
+conflict prompts is on the [Prompts](#prompts) tab.
 
 ## Agent Messages
 
