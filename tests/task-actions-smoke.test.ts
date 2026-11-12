@@ -36,7 +36,7 @@ describe('TaskActions smoke (issue #469)', () => {
   });
 
   it('renders the escalated action bar without Delete for an escalated task', async () => {
-    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
+    const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: true });
 
     await renderActions({ task, variant: 'bar' });
 
@@ -53,14 +53,14 @@ describe('TaskActions smoke (issue #469)', () => {
     expect([...bar.lastElementChild!.querySelectorAll('button')].map((b) => b.textContent?.replace(/ .*/, ''))).toEqual(['Retry…', 'Accept']);
   });
 
-  it('disables Accept when the escalated task has no candidate to merge', async () => {
+  it('does not render Accept when the escalated task has no candidate to merge', async () => {
     const task = makeTask({ id: 7, prompt: 'Add retry backoff', summary: 'Add retry backoff', state: 'escalated', hasCandidate: false });
 
     await renderActions({ task, variant: 'bar' });
 
-    const accept = [...host!.querySelectorAll('button')].find((b) => b.textContent?.includes('Accept'));
-    expect(accept?.disabled).toBe(true);
-    expect(accept?.title).toBe('No candidate commits to accept');
+    const buttons = [...host!.querySelectorAll('button')].map((b) => b.textContent);
+    expect(buttons.some((b) => b?.includes('Accept'))).toBe(false);
+    expect(buttons).toContain('Retry…');
   });
 
   it('disables the escalation actions while an Accept is merging', async () => {

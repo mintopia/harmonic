@@ -21,10 +21,11 @@ export type TaskAction =
   | 'uncancel'
   | 'delete';
 
-export function taskActions(state: TaskState, wallClockDeadline: number | null = null): TaskAction[] {
+/** `hasCandidate` gates Accept: the server refuses it (409) with no commits ahead of base, so it is not offered. */
+export function taskActions(state: TaskState, wallClockDeadline: number | null = null, hasCandidate = true): TaskAction[] {
   switch (state) {
     case 'escalated':
-      return ['delete', 'close', 'retry', 'accept'];
+      return hasCandidate ? ['delete', 'close', 'retry', 'accept'] : ['delete', 'close', 'retry'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
@@ -39,19 +40,6 @@ export function taskActions(state: TaskState, wallClockDeadline: number | null =
       return ['delete'];
   }
   return [];
-}
-
-export interface EscalationActions {
-  /** Accept merges the branch's candidate, so it needs one (commits ahead of base). */
-  accept: boolean;
-  retry: boolean;
-  close: boolean;
-}
-
-/** Which of the three escalation actions an escalated ticket can take right now; null off the surface. */
-export function escalationActions(task: Pick<Task, 'hasCandidate' | 'state'>): EscalationActions | null {
-  if (task.state !== 'escalated') return null;
-  return { accept: task.hasCandidate, retry: true, close: true };
 }
 
 export interface WorkflowEscalationNotes {

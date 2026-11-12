@@ -273,15 +273,20 @@ export class TrackerEpicService implements EpicService {
     const coordinator = entry?.epicIntegrate;
     if (!entry || !coordinator || !this.epicAttempts) return null;
     if (entry.epics.isInPlace(epicRef, await this.tasks.list({ workspaceId }))) {
-      return { status: 'noop', reason: 'direct-mode epic completes in place; nothing to integrate' };
+      return null;
     }
-    if (coordinator.heldReason(epicRef) === null) return null;
-    const attempt = await this.epicAttempts.currentForEpic({ workspaceId, epicRef });
-    if (attempt.state !== 'escalated') return null;
+    if ((await this.escalationHold(workspaceId, epicRef)) === null) return null;
     coordinator.resume(epicRef, guidance, continuation);
     const memberRefs = entry.epics.membersOf(epicRef);
     const members = await this.currentMemberStates(workspaceId, memberRefs);
     return coordinator.submit({ ref: epicRef, members, memberRefs });
+  }
+
+  /** Held only once the escalated Attempt row exists too; `integrate.held` and `retryEpic` both read this. */
+  private async escalationHold(workspaceId: number, epicRef: TrackerRef): Promise<string | null> {
+    const held = this.entries.get(workspaceId)?.epicIntegrate?.heldReason(epicRef) ?? null;
+    if (held === null || !this.epicAttempts) return null;
+    return (await this.epicAttempts.currentForEpic({ workspaceId, epicRef })).state === 'escalated' ? held : null;
   }
 
   async epicBaseNotReady(task: TaskRow): Promise<EpicBaseGate> {
@@ -394,7 +399,7 @@ export class TrackerEpicService implements EpicService {
     const verifiers = this.integration !== 'lifecycle-only' ? this.integration.getConfig().verify.epic.preMerge : { commands: [], critics: [] };
     const status = integrate?.verificationStatus(epicRef) ?? null;
     const labels = [...verifiers.commands.map((command) => [command.command, ...command.args].join(' ')), ...verifiers.critics.map((_, index) => `Critic ${index + 1}`)];
-    return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: integrate?.heldReason(epicRef) ?? null, phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
+    return { integration: { branch, ...integration }, verification: { status, configured, stages: [{ label: 'Epic pre-merge', status, verifiers: labels }] }, integrate: { inFlight: integrate?.isInFlight(epicRef) ?? false, held: await this.escalationHold(workspaceId, epicRef), phase: integrate?.activePhase(epicRef) ?? null }, mergeSteps, timelineEvents };
   }
   private async epicBaseBranch(workspaceId: number): Promise<string | null> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return workspace ? resolveRepositoryDefaultBranch(workspace.workingDir).catch(() => null) : null; }
   private async verificationConfigured(workspaceId: number): Promise<boolean> { const workspace = (await this.getWorkspaces()).find((candidate) => candidate.id === workspaceId); return !!workspace && this.integration !== 'lifecycle-only' && this.integration.getConfig().verify.epic.preMerge.commands.length > 0; }

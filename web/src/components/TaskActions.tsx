@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import type { Task, StepType } from '../types';
-import { acceptPresentation, acceptedOutcome, escalationActions, taskActions, type TaskAction } from '../task-actions-model';
+import { acceptPresentation, acceptedOutcome, taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnRetry } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { RetryDialog } from './RetryDialog';
@@ -34,8 +34,7 @@ export function TaskActions({
   const [resumeOpen, setResumeOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
 
-  const actions = taskActions(task.state, task.wallClockDeadline);
-  const escalation = escalationActions(task);
+  const actions = taskActions(task.state, task.wallClockDeadline, task.hasCandidate);
   const accept = acceptPresentation(failedStep);
   // Persisted on the Task so actions stay disabled across a reload; `resolving-conflicts` is excluded so the operator can still Close.
   const acceptInFlight = task.mergeStatus === 'merging';
@@ -76,13 +75,6 @@ export function TaskActions({
     switch (action) {
       case 'accept': {
         const label = variant === 'card' ? 'Accept' : accept.label;
-        if (escalation && !escalation.accept) {
-          return (
-            <button key={action} className={btnAccept} disabled title="No candidate commits to accept">
-              {label}
-            </button>
-          );
-        }
         return (
           <button key={action} className={btnAccept} onClick={onAccept} disabled={accepting || acceptInFlight} title={accept.description}>
             {accepting || acceptInFlight ? 'Accepting…' : label}

@@ -762,6 +762,7 @@ export function EpicPage({
                     type="button"
                     className={btnAccept}
                     disabled={retrying || !guidance.trim()}
+                    title={guidance.trim() ? undefined : 'Enter guidance first'}
                     onClick={() => retryEpic('continue')}
                   >
                     Continue with guidance
@@ -770,6 +771,7 @@ export function EpicPage({
                     type="button"
                     className={btnRetry}
                     disabled={retrying || !guidance.trim()}
+                    title={guidance.trim() ? undefined : 'Enter guidance first'}
                     onClick={() => retryEpic('fresh')}
                   >
                     {retrying ? 'Requeuing…' : 'Retry and start fresh'}

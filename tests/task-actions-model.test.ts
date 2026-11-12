@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { acceptPresentation, acceptedOutcome, escalationActions, nextUnexecutedStep, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
+import { acceptPresentation, acceptedOutcome, nextUnexecutedStep, taskActions, workflowEscalationNotes } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
   it('offers the escalation dispositions on escalated, accept last, delete first', () => {
     expect(taskActions('escalated')).toEqual(['delete', 'close', 'retry', 'accept']);
+  });
+
+  it('hides Accept on escalated when there is no candidate — the server would 409', () => {
+    expect(taskActions('escalated', null, false)).toEqual(['delete', 'close', 'retry']);
+    expect(taskActions('escalated', null, true)).toContain('accept');
   });
 
   it('never offers plain cancel or run on escalated — the dispositions are Retry, Close, Accept', () => {
@@ -58,25 +63,6 @@ describe('taskActions', () => {
 
   it('returns [] for an unknown state instead of crashing (server version skew)', () => {
     expect(taskActions('some-future-state' as never)).toEqual([]);
-  });
-});
-
-describe('escalationActions', () => {
-  it('is null off the escalation surface, even with a candidate', () => {
-    expect(escalationActions({ state: 'ready', hasCandidate: true })).toBeNull();
-    expect(escalationActions({ state: 'working', hasCandidate: true })).toBeNull();
-  });
-
-  it('offers all three when the escalated ticket has a candidate', () => {
-    expect(escalationActions({ state: 'escalated', hasCandidate: true })).toEqual({
-      accept: true,
-      retry: true,
-      close: true,
-    });
-  });
-
-  it('withholds only Accept when the branch has no candidate', () => {
-    expect(escalationActions({ state: 'escalated', hasCandidate: false })).toEqual({ accept: false, retry: true, close: true });
   });
 });
 
