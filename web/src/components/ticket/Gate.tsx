@@ -32,7 +32,7 @@ export function Gate({
   if (model.kind !== 'result' && task.state === 'escalated') return null;
 
   if (model.kind === 'none') {
-    if (taskActions(task.state, task.wallClockDeadline).length === 0) return null;
+    if (taskActions(task.state, task.wallClockDeadline, task.hasCandidate).length === 0) return null;
     return (
       <div className={WRAP}>
         <TaskActions task={task} failedStep={failedStep} variant="footer" onEdit={onEdit} onChanged={onChanged} />

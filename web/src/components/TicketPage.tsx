@@ -269,12 +269,11 @@ export function TicketPage({
               </div>
               {workflowNotes && (
                 <dl className="mt-2 grid gap-1 text-small text-ink" aria-label="What each action does">
-                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).map(([name, text]) => (
+                  {([['Accept', workflowNotes.accept], ['Retry', workflowNotes.retry], ['Close', workflowNotes.close]] as const).filter(([name]) => name !== 'Accept' || task.hasCandidate).map(([name, text]) => (
                     <div key={name}>
                       <dt className="inline font-semibold">{name}</dt> <dd className="inline text-muted">{text}</dd>
                     </div>
                   ))}
-                  {!task.hasCandidate && <div className="text-muted">Accept is unavailable: no candidate commit on the Ticket branch.</div>}
                 </dl>
               )}
               {unconfiguredHarness && <UnconfiguredHarnessGate taskId={task.id} onChanged={onChanged} onClose={onClose} />}

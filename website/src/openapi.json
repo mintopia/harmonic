@@ -48119,7 +48119,7 @@
             }
           },
           "409": {
-            "description": "The Epic is not escalated or has no active whole-Epic coordinator.",
+            "description": "The Epic is not escalated (its hold is not yet recorded, or it completes in place) or has no active whole-Epic coordinator.",
             "content": {
               "application/json": {
                 "schema": {

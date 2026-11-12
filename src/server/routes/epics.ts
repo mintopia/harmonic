@@ -373,14 +373,14 @@ export async function epicRoutes(fastify: FastifyInstance, ctx: AppContext): Pro
         response: {
           200: epicIntegrateOutcomeSchema.describe('The outcome of retrying the Epic and requeuing it with operator guidance.'),
           404: errorResponse('No Workspace has that id.'),
-          409: errorResponse('The Epic is not escalated or has no active whole-Epic coordinator.'),
+          409: errorResponse('The Epic is not escalated (its hold is not yet recorded, or it completes in place) or has no active whole-Epic coordinator.'),
         },
       },
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       const outcome = await ctx.trackerManager.retryEpic(req.params.workspaceId, req.params.epicRef, req.body.guidance, req.body.continuation);
-      if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated`);
+      if (!outcome) throw new DomainError('conflict', `Epic ${req.params.epicRef} is not escalated (no operator hold to retry, or it completes in place)`);
       return outcome;
     },
   );
