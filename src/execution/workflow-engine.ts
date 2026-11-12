@@ -1,3 +1,4 @@
+import { usageFromAcp } from './usage.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -572,7 +573,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       } finally {
         await transcript?.finish();
       }
-      if (result.usage) await this.deps.stepRuns.setUsage(stepRunId, result.usage);
+      if (result.usage) await this.deps.stepRuns.setUsage(stepRunId, usageFromAcp(result.usage, route.model));
       const output = mask(result.output);
       const after = await markGit(cwd, pod);
       const changed = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits || (!dirtyBefore && (await isDirty(cwd, pod)));
