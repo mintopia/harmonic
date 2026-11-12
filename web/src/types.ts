@@ -591,20 +591,10 @@ export interface Workspace {
   archiveRetentionMaxTotalMB: number | null;
   /** Tool-timeout override; `null` inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: number | null;
-  /** Drive overrides, decomposed into independently-inheritable
-   * fields; each `null` inherits the matching global `config.drive.*`. */
-  drivePrompt: string | null;
-  driveUnattendedReminder: string | null;
-  driveContinuePrompt: string | null;
-  driveCommitNudge: string | null;
-  /** Task Prompt override; `null` inherits `config.taskPrompt`. */
-  taskPrompt: string | null;
   /** Pause message override; `null` inherits `config.pauseMessage`. */
   pauseMessage: string | null;
-  mergeConflictPrompt: string | null;
   mergeEpicConflictPrompt: string | null;
   mergeEpicRefreshPrompt: string | null;
-  verifyEpicResolveSuffix: string | null;
   createdAt: number;
   updatedAt: number;
 }

@@ -109,25 +109,11 @@ export const workspaceOverridesSchema = z.object({
   guardrailProgress: z.boolean().nullable().optional(),
   /** Tool-timeout bound override; null inherits `config.guardrails.toolTimeoutMinutes`. */
   toolTimeoutMinutes: z.number().positive().nullable().optional().meta({ example: 20 }),
-  /** Drive Prompt override; null inherits `config.drive.prompt`. */
-  drivePrompt: z.string().min(1).nullable().optional(),
-  /** Unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
-  driveUnattendedReminder: z.string().min(1).nullable().optional(),
-  /** Continue-prompt override; null inherits `config.drive.continuePrompt`. */
-  driveContinuePrompt: z.string().min(1).nullable().optional(),
-  /** Task Prompt override; null inherits `config.taskPrompt`. */
-  taskPrompt: z.string().min(1).nullable().optional(),
   pauseMessage: z.string().min(1).nullable().optional(),
-  /** Commit nudge override; null inherits `config.drive.commitNudge`. */
-  driveCommitNudge: z.string().min(1).nullable().optional(),
-  /** Task merge-conflict prompt override; null inherits `config.merge.conflictPrompt`. */
-  mergeConflictPrompt: z.string().min(1).meta({ example: '## Merge conflict resolution (turn {turn})' }).nullable().optional(),
   /** Epic integration merge-conflict prompt override; null inherits `config.merge.epicConflictPrompt`. */
   mergeEpicConflictPrompt: z.string().min(1).meta({ example: '## Epic integration merge conflict resolution (turn {turn})' }).nullable().optional(),
   /** Epic integration refresh prompt override; null inherits `config.merge.epicRefreshPrompt`. */
   mergeEpicRefreshPrompt: z.string().min(1).meta({ example: '## Epic integration refresh' }).nullable().optional(),
-  /** Epic verification resolver suffix override; null inherits `config.verify.epic.resolveSuffix`. */
-  verifyEpicResolveSuffix: z.string().min(1).meta({ example: 'Work in the checked-out integration branch `{branch}`.' }).nullable().optional(),
   /** Export-on-terminal toggle override; null inherits `config.export.enabled`. */
   exportEnabled: z.boolean().nullable().optional(),
   /** Export directory override (absolute); null inherits `config.export.directory.path`. */
@@ -190,16 +176,9 @@ export const OVERRIDE_KEYS = [
   'guardrailBudget',
   'guardrailProgress',
   'toolTimeoutMinutes',
-  'drivePrompt',
-  'driveUnattendedReminder',
-  'driveContinuePrompt',
-  'taskPrompt',
   'pauseMessage',
-  'driveCommitNudge',
-  'mergeConflictPrompt',
   'mergeEpicConflictPrompt',
   'mergeEpicRefreshPrompt',
-  'verifyEpicResolveSuffix',
   'exportEnabled',
   'exportDirectoryPath',
   'exportS3Endpoint',
@@ -294,16 +273,9 @@ export class WorkspaceService {
       guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
       guardrailProgress: o.guardrailProgress,
       toolTimeoutMinutes: o.toolTimeoutMinutes,
-      drivePrompt: o.drivePrompt,
-      driveUnattendedReminder: o.driveUnattendedReminder,
-      driveContinuePrompt: o.driveContinuePrompt,
-      taskPrompt: o.taskPrompt,
       pauseMessage: o.pauseMessage,
-      driveCommitNudge: o.driveCommitNudge,
-      mergeConflictPrompt: o.mergeConflictPrompt,
       mergeEpicConflictPrompt: o.mergeEpicConflictPrompt,
       mergeEpicRefreshPrompt: o.mergeEpicRefreshPrompt,
-      verifyEpicResolveSuffix: o.verifyEpicResolveSuffix,
       exportEnabled: o.exportEnabled,
       exportDirectoryPath: o.exportDirectoryPath,
       exportS3Endpoint: o.exportS3Endpoint,

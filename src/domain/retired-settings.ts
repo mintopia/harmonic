@@ -17,7 +17,24 @@ export type RetiredCode = (typeof RETIRED_CODES)[number];
 
 export const retiredWorkspaceKey = (code: string): string => `promptFragment${code.charAt(0).toUpperCase()}${code.slice(1)}`;
 
-export const RETIRED_WORKSPACE_KEYS: readonly string[] = RETIRED_CODES.map(retiredWorkspaceKey);
+/** Workspace prompt overrides removed with no runtime reader; kept on disk for rollback and read only by the settings-to-workflow migrations. */
+export const RETIRED_WORKSPACE_PROMPT_KEYS = [
+  'drivePrompt',
+  'driveUnattendedReminder',
+  'driveContinuePrompt',
+  'taskPrompt',
+  'driveCommitNudge',
+  'mergeConflictPrompt',
+  'verifyEpicResolveSuffix',
+] as const;
+export type RetiredWorkspacePromptKey = (typeof RETIRED_WORKSPACE_PROMPT_KEYS)[number];
+
+export const RETIRED_WORKSPACE_KEYS: readonly string[] = [...RETIRED_CODES.map(retiredWorkspaceKey), ...RETIRED_WORKSPACE_PROMPT_KEYS];
+
+export function retiredWorkspacePrompt(retired: RetiredSettings, workspaceId: number, key: RetiredWorkspacePromptKey): string | undefined {
+  const value = retired.workspaces[String(workspaceId)]?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
 
 /** The retired keys exactly as they sit on disk, kept verbatim so a rollback still finds them. */
 export interface RetiredSettings {

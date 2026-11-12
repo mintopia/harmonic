@@ -90,14 +90,10 @@ export interface RunnerOptions {
         | 'toolTimeoutMinutes'
         | 'maxAttempts'
         | 'contextReuseTokenLimit'
-        | 'taskPrompt'
         | 'pauseMessage'
         | 'agentMessagesEnabled'
-        | 'driveCommitNudge'
-        | 'mergeConflictPrompt'
         | 'mergeEpicConflictPrompt'
         | 'mergeEpicRefreshPrompt'
-        | 'verifyEpicResolveSuffix'
       > &
         Partial<Pick<WorkspaceRow, 'name' | 'workingDir' | 'codeRepository' | 'workflow' | 'workflowLabels' | 'workflowVars' | 'modelOptions'>>)
     | undefined

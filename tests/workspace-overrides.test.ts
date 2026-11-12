@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { parse, stringify } from 'yaml';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
@@ -7,6 +8,7 @@ import { DEFAULT_EXCLUDED_DIRECTORIES, workspaceOverridesSchema, WorkspaceServic
 import { budgetGuardrailSchema, baselineConfig, mergeConfig } from '../src/config.js';
 import type { SettingsStore } from '../src/server/settings-store.js';
 import { makeSettingsStore, seedWorkspace } from './helpers.js';
+import { RETIRED_WORKSPACE_PROMPT_KEYS } from '../src/domain/retired-settings.js';
 
 describe('WorkspaceService override persistence (issue #64)', () => {
   let dataDir: string;
@@ -41,10 +43,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.agentMessagesSendCap).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
-    expect(ws.drivePrompt).toBeNull();
-    expect(ws.driveUnattendedReminder).toBeNull();
-    expect(ws.driveContinuePrompt).toBeNull();
-    expect(ws.taskPrompt).toBeNull();
+    expect(ws.pauseMessage).toBeNull();
     expect(ws.toolTimeoutMinutes).toBeNull();
   });
 
@@ -215,28 +214,22 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(untouched.guardrailProgress).toBe(false);
   });
 
-  it('sets, clears, and independently patches the drive/taskPrompt/toolTimeout overrides (#339)', async () => {
+  it('sets, clears, and independently patches the pauseMessage/toolTimeout overrides (#339)', async () => {
     const ws = (await workspaces.list())[0]!;
     const set = await workspaces.update(ws.id, {
-      drivePrompt: 'WS drive prompt',
-      driveUnattendedReminder: 'WS reminder',
-      driveContinuePrompt: 'WS continue',
-      taskPrompt: 'WS task prompt',
+      pauseMessage: 'WS pause',
       toolTimeoutMinutes: 45,
     });
-    expect(set.drivePrompt).toBe('WS drive prompt');
-    expect(set.driveUnattendedReminder).toBe('WS reminder');
-    expect(set.driveContinuePrompt).toBe('WS continue');
-    expect(set.taskPrompt).toBe('WS task prompt');
+    expect(set.pauseMessage).toBe('WS pause');
     expect(set.toolTimeoutMinutes).toBe(45);
 
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
-    expect(renamed.drivePrompt).toBe('WS drive prompt');
+    expect(renamed.pauseMessage).toBe('WS pause');
     expect(renamed.toolTimeoutMinutes).toBe(45);
 
     const cleared = await workspaces.update(ws.id, { toolTimeoutMinutes: null });
     expect(cleared.toolTimeoutMinutes).toBeNull();
-    expect(cleared.drivePrompt).toBe('WS drive prompt');
+    expect(cleared.pauseMessage).toBe('WS pause');
   });
 
   it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {
@@ -284,15 +277,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       guardrailBudget: null,
       guardrailProgress: null,
       toolTimeoutMinutes: null,
-      drivePrompt: null,
-      driveUnattendedReminder: null,
-      driveContinuePrompt: null,
-      taskPrompt: null,
-      driveCommitNudge: null,
-      mergeConflictPrompt: null,
       mergeEpicConflictPrompt: null,
       mergeEpicRefreshPrompt: null,
-      verifyEpicResolveSuffix: null,
       pauseMessage: null,
       exportEnabled: null,
       exportDirectoryPath: null,
@@ -311,5 +297,24 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       archiveRetentionDays: null,
       archiveRetentionMaxTotalMB: null,
     });
+  });
+});
+
+describe('retired Workspace prompt override keys', () => {
+  it('load without error, stay out of overrides, and survive a write verbatim', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-ws-retired-'));
+    try {
+      const stored = Object.fromEntries(RETIRED_WORKSPACE_PROMPT_KEYS.map((key) => [key, `old ${key}`]));
+      writeFileSync(join(dir, 'settings.yaml'), stringify({ workspaces: { '1': { ...stored, pauseMessage: 'keep' } } }));
+      const store = await makeSettingsStore(dir);
+      const overrides = store.getOverrides(1);
+      expect(overrides.pauseMessage).toBe('keep');
+      for (const key of RETIRED_WORKSPACE_PROMPT_KEYS) expect(overrides).not.toHaveProperty(key);
+      await store.setOverrides(1, { priority: 'high' });
+      const onDisk = parse(readFileSync(join(dir, 'settings.yaml'), 'utf8')).workspaces['1'];
+      expect(onDisk).toMatchObject({ ...stored, pauseMessage: 'keep', priority: 'high' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

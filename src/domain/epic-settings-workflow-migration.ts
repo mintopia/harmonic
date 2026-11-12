@@ -9,9 +9,9 @@ import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
 import { convertEditedEpicFixPrompts, epicFixTexts } from './epic-fix-prompt.js';
 import type { PromptLibrary } from './prompt-library-store.js';
-import { translateRetiredText } from './retired-settings.js';
+import { NO_RETIRED, retiredWorkspacePrompt, translateRetiredText, type RetiredSettings } from './retired-settings.js';
 import { resolveLegacyEpicPreMerge, type LegacyWorkspace } from './legacy-execution-settings.js';
-import { resolveEpicResolverPrompts, resolveScoped } from './setting-override.js';
+import { resolveScoped } from './setting-override.js';
 import {
   commandRunLine,
   DEFAULT_CRITIC_TIMEOUT_SECONDS,
@@ -47,13 +47,14 @@ export interface EpicMigrationPlan {
 export interface EpicPlanInput {
   config: AppConfig;
   workspaces: readonly WorkspaceRow[];
+  retired?: RetiredSettings;
   legacyWorkspaces?: ReadonlyMap<number, LegacyWorkspace>;
   library: { resolvePrompt: string; resolveSuffix: string; failingVerification?: string };
 }
 
 function scopeOf(ws: WorkspaceRow | null, input: EpicPlanInput): EpicScope {
   const { config, library } = input;
-  const suffix = ws ? resolveEpicResolverPrompts(ws, config).resolveSuffix : config.verify.epic.resolveSuffix;
+  const suffix = (ws && retiredWorkspacePrompt(input.retired ?? NO_RETIRED, ws.id, 'verifyEpicResolveSuffix')) || config.verify.epic.resolveSuffix;
   const resolveSuffix = suffix === config.verify.epic.resolveSuffix ? library.resolveSuffix : suffix;
   return {
     maxAttempts: resolveScoped('maxAttempts', ws?.maxAttempts, config.maxAttempts),
@@ -144,6 +145,7 @@ export async function migrateEpicSettingsToWorkflows(deps: EpicSettingsMigration
   const plan = await planEpicSettingsMigration({
     config: deps.settings.getGlobal(),
     workspaces: await deps.workspaces.list(),
+    retired: deps.settings.getRetired(),
     legacyWorkspaces: deps.settings.getLegacySettings().workspaces,
     library: await epicFixTexts(deps.prompts),
   });
