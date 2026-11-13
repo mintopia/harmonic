@@ -104,6 +104,9 @@ This server runs the **front door** surface: three tools reach every jCodeMunch 
 
 ## Repo rules
 
+ - Codebase mapping subagents: jcodemunch MCP and Sonnet / Terra.
+ - When work is complete, before merging or finishing, run /no-comments
+
 ### Testing
 
 While editing, run the relevant test file with `npx vitest run <file>`.
