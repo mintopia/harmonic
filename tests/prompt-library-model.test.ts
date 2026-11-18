@@ -9,13 +9,13 @@ import {
   localIssues,
   malformedReference,
   parseSaveError,
+  railSections,
   sendContexts,
   suggestCode,
   renameRewrites,
   usedByLabel,
   usedByRows,
   validateCode,
-  visiblePrompts,
 } from '../web/src/prompt-library-model.js';
 import type { Prompt } from '../web/src/types.js';
 
@@ -26,10 +26,16 @@ function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
 const LIB = [prompt('implement', { bundled: true }), prompt('critic', { bundled: true, description: 'Correctness Critic' }), prompt('team-style')];
 
 describe('prompt library model', () => {
-  it('hides engine fragments unless asked, so a default search skips them', () => {
+  it('groups the rail into Prompts and Engine fragments, the fragments only when asked and filtered by the same search', () => {
     const lib = [...LIB, prompt('criticRole', { bundled: true, category: 'fragment', description: 'critic role' })];
-    expect(filterPrompts(visiblePrompts(lib, false), 'critic').map((p) => p.code)).toEqual(['critic']);
-    expect(filterPrompts(visiblePrompts(lib, true), 'critic').map((p) => p.code)).toEqual(['critic', 'criticRole']);
+    const view = (include: boolean, query: string) => railSections(lib, include, query).map((s) => [s.label, s.prompts.map((p) => p.code)]);
+    expect(view(false, '')).toEqual([['Prompts', ['implement', 'critic', 'team-style']]]);
+    expect(view(false, 'critic')).toEqual([['Prompts', ['critic']]]);
+    expect(view(true, 'critic')).toEqual([
+      ['Prompts', ['critic']],
+      ['Engine fragments', ['criticRole']],
+    ]);
+    expect(view(true, 'role')).toEqual([['Engine fragments', ['criticRole']]]);
   });
 
   it('filters by code or description, case-insensitively', () => {
