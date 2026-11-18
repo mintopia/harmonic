@@ -484,14 +484,14 @@ function PromptEditForm() {
                 ))}
               </div>
             )}
-            {errorCount > 0 && (
-              <p className="text-small text-muted">
-                Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.
-              </p>
-            )}
           </>
         }
       />
+      {errorCount > 0 && (
+        <p className="text-small text-muted">
+          Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.
+        </p>
+      )}
     </section>
   );
 }

@@ -408,6 +408,14 @@ describe('Prompt Library page', () => {
     expect((operator().querySelector('textarea') as HTMLTextAreaElement).value).toBe('Fix {title} for ${{ ticket.ref }}.');
   });
 
+  it('keeps the save-blocked hint visible in the As sent view', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Bad ${{ vars.x');
+    await click(button(host, 'As sent'));
+    expect(host.textContent).toContain('Save is blocked while an error shows.');
+  });
+
   it('fills unsaved edits and their includes into the As sent view', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="release-notes"] button'));

@@ -66,7 +66,7 @@ export function PromptSends({
   );
 
   return (
-    <article aria-label="What the step sends" className="flex flex-col gap-3.5 rounded-lg bg-surface p-[18px] shadow-card">
+    <article aria-label="Prompt editor" className="flex flex-col gap-3.5 rounded-lg bg-surface p-[18px] shadow-card">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex flex-wrap items-center gap-2 text-small text-muted">
           <span className={labelType}>Sent by</span>
