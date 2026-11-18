@@ -9,9 +9,28 @@ import type { Prompt } from '../../types';
 import { field, labelType } from '../../ui';
 import { UsedBy } from './UsedBy';
 
-const BODY = 'text-body leading-[1.65]';
-const BLOCK = 'block rounded-r-sm border-l-[3px] px-2.5 py-1.5';
-const BLOCK_LABEL = 'mb-1 flex items-center gap-1.5 font-sans text-label font-semibold uppercase';
+const MONO = 'font-data text-[13px] leading-[1.65]';
+const ENGINE_PARTS: Record<string, string> = { 'Read-only critic guard': 'criticRole + criticSecurity', 'Verdict contract': 'verdict contract' };
+
+const TONES = {
+  operator: { frame: 'border-2 border-accent', head: 'bg-accent-tint text-accent' },
+  engine: { frame: 'border border-hairline', head: 'bg-await-tint text-await' },
+} as const;
+
+function Block({ tone, label, sub, aside, segment, children }: { tone: keyof typeof TONES; label: string; sub?: ReactNode; aside?: string; segment: string; children: ReactNode }) {
+  return (
+    <div data-segment={segment} className={`overflow-hidden rounded-md ${TONES[tone].frame}`}>
+      <div className={`flex flex-wrap items-baseline gap-x-2 px-3 py-2 ${TONES[tone].head}`}>
+        <span className="font-sans text-label font-semibold uppercase">{label}</span>
+        {sub && <span className="min-w-0 break-words font-data text-small text-ink">{sub}</span>}
+        {aside && <span className="ml-auto font-data text-small text-muted">{aside}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const SWATCH = 'mr-1.5 inline-block size-2.5 rounded-sm align-[-1px]';
 
 type Mode = 'structure' | 'sent';
 
@@ -36,14 +55,22 @@ export function PromptSends({
   prompt,
   text,
   prompts,
+  title,
   fields,
+  aside,
   editor,
+  footer,
+  notice,
 }: {
   prompt: Prompt | null;
   text: string;
   prompts: readonly Prompt[];
+  title: ReactNode;
   fields: ReactNode;
+  aside: string;
   editor: ReactNode;
+  footer: ReactNode;
+  notice: ReactNode;
 }) {
   const contexts = sendContexts(prompt?.usedBySteps ?? []);
   const [picked, setPicked] = useState(0);
@@ -59,51 +86,61 @@ export function PromptSends({
       type="button"
       aria-pressed={mode === id}
       onClick={() => setMode(id)}
-      className={`rounded-sm px-2.5 py-1 text-small font-semibold ${mode === id ? 'bg-surface text-ink shadow-card' : 'text-muted'}`}
+      className={`rounded-sm px-3 py-1.5 text-small font-semibold ${mode === id ? 'bg-accent text-on-accent' : 'text-muted'}`}
     >
       {label}
     </button>
   );
 
   return (
-    <article aria-label="Prompt editor" className="flex flex-col gap-3.5 rounded-lg bg-surface p-[18px] shadow-card">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <label className="flex flex-wrap items-center gap-2 text-small text-muted">
-          <span className={labelType}>Sent by</span>
-          <select value={contexts.indexOf(context)} onChange={(e) => setPicked(Number(e.target.value))} className={`${field} !min-h-0 !w-auto !py-1`}>
-            {contexts.map((c, i) => (
-              <option key={i} value={i}>
-                {c.label} · {c.uses}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div role="group" aria-label="Preview mode" className="flex gap-0.5 rounded-md bg-raised p-0.5">
+    <article aria-label="Prompt editor" className="flex min-w-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-hairline px-4 py-4">
+        {title}
+        <div role="group" aria-label="Preview mode" className="col-start-2 row-start-1 flex shrink-0 gap-0.5 rounded-md border border-edge p-0.5">
           {modeButton('structure', 'Structure')}
           {modeButton('sent', 'As sent')}
         </div>
       </header>
-      {fields}
-      <UsedBy prompt={prompt} />
-      <div data-testid="step-sends" className="flex flex-col gap-2">
-        <div data-segment="operator" className="flex flex-col gap-3.5">
-          {mode === 'structure' ? (
-            editor
-          ) : (
-            <div className={`whitespace-pre-wrap rounded-sm border border-hairline bg-sunken p-3 ${BODY}`}>{fillSample(resolvePrompt(text, lookup, seen))}</div>
-          )}
+      <div className="flex flex-col gap-3.5 p-4">
+        {fields}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className={`${labelType} text-muted`}>What the step actually sends</span>
+          <label className="flex items-center gap-2 text-small text-muted">
+            <span>Sent by</span>
+            <select value={contexts.indexOf(context)} onChange={(e) => setPicked(Number(e.target.value))} className={`${field} !min-h-0 !w-auto !py-1`}>
+              {contexts.map((c, i) => (
+                <option key={i} value={i}>
+                  {c.label} · {c.uses}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-        {segments === null && (
-          <p className="text-small text-muted">{error ? `Couldn’t load the engine’s parts: ${error}` : 'Loading the engine’s parts…'}</p>
-        )}
-        {segments?.map((s) => (
-          <div key={s.label} data-segment="engine" className={`${BLOCK} border-edge bg-raised ${BODY}`}>
-            <span className={`${BLOCK_LABEL} text-muted`}>
-              {s.label} <span className="font-normal normal-case tracking-normal">· added by the engine, can’t be edited</span>
-            </span>
-            <div className="whitespace-pre-wrap text-muted">{s.text}</div>
-          </div>
-        ))}
+        <div data-testid="step-sends" className="flex flex-col gap-3">
+          <Block tone="operator" label="Your prompt" sub={prompt?.code} aside={mode === 'structure' ? aside : undefined} segment="operator">
+            {mode === 'structure' ? (
+              <>
+                <div className="flex flex-col gap-3.5 bg-field">{editor}</div>
+                {footer}
+              </>
+            ) : (
+              <div className={`whitespace-pre-wrap break-words bg-field px-4 py-3 ${MONO}`}>{fillSample(resolvePrompt(text, lookup, seen))}</div>
+            )}
+          </Block>
+          {segments === null && <p className="text-small text-muted">{error ? `Couldn’t load the engine’s parts: ${error}` : 'Loading the engine’s parts…'}</p>}
+          {segments?.map((s) => (
+            <Block key={s.label} tone="engine" label="Engine · appended" sub={ENGINE_PARTS[s.label] ?? s.label} aside="not editable" segment="engine">
+              <div className={`whitespace-pre-wrap break-words bg-sunken px-4 py-3 text-ink ${MONO}`}>{s.text}</div>
+            </Block>
+          ))}
+        </div>
+        {notice}
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-small text-muted">
+          <span><i className={`${SWATCH} bg-accent-tint`} />your prompt (editable)</span>
+          {(segments?.length ?? 0) > 0 && <span><i className={`${SWATCH} bg-await-tint`} />engine-appended (fixed)</span>}
+          <span><i className={`${SWATCH} bg-ready-tint`} />filled at run time</span>
+        </p>
+        <UsedBy prompt={prompt} />
       </div>
     </article>
   );

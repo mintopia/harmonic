@@ -84,15 +84,17 @@ async function type(el: HTMLTextAreaElement | HTMLInputElement, value: string) {
   });
 }
 
+const footerSave = (host: HTMLElement) => button(host.querySelector('[data-testid="prompt-footer"]') as HTMLElement, 'Save');
+
 describe('Prompt Library page', () => {
   it('lists prompts in the rail with source and used-by tags', async () => {
     const host = await mountLibrary();
     expect(host.querySelectorAll('nav[aria-label="Prompts"] [data-prompt]')).toHaveLength(4);
     const row = host.querySelector('[data-prompt="team-style"]');
-    expect(row?.textContent).toContain('Yours');
-    expect(row?.textContent).toContain('3 steps · 1 prompt');
-    expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('Bundled');
-    expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('Unused');
+    expect(row?.textContent).toContain('yours');
+    expect(row?.textContent).toContain('used ×4');
+    expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('bundled');
+    expect(host.querySelector('[data-prompt="implement"]')?.textContent).toContain('unused');
   });
 
   it('shows the no-match empty state with Clear search', async () => {
@@ -105,7 +107,7 @@ describe('Prompt Library page', () => {
 
   it('groups the rail into Prompts and Engine fragments, hiding fragments from the list and search until the toggle is on', async () => {
     const host = await mountLibrary([...LIB, prompt('criticRole', { bundled: true, category: 'fragment' })]);
-    const sections = () => [...host.querySelectorAll('nav[aria-label="Prompts"] [data-rail-section]')].map((g) => [g.querySelector('h3')?.textContent, [...g.querySelectorAll('[data-prompt]')].map((r) => r.getAttribute('data-prompt'))]);
+    const sections = () => [...host.querySelectorAll('nav[aria-label="Prompts"] [data-rail-section]')].map((g) => [[...(g.querySelector('h3')?.children ?? [])].map((c) => c.textContent).join(' · '), [...g.querySelectorAll('[data-prompt]')].map((r) => r.getAttribute('data-prompt'))]);
     expect(sections()).toEqual([['Prompts · 4', ['implement', 'team-style', 'security-checklist', 'release-notes']]]);
     await type(host.querySelector('input[type="search"]') as HTMLInputElement, 'critic');
     expect(host.textContent).toContain('No prompts match “critic”');
@@ -138,8 +140,8 @@ describe('Prompt Library page', () => {
     const create = vi.spyOn(api, 'createPrompt').mockImplementation(async (body) => prompt(body.code, { ...body }));
     const update = vi.spyOn(api, 'updatePrompt');
     await click(host.querySelector('[data-prompt="implement"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'My own implement.');
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'My own implement.');
+    await click(footerSave(host));
     expect(create).not.toHaveBeenCalled();
     const name = host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement;
     expect(name.value).toBe('implement-copy');
@@ -155,7 +157,7 @@ describe('Prompt Library page', () => {
     expect(host.querySelector('section[aria-label="Prompt my-implement"]')).not.toBeNull();
 
     await click(host.querySelector('[data-prompt="implement"] button'));
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Implement ${{ ticket.title }}.');
+    expect((host.querySelector('#prompt-text') as HTMLTextAreaElement).value).toBe('Implement ${{ ticket.title }}.');
     expect(changes).toBe(0);
   });
 
@@ -163,15 +165,15 @@ describe('Prompt Library page', () => {
     const host = await mountLibrary();
     vi.spyOn(api, 'createPrompt').mockRejectedValue(new ApiError(400, 'Include cycle: my-implement → team-style → my-implement', 'validation'));
     await click(host.querySelector('[data-prompt="implement"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Use ${{ prompts.team-style }}');
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Use ${{ prompts.team-style }}');
+    await click(footerSave(host));
     await type(host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement, 'my-implement');
     await click(button(host.ownerDocument.body, 'Save as new prompt'));
     expect(host.ownerDocument.querySelector('#prompt-fork-code')).toBeNull();
     expect(host.textContent).toContain('Include cycle');
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Use ${{ prompts.team-style }}');
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Fixed.');
-    await click(button(host, 'Save'));
+    expect((host.querySelector('#prompt-text') as HTMLTextAreaElement).value).toBe('Use ${{ prompts.team-style }}');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Fixed.');
+    await click(footerSave(host));
     expect((host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement).value).toBe('my-implement');
   });
 
@@ -180,8 +182,8 @@ describe('Prompt Library page', () => {
     const update = vi.spyOn(api, 'updatePrompt').mockImplementation(async (code, body) => prompt(code, body));
     const create = vi.spyOn(api, 'createPrompt');
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Check more secrets.');
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Check more secrets.');
+    await click(footerSave(host));
     expect(update).toHaveBeenCalledWith('security-checklist', { description: 'security-checklist description', text: 'Check more secrets.' });
     expect(create).not.toHaveBeenCalled();
   });
@@ -192,34 +194,34 @@ describe('Prompt Library page', () => {
       new ApiError(400, 'Include cycle: team-style → security-checklist → team-style', 'validation'),
     );
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    const text = host.querySelector('textarea') as HTMLTextAreaElement;
+    const text = host.querySelector('#prompt-text') as HTMLTextAreaElement;
     await type(text, 'Keep it small.\n${{ prompts.security-checklist }}!');
-    const save = button(host, 'Save') as HTMLButtonElement;
+    const save = footerSave(host) as HTMLButtonElement;
     expect(save.disabled).toBe(false);
     await click(save);
     const alert = host.querySelector('[data-issue="cycle"]');
     expect(alert?.textContent).toContain('Include cycle');
     expect(alert?.textContent).toContain('security-checklist');
     expect(alert?.textContent).toContain('Line 2');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(true);
     expect(host.textContent).toContain('Fix the 1 error above');
 
     await type(text, 'Keep it small.');
     expect(host.querySelector('[data-issue="cycle"]')).toBeNull();
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(false);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('marks an unknown code with line, column and a usable suggestion', async () => {
     const host = await mountLibrary();
     vi.spyOn(api, 'updatePrompt').mockRejectedValue(new ApiError(400, 'Prompt includes unknown prompt code: secuirty-checklist', 'validation'));
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Hi\n${{ prompts.secuirty-checklist }}');
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Hi\n${{ prompts.secuirty-checklist }}');
+    await click(footerSave(host));
     const alert = host.querySelector('[data-issue="unknown"]');
     expect(alert?.textContent).toContain('line 2, column 1');
     expect(alert?.textContent).toContain('Did you mean');
     await click(button(host, 'Use suggestion'));
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Hi\n${{ prompts.security-checklist }}');
+    expect((host.querySelector('#prompt-text') as HTMLTextAreaElement).value).toBe('Hi\n${{ prompts.security-checklist }}');
     expect(host.querySelector('[data-issue]')).toBeNull();
   });
 
@@ -227,9 +229,9 @@ describe('Prompt Library page', () => {
     const host = await mountLibrary();
     const update = vi.spyOn(api, 'updatePrompt');
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Finish in ${{ vars.report_format');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Finish in ${{ vars.report_format');
     expect(host.querySelector('[data-issue="malformed"]')?.textContent).toContain('never closed');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(true);
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -252,9 +254,9 @@ describe('Prompt Library page', () => {
     const host = await mountLibrary();
     vi.spyOn(api, 'updatePrompt').mockRejectedValue(new ApiError(400, 'Prompt includes unknown prompt code: secuirty-checklist', 'validation'));
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Hi\n${{ prompts.secuirty-checklist }}');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Hi\n${{ prompts.secuirty-checklist }}');
     expect(host.querySelector('[data-ref="include"]')?.textContent).toBe('${{ prompts.secuirty-checklist }}');
-    await click(button(host, 'Save'));
+    await click(footerSave(host));
     expect(host.querySelector('[data-ref="bad"]')?.textContent).toBe('${{ prompts.secuirty-checklist }}');
     expect(host.querySelector('[data-ref="include"]')).toBeNull();
   });
@@ -292,7 +294,7 @@ describe('Prompt Library page', () => {
     await click(button(host, '+ New prompt'));
     await type(host.querySelector('#prompt-code') as HTMLInputElement, 'implement');
     expect(host.textContent).toContain('already exists (Bundled)');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('opens a picked row beside the rail and keeps its draft when you switch away and back', async () => {
@@ -303,13 +305,13 @@ describe('Prompt Library page', () => {
     expect(host.querySelector('[data-prompt="security-checklist"] button')?.getAttribute('aria-current')).toBe('true');
     expect(host.querySelectorAll('[data-prompt]')).toHaveLength(4);
 
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Check secrets and tokens.');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Check secrets and tokens.');
     expect(host.querySelector('[data-prompt="security-checklist"]')?.textContent).toContain('Edited');
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toContain('Keep it small.');
+    expect((host.querySelector('#prompt-text') as HTMLTextAreaElement).value).toContain('Keep it small.');
 
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
-    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Check secrets and tokens.');
+    expect((host.querySelector('#prompt-text') as HTMLTextAreaElement).value).toBe('Check secrets and tokens.');
     expect(host.textContent).toContain('Edited');
   });
 
@@ -356,10 +358,10 @@ describe('Prompt Library page', () => {
     const blocks = [...sends().querySelectorAll('[data-segment]')];
     expect(blocks.map((b) => b.getAttribute('data-segment'))).toEqual(['operator', 'engine', 'engine']);
     expect(blocks[0]?.textContent).toContain('Keep it small.');
-    expect(blocks[1]?.textContent).toContain('Read-only critic guard');
+    expect(blocks[1]?.textContent).toContain('criticRole + criticSecurity');
     expect(blocks[1]?.textContent).toMatch(/READ-ONLY/i);
     expect(blocks[1]?.querySelector('textarea, input')).toBeNull();
-    expect(blocks[2]?.textContent).toContain('Verdict contract');
+    expect(blocks[2]?.textContent).toContain('verdict contract');
     expect(api.assemblePrompt).toHaveBeenCalledWith('critic', '');
   });
 
@@ -387,7 +389,7 @@ describe('Prompt Library page', () => {
   it('keeps the save-blocked hint visible in the As sent view', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Bad ${{ vars.x');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Bad ${{ vars.x');
     await click(button(host, 'As sent'));
     expect(host.textContent).toContain('Save is blocked while an error shows.');
   });
@@ -395,7 +397,7 @@ describe('Prompt Library page', () => {
   it('fills unsaved edits and their includes into the As sent view', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="release-notes"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Only ${{ prompts.security-checklist }}');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Only ${{ prompts.security-checklist }}');
     await click(button(host, 'As sent'));
     expect(host.querySelector('[data-segment="operator"]')?.textContent).toContain('Only Check secrets.');
   });
@@ -406,24 +408,24 @@ describe('Prompt Library page', () => {
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
 
     update.mockRejectedValueOnce(new ApiError(400, 'Prompt includes unknown prompt code: team-stile', 'validation'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, '${{ prompts.team-stile }}');
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, '${{ prompts.team-stile }}');
+    await click(footerSave(host));
     expect(host.querySelector('[data-issue="unknown"]')).not.toBeNull();
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(true);
 
     update.mockRejectedValueOnce(new ApiError(400, 'Include cycle: security-checklist → team-style → security-checklist', 'validation'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, '${{ prompts.team-style }}');
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(false);
-    await click(button(host, 'Save'));
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, '${{ prompts.team-style }}');
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(false);
+    await click(footerSave(host));
     expect(host.querySelector('[data-issue="cycle"]')).not.toBeNull();
-    expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
+    expect((footerSave(host) as HTMLButtonElement).disabled).toBe(true);
     expect(update).toHaveBeenCalledTimes(2);
   });
 
   it('counts unsaved changes for the open prompt', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Different text.');
+    await type(host.querySelector('#prompt-text') as HTMLTextAreaElement, 'Different text.');
     expect(changes).toBe(1);
     await type(host.querySelector('#prompt-description') as HTMLInputElement, 'Changed');
     expect(changes).toBe(2);
@@ -452,6 +454,18 @@ describe('Prompt Library page', () => {
       expect(details.open).toBe(false);
       await type(source(host), '${{ prompts.selfHeal }}');
       expect([...host.querySelectorAll('[data-included-prompt]')].map((e) => e.getAttribute('data-included-prompt'))).toEqual(['selfHeal']);
+    });
+
+    it('edits the outer prompt text in place around the include cards and saves it', async () => {
+      const host = await mountLibrary(COMPOSED);
+      const update = vi.spyOn(api, 'updatePrompt').mockImplementation(async (code, body) => prompt(code, body));
+      await click(host.querySelector('[data-prompt="my-composite"] button'));
+      const outer = (i: number) => host.querySelector(`[data-outer-text="${i}"] textarea`) as HTMLTextAreaElement;
+      expect(outer(4).value).toBe('');
+      await type(outer(4), 'House last.');
+      expect(source(host).value).toBe('${{ prompts.drivePrompt }}\n${{ prompts.house }}House last.');
+      await click(footerSave(host));
+      expect(update).toHaveBeenCalledWith('my-composite', expect.objectContaining({ text: '${{ prompts.drivePrompt }}\n${{ prompts.house }}House last.' }));
     });
 
     it('forks a bundled include on save and repoints an operator parent at the copy', async () => {

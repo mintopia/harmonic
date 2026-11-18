@@ -76,8 +76,12 @@ describe('Workflows page: import, edit, save, export through the real routes and
       await new Promise((r) => setTimeout(r, 100));
       await flush();
     });
-    const row = [...host.querySelectorAll('tbody tr')].find((r) => r.textContent?.includes('flow-e2e'));
-    expect(row).toBeDefined();
+    let row: Element | undefined;
+    await vi.waitFor(async () => {
+      await act(flush);
+      row = [...host.querySelectorAll('tbody tr')].find((r) => r.textContent?.includes('flow-e2e'));
+      expect(row).toBeDefined();
+    });
 
     await click(row!.querySelector('td button'));
     await act(async () => {
@@ -93,8 +97,11 @@ describe('Workflows page: import, edit, save, export through the real routes and
       await flush();
     });
     await click(button(host, 'Save as v2'));
-    expect(host.textContent).toContain('v2');
-    expect(host.textContent).toContain('Saved');
+    await vi.waitFor(async () => {
+      await act(flush);
+      expect(host.textContent).toContain('v2');
+      expect(host.textContent).toContain('Saved');
+    });
 
     await click(button(host, 'Export'));
     expect(downloads).toHaveLength(1);

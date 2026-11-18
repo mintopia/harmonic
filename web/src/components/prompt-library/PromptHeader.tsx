@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { ApiError, api } from '../../api';
 import { toastError } from '../../toast';
 import { copyCode, parseSaveError, renameRewrites, savedLabel, validateCode, type SaveIssue } from '../../prompt-library-model';
-import { btnGhost, btnPrimary, btnQuietDestructive, field, labelType, panelTitle, quietTag } from '../../ui';
+import { btnGhost, btnPrimary, field, labelType, panelTitle, quietTag } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { Modal } from '../Modal';
 import { usePromptsFlow } from './PromptsFlow';
-import { SourceBadge } from './SourceBadge';
 
-export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocked?: boolean; onIssue?: (issue: SaveIssue | null) => void; onDiscarded?: () => void }) {
+export function usePromptActions({ blocked = false, onIssue, onDiscarded }: { blocked?: boolean; onIssue?: (issue: SaveIssue | null) => void; onDiscarded?: () => void }) {
   const flow = usePromptsFlow();
   const { current: prompt, isNew, prompts, draft } = flow;
   const { code, description, text } = draft;
@@ -73,58 +72,10 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
     }
   };
 
-  const saved = prompt ? savedLabel(prompt.updatedAt) : null;
-  const subtitle = [description, saved].filter(Boolean).join(' · ');
-
-  return (
+  const dialogs = (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="font-data text-display font-semibold text-ink">{isNew ? 'New prompt' : prompt?.code}</h2>
-            {prompt && <SourceBadge bundled={prompt.bundled} />}
-            {dirty && !isNew && <span className={quietTag}>Edited</span>}
-          </div>
-          <p className="text-body text-muted">{subtitle || (isNew ? 'Name it, say what it is for, then write the text.' : '')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {prompt && !prompt.bundled && (
-            <button type="button" className={btnQuietDestructive} disabled={busy} onClick={() => setConfirmDelete(true)}>
-              Delete…
-            </button>
-          )}
-          {prompt && !prompt.bundled && (
-            <button type="button" className={btnGhost} disabled={busy || dirty} title={dirty ? 'Save or discard your changes before renaming' : undefined} onClick={() => setRenameTo(prompt.code)}>
-              Rename…
-            </button>
-          )}
-          <button
-            type="button"
-            className={btnGhost}
-            disabled={busy || !dirty}
-            onClick={() => {
-              flow.discard();
-              onDiscarded?.();
-            }}
-          >
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className={btnPrimary}
-            disabled={saveDisabled}
-            onClick={() => {
-              if (!prompt?.bundled) return void save();
-              setForkCode((c) => c ?? copyCode(prompt.code, prompts));
-              setForkOpen(true);
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </div>
       {actionError && (
-        <p role="alert" className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
+        <p role="alert" className="mx-4 mt-3 rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
           {actionError}
         </p>
       )}
@@ -168,6 +119,41 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
           This removes the prompt from the Library. A prompt that other prompts include cannot be deleted.
         </ConfirmDialog>
       )}
+    </>
+  );
+
+  return {
+    busy,
+    dirty,
+    saveDisabled,
+    dialogs,
+    save: () => {
+      if (!prompt?.bundled) return void save();
+      setForkCode((c) => c ?? copyCode(prompt.code, prompts));
+      setForkOpen(true);
+    },
+    discard: () => {
+      flow.discard();
+      onDiscarded?.();
+    },
+    askDelete: () => setConfirmDelete(true),
+    askRename: () => prompt && setRenameTo(prompt.code),
+  };
+}
+
+export type PromptActions = ReturnType<typeof usePromptActions>;
+
+export function PromptTitle() {
+  const { current: prompt, isNew, draft, changes } = usePromptsFlow();
+  const saved = prompt ? savedLabel(prompt.updatedAt) : null;
+  const subtitle = [draft.description, saved].filter(Boolean).join(' · ');
+  return (
+    <>
+      <div className="col-start-1 row-start-1 flex min-w-0 flex-wrap items-center gap-2.5">
+        <h2 className="break-all font-data text-[17px] font-semibold text-ink">{isNew ? 'New prompt' : prompt?.code}</h2>
+        {changes > 0 && !isNew && <span className={quietTag}>Edited</span>}
+      </div>
+      <p className="col-span-2 row-start-2 text-body text-muted">{subtitle || (isNew ? 'Name it, say what it is for, then write the text.' : '')}</p>
     </>
   );
 }

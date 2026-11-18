@@ -80,7 +80,7 @@ describe('per-target concurrency in the Auto-Runner', () => {
     const { ar, started } = build(1);
     ar.poke();
     await vi.waitFor(() => expect(started).toEqual([first.id, local.id]));
-    expect(ar.skipReasonFor(second.id)).toBe('waiting for k8s-prod');
+    await vi.waitFor(() => expect(ar.skipReasonFor(second.id)).toBe('waiting for k8s-prod'));
   });
 
   it('holds a disabled target\'s Tickets and starts them once it is re-enabled', async () => {

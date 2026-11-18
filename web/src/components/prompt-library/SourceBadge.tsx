@@ -1,11 +1,18 @@
+import type { ReactNode } from 'react';
+
+const TONES = {
+  bundled: 'bg-raised text-muted',
+  yours: 'bg-accent-tint text-accent',
+  used: 'bg-ready-tint text-ready',
+  fragment: 'bg-await-tint text-await',
+} as const;
+
+export type TagTone = keyof typeof TONES;
+
+export function Tag({ tone, children }: { tone: TagTone; children: ReactNode }) {
+  return <span className={`inline-flex whitespace-nowrap rounded-sm px-1.5 py-px font-data text-[10.5px] ${TONES[tone]}`}>{children}</span>;
+}
+
 export function SourceBadge({ bundled }: { bundled: boolean }) {
-  return (
-    <span
-      className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] ${
-        bundled ? 'bg-raised text-muted' : 'bg-accent-tint text-accent'
-      }`}
-    >
-      {bundled ? 'Bundled' : 'Yours'}
-    </span>
-  );
+  return <Tag tone={bundled ? 'bundled' : 'yours'}>{bundled ? 'bundled' : 'yours'}</Tag>;
 }
