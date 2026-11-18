@@ -29,7 +29,6 @@ export const SAMPLE_STEP_FIELDS: Readonly<Record<string, string | number>> = {
 
 const SAMPLE_TICKET = { title: SAMPLE_DRIVE_FIELDS.title, body: SAMPLE_DRIVE_FIELDS.description, labels: ['bug'], ref: SAMPLE_DRIVE_FIELDS.ref, origin: 'mirrored' };
 
-/** The text as a step would send it, filled with sample values; a malformed expression leaves it as written. */
 export function fillSample(text: string): string {
   const vars = Object.fromEntries([...text.matchAll(/\bvars\.([A-Za-z_][\w-]*)/g)].map(([, name]) => [name as string, `<${name}>`]));
   try {

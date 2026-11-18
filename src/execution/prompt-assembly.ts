@@ -176,7 +176,6 @@ export interface PromptSegment {
 export const PROMPT_STEP_KINDS = ['agent', 'critic'] as const;
 export type PromptStepKind = (typeof PROMPT_STEP_KINDS)[number];
 
-/** What a workflow step sends, in order: the step's own prompt, then any parts the engine appends and nobody can edit. */
 export function assembleStepPrompt(kind: PromptStepKind, prompt: string, prompts: EnginePrompts): PromptSegment[] {
   const operator: PromptSegment = { source: 'operator', label: 'Your prompt', text: prompt };
   if (kind === 'agent') return [operator];
