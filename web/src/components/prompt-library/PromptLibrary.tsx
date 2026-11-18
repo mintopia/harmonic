@@ -8,6 +8,8 @@ import { PromptEditStep } from './PromptEdit';
 import { usePromptsFlow } from './PromptsFlow';
 import { SourceBadge } from './SourceBadge';
 
+const PANEL_BELOW_RAIL = '(max-width: 767px)';
+
 export function PromptLibrary() {
   return (
     <div className="flex min-w-0 flex-col gap-5 md:flex-row md:items-start">
@@ -96,8 +98,7 @@ function PromptPanel() {
   const flow = usePromptsFlow();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Stacked below the rail on phones, so the open prompt would sit off screen.
-    if (flow.selected !== null && window.matchMedia?.('(max-width: 767px)').matches) ref.current?.scrollIntoView({ block: 'start' });
+    if (flow.selected !== null && window.matchMedia?.(PANEL_BELOW_RAIL).matches) ref.current?.scrollIntoView({ block: 'start' });
   }, [flow.selected]);
   if (flow.selected !== null)
     return (
