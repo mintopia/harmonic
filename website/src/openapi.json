@@ -11153,6 +11153,14 @@
             "type": "boolean",
             "description": "Bundled prompts ship with Harmonic and are read-only; duplicate one to edit."
           },
+          "category": {
+            "type": "string",
+            "enum": [
+              "fragment",
+              "prompt"
+            ],
+            "description": "`fragment` for an internal engine piece the runtime composes; `prompt` for one an operator names in a workflow step or edits."
+          },
           "resolved": {
             "type": "string",
             "description": "The text with every `${{ prompts.<code> }}` include expanded."
@@ -11211,6 +11219,7 @@
           "description",
           "text",
           "bundled",
+          "category",
           "resolved",
           "usedBy",
           "usedBySteps",
@@ -22736,6 +22745,14 @@
             "type": "boolean",
             "description": "Bundled prompts ship with Harmonic and are read-only; duplicate one to edit."
           },
+          "category": {
+            "type": "string",
+            "enum": [
+              "fragment",
+              "prompt"
+            ],
+            "description": "`fragment` for an internal engine piece the runtime composes; `prompt` for one an operator names in a workflow step or edits."
+          },
           "resolved": {
             "type": "string",
             "description": "The text with every `${{ prompts.<code> }}` include expanded."
@@ -22795,6 +22812,7 @@
           "description",
           "text",
           "bundled",
+          "category",
           "resolved",
           "usedBy",
           "usedBySteps",

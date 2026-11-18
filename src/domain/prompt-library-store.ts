@@ -7,7 +7,7 @@ import { DomainError } from './errors.js';
 import { BUNDLED_PROMPTS, BUNDLED_PROMPT_CODES, type EnginePrompts } from './bundled-prompts.js';
 import { LIBRARY_ENTRY_CODES } from './prompt-library-sources.js';
 import { retiredEntryFor } from './retired-settings.js';
-import { PROMPT_CODE_PATTERN, renameIncludes, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
+import { PROMPT_CODE_PATTERN, renameIncludes, resolvePrompt, usedBy, validateIncludes, type PromptCategory, type PromptEntry } from './prompt-library.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
 import { parseWorkflow, type WorkflowStepDefinition } from './workflow.js';
 import type { WorkflowEntry } from './workflow-library-store.js';
@@ -19,7 +19,10 @@ export interface StepUse {
   readonly uses: PromptStepKind;
 }
 
+const FRAGMENT_CODES: ReadonlySet<string> = new Set(BUNDLED_PROMPT_CODES);
+
 export interface PromptView extends Omit<PromptEntry, 'updatedAt'> {
+  readonly category: PromptCategory;
   readonly resolved: string;
   readonly usedBy: string[];
   readonly usedBySteps: StepUse[];
@@ -181,6 +184,7 @@ export class PromptLibrary {
     return {
       ...entry,
       updatedAt: entry.updatedAt ?? null,
+      category: entry.bundled && FRAGMENT_CODES.has(entry.code) ? 'fragment' : 'prompt',
       resolved: resolvePrompt(entry.text, lookup, [entry.code]),
       usedBy: usedBy(entry.code, all),
       usedBySteps: this.stepUses(entry.code),

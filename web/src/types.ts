@@ -1,3 +1,4 @@
+import type { PromptCategory } from '../../src/domain/prompt-library.js';
 import type { PromptStepKind } from '../../src/execution/prompt-assembly.js';
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
@@ -1450,6 +1451,7 @@ export interface Prompt {
   description: string;
   text: string;
   bundled: boolean;
+  category: PromptCategory;
   resolved: string;
   usedBy: string[];
   usedBySteps: PromptStepUse[];

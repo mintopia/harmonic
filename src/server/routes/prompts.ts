@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { PromptLibrary } from '../../domain/prompt-library-store.js';
-import { PROMPT_CODE_PATTERN } from '../../domain/prompt-library.js';
+import { PROMPT_CATEGORIES, PROMPT_CODE_PATTERN } from '../../domain/prompt-library.js';
 import { PROMPT_SEGMENT_SOURCES, PROMPT_STEP_KINDS } from '../../execution/prompt-assembly.js';
 import { errorResponse, okResponseSchema } from '../schemas.js';
 import { listResponse } from '../pagination.js';
@@ -33,6 +33,7 @@ const promptSchema = z
     description: z.string().meta({ example: 'Wording every agent turn shares.' }),
     text: z.string().meta({ example: 'Follow the house style. ${{ prompts.conflictResolution }}' }),
     bundled: z.boolean().describe('Bundled prompts ship with Harmonic and are read-only; duplicate one to edit.'),
+    category: z.enum(PROMPT_CATEGORIES).describe('`fragment` for an internal engine piece the runtime composes; `prompt` for one an operator names in a workflow step or edits.'),
     resolved: z.string().describe('The text with every `${{ prompts.<code> }}` include expanded.'),
     usedBy: z.array(z.string()).describe('Codes of the prompts that include this one.'),
     usedBySteps: z.array(stepUseSchema).describe('Workflow steps whose `with.prompt` names this prompt.'),

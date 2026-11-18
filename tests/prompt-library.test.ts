@@ -43,6 +43,18 @@ describe('PromptLibrary on a real filesystem', () => {
     expect((await second.get('base')).usedBy).toEqual(['top']);
   });
 
+  it('classifies bundled engine pieces as fragments and everything else as prompts', async () => {
+    const lib = new PromptLibrary(root);
+    await lib.create('criticRole-edited', 'x', 'T');
+    const category = new Map((await lib.list()).map((p) => [p.code, p.category]));
+    expect(category.get('criticRole')).toBe('fragment');
+    expect(category.get('routeClassifier')).toBe('fragment');
+    expect(category.get('implement-native')).toBe('prompt');
+    expect(category.get('taskPrompt')).toBe('prompt');
+    expect(category.get('criticRole-edited')).toBe('prompt');
+    await lib.delete('criticRole-edited');
+  });
+
   it('reports the file mtime as updatedAt for operator prompts and null for bundled ones', async () => {
     const lib = new PromptLibrary(root);
     await lib.create('stamped', 'x', 'T');

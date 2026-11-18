@@ -16,16 +16,23 @@ import {
   usedByLabel,
   usedByRows,
   validateCode,
+  visiblePrompts,
 } from '../web/src/prompt-library-model.js';
 import type { Prompt } from '../web/src/types.js';
 
 function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
-  return { code, description: `${code} desc`, text: '', bundled: false, resolved: '', usedBy: [], usedBySteps: [], updatedAt: null, ...over };
+  return { code, description: `${code} desc`, text: '', bundled: false, category: 'prompt', resolved: '', usedBy: [], usedBySteps: [], updatedAt: null, ...over };
 }
 
 const LIB = [prompt('implement', { bundled: true }), prompt('critic', { bundled: true, description: 'Correctness Critic' }), prompt('team-style')];
 
 describe('prompt library model', () => {
+  it('hides engine fragments unless asked, so a default search skips them', () => {
+    const lib = [...LIB, prompt('criticRole', { bundled: true, category: 'fragment', description: 'critic role' })];
+    expect(filterPrompts(visiblePrompts(lib, false), 'critic').map((p) => p.code)).toEqual(['critic']);
+    expect(filterPrompts(visiblePrompts(lib, true), 'critic').map((p) => p.code)).toEqual(['critic', 'criticRole']);
+  });
+
   it('filters by code or description, case-insensitively', () => {
     expect(filterPrompts(LIB, 'IMPL').map((p) => p.code)).toEqual(['implement']);
     expect(filterPrompts(LIB, 'correctness').map((p) => p.code)).toEqual(['critic']);

@@ -9,6 +9,10 @@ export function filterPrompts(prompts: readonly Prompt[], query: string): Prompt
   return prompts.filter((p) => p.code.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
 }
 
+export function visiblePrompts(prompts: readonly Prompt[], includeFragments: boolean): Prompt[] {
+  return includeFragments ? [...prompts] : prompts.filter((p) => p.category !== 'fragment');
+}
+
 export function libraryCounts(prompts: readonly Prompt[]): { total: number; bundled: number; yours: number } {
   const bundled = prompts.filter((p) => p.bundled).length;
   return { total: prompts.length, bundled, yours: prompts.length - bundled };
