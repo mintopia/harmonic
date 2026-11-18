@@ -1458,4 +1458,5 @@ export interface Prompt {
 export interface PromptStepUse {
   workflow: string;
   stepId: string;
+  uses: 'agent' | 'critic';
 }

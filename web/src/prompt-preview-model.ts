@@ -1,6 +1,6 @@
 import type { EnginePrompts } from '../../src/domain/bundled-prompts.js';
 import type { ClassifierInput } from '../../src/domain/route-classifier.js';
-import { buildCriticPrompt } from '../../src/execution/prompt-assembly.js';
+import { buildCriticPrompt, renderAgentPrompt } from '../../src/execution/prompt-assembly.js';
 import type { DriveFields } from '../../src/execution/prompt-template.js';
 
 /** Illustrative values for the `{taskId}/{skill}/{ref}/{url}/{title}/{description}` tokens. */
@@ -12,6 +12,33 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
   title: 'Example issue title',
   description: 'Example issue body describing the change to make.',
 };
+
+/** Illustrative values for every `{field}` a workflow agent or critic step fills. */
+export const SAMPLE_STEP_FIELDS: Readonly<Record<string, string | number>> = {
+  ...SAMPLE_DRIVE_FIELDS,
+  prompt: SAMPLE_DRIVE_FIELDS.description,
+  id: SAMPLE_DRIVE_FIELDS.taskId,
+  workingDir: '/workspace/repo',
+  harness: 'claude',
+  model: 'sonnet',
+  branch: 'epic/example',
+  feedback: '',
+  attempt: 0,
+  reason: '',
+  output: '',
+};
+
+const SAMPLE_TICKET = { title: SAMPLE_DRIVE_FIELDS.title, body: SAMPLE_DRIVE_FIELDS.description, labels: ['bug'], ref: SAMPLE_DRIVE_FIELDS.ref, origin: 'mirrored' };
+
+/** The text as a step would send it, filled with sample values; a malformed expression leaves it as written. */
+export function fillSample(text: string): string {
+  const vars = Object.fromEntries([...text.matchAll(/\bvars\.([A-Za-z_][\w-]*)/g)].map(([, name]) => [name as string, `<${name}>`]));
+  try {
+    return renderAgentPrompt(text, SAMPLE_STEP_FIELDS, { ticket: SAMPLE_TICKET, vars });
+  } catch {
+    return text;
+  }
+}
 
 /** A compiled prompt shown under one editor, optionally split into labeled
  * variants that render side by side. */

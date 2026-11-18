@@ -8,6 +8,9 @@ import { PromptImpact } from '../web/src/components/prompt-library/PromptImpact.
 import { PromptsFlowProvider, promptsRailState, usePromptsFlow, type PromptsRailState } from '../web/src/components/prompt-library/PromptsFlow.js';
 import type { Prompt, WorkflowLibraryEntry } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
+import { assembleStepPrompt } from '../src/execution/prompt-assembly.js';
+import { SAMPLE_DRIVE_FIELDS } from '../web/src/prompt-preview-model.js';
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -28,9 +31,9 @@ const LIB: Prompt[] = [
     text: 'Keep it small.\n${{ prompts.security-checklist }}',
     usedBy: ['release-notes'],
     usedBySteps: [
-      { workflow: 'Default', stepId: 'implement' },
-      { workflow: 'Security review', stepId: 'security' },
-      { workflow: 'Default', stepId: 'review' },
+      { workflow: 'Default', stepId: 'implement', uses: 'agent' },
+      { workflow: 'Security review', stepId: 'security', uses: 'critic' },
+      { workflow: 'Default', stepId: 'review', uses: 'critic' },
     ],
     updatedAt: new Date(2026, 9, 29, 14, 2).toISOString(),
   }),
@@ -66,6 +69,7 @@ async function mountLibrary(prompts = LIB, workflows = WORKFLOWS) {
   rail = null;
   vi.spyOn(api, 'prompts').mockResolvedValue({ prompts, total: prompts.length });
   vi.spyOn(api, 'workflows').mockResolvedValue({ workflows, total: workflows.length });
+  vi.spyOn(api, 'assemblePrompt').mockImplementation(async (uses, text) => ({ segments: assembleStepPrompt(uses, text, bundledEnginePrompts()) }));
   return mountComponent(createElement(Flow));
 }
 
@@ -340,6 +344,47 @@ describe('Prompt Library page', () => {
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
     await click(button(host, 'To impact'));
     expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('3 Tickets running now');
+  });
+
+  it('shows what a critic step sends: your prompt, then the engine guard and verdict contract as fixed blocks', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="team-style"] button'));
+    const sends = () => host.querySelector('[data-testid="step-sends"]') as HTMLElement;
+    const select = host.querySelector('select') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Default › implement · agent', 'Security review › security · critic', 'Default › review · critic']);
+    expect(sends().querySelector('[data-segment="engine"]')).toBeNull();
+
+    await act(async () => {
+      select.value = '1';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+    });
+    const blocks = [...sends().querySelectorAll('[data-segment]')];
+    expect(blocks.map((b) => b.getAttribute('data-segment'))).toEqual(['operator', 'engine', 'engine']);
+    expect(blocks[0]?.textContent).toContain('Keep it small.');
+    expect(blocks[1]?.textContent).toContain('Read-only critic guard');
+    expect(blocks[1]?.textContent).toMatch(/READ-ONLY/i);
+    expect(blocks[2]?.textContent).toContain('Verdict contract');
+    expect(api.assemblePrompt).toHaveBeenCalledWith('critic', 'Keep it small.\n${{ prompts.security-checklist }}');
+  });
+
+  it('shows the assembled view for a bundled prompt', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="implement"] button'));
+    expect(host.querySelector('[data-testid="step-sends"]')?.textContent).toContain('Implement');
+  });
+
+  it('toggles between highlighted tokens and sample values', async () => {
+    const lib = LIB.map((p) => (p.code === 'security-checklist' ? { ...p, text: 'Fix {title} for ${{ ticket.ref }}.' } : p));
+    const host = await mountLibrary(lib);
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
+    const operator = () => host.querySelector('[data-segment="operator"]') as HTMLElement;
+    expect(operator().querySelector('[data-ref="field"]')?.textContent).toBe('{title}');
+    expect(operator().querySelector('[data-ref="context"]')?.textContent).toBe('ticket.ref');
+
+    await click(button(host, 'As sent'));
+    expect(operator().querySelector('[data-ref]')).toBeNull();
+    expect(operator().textContent).toContain(`Fix ${SAMPLE_DRIVE_FIELDS.title} for ${SAMPLE_DRIVE_FIELDS.ref}.`);
   });
 
   it('updates the include preview as you type', async () => {

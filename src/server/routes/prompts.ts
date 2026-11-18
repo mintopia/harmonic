@@ -8,10 +8,23 @@ import { listResponse } from '../pagination.js';
 
 const codeSchema = z.string().regex(PROMPT_CODE_PATTERN, 'a code starts with a letter and holds letters, digits, - or _ (max 64)').meta({ example: 'house-style' });
 
+const stepKindSchema = z.enum(['agent', 'critic']);
+
 const stepUseSchema = z.object({
   workflow: z.string().meta({ example: 'implement' }),
   stepId: z.string().meta({ example: 'review' }),
+  uses: stepKindSchema.describe('The step action, which decides what the engine appends to the prompt.'),
 });
+
+const segmentSchema = z
+  .object({
+    source: z.enum(['operator', 'engine']).describe('`operator`: the prompt text, editable. `engine`: a part the engine appends, fixed.'),
+    label: z.string().meta({ example: 'Verdict contract' }),
+    text: z.string(),
+  })
+  .meta({ id: 'PromptSegment' });
+
+const assembleBodySchema = z.object({ text: z.string().max(100_000), uses: stepKindSchema });
 
 const promptSchema = z
   .object({
@@ -50,6 +63,20 @@ export async function promptRoutes(fastify: FastifyInstance, ctx: { prompts: Pro
       const prompts = await ctx.prompts.list();
       return { prompts, total: prompts.length };
     },
+  );
+
+  app.post(
+    '/prompts/assemble',
+    {
+      schema: {
+        tags,
+        description: 'Assemble the full prompt a step of the given kind sends for this text: includes expanded, then any engine-appended parts, as ordered labelled segments.',
+        security,
+        body: assembleBodySchema,
+        response: { 200: z.object({ segments: z.array(segmentSchema) }).describe('The segments in the order they are sent.') },
+      },
+    },
+    async (req) => ({ segments: await ctx.prompts.assemble(req.body.uses, req.body.text) }),
   );
 
   app.get(

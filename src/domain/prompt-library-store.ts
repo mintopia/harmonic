@@ -9,10 +9,12 @@ import { PROMPT_CODE_PATTERN, resolvePrompt, usedBy, validateIncludes, type Prom
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
 import { parseWorkflow, type WorkflowStepDefinition } from './workflow.js';
 import type { WorkflowEntry } from './workflow-library-store.js';
+import { assembleStepPrompt, type PromptSegment, type PromptStepKind } from '../execution/prompt-assembly.js';
 
 export interface StepUse {
   readonly workflow: string;
   readonly stepId: string;
+  readonly uses: PromptStepKind;
 }
 
 export interface PromptView extends Omit<PromptEntry, 'updatedAt'> {
@@ -35,6 +37,8 @@ function promptCodeOf(step: WorkflowStepDefinition): string | undefined {
   const prompt = step.with?.prompt;
   return typeof prompt === 'string' ? prompt.trim() : undefined;
 }
+
+const promptStepKind = (step: WorkflowStepDefinition): PromptStepKind | undefined => (step.uses === 'agent' || step.uses === 'critic' ? step.uses : undefined);
 
 const fileSchema = z.object({ description: z.string(), text: z.string() });
 
@@ -99,7 +103,10 @@ export class PromptLibrary {
 
   private stepUses(code: string): StepUse[] {
     return (this.workflows?.list() ?? []).flatMap((wf) =>
-      stepsOf(wf.text).filter((step) => promptCodeOf(step) === code).map((step) => ({ workflow: wf.name, stepId: step.id })),
+      stepsOf(wf.text).flatMap((step) => {
+        const uses = promptStepKind(step);
+        return uses && promptCodeOf(step) === code ? [{ workflow: wf.name, stepId: step.id, uses }] : [];
+      }),
     );
   }
 
@@ -168,6 +175,11 @@ export class PromptLibrary {
     const lookup = new Map((await this.all()).map((e) => [e.code, e.text]));
     const isCode = PROMPT_CODE_PATTERN.test(textOrCode) && lookup.has(textOrCode);
     return resolvePrompt(isCode ? lookup.get(textOrCode)! : textOrCode, lookup, isCode ? [textOrCode] : []);
+  }
+
+  /** What a step of the given kind sends for this text, with Library includes and the operator's engine prompts applied. */
+  async assemble(kind: PromptStepKind, text: string): Promise<PromptSegment[]> {
+    return assembleStepPrompt(kind, await this.resolve(text), this.enginePrompts());
   }
 
   async get(code: string): Promise<PromptView> {
