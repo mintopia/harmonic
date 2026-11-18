@@ -172,7 +172,7 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
   );
 }
 
-function SaveAsNewDialog({
+export function SaveAsNewDialog({
   bundled,
   code,
   error,
