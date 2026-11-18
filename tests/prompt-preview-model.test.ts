@@ -25,4 +25,3 @@ describe('prompt-preview-model (settings compiled preview)', () => {
     expect(fillSample('Broken ${{ ticket. }} {title}')).toBe('Broken ${{ ticket. }} {title}');
   });
 });
-

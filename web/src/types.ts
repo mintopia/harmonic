@@ -1,3 +1,4 @@
+import type { PromptStepKind } from '../../src/execution/prompt-assembly.js';
 import type { TrackerResolveFailureCode } from '../../src/tracker/adapter.js';
 import type { AttemptClassifier, EscalationCause, TaskClassifier, TaskRouting } from '../../src/domain/task-routing.js';
 
@@ -1458,5 +1459,5 @@ export interface Prompt {
 export interface PromptStepUse {
   workflow: string;
   stepId: string;
-  uses: 'agent' | 'critic';
+  uses: PromptStepKind;
 }

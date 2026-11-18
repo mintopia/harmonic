@@ -3,12 +3,13 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { PromptLibrary } from '../../domain/prompt-library-store.js';
 import { PROMPT_CODE_PATTERN } from '../../domain/prompt-library.js';
+import { PROMPT_SEGMENT_SOURCES, PROMPT_STEP_KINDS } from '../../execution/prompt-assembly.js';
 import { errorResponse, okResponseSchema } from '../schemas.js';
 import { listResponse } from '../pagination.js';
 
 const codeSchema = z.string().regex(PROMPT_CODE_PATTERN, 'a code starts with a letter and holds letters, digits, - or _ (max 64)').meta({ example: 'house-style' });
 
-const stepKindSchema = z.enum(['agent', 'critic']);
+const stepKindSchema = z.enum(PROMPT_STEP_KINDS);
 
 const stepUseSchema = z.object({
   workflow: z.string().meta({ example: 'implement' }),
@@ -18,7 +19,7 @@ const stepUseSchema = z.object({
 
 const segmentSchema = z
   .object({
-    source: z.enum(['operator', 'engine']).describe('`operator`: the prompt text, editable. `engine`: a part the engine appends, fixed.'),
+    source: z.enum(PROMPT_SEGMENT_SOURCES).describe('`operator`: the prompt text, editable. `engine`: a part the engine appends, fixed.'),
     label: z.string().meta({ example: 'Verdict contract' }),
     text: z.string(),
   })

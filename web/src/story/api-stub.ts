@@ -2,7 +2,7 @@
 import type { Prompt, TrackerRef } from '../types.js';
 import * as f from './fixtures';
 import { bundledEnginePrompts } from '../../../src/domain/bundled-prompts.js';
-import { assembleStepPrompt } from '../../../src/execution/prompt-assembly.js';
+import { assembleStepPrompt, type PromptStepKind } from '../../../src/execution/prompt-assembly.js';
 
 export const workflowStory = new URLSearchParams(window.location.search).get('workflow') === '1';
 const podParam = new URLSearchParams(window.location.search).get('pod');
@@ -321,8 +321,8 @@ const executionTargetFixtures: ExecutionTarget[] = [
   stubTarget('k8s-staging', false, 0, 1, 'harmonic-staging'),
 ];
 
-const step = (workflow: string, stepId: string, uses: 'agent' | 'critic' = 'agent') => ({ workflow, stepId, uses });
-const stepsOf = (n: number, uses: 'agent' | 'critic' = 'agent') => Array.from({ length: n }, (_, i) => step('implement', `step-${i + 1}`, uses));
+const step = (workflow: string, stepId: string, uses: PromptStepKind = 'agent') => ({ workflow, stepId, uses });
+const stepsOf = (n: number, uses: PromptStepKind = 'agent') => Array.from({ length: n }, (_, i) => step('implement', `step-${i + 1}`, uses));
 const promptFixtures: Prompt[] = [
   { code: 'implement', description: 'The implementation turn: what to build and how to report', text: 'Implement ${{ ticket.title }} as described in the Ticket.\nRead the relevant code before changing it. Make the smallest change that solves the problem.\nRun the checks the repository defines and fix what you broke.\n\nWhen done, report what changed, what you verified, and anything left open.', bundled: true, resolved: '', usedBy: [], usedBySteps: stepsOf(3), updatedAt: null },
   { code: 'critic-correctness', description: 'Correctness Critic: judge the diff against the issue', text: 'Judge the diff against the issue.', bundled: true, resolved: '', usedBy: [], usedBySteps: stepsOf(2, 'critic'), updatedAt: null },

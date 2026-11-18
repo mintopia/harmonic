@@ -13,7 +13,6 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
   description: 'Example issue body describing the change to make.',
 };
 
-/** Illustrative values for every `{field}` a workflow agent or critic step fills. */
 export const SAMPLE_STEP_FIELDS: Readonly<Record<string, string | number>> = {
   ...SAMPLE_DRIVE_FIELDS,
   prompt: SAMPLE_DRIVE_FIELDS.description,

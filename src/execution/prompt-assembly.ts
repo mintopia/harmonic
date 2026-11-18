@@ -165,13 +165,16 @@ ${CRITIC_VERDICT_CONTRACT}`;
 
 const FINDINGS_NOTE = 'You may add an optional "findings" key to that object: an array of short strings, one per concrete problem you found.';
 
+export const PROMPT_SEGMENT_SOURCES = ['operator', 'engine'] as const;
+
 export interface PromptSegment {
-  source: 'operator' | 'engine';
+  source: (typeof PROMPT_SEGMENT_SOURCES)[number];
   label: string;
   text: string;
 }
 
-export type PromptStepKind = 'agent' | 'critic';
+export const PROMPT_STEP_KINDS = ['agent', 'critic'] as const;
+export type PromptStepKind = (typeof PROMPT_STEP_KINDS)[number];
 
 /** What a workflow step sends, in order: the step's own prompt, then any parts the engine appends and nobody can edit. */
 export function assembleStepPrompt(kind: PromptStepKind, prompt: string, prompts: EnginePrompts): PromptSegment[] {

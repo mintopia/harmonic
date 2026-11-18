@@ -365,7 +365,7 @@ describe('Prompt Library page', () => {
     expect(blocks[1]?.textContent).toContain('Read-only critic guard');
     expect(blocks[1]?.textContent).toMatch(/READ-ONLY/i);
     expect(blocks[2]?.textContent).toContain('Verdict contract');
-    expect(api.assemblePrompt).toHaveBeenCalledWith('critic', 'Keep it small.\n${{ prompts.security-checklist }}');
+    expect(api.assemblePrompt).toHaveBeenCalledWith('critic', '');
   });
 
   it('shows the assembled view for a bundled prompt', async () => {

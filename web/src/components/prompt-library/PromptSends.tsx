@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PromptSegment, PromptStepKind } from '../../../../src/execution/prompt-assembly.js';
 import { resolvePrompt } from '../../../../src/domain/prompt-library.js';
 import { api } from '../../api';
@@ -41,29 +41,20 @@ function Preview({ nodes }: { nodes: readonly PreviewNode[] }) {
   );
 }
 
-/** Engine parts depend only on the step kind and the Library, so a draft edit refetches them lazily. */
-function useEngineSegments(uses: PromptStepKind, text: string): { segments: PromptSegment[] | null; error: string | null } {
+function useEngineSegments(uses: PromptStepKind): { segments: PromptSegment[] | null; error: string | null } {
   const [state, setState] = useState<{ uses: PromptStepKind; segments: PromptSegment[] | null; error: string | null } | null>(null);
-  const loadedFor = useRef<PromptStepKind | null>(null);
   useEffect(() => {
+    if (uses === 'agent') return;
     let live = true;
-    const timer = setTimeout(
-      () =>
-        api.assemblePrompt(uses, text).then(
-          (r) => {
-            if (!live) return;
-            loadedFor.current = uses;
-            setState({ uses, segments: r.segments.filter((s) => s.source === 'engine'), error: null });
-          },
-          (err: unknown) => live && setState({ uses, segments: null, error: errorText(err) }),
-        ),
-      loadedFor.current === uses ? 250 : 0,
+    api.assemblePrompt(uses, '').then(
+      (r) => live && setState({ uses, segments: r.segments.filter((s) => s.source === 'engine'), error: null }),
+      (err: unknown) => live && setState({ uses, segments: null, error: errorText(err) }),
     );
     return () => {
       live = false;
-      clearTimeout(timer);
     };
-  }, [uses, text]);
+  }, [uses]);
+  if (uses === 'agent') return { segments: [], error: null };
   return state?.uses === uses ? state : { segments: null, error: null };
 }
 
@@ -72,7 +63,7 @@ export function PromptSends({ prompt, text, prompts }: { prompt: Prompt | null; 
   const [picked, setPicked] = useState(0);
   const [mode, setMode] = useState<Mode>('structure');
   const context = contexts[Math.min(picked, contexts.length - 1)]!;
-  const { segments, error } = useEngineSegments(context.uses, text);
+  const { segments, error } = useEngineSegments(context.uses);
 
   const lookup = new Map(prompts.map((p) => [p.code, p.text]));
   if (prompt) lookup.set(prompt.code, text);
@@ -121,7 +112,7 @@ export function PromptSends({ prompt, text, prompts }: { prompt: Prompt | null; 
             <div className="whitespace-pre-wrap">{fillSample(resolvePrompt(text, lookup, seen))}</div>
           )}
         </div>
-        {context.uses === 'critic' && segments === null && (
+        {segments === null && (
           <p className="text-small text-muted">{error ? `Couldn’t load the engine’s parts: ${error}` : 'Loading the engine’s parts…'}</p>
         )}
         {segments?.map((s) => (
