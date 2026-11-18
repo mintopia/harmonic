@@ -11108,6 +11108,31 @@
           "entries"
         ]
       },
+      "PromptSegmentInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "engine"
+            ],
+            "description": "`operator`: the prompt text, editable. `engine`: a part the engine appends, fixed."
+          },
+          "label": {
+            "type": "string",
+            "example": "Verdict contract"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "label",
+          "text"
+        ]
+      },
       "PromptInput": {
         "type": "object",
         "properties": {
@@ -11151,11 +11176,20 @@
                 "stepId": {
                   "type": "string",
                   "example": "review"
+                },
+                "uses": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "critic"
+                  ],
+                  "description": "The step action, which decides what the engine appends to the prompt."
                 }
               },
               "required": [
                 "workflow",
-                "stepId"
+                "stepId",
+                "uses"
               ]
             },
             "description": "Workflow steps whose `with.prompt` names this prompt."
@@ -22656,6 +22690,32 @@
         ],
         "additionalProperties": false
       },
+      "PromptSegment": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "engine"
+            ],
+            "description": "`operator`: the prompt text, editable. `engine`: a part the engine appends, fixed."
+          },
+          "label": {
+            "type": "string",
+            "example": "Verdict contract"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "label",
+          "text"
+        ],
+        "additionalProperties": false
+      },
       "Prompt": {
         "type": "object",
         "properties": {
@@ -22699,11 +22759,20 @@
                 "stepId": {
                   "type": "string",
                   "example": "review"
+                },
+                "uses": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "critic"
+                  ],
+                  "description": "The step action, which decides what the engine appends to the prompt."
                 }
               },
               "required": [
                 "workflow",
-                "stepId"
+                "stepId",
+                "uses"
               ],
               "additionalProperties": false
             },
@@ -30477,6 +30546,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts/assemble": {
+      "post": {
+        "tags": [
+          "Prompts"
+        ],
+        "description": "Assemble the full prompt a step of the given kind sends for this text: includes expanded, then any engine-appended parts, as ordered labelled segments. Operator only: reachable with a full-scope key or session, not an attempt-scoped Attempt Key or a Read Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 100000
+                  },
+                  "uses": {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "critic"
+                    ]
+                  }
+                },
+                "required": [
+                  "text",
+                  "uses"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The segments in the order they are sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "segments": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PromptSegment"
+                      }
+                    }
+                  },
+                  "required": [
+                    "segments"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The segments in the order they are sent."
                 }
               }
             }

@@ -165,15 +165,31 @@ ${CRITIC_VERDICT_CONTRACT}`;
 
 const FINDINGS_NOTE = 'You may add an optional "findings" key to that object: an array of short strings, one per concrete problem you found.';
 
-/** The prompt a workflow critic step sends: the step's own prompt, then the engine's read-only restraint and JSON verdict contract. Neither is editable. */
-export function buildWorkflowCriticPrompt(prompt: string, prompts: EnginePrompts): string {
+export const PROMPT_SEGMENT_SOURCES = ['operator', 'engine'] as const;
+
+export interface PromptSegment {
+  source: (typeof PROMPT_SEGMENT_SOURCES)[number];
+  label: string;
+  text: string;
+}
+
+export const PROMPT_STEP_KINDS = ['agent', 'critic'] as const;
+export type PromptStepKind = (typeof PROMPT_STEP_KINDS)[number];
+
+export function assembleStepPrompt(kind: PromptStepKind, prompt: string, prompts: EnginePrompts): PromptSegment[] {
+  const operator: PromptSegment = { source: 'operator', label: 'Your prompt', text: prompt };
+  if (kind === 'agent') return [operator];
   return [
-    prompt,
-    `## Critic instructions\n${criticRole(prompts)}`,
-    renderPrompt('criticSecurity', prompts),
-    CRITIC_VERDICT_CONTRACT,
-    FINDINGS_NOTE,
-  ].join('\n\n');
+    operator,
+    { source: 'engine', label: 'Read-only critic guard', text: `## Critic instructions\n${criticRole(prompts)}\n\n${renderPrompt('criticSecurity', prompts)}` },
+    { source: 'engine', label: 'Verdict contract', text: `${CRITIC_VERDICT_CONTRACT}\n\n${FINDINGS_NOTE}` },
+  ];
+}
+
+export function buildWorkflowCriticPrompt(prompt: string, prompts: EnginePrompts): string {
+  return assembleStepPrompt('critic', prompt, prompts)
+    .map((segment) => segment.text)
+    .join('\n\n');
 }
 
 export function buildClassifierPrompt(input: ClassifierInput, prompts: EnginePrompts): string {

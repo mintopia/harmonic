@@ -1,3 +1,4 @@
+import type { PromptSegment, PromptStepKind } from '../../src/execution/prompt-assembly.js';
 import type { TrackerRef } from './types.js';
 import type {
   Prompt,
@@ -189,6 +190,7 @@ export const api = {
   createPrompt: (body: { code: string; description: string; text: string }) => request<Prompt>('POST', '/api/prompts', body),
   updatePrompt: (code: string, body: { description: string; text: string }) =>
     request<Prompt>('PUT', `/api/prompts/${encodeURIComponent(code)}`, body),
+  assemblePrompt: (uses: PromptStepKind, text: string) => request<{ segments: PromptSegment[] }>('POST', '/api/prompts/assemble', { text, uses }),
   deletePrompt: (code: string) => request<{ ok: true }>('DELETE', `/api/prompts/${encodeURIComponent(code)}`),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),

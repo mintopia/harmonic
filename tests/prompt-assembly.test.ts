@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { bundledEnginePrompts, type EnginePrompts } from '../src/domain/bundled-prompts.js';
+import { bundledEnginePrompts, CRITIC_VERDICT_CONTRACT, READ_ONLY_RESTRAINT, type EnginePrompts } from '../src/domain/bundled-prompts.js';
 import {
+  assembleStepPrompt,
+  buildWorkflowCriticPrompt,
   composeAttemptPrompt,
   composePauseMessage,
   composePeerContext,
@@ -144,5 +146,28 @@ describe('nudge templates', () => {
   it('expands included prompts in the pause message', () => {
     const prompts = { ...defaults(), conflictResolution: 'SHARED' };
     expect(composePauseMessage('Stop. ${{ prompts.conflictResolution }}', prompts)).toBe('Stop. SHARED');
+  });
+});
+
+describe('assembleStepPrompt', () => {
+  const prompts = defaults();
+
+  it('lays a critic step out as the operator prompt, then the engine guard and verdict contract, in order', () => {
+    const segments = assembleStepPrompt('critic', 'Judge the candidate.', prompts);
+    expect(segments.map((s) => [s.source, s.label])).toEqual([
+      ['operator', 'Your prompt'],
+      ['engine', 'Read-only critic guard'],
+      ['engine', 'Verdict contract'],
+    ]);
+    const [operator, guard, contract] = segments;
+    expect(operator!.text).toBe('Judge the candidate.');
+    expect(guard!.text).toContain(renderPrompt('criticRole', prompts, { readOnlyRestraint: READ_ONLY_RESTRAINT }));
+    expect(guard!.text).toContain(renderPrompt('criticSecurity', prompts));
+    expect(contract!.text).toContain(CRITIC_VERDICT_CONTRACT);
+    expect(segments.map((s) => s.text).join('\n\n')).toBe(buildWorkflowCriticPrompt('Judge the candidate.', prompts));
+  });
+
+  it('sends an agent step its prompt alone', () => {
+    expect(assembleStepPrompt('agent', 'Do the work.', prompts)).toEqual([{ source: 'operator', label: 'Your prompt', text: 'Do the work.' }]);
   });
 });

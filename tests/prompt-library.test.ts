@@ -77,8 +77,8 @@ steps:
 `;
     lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', subject: 'ticket' as const, text, version: 1 }] });
     expect((await lib.get('step-used')).usedBySteps).toEqual([
-      { workflow: 'wf', stepId: 'build' },
-      { workflow: 'wf', stepId: 'review' },
+      { workflow: 'wf', stepId: 'build', uses: 'agent' },
+      { workflow: 'wf', stepId: 'review', uses: 'critic' },
     ]);
     expect((await lib.get('step-used')).usedBy).toEqual([]);
     await lib.delete('step-used');
@@ -146,6 +146,21 @@ describe('/api/prompts', () => {
     expect(cycle.body.error.message).toContain('cyc-a → cyc-b → cyc-a');
     const unknown = await server.api('POST', '/api/prompts', { code: 'cyc-c', description: '', text: '${{ prompts.ghost }}' });
     expect(unknown.status).toBe(400);
+  });
+
+  it('assembles what a critic step sends: the operator text with includes expanded, then the engine guard and verdict contract', async () => {
+    const res = await server.api('POST', '/api/prompts/assemble', { text: 'Judge it. ${{ prompts.cyc-a }}', uses: 'critic' });
+    expect(res.status).toBe(200);
+    expect(res.body.segments.map((s: { source: string; label: string }) => `${s.source}:${s.label}`)).toEqual([
+      'operator:Your prompt',
+      'engine:Read-only critic guard',
+      'engine:Verdict contract',
+    ]);
+    expect(res.body.segments[0].text).toBe('Judge it. x');
+    expect(res.body.segments[1].text).toMatch(/READ-ONLY/i);
+    expect(res.body.segments[2].text).toMatch(/verdict/i);
+    const agent = await server.api('POST', '/api/prompts/assemble', { text: 'Do it.', uses: 'agent' });
+    expect(agent.body.segments).toEqual([{ source: 'operator', label: 'Your prompt', text: 'Do it.' }]);
   });
 
   it('returns the resolved preview and usedBy', async () => {

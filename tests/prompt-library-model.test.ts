@@ -10,6 +10,7 @@ import {
   malformedReference,
   parseSaveError,
   previewTree,
+  sendContexts,
   suggestCode,
   usedByLabel,
   usedByRows,
@@ -32,7 +33,7 @@ describe('prompt library model', () => {
   });
 
   it('labels used-by with steps and prompts', () => {
-    const step = { workflow: 'w', stepId: 's' };
+    const step = { workflow: 'w', stepId: 's', uses: 'agent' as const };
     expect(usedByLabel({ usedBy: [], usedBySteps: [] })).toBe('Unused');
     expect(usedByLabel({ usedBy: ['a'], usedBySteps: [] })).toBe('1 prompt');
     expect(usedByLabel({ usedBy: ['a', 'b'], usedBySteps: [] })).toBe('2 prompts');
@@ -42,7 +43,7 @@ describe('prompt library model', () => {
 
   it('orders Used by rows steps first, then prompts with the include line', () => {
     const lib = [prompt('team-style'), prompt('release-notes', { text: 'a\nb\n${{ prompts.team-style }}' })];
-    const rows = usedByRows({ code: 'team-style', usedBy: ['release-notes'], usedBySteps: [{ workflow: 'w', stepId: 'build' }] }, lib);
+    const rows = usedByRows({ code: 'team-style', usedBy: ['release-notes'], usedBySteps: [{ workflow: 'w', stepId: 'build', uses: 'agent' }] }, lib);
     expect(rows).toEqual([
       { kind: 'step', workflow: 'w', stepId: 'build' },
       { kind: 'prompt', code: 'release-notes', line: 3 },
@@ -144,5 +145,18 @@ describe('prompt library model', () => {
       { kind: 'text', value: ' ' },
       { kind: 'text', value: '${{ prompts.nope }}' },
     ]);
+  });
+
+  it('marks {field} tokens the engine fills, leaving other braces as text', () => {
+    expect(previewTree('Fix {title} in {"json": 1}', new Map())).toEqual([
+      { kind: 'text', value: 'Fix ' },
+      { kind: 'field', value: 'title' },
+      { kind: 'text', value: ' in {"json": 1}' },
+    ]);
+  });
+
+  it('offers each step that sends the prompt, or a generic agent and critic step when none does', () => {
+    expect(sendContexts([{ workflow: 'Default', stepId: 'review', uses: 'critic' }])).toEqual([{ label: 'Default › review', uses: 'critic' }]);
+    expect(sendContexts([]).map((c) => c.uses)).toEqual(['agent', 'critic']);
   });
 });

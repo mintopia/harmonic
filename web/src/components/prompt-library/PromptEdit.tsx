@@ -4,10 +4,8 @@ import {
   badSpans,
   highlightLine,
   localIssues,
-  previewTree,
   validateCode,
   type BadSpan,
-  type PreviewNode,
   type SaveIssue,
   type TextSegment,
 } from '../../prompt-library-model';
@@ -15,12 +13,12 @@ import { btnGhost, field, labelType } from '../../ui';
 import { Icon } from '../Icon';
 import { PromptHeader } from './PromptHeader';
 import { usePromptsFlow } from './PromptsFlow';
+import { PromptSends } from './PromptSends';
 
 const CHIP_RESET = 'group-focus-within:px-0 group-focus-within:[font:inherit]';
 const INC = `rounded-sm bg-tool-tint px-1 font-data text-[12.5px] text-tool ${CHIP_RESET}`;
 const CTX = `rounded-sm bg-ready-tint px-1 font-data text-[12.5px] text-ready ${CHIP_RESET}`;
 const BAD = `rounded-sm bg-fail-tint px-1 font-data text-[12.5px] text-fail underline decoration-fail decoration-wavy underline-offset-[3px] ${CHIP_RESET}`;
-const PH = 'rounded-sm bg-ready-tint px-1 font-data text-[12px] text-ready';
 const BODY = 'text-body leading-[1.65]';
 
 function Segments({ segments }: { segments: readonly TextSegment[] }) {
@@ -83,35 +81,6 @@ function TextBox({
         className={`absolute inset-y-0 left-9 right-0 resize-none overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2.5 text-transparent caret-ink focus:outline-none ${BODY}`}
       />
     </div>
-  );
-}
-
-function Preview({ nodes }: { nodes: readonly PreviewNode[] }) {
-  return (
-    <>
-      {nodes.map((n, i) => {
-        if (n.kind === 'text') {
-          let value = n.value;
-          if (nodes[i - 1]?.kind === 'include') value = value.replace(/^\n/, '');
-          if (nodes[i + 1]?.kind === 'include') value = value.replace(/\n$/, '');
-          return <span key={i} className="whitespace-pre-wrap">{value}</span>;
-        }
-        if (n.kind === 'context') return <span key={i} className={PH}>{n.value}</span>;
-        const nested = n.depth > 1;
-        return (
-          <span
-            key={i}
-            data-include={n.code}
-            className={`my-1.5 block rounded-r-sm border-l-[3px] px-2.5 py-1.5 ${nested ? 'border-await bg-await-tint' : 'border-accent bg-accent-tint'}`}
-          >
-            <span className={`mb-1 flex items-center gap-1.5 font-sans text-label font-semibold uppercase ${nested ? 'text-await' : 'text-accent'}`}>
-              Included from <code className="font-data text-[11px] normal-case tracking-normal">{n.code}</code>
-            </span>
-            <Preview nodes={n.children} />
-          </span>
-        );
-      })}
-    </>
   );
 }
 
@@ -269,10 +238,6 @@ function PromptEditForm() {
   const errorCount = textIssues.length + (codeIssue ? 1 : 0) + (formIssue ? 1 : 0);
   const bad = badSpans(text, textIssues);
 
-  const lookup = new Map(prompts.map((p) => [p.code, p.text]));
-  if (prompt) lookup.set(prompt.code, text);
-  const tree = previewTree(text, lookup, prompt ? [prompt.code] : []);
-
   const edit = (patch: Partial<typeof draft>) => {
     flow.setDraft(patch);
     setServerIssue(null);
@@ -370,22 +335,7 @@ function PromptEditForm() {
           )}
         </article>
 
-        <article aria-label="What the step sends" className="flex flex-col gap-2.5 rounded-lg bg-sunken p-[18px] shadow-card">
-          <div className="flex items-center justify-between">
-            <h3 className="text-title font-semibold text-ink">What a step sends</h3>
-            <span className="text-micro text-muted">read-only</span>
-          </div>
-          <p className="text-small text-muted">This prompt with every include expanded. Updates as you type.</p>
-          <div data-testid="include-preview" className={`rounded-sm border border-hairline bg-surface p-3 ${BODY}`}>
-            <Preview nodes={tree} />
-          </div>
-          <div className="flex flex-wrap gap-3.5 text-micro text-muted">
-            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-accent-tint shadow-[inset_3px_0_0_var(--color-accent)]" />included prompt</span>
-            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-await-tint shadow-[inset_3px_0_0_var(--color-await)]" />nested include</span>
-            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-ready-tint" /><span className="text-ready">blue</span> filled at run time</span>
-          </div>
-          <p className="text-small text-muted">A Critic step also gets the engine’s read-only guard and verdict contract. They aren’t shown here and can’t be edited.</p>
-        </article>
+        <PromptSends prompt={prompt} text={text} prompts={prompts} />
       </div>
 
     </section>
