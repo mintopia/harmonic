@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../web/src/api.js';
 import { PromptEditStep } from '../web/src/components/prompt-library/PromptEdit.js';
 import { PromptFind } from '../web/src/components/prompt-library/PromptFind.js';
-import { PromptImpact } from '../web/src/components/prompt-library/PromptImpact.js';
 import { PromptsFlowProvider, promptsRailState, usePromptsFlow, type PromptsRailState } from '../web/src/components/prompt-library/PromptsFlow.js';
 import type { Prompt, WorkflowLibraryEntry } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
@@ -54,14 +53,13 @@ function StepNav() {
     'nav',
     null,
     createElement('button', { type: 'button', onClick: () => flow.goStep('edit') }, 'To edit'),
-    createElement('button', { type: 'button', onClick: () => flow.goStep('impact') }, 'To impact'),
     createElement('button', { type: 'button', onClick: () => flow.goStep('find') }, 'To find'),
   );
 }
 
 function Flow() {
   const [step, setStep] = useState('find');
-  const body = step === 'edit' ? createElement(PromptEditStep) : step === 'impact' ? createElement(PromptImpact) : createElement(PromptFind);
+  const body = step === 'edit' ? createElement(PromptEditStep) : createElement(PromptFind);
   return createElement(PromptsFlowProvider, { active: true, onStep: setStep }, createElement(StepNav), createElement('div', null, body));
 }
 
@@ -244,28 +242,19 @@ describe('Prompt Library page', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('previews nested includes and lists used-by prompts with the include line', async () => {
-    const host = await mountLibrary();
-    await click(host.querySelector('[data-prompt="team-style"] button'));
-    const preview = host.querySelector('[data-testid="include-preview"]');
-    expect(preview?.querySelector('[data-include="security-checklist"]')?.textContent).toContain('Check secrets.');
-    await click(button(host, 'To impact'));
-    expect(host.textContent).toContain('Includes team-style on line 2');
-    await click(button(host, 'Open prompt'));
-    expect(host.querySelector('section[aria-label="Prompt release-notes"]')).not.toBeNull();
-  });
-
-  it('lists workflow steps in Used by and shows when the prompt was edited', async () => {
+  it('shows Used by inline in the panel and opens an including prompt', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="team-style"] button'));
     expect(host.textContent).toContain('saved Oct 29 14:02');
-    await click(button(host, 'To impact'));
-    const rows = [...host.querySelectorAll('[data-used-by]')];
+    const usedBy = host.querySelector('section[aria-label="Prompt team-style"] article [data-testid="used-by"]') as HTMLElement;
+    expect(usedBy.textContent).toMatch(/^Used by/);
+    const rows = [...usedBy.querySelectorAll('[data-used-by]')];
     expect(rows.map((r) => r.getAttribute('data-used-by'))).toEqual(['step', 'step', 'step', 'prompt']);
-    expect(rows[0]?.textContent).toContain('Default · step implement');
-    expect(rows[0]?.textContent).toContain('Workflow · 5 Tickets');
-    expect(rows[1]?.textContent).toContain('Workflow · 3 Tickets');
-    expect(rows[0]?.querySelector('a')?.textContent).toBe('Open workflow');
+    expect(rows[0]?.textContent).toBe('Default · implement');
+    expect(rows[0]?.getAttribute('href')).toBe('/workflows');
+    expect(rows[3]?.getAttribute('title')).toBe('Includes team-style on line 2');
+    await click(rows[3]);
+    expect(host.querySelector('section[aria-label="Prompt release-notes"]')).not.toBeNull();
   });
 
   it('draws the offending reference as a bad span in the text box', async () => {
@@ -332,57 +321,53 @@ describe('Prompt Library page', () => {
     expect(host.querySelectorAll('[data-prompt]')).toHaveLength(4);
   });
 
-  it('moves to Edit when a code is clicked and keeps the draft across Check impact', async () => {
+  it('moves to Edit when a code is clicked and keeps the draft when you come back', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
     expect(host.querySelector('section[aria-label="Prompt security-checklist"]')).not.toBeNull();
     expect(host.querySelector('[data-prompt]')).toBeNull();
 
     await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Check secrets and tokens.');
-    await click(button(host, 'To impact'));
-    expect(host.querySelector('section[aria-label="Impact of security-checklist"]')).not.toBeNull();
+    await click(button(host, 'To find'));
     expect(host.querySelector('textarea')).toBeNull();
 
-    await click(button(host, 'To edit'));
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
     expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Check secrets and tokens.');
     expect(host.textContent).toContain('Edited');
   });
 
-  it('sums running Tickets over the distinct workflows and lists Used by rows with Ticket counts', async () => {
+  it('sums running Tickets over the distinct workflows in the Used by line', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await click(button(host, 'To impact'));
     expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('3 Tickets running now');
-    const rows = [...host.querySelectorAll('[data-used-by="step"]')];
-    expect(rows[0]?.textContent).toContain('5 Tickets');
-    expect(rows[1]?.textContent).toContain('3 Tickets');
   });
 
-  it('uses the singular for one running Ticket and zero for an unused prompt', async () => {
+  it('uses the singular for one running Ticket and says when nothing uses the prompt', async () => {
     const host = await mountLibrary(LIB, [workflow('Default', 5, 0), workflow('Security review', 3, 1)]);
     await click(host.querySelector('[data-prompt="team-style"] button'));
-    await click(button(host, 'To impact'));
     expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('1 Ticket running now');
 
     await click(button(host, 'To find'));
     await click(host.querySelector('[data-prompt="release-notes"] button'));
-    await click(button(host, 'To impact'));
-    expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('0 Tickets running now');
-    expect(host.textContent).toContain('Nothing uses this prompt yet.');
+    expect(host.querySelector('[data-testid="running-now"]')).toBeNull();
+    expect(host.querySelector('[data-testid="used-by"]')?.textContent).toBe('Nothing uses this prompt yet.');
   });
 
   it('counts running Tickets reached through an include chain', async () => {
     const lib = LIB.map((p) => (p.code === 'security-checklist' ? { ...p, usedBy: ['team-style'] } : p));
     const host = await mountLibrary(lib);
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
-    await click(button(host, 'To impact'));
     expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('3 Tickets running now');
   });
 
-  it('shows what a critic step sends: your prompt, then the engine guard and verdict contract as fixed blocks', async () => {
+  it('assembles one column: the editable prompt, then the engine guard and verdict contract as fixed blocks', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="team-style"] button'));
+    const section = host.querySelector('section[aria-label="Prompt team-style"]') as HTMLElement;
+    expect(section.querySelectorAll('article')).toHaveLength(1);
+    expect(section.querySelector('article header [aria-label="Preview mode"]')).not.toBeNull();
     const sends = () => host.querySelector('[data-testid="step-sends"]') as HTMLElement;
+    expect(sends().querySelector('[data-segment="operator"] textarea#prompt-text')).not.toBeNull();
     const select = host.querySelector('select') as HTMLSelectElement;
     expect([...select.options].map((o) => o.textContent)).toEqual(['Default › implement · agent', 'Security review › security · critic', 'Default › review · critic']);
     expect(sends().querySelector('[data-segment="engine"]')).toBeNull();
@@ -397,6 +382,7 @@ describe('Prompt Library page', () => {
     expect(blocks[0]?.textContent).toContain('Keep it small.');
     expect(blocks[1]?.textContent).toContain('Read-only critic guard');
     expect(blocks[1]?.textContent).toMatch(/READ-ONLY/i);
+    expect(blocks[1]?.querySelector('textarea, input')).toBeNull();
     expect(blocks[2]?.textContent).toContain('Verdict contract');
     expect(api.assemblePrompt).toHaveBeenCalledWith('critic', '');
   });
@@ -404,36 +390,38 @@ describe('Prompt Library page', () => {
   it('shows the assembled view for a bundled prompt', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="implement"] button'));
-    expect(host.querySelector('[data-testid="step-sends"]')?.textContent).toContain('Implement');
+    expect((host.querySelector('[data-testid="step-sends"] textarea') as HTMLTextAreaElement).value).toContain('Implement');
   });
 
-  it('toggles between highlighted tokens and sample values', async () => {
+  it('switches the assembled view between the editable structure and the read-only filled preview', async () => {
     const lib = LIB.map((p) => (p.code === 'security-checklist' ? { ...p, text: 'Fix {title} for ${{ ticket.ref }}.' } : p));
     const host = await mountLibrary(lib);
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
     const operator = () => host.querySelector('[data-segment="operator"]') as HTMLElement;
-    expect(operator().querySelector('[data-ref="field"]')?.textContent).toBe('{title}');
-    expect(operator().querySelector('[data-ref="context"]')?.textContent).toBe('ticket.ref');
+    expect(operator().querySelector('[data-ref="context"]')?.textContent).toBe('${{ ticket.ref }}');
 
     await click(button(host, 'As sent'));
-    expect(operator().querySelector('[data-ref]')).toBeNull();
+    expect(operator().querySelector('textarea, [data-ref]')).toBeNull();
     expect(operator().textContent).toContain(`Fix ${SAMPLE_DRIVE_FIELDS.title} for ${SAMPLE_DRIVE_FIELDS.ref}.`);
+
+    await click(button(host, 'Structure'));
+    expect((operator().querySelector('textarea') as HTMLTextAreaElement).value).toBe('Fix {title} for ${{ ticket.ref }}.');
   });
 
-  it('updates the include preview as you type', async () => {
+  it('keeps the save-blocked hint visible in the As sent view', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Bad ${{ vars.x');
+    await click(button(host, 'As sent'));
+    expect(host.textContent).toContain('Save is blocked while an error shows.');
+  });
+
+  it('fills unsaved edits and their includes into the As sent view', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="release-notes"] button'));
-    const preview = () => host.querySelector('[data-testid="include-preview"]') as HTMLElement;
-    expect(preview().querySelector('[data-include="team-style"]')).not.toBeNull();
-    expect(preview().querySelector('[data-include="security-checklist"]')).not.toBeNull();
-
-    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Plain notes.');
-    expect(preview().querySelector('[data-include]')).toBeNull();
-    expect(preview().textContent).toContain('Plain notes.');
-
     await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Only ${{ prompts.security-checklist }}');
-    expect(preview().querySelector('[data-include="team-style"]')).toBeNull();
-    expect(preview().querySelector('[data-include="security-checklist"]')?.textContent).toContain('Check secrets.');
+    await click(button(host, 'As sent'));
+    expect(host.querySelector('[data-segment="operator"]')?.textContent).toContain('Only Check secrets.');
   });
 
   it('keeps Save disabled for an unknown code and an include cycle until the text changes', async () => {
@@ -456,18 +444,16 @@ describe('Prompt Library page', () => {
     expect(update).toHaveBeenCalledTimes(2);
   });
 
-  it('disables Edit and Check impact in the rail until a prompt is picked', async () => {
+  it('disables Edit in the rail until a prompt is picked', async () => {
     const host = await mountLibrary();
-    expect([...(rail?.disabled ?? [])].sort()).toEqual(['edit', 'impact']);
+    expect([...(rail?.disabled ?? [])]).toEqual(['edit']);
     expect(rail?.summaries.edit).toBe('Pick a prompt first');
-    expect(rail?.summaries.impact).toBe('Pick a prompt first');
     expect(rail?.values.find).toBeUndefined();
 
     await click(host.querySelector('[data-prompt="team-style"] button'));
     expect(rail?.disabled.size).toBe(0);
     expect(rail?.values.find).toBe('team-style');
     expect(rail?.summaries.edit).toBe('Change the text');
-    expect(rail?.summaries.impact).toBe('3 steps · 1 prompt');
   });
 
   it('summarises unsaved changes in the rail', async () => {

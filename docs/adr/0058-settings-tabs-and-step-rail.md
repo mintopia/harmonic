@@ -3,6 +3,8 @@
 Status: accepted; amends ADR-0009's tabbed-engine clause only
 Date: 2026-11-01
 
+Amended 2026-11-18 (#987): Prompts has Find and Edit. Check impact folds into the editor as an inline Used by line.
+
 The Settings tabs become General · Running Tickets · Prompts · Integrations ·
 Archive & Export. Security folds into General as the Access step. Each tab
 with steps shows a left step rail, and the current step, selected by the
@@ -34,7 +36,7 @@ value.
   Limits.
 - **Security folds into General.** Its controls move to the Access step.
 - **Step sets:** General has Identity, Access, Chats and Files. Prompts has
-  Find, Edit and Check impact. Integrations has Code, Work, Agents and Updates.
+  Find and Edit. Integrations has Code, Work, Agents and Updates.
   Archive & Export has Keep, Export, Redact and Deliver.
 
 ### Step rail

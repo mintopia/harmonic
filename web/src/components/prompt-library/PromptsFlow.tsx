@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../../api';
 import { renameIncludes } from '../../../../src/domain/prompt-library.js';
-import { unsavedChanges, usedByLabel } from '../../prompt-library-model';
+import { unsavedChanges } from '../../prompt-library-model';
 import type { Prompt } from '../../types';
 import { useAsyncResource } from '../../useAsyncResource';
 
@@ -63,15 +63,13 @@ export interface PromptsRailState {
 
 export function promptsRailState(flow: PromptsFlow | null): PromptsRailState {
   const none = !flow || flow.selected === null;
-  const current = flow?.current ?? null;
   const edit = flow && flow.changes > 0 ? `${flow.changes} unsaved ${flow.changes === 1 ? 'change' : 'changes'}` : 'Change the text';
   return {
-    disabled: new Set(none ? ['edit', 'impact'] : []),
+    disabled: new Set(none ? ['edit'] : []),
     values: { find: flow?.selected ?? undefined },
     summaries: {
       find: 'Pick a prompt',
       edit: none ? 'Pick a prompt first' : edit,
-      impact: none ? 'Pick a prompt first' : current ? usedByLabel(current) : 'A new prompt is unused',
     },
   };
 }
