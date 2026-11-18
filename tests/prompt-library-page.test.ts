@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-import { act, createElement, useEffect, useState } from 'react';
+import { act, createElement, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../web/src/api.js';
-import { PromptEditStep } from '../web/src/components/prompt-library/PromptEdit.js';
-import { PromptFind } from '../web/src/components/prompt-library/PromptFind.js';
-import { PromptsFlowProvider, promptsRailState, usePromptsFlow, type PromptsRailState } from '../web/src/components/prompt-library/PromptsFlow.js';
+import { PromptLibrary } from '../web/src/components/prompt-library/PromptLibrary.js';
+import { PromptsFlowProvider, usePromptsFlow } from '../web/src/components/prompt-library/PromptsFlow.js';
 import type { Prompt, WorkflowLibraryEntry } from '../web/src/types.js';
 import { cleanup, flush, mountComponent } from './component-smoke-harness.js';
 import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
@@ -42,29 +41,22 @@ const LIB: Prompt[] = [
 
 const WORKFLOWS = [workflow('Default', 5, 2), workflow('Security review', 3, 1), workflow('Unrelated', 9, 7)];
 
-let rail: PromptsRailState | null = null;
+let changes = 0;
 
-function StepNav() {
+function Probe() {
   const flow = usePromptsFlow();
   useEffect(() => {
-    rail = promptsRailState(flow);
+    changes = flow.changes;
   });
-  return createElement(
-    'nav',
-    null,
-    createElement('button', { type: 'button', onClick: () => flow.goStep('edit') }, 'To edit'),
-    createElement('button', { type: 'button', onClick: () => flow.goStep('find') }, 'To find'),
-  );
+  return null;
 }
 
 function Flow() {
-  const [step, setStep] = useState('find');
-  const body = step === 'edit' ? createElement(PromptEditStep) : createElement(PromptFind);
-  return createElement(PromptsFlowProvider, { active: true, onStep: setStep }, createElement(StepNav), createElement('div', null, body));
+  return createElement(PromptsFlowProvider, { active: true }, createElement(Probe), createElement(PromptLibrary));
 }
 
 async function mountLibrary(prompts = LIB, workflows = WORKFLOWS) {
-  rail = null;
+  changes = 0;
   vi.spyOn(api, 'prompts').mockResolvedValue({ prompts, total: prompts.length });
   vi.spyOn(api, 'workflows').mockResolvedValue({ workflows, total: workflows.length });
   vi.spyOn(api, 'assemblePrompt').mockImplementation(async (uses, text) => ({ segments: assembleStepPrompt(uses, text, bundledEnginePrompts()) }));
@@ -93,10 +85,9 @@ async function type(el: HTMLTextAreaElement | HTMLInputElement, value: string) {
 }
 
 describe('Prompt Library page', () => {
-  it('lists prompts with badges, used-by and the source strip', async () => {
+  it('lists prompts in the rail with source and used-by tags', async () => {
     const host = await mountLibrary();
-    expect(host.textContent).toContain('Bundled · 1');
-    expect(host.textContent).toContain('Yours · 3');
+    expect(host.querySelectorAll('nav[aria-label="Prompts"] [data-prompt]')).toHaveLength(4);
     const row = host.querySelector('[data-prompt="team-style"]');
     expect(row?.textContent).toContain('Yours');
     expect(row?.textContent).toContain('3 steps · 1 prompt');
@@ -120,13 +111,7 @@ describe('Prompt Library page', () => {
     await click([...host.querySelectorAll('label')].find((l) => l.textContent?.includes('Include engine fragments'))?.querySelector('input'));
     expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
     await click(host.querySelector('[data-prompt="criticRole"] button'));
-    await click(button(host, 'To find'));
     expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
-  });
-
-  it('shows the no-own-prompts empty state when only bundled prompts exist', async () => {
-    const host = await mountLibrary([prompt('implement', { bundled: true })]);
-    expect(host.textContent).toContain('You have no prompts of your own yet');
   });
 
   it('lets a bundled entry be edited with no Duplicate or Delete', async () => {
@@ -162,10 +147,9 @@ describe('Prompt Library page', () => {
     expect(create).toHaveBeenCalledWith({ code: 'my-implement', description: 'implement description', text: 'My own implement.' });
     expect(host.querySelector('section[aria-label="Prompt my-implement"]')).not.toBeNull();
 
-    await click(button(host, 'To find'));
     await click(host.querySelector('[data-prompt="implement"] button'));
     expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Implement ${{ ticket.title }}.');
-    expect(rail?.summaries.edit).toBe('Change the text');
+    expect(changes).toBe(0);
   });
 
   it('keeps the edit and the typed code when the server refuses a bundled save', async () => {
@@ -304,32 +288,18 @@ describe('Prompt Library page', () => {
     expect((button(host, 'Save') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('filters with the All, Yours and Unused tabs and shows their counts', async () => {
+  it('opens a picked row beside the rail and keeps its draft when you switch away and back', async () => {
     const host = await mountLibrary();
-    const tabs = () => [...host.querySelectorAll('[role="tab"]')] as HTMLElement[];
-    expect(tabs().map((t) => t.textContent)).toEqual(['All 4', 'Yours 3', 'Unused 3']);
-    expect(tabs()[0]?.getAttribute('aria-selected')).toBe('true');
-
-    await click(tabs()[1]);
-    expect(tabs()[1]?.getAttribute('aria-selected')).toBe('true');
-    expect([...host.querySelectorAll('[data-prompt]')].map((r) => r.getAttribute('data-prompt'))).toEqual(['team-style', 'security-checklist', 'release-notes']);
-
-    await click(tabs()[2]);
-    expect([...host.querySelectorAll('[data-prompt]')].map((r) => r.getAttribute('data-prompt'))).toEqual(['implement', 'security-checklist', 'release-notes']);
-
-    await click(tabs()[0]);
-    expect(host.querySelectorAll('[data-prompt]')).toHaveLength(4);
-  });
-
-  it('moves to Edit when a code is clicked and keeps the draft when you come back', async () => {
-    const host = await mountLibrary();
+    expect(host.textContent).toContain('Pick a prompt from the list');
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
     expect(host.querySelector('section[aria-label="Prompt security-checklist"]')).not.toBeNull();
-    expect(host.querySelector('[data-prompt]')).toBeNull();
+    expect(host.querySelector('[data-prompt="security-checklist"] button')?.getAttribute('aria-current')).toBe('true');
+    expect(host.querySelectorAll('[data-prompt]')).toHaveLength(4);
 
     await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Check secrets and tokens.');
-    await click(button(host, 'To find'));
-    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('[data-prompt="security-checklist"]')?.textContent).toContain('Edited');
+    await click(host.querySelector('[data-prompt="team-style"] button'));
+    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toContain('Keep it small.');
 
     await click(host.querySelector('[data-prompt="security-checklist"] button'));
     expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Check secrets and tokens.');
@@ -347,7 +317,6 @@ describe('Prompt Library page', () => {
     await click(host.querySelector('[data-prompt="team-style"] button'));
     expect(host.querySelector('[data-testid="running-now"]')?.textContent).toBe('1 Ticket running now');
 
-    await click(button(host, 'To find'));
     await click(host.querySelector('[data-prompt="release-notes"] button'));
     expect(host.querySelector('[data-testid="running-now"]')).toBeNull();
     expect(host.querySelector('[data-testid="used-by"]')?.textContent).toBe('Nothing uses this prompt yet.');
@@ -444,25 +413,13 @@ describe('Prompt Library page', () => {
     expect(update).toHaveBeenCalledTimes(2);
   });
 
-  it('disables Edit in the rail until a prompt is picked', async () => {
-    const host = await mountLibrary();
-    expect([...(rail?.disabled ?? [])]).toEqual(['edit']);
-    expect(rail?.summaries.edit).toBe('Pick a prompt first');
-    expect(rail?.values.find).toBeUndefined();
-
-    await click(host.querySelector('[data-prompt="team-style"] button'));
-    expect(rail?.disabled.size).toBe(0);
-    expect(rail?.values.find).toBe('team-style');
-    expect(rail?.summaries.edit).toBe('Change the text');
-  });
-
-  it('summarises unsaved changes in the rail', async () => {
+  it('counts unsaved changes for the open prompt', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="team-style"] button'));
     await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Different text.');
-    expect(rail?.summaries.edit).toBe('1 unsaved change');
+    expect(changes).toBe(1);
     await type(host.querySelector('#prompt-description') as HTMLInputElement, 'Changed');
-    expect(rail?.summaries.edit).toBe('2 unsaved changes');
+    expect(changes).toBe(2);
   });
 
   describe('included prompts', () => {
@@ -509,7 +466,7 @@ describe('Prompt Library page', () => {
       expect(source(host).value).toBe('${{ prompts.my-drive }}\n${{ prompts.house }}');
       expect(regionText(host, 'my-drive').value).toBe('Drive {ref} carefully.');
       expect(region(host, 'drivePrompt')).toBeNull();
-      expect(rail?.summaries.edit).toBe('Change the text');
+      expect(changes).toBe(0);
     });
 
     it('forks a bundled include in a bundled parent by repointing the parent draft, leaving both originals unsaved', async () => {
@@ -522,7 +479,7 @@ describe('Prompt Library page', () => {
       await click(button(host.ownerDocument.body, 'Save as new prompt'));
       expect(update).not.toHaveBeenCalled();
       expect(source(host).value).toBe('${{ prompts.drivePrompt }}{feedback}\n\n${{ prompts.selfHeal-copy }}');
-      expect(rail?.summaries.edit).toBe('1 unsaved change');
+      expect(changes).toBe(1);
     });
 
     it('keeps the copy and repoints the parent draft when storing the parent fails', async () => {
@@ -536,7 +493,7 @@ describe('Prompt Library page', () => {
       await click(button(host.ownerDocument.body, 'Save as new prompt'));
       expect(source(host).value).toBe('${{ prompts.my-drive }}\n${{ prompts.house }}');
       expect(regionText(host, 'my-drive').value).toBe('Drive carefully.');
-      expect(rail?.summaries.edit).toBe('1 unsaved change');
+      expect(changes).toBe(1);
     });
 
     it('opens the collapsed source when it holds an error', async () => {

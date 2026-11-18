@@ -120,6 +120,8 @@ export const card = 'rounded-lg bg-surface shadow-card';
 export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase';
 
 /** Inline monospace token (a label, Harness or id) set in running text; pass the tint classes for background and colour. */
+export const quietTag = 'rounded-full bg-raised px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] text-muted';
+
 export const codeChip = 'rounded-sm px-1.5 font-data text-small';
 
 /** Tool call / permission chip — harness metadata, Tooling cyan (the Signal

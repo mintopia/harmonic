@@ -155,7 +155,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   };
 
   return (
-    <PromptsFlowProvider active={tab === 'prompts'} onStep={setStep}>
+    <PromptsFlowProvider active={tab === 'prompts'}>
     <SettingsForm
       title="Settings"
       intro=""

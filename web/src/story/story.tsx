@@ -36,8 +36,7 @@ import { SettingsSection } from '../components/SettingsSection';
 import { RetryDialog } from '../components/RetryDialog';
 import { WorkflowsPage } from '../components/workflows/WorkflowsPage';
 import { runningStory, withWorkflowStory, workflowTaskFields } from './api-stub';
-import { PromptEditStep } from '../components/prompt-library/PromptEdit';
-import { PromptFind } from '../components/prompt-library/PromptFind';
+import { PromptLibrary } from '../components/prompt-library/PromptLibrary';
 import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, timeline } from './fixtures';
 
@@ -86,12 +85,10 @@ function StoryFrame({ style, children }: { style?: React.CSSProperties; children
 }
 
 function PromptLibraryStory() {
-  const [step, setStep] = useState('find');
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1040, margin: '0 auto' }}>
-      <PromptsFlowProvider active onStep={setStep}>
-        {step === 'find' && <PromptFind />}
-        {step === 'edit' && <PromptEditStep />}
+    <div style={{ minHeight: '100vh', background: 'var(--hm-canvas)', padding: 24, maxWidth: 1280, margin: '0 auto' }}>
+      <PromptsFlowProvider active>
+        <PromptLibrary />
       </PromptsFlowProvider>
     </div>
   );

@@ -103,7 +103,7 @@ export function WorkspaceSettingsPage({
   };
 
   return (
-    <PromptsFlowProvider active={tab === 'prompts'} onStep={setStep}>
+    <PromptsFlowProvider active={tab === 'prompts'}>
     <SettingsForm
       title="Workspace"
       intro={

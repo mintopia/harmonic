@@ -36,7 +36,7 @@ describe('settings tabs and steps', () => {
     expect(stepsForSurface('global', 'execution').map((s) => s.id)).toEqual(['workflow', 'agent', 'where', 'limits']);
     expect(stepsForSurface('global', 'general').map((s) => s.id)).toEqual(['identity', 'access', 'chats', 'files']);
     expect(stepsForSurface('workspace', 'general').map((s) => s.id)).toEqual(['identity', 'chats', 'files']);
-    expect(visibleSteps('prompts', new Set(['find'])).map((s) => s.id)).toEqual(['find']);
+    expect(visibleSteps('archive', new Set(['keep', 'deliver'])).map((s) => s.id)).toEqual(['keep', 'deliver']);
   });
 
   it('resolves the requested step', () => {
