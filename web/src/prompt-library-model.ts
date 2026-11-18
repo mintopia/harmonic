@@ -1,6 +1,5 @@
 import { PROMPT_CODE_PATTERN } from '../../src/domain/prompt-library.js';
 import type { PromptStepKind } from '../../src/execution/prompt-assembly.js';
-import { SAMPLE_STEP_FIELDS } from './prompt-preview-model.js';
 import type { Prompt, PromptStepUse, WorkflowLibraryEntry } from './types.js';
 
 export function filterPrompts(prompts: readonly Prompt[], query: string): Prompt[] {
@@ -236,51 +235,7 @@ export function sendContexts(steps: readonly PromptStepUse[]): SendContext[] {
   return steps.map((s) => ({ label: `${s.workflow} › ${s.stepId}`, uses: s.uses }));
 }
 
-export type PreviewNode =
-  | { kind: 'text'; value: string }
-  | { kind: 'field'; value: string }
-  | { kind: 'context'; value: string }
-  | { kind: 'include'; code: string; depth: number; children: PreviewNode[] };
-
 const TOKEN = /\$\{\{\s*([^\s}]+)\s*\}\}/g;
-const FIELD = /\{([^{}]+)\}/g;
-
-function textNodes(value: string): PreviewNode[] {
-  const nodes: PreviewNode[] = [];
-  let last = 0;
-  for (const m of value.matchAll(FIELD)) {
-    const name = m[1] as string;
-    if (!Object.hasOwn(SAMPLE_STEP_FIELDS, name)) continue;
-    const index = m.index as number;
-    if (index > last) nodes.push({ kind: 'text', value: value.slice(last, index) });
-    nodes.push({ kind: 'field', value: name });
-    last = index + m[0].length;
-  }
-  if (last < value.length) nodes.push({ kind: 'text', value: value.slice(last) });
-  return nodes;
-}
-
-export function previewTree(text: string, lookup: ReadonlyMap<string, string>, seen: readonly string[] = [], depth = 1): PreviewNode[] {
-  const nodes: PreviewNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(TOKEN)) {
-    const index = m.index as number;
-    if (index > last) nodes.push(...textNodes(text.slice(last, index)));
-    last = index + m[0].length;
-    const ref = m[1] as string;
-    const code = ref.startsWith('prompts.') ? ref.slice('prompts.'.length) : null;
-    const body = code === null ? undefined : lookup.get(code);
-    if (code !== null && body !== undefined && !seen.includes(code)) {
-      nodes.push({ kind: 'include', code, depth, children: previewTree(body, lookup, [...seen, code], depth + 1) });
-    } else if (code === null) {
-      nodes.push({ kind: 'context', value: ref });
-    } else {
-      nodes.push({ kind: 'text', value: m[0] });
-    }
-  }
-  if (last < text.length) nodes.push(...textNodes(text.slice(last)));
-  return nodes;
-}
 
 export type TextSegment = { kind: 'text' | 'include' | 'context' | 'bad'; value: string };
 

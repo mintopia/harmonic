@@ -9,7 +9,6 @@ import {
   localIssues,
   malformedReference,
   parseSaveError,
-  previewTree,
   sendContexts,
   suggestCode,
   renameRewrites,
@@ -130,37 +129,6 @@ describe('prompt library model', () => {
 
   it('applies a suggestion to every reference to the unknown code', () => {
     expect(applySuggestion('${{ prompts.sec }} x ${{prompts.sec}}', 'sec', 'security')).toBe('${{ prompts.security }} x ${{prompts.security}}');
-  });
-
-  it('builds a nested include preview with context values and unknown codes left as written', () => {
-    const lookup = new Map([
-      ['a', 'A body ${{ prompts.b }}'],
-      ['b', 'B body'],
-    ]);
-    expect(previewTree('Hi ${{ ticket.title }} ${{ prompts.a }} ${{ prompts.nope }}', lookup)).toEqual([
-      { kind: 'text', value: 'Hi ' },
-      { kind: 'context', value: 'ticket.title' },
-      { kind: 'text', value: ' ' },
-      {
-        kind: 'include',
-        code: 'a',
-        depth: 1,
-        children: [
-          { kind: 'text', value: 'A body ' },
-          { kind: 'include', code: 'b', depth: 2, children: [{ kind: 'text', value: 'B body' }] },
-        ],
-      },
-      { kind: 'text', value: ' ' },
-      { kind: 'text', value: '${{ prompts.nope }}' },
-    ]);
-  });
-
-  it('marks {field} tokens the engine fills, leaving other braces as text', () => {
-    expect(previewTree('Fix {title} in {"json": 1}', new Map())).toEqual([
-      { kind: 'text', value: 'Fix ' },
-      { kind: 'field', value: 'title' },
-      { kind: 'text', value: ' in {"json": 1}' },
-    ]);
   });
 
   it('offers each step that sends the prompt, or a generic agent and critic step when none does', () => {

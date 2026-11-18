@@ -179,11 +179,11 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the prompts settings as three bare full-width steps on both surfaces', () => {
+  it('declares the prompts settings as two bare full-width steps on both surfaces', () => {
     const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.step !== 'overrides');
-    expect(sections.map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
+    expect(sections.map((s) => s.step)).toEqual(['find', 'edit']);
     for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true, surfaces: ['global', 'workspace'] });
-    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact', 'overrides']);
+    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'overrides']);
   });
 
 });

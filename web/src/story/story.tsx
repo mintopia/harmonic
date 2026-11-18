@@ -38,7 +38,6 @@ import { WorkflowsPage } from '../components/workflows/WorkflowsPage';
 import { runningStory, withWorkflowStory, workflowTaskFields } from './api-stub';
 import { PromptEditStep } from '../components/prompt-library/PromptEdit';
 import { PromptFind } from '../components/prompt-library/PromptFind';
-import { PromptImpact } from '../components/prompt-library/PromptImpact';
 import { PromptsFlowProvider } from '../components/prompt-library/PromptsFlow';
 import { criticLog, task, boardEpic, boardTasks, doneEpic, timeline } from './fixtures';
 
@@ -93,7 +92,6 @@ function PromptLibraryStory() {
       <PromptsFlowProvider active onStep={setStep}>
         {step === 'find' && <PromptFind />}
         {step === 'edit' && <PromptEditStep />}
-        {step === 'impact' && <PromptImpact />}
       </PromptsFlowProvider>
     </div>
   );

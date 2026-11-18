@@ -33,7 +33,6 @@ import { ExecutionTargetsPanel } from './ExecutionTargetsSettings';
 import { WorkspaceExecutionTargets } from './WorkspaceExecutionTargets';
 import { PromptEditStep } from './prompt-library/PromptEdit';
 import { PromptFind } from './prompt-library/PromptFind';
-import { PromptImpact } from './prompt-library/PromptImpact';
 
 export type Surface = 'global' | 'workspace';
 
@@ -1303,16 +1302,6 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
     title: 'Edit a prompt',
     description: '',
     body: () => <PromptEditStep />,
-  },
-  {
-    tab: 'prompts',
-    step: 'impact',
-    surfaces: ['global', 'workspace'],
-    bare: true,
-    wide: true,
-    title: 'Prompt impact',
-    description: '',
-    body: () => <PromptImpact />,
   },
 
   {

@@ -404,8 +404,11 @@ function PromptEditForm() {
           <span>Edit freely. Saving keeps your edit as a new prompt of your own and leaves this one unchanged.</span>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-2 xl:items-start">
-        <article className="flex flex-col gap-3.5 rounded-lg bg-surface p-[18px] shadow-card">
+      <PromptSends
+        prompt={prompt}
+        text={text}
+        prompts={prompts}
+        fields={
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div>
               <label htmlFor="prompt-code" className={`${labelType} mb-1.5 block text-muted`}>
@@ -444,51 +447,51 @@ function PromptEditForm() {
               <p className="mt-1 text-micro text-muted">Shown in pickers and the list</p>
             </div>
           </div>
-
-          <Source
-            composed={includes.length > 0}
-            failing={textIssues.length > 0 || formIssue !== null}
-            insert={<InsertBar codes={otherCodes} onInsert={insertToken} />}
-            editor={
-              <>
-                <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
-                {textIssues.map((issue, i) => (
-                  <ErrorBox
-                    key={i}
-                    issue={issue}
-                    onFix={
-                      issue.kind === 'unknown' && issue.suggestion
-                        ? () => edit({ text: applySuggestion(text, issue.code, issue.suggestion as string) })
-                        : undefined
-                    }
-                  />
+        }
+        editor={
+          <>
+            <Source
+              composed={includes.length > 0}
+              failing={textIssues.length > 0 || formIssue !== null}
+              insert={<InsertBar codes={otherCodes} onInsert={insertToken} />}
+              editor={
+                <>
+                  <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
+                  {textIssues.map((issue, i) => (
+                    <ErrorBox
+                      key={i}
+                      issue={issue}
+                      onFix={
+                        issue.kind === 'unknown' && issue.suggestion
+                          ? () => edit({ text: applySuggestion(text, issue.code, issue.suggestion as string) })
+                          : undefined
+                      }
+                    />
+                  ))}
+                  {formIssue && <ErrorBox issue={formIssue} />}
+                  <p className="mt-1.5 text-micro text-muted">
+                    Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
+                    <code className="font-data">vars.name</code> fills in when the step runs.
+                  </p>
+                </>
+              }
+            />
+            {includes.length > 0 && (
+              <div className="flex flex-col gap-2" aria-label="Included prompts">
+                <span className={`${labelType} text-muted`}>Included prompts</span>
+                {includes.map((p) => (
+                  <IncludedPrompt key={p.code} parent={prompt} include={p} />
                 ))}
-                {formIssue && <ErrorBox issue={formIssue} />}
-                <p className="mt-1.5 text-micro text-muted">
-                  Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
-                  <code className="font-data">vars.name</code> fills in when the step runs.
-                </p>
-              </>
-            }
-          />
-          {includes.length > 0 && (
-            <div className="flex flex-col gap-2" aria-label="Included prompts">
-              <span className={`${labelType} text-muted`}>Included prompts</span>
-              {includes.map((p) => (
-                <IncludedPrompt key={p.code} parent={prompt} include={p} />
-              ))}
-            </div>
-          )}
-          {errorCount > 0 && (
-            <p className="text-small text-muted">
-              Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.
-            </p>
-          )}
-        </article>
-
-        <PromptSends prompt={prompt} text={text} prompts={prompts} />
-      </div>
-
+              </div>
+            )}
+            {errorCount > 0 && (
+              <p className="text-small text-muted">
+                Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.
+              </p>
+            )}
+          </>
+        }
+      />
     </section>
   );
 }
