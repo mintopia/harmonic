@@ -267,6 +267,27 @@ describe('Prompt Library page', () => {
     expect(host.querySelector('[data-ref="include"]')).toBeNull();
   });
 
+  it('renames after stating how many references it rewrites, refusing a taken code', async () => {
+    const host = await mountLibrary();
+    const ren = vi.spyOn(api, 'renamePrompt').mockResolvedValue(prompt('house-style'));
+    await click(host.querySelector('[data-prompt="team-style"] button'));
+    await click(button(host, 'Rename…'));
+    expect(host.textContent).toContain('4 references will be rewritten: 1 include in another prompt and 3 workflow steps.');
+    const input = host.querySelector('input[aria-label="New code"]') as HTMLInputElement;
+    await type(input, 'release-notes');
+    expect(host.textContent).toContain('already exists');
+    expect(button(host, 'Rename prompt')?.disabled).toBe(true);
+    await type(input, 'house-style');
+    await click(button(host, 'Rename prompt'));
+    expect(ren).toHaveBeenCalledWith('team-style', 'house-style');
+  });
+
+  it('offers no Rename for a bundled prompt', async () => {
+    const host = await mountLibrary();
+    await click(host.querySelector('[data-prompt="implement"] button'));
+    expect(button(host, 'Rename…')).toBeUndefined();
+  });
+
   it('confirms before deleting and rejects a bad new code inline', async () => {
     const host = await mountLibrary();
     const del = vi.spyOn(api, 'deletePrompt').mockResolvedValue({ ok: true });

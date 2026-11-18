@@ -192,6 +192,7 @@ export const api = {
     request<Prompt>('PUT', `/api/prompts/${encodeURIComponent(code)}`, body),
   assemblePrompt: (uses: PromptStepKind, text: string) => request<{ segments: PromptSegment[] }>('POST', '/api/prompts/assemble', { text, uses }),
   deletePrompt: (code: string) => request<{ ok: true }>('DELETE', `/api/prompts/${encodeURIComponent(code)}`),
+  renamePrompt: (code: string, newCode: string) => request<Prompt>('POST', `/api/prompts/${encodeURIComponent(code)}/rename`, { code: newCode }),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
   updateState: () => request<UpdateState>('GET', '/api/update'),

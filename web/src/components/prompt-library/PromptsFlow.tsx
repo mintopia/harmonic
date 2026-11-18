@@ -30,6 +30,7 @@ export interface PromptsFlow {
   goStep: (step: string) => void;
   afterSave: (saved: Prompt) => void;
   afterDelete: () => void;
+  afterRename: (from: string, renamed: Prompt) => void;
 }
 
 const FlowContext = createContext<PromptsFlow | null>(null);
@@ -138,6 +139,12 @@ export function PromptsFlowProvider({
       reload();
       setSelected(null);
       onStep('find');
+    },
+    afterRename: (from, renamed) => {
+      forget(from);
+      setPatched((all) => [...all.filter((p) => p.code !== from && p.code !== renamed.code), renamed]);
+      reload();
+      open(renamed.code);
     },
   };
 

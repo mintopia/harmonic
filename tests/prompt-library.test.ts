@@ -75,7 +75,7 @@ steps:
           with:
             prompt: something else
 `;
-    lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', subject: 'ticket' as const, text, version: 1 }] });
+    lib.attachWorkflows({ list: () => [{ name: 'wf', description: 'd', subject: 'ticket' as const, text, version: 1 }], save: async () => undefined });
     expect((await lib.get('step-used')).usedBySteps).toEqual([
       { workflow: 'wf', stepId: 'build', uses: 'agent' },
       { workflow: 'wf', stepId: 'review', uses: 'critic' },
@@ -90,6 +90,76 @@ steps:
     await lib.delete('top');
     await lib.delete('base');
     expect(existsSync(join(root, 'prompts', 'base.json'))).toBe(false);
+  });
+});
+
+describe('PromptLibrary rename', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harmonic-prompt-rename-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  const workflowText = `name: wf
+description: d
+steps:
+  - attempts:
+      max: 2
+      steps:
+        # build first
+        - id: build
+          uses: agent
+          with:
+            prompt: old-code
+            continuePrompt: old-code
+        - id: other
+          uses: agent
+          with:
+            prompt: "old-code-not"
+        - id: picked
+          uses: agent
+          with:
+            prompt: "\${{ ticket.origin == 'mirrored' && (attempt.number > 1 && 'implement-ticket-heal' || 'implement-ticket') || 'implement-native' }}"
+`;
+
+  function setup(): { lib: PromptLibrary; saved: Map<string, string> } {
+    const lib = new PromptLibrary(root);
+    const saved = new Map<string, string>([['wf', workflowText]]);
+    lib.attachWorkflows({
+      list: () => [...saved].map(([name, text]) => ({ name, description: 'd', subject: 'ticket' as const, text, version: 1 })),
+      save: async (name, text) => {
+        saved.set(name, text);
+      },
+    });
+    return { lib, saved };
+  }
+
+  it('moves the entry and rewrites includes and workflow step references', async () => {
+    const { lib, saved } = setup();
+    await lib.create('old-code', 'the one', 'Body');
+    await lib.create('includer', 'x', 'A ${{ prompts.old-code }} B ${{prompts.old-code}}');
+    const before = await lib.get('old-code');
+    expect(before.usedBy.length + before.usedBySteps.length).toBe(2);
+
+    const renamed = await lib.rename('old-code', 'new-code');
+    expect(renamed).toMatchObject({ code: 'new-code', description: 'the one', text: 'Body', usedBy: ['includer'] });
+    expect(existsSync(join(root, 'prompts', 'old-code.json'))).toBe(false);
+    expect(lib.hasOperatorEntry('old-code')).toBe(false);
+    await expect(lib.get('old-code')).rejects.toThrow(/No prompt/);
+    expect((await lib.get('includer')).text).toBe('A ${{ prompts.new-code }} B ${{ prompts.new-code }}');
+    expect(saved.get('wf')).toBe(workflowText.replace('prompt: old-code\n', 'prompt: new-code\n').replace('continuePrompt: old-code', 'continuePrompt: new-code'));
+    expect(renamed.usedBySteps).toEqual([{ workflow: 'wf', stepId: 'build', uses: 'agent' }]);
+  });
+
+  it('refuses a bundled prompt, a taken code, an invalid code and an engine-read entry', async () => {
+    const { lib } = setup();
+    await lib.create('mine', 'x', 'T');
+    await lib.create('taken', 'x', 'Other');
+    await expect(lib.rename('conflictResolution', 'cr')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(lib.rename('mine', 'taken')).rejects.toMatchObject({ code: 'conflict' });
+    await expect(lib.rename('mine', 'conflictResolution')).rejects.toMatchObject({ code: 'conflict' });
+    await expect(lib.rename('mine', '9bad')).rejects.toMatchObject({ code: 'validation' });
+    await expect(lib.rename('mine', 'mine')).rejects.toMatchObject({ code: 'validation' });
+    await lib.create('taskPrompt-edited', 'x', 'T');
+    await expect(lib.rename('taskPrompt-edited', 'renamed')).rejects.toMatchObject({ code: 'forbidden' });
+    expect(lib.hasOperatorEntry('mine')).toBe(true);
   });
 });
 
@@ -161,6 +231,18 @@ describe('/api/prompts', () => {
     expect(res.body.segments[2].text).toMatch(/verdict/i);
     const agent = await server.api('POST', '/api/prompts/assemble', { text: 'Do it.', uses: 'agent' });
     expect(agent.body.segments).toEqual([{ source: 'operator', label: 'Your prompt', text: 'Do it.' }]);
+  });
+
+  it('renames an operator prompt and refuses a bundled one or a taken code', async () => {
+    await server.api('POST', '/api/prompts', { code: 'ren-a', description: '', text: 'a' });
+    await server.api('POST', '/api/prompts', { code: 'ren-b', description: '', text: 'see ${{ prompts.ren-a }}' });
+    expect((await server.api('POST', '/api/prompts/conflictResolution/rename', { code: 'cr' })).status).toBe(403);
+    expect((await server.api('POST', '/api/prompts/ren-a/rename', { code: 'ren-b' })).status).toBe(409);
+    const res = await server.api('POST', '/api/prompts/ren-a/rename', { code: 'ren-c' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ code: 'ren-c', usedBy: ['ren-b'] });
+    expect((await server.api('GET', '/api/prompts/ren-b')).body.text).toBe('see ${{ prompts.ren-c }}');
+    expect((await server.api('GET', '/api/prompts/ren-a')).status).toBe(404);
   });
 
   it('returns the resolved preview and usedBy', async () => {

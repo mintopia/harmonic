@@ -9,6 +9,8 @@ Amended 2026-11-12: seven of those ten have no runtime reader (workflow steps re
 
 Amended 2026-11-18 (#984): the editor no longer has a Duplicate step. An operator edits a bundled prompt in place; Save asks for a code (default `<code>-copy`, a taken code refused) and creates an operator prompt from the edited text. The bundled entry stays unchanged and read-only in the store. This replaces only the "Duplicate makes an editable copy" wording below.
 
+Amended 2026-11-18 (#983): an operator entry can be renamed. A prompt's identity is its code, so rename moves the entry and rewrites every `${{ prompts.<code> }}` include and every workflow step `with.prompt` or `with.continuePrompt` naming it. Bundled entries are not renamed (save an edit as a new prompt first), nor are the converted entries the engine reads under a fixed code. Pinned workflow versions keep the old code.
+
 Prompts become entries in a **Prompt Library**: named prompts, each with a
 code and a description. A Task Execution Workflow step (ADR-0053) uses a prompt
 by its code or as literal text, and a prompt can include another by code. The

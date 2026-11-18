@@ -43,6 +43,7 @@ const promptSchema = z
 const promptBodySchema = z.object({ description: z.string().max(500), text: z.string().max(100_000) });
 const createBodySchema = promptBodySchema.extend({ code: codeSchema });
 const duplicateBodySchema = z.object({ code: codeSchema.optional().describe('Code for the copy; defaults to `<code>-copy`.') });
+const renameBodySchema = z.object({ code: codeSchema.describe('The new code.') });
 const codeParamsSchema = z.object({ code: codeSchema });
 
 export async function promptRoutes(fastify: FastifyInstance, ctx: { prompts: PromptLibrary }): Promise<void> {
@@ -152,6 +153,27 @@ export async function promptRoutes(fastify: FastifyInstance, ctx: { prompts: Pro
       },
     },
     async (req, reply) => reply.status(201).send(await ctx.prompts.duplicate(req.params.code, req.body.code)),
+  );
+
+  app.post(
+    '/prompts/:code/rename',
+    {
+      schema: {
+        tags,
+        description: 'Rename an operator prompt, rewriting every `${{ prompts.<code> }}` include and every workflow step `with.prompt` or `with.continuePrompt` that names it.',
+        security,
+        params: codeParamsSchema,
+        body: renameBodySchema,
+        response: {
+          200: promptSchema.describe('The prompt under its new code.'),
+          400: errorResponse('The new code is not a valid prompt code.'),
+          403: errorResponse('The prompt is bundled, or Harmonic reads it under its current code.'),
+          404: errorResponse('No prompt has that code.'),
+          409: errorResponse('The new code is already taken.'),
+        },
+      },
+    },
+    async (req) => ctx.prompts.rename(req.params.code, req.body.code),
   );
 
   app.delete(

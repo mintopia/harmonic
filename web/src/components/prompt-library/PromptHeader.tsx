@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ApiError, api } from '../../api';
 import { toastError } from '../../toast';
-import { copyCode, parseSaveError, savedLabel, validateCode, type SaveIssue } from '../../prompt-library-model';
+import { copyCode, parseSaveError, renameRewrites, savedLabel, validateCode, type SaveIssue } from '../../prompt-library-model';
 import { btnGhost, btnPrimary, btnQuietDestructive, field, labelType, panelTitle } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { Modal } from '../Modal';
@@ -17,6 +17,8 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
   const [actionError, setActionError] = useState<string | null>(null);
   const [forkCode, setForkCode] = useState<string | null>(null);
   const [forkOpen, setForkOpen] = useState(false);
+  const [renameTo, setRenameTo] = useState<string | null>(null);
+  const renameIssue = renameTo === null ? null : validateCode(renameTo, prompts);
   const dirty = flow.changes > 0;
   const saveDisabled = busy || blocked || !dirty || (isNew && (code === '' || validateCode(code, prompts) !== null));
 
@@ -57,6 +59,20 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
     }
   };
 
+  const rename = async () => {
+    if (!prompt || renameTo === null || renameIssue !== null) return;
+    setRenameTo(null);
+    setBusy(true);
+    setActionError(null);
+    try {
+      flow.afterRename(prompt.code, await api.renamePrompt(prompt.code, renameTo));
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saved = prompt ? savedLabel(prompt.updatedAt) : null;
   const subtitle = [description, saved].filter(Boolean).join(' · ');
 
@@ -75,6 +91,11 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
           {prompt && !prompt.bundled && (
             <button type="button" className={btnQuietDestructive} disabled={busy} onClick={() => setConfirmDelete(true)}>
               Delete…
+            </button>
+          )}
+          {prompt && !prompt.bundled && (
+            <button type="button" className={btnGhost} disabled={busy || dirty} title={dirty ? 'Save or discard your changes before renaming' : undefined} onClick={() => setRenameTo(prompt.code)}>
+              Rename…
             </button>
           )}
           <button
@@ -116,6 +137,24 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
           onSave={() => void save(forkCode)}
           onCancel={() => setForkOpen(false)}
         />
+      )}
+      {renameTo !== null && prompt && (
+        <ConfirmDialog
+          label="Rename prompt"
+          title={`Rename ${prompt.code}`}
+          confirmLabel="Rename prompt"
+          tone="primary"
+          confirmDisabled={renameIssue !== null}
+          onConfirm={() => void rename()}
+          onCancel={() => setRenameTo(null)}
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className="text-small font-semibold text-ink">New code</span>
+            <input autoFocus value={renameTo} onChange={(e) => setRenameTo(e.target.value)} aria-label="New code" className={`${field} font-data`} />
+          </label>
+          {renameTo !== prompt.code && renameIssue && <p className="mt-1.5 text-small text-fail">{renameIssue}</p>}
+          <p className="mt-3">{renameRewrites(prompt)}</p>
+        </ConfirmDialog>
       )}
       {confirmDelete && prompt && (
         <ConfirmDialog
