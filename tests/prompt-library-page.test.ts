@@ -103,15 +103,22 @@ describe('Prompt Library page', () => {
     expect(host.querySelector('[data-prompt="implement"]')).not.toBeNull();
   });
 
-  it('hides engine fragments from the list and search until Include engine fragments is on', async () => {
+  it('groups the rail into Prompts and Engine fragments, hiding fragments from the list and search until the toggle is on', async () => {
     const host = await mountLibrary([...LIB, prompt('criticRole', { bundled: true, category: 'fragment' })]);
-    expect(host.querySelector('[data-prompt="criticRole"]')).toBeNull();
+    const sections = () => [...host.querySelectorAll('nav[aria-label="Prompts"] [data-rail-section]')].map((g) => [g.querySelector('h3')?.textContent, [...g.querySelectorAll('[data-prompt]')].map((r) => r.getAttribute('data-prompt'))]);
+    expect(sections()).toEqual([['Prompts · 4', ['implement', 'team-style', 'security-checklist', 'release-notes']]]);
     await type(host.querySelector('input[type="search"]') as HTMLInputElement, 'critic');
     expect(host.textContent).toContain('No prompts match “critic”');
     await click([...host.querySelectorAll('label')].find((l) => l.textContent?.includes('Include engine fragments'))?.querySelector('input'));
-    expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
+    expect(sections()).toEqual([['Engine fragments · 1', ['criticRole']]]);
+    await type(host.querySelector('input[type="search"]') as HTMLInputElement, '');
+    expect(sections()).toEqual([
+      ['Prompts · 4', ['implement', 'team-style', 'security-checklist', 'release-notes']],
+      ['Engine fragments · 1', ['criticRole']],
+    ]);
     await click(host.querySelector('[data-prompt="criticRole"] button'));
-    expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
+    expect(host.querySelector('[data-prompt="criticRole"] button')?.getAttribute('aria-current')).toBe('true');
+    expect(host.querySelector('section[aria-label="Prompt criticRole"]')).not.toBeNull();
   });
 
   it('lets a bundled entry be edited with no Duplicate or Delete', async () => {

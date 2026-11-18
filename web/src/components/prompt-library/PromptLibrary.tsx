@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { filterPrompts, unsavedChanges, usedByLabel, visiblePrompts } from '../../prompt-library-model';
+import { railSections, unsavedChanges, usedByLabel } from '../../prompt-library-model';
+import type { Prompt } from '../../types';
 import { btnGhost, btnPrimary, labelType, quietTag, searchField } from '../../ui';
 import { EmptyState } from '../EmptyState';
 import { Icon } from '../Icon';
@@ -24,13 +25,11 @@ export function PromptLibrary() {
 function PromptRail() {
   const flow = usePromptsFlow();
   const [query, setQuery] = useState('');
-  const all = useMemo(() => visiblePrompts(flow.prompts, flow.includeFragments), [flow.prompts, flow.includeFragments]);
-  const shown = useMemo(() => filterPrompts(all, query), [all, query]);
+  const sections = useMemo(() => railSections(flow.prompts, flow.includeFragments, query), [flow.prompts, flow.includeFragments, query]);
 
   return (
     <nav aria-label="Prompts" className="flex min-w-0 flex-col gap-3 rounded-lg bg-surface p-3 shadow-card md:sticky md:top-4 md:w-80 md:shrink-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className={`${labelType} text-muted`}>Prompts{flow.loaded ? ` · ${all.length}` : ''}</span>
+      <div className="flex items-center justify-end gap-2">
         <button type="button" className={btnPrimary} onClick={flow.startNew}>
           + New prompt
         </button>
@@ -48,34 +47,24 @@ function PromptRail() {
       {flow.error && <LoadError message={flow.error} onRetry={flow.reload} />}
       {!flow.loaded && !flow.error && <p className="text-muted">Loading prompts…</p>}
 
-      {shown.length > 0 && (
-        <ul className="-mx-1 m-0 flex max-h-80 list-none flex-col gap-0.5 overflow-y-auto p-0 md:max-h-[70vh]">
-          {shown.map((p) => {
-            const active = flow.selected === p.code;
-            const edited = unsavedChanges(p, flow.draftOf(p)) > 0;
-            return (
-              <li key={p.code} data-prompt={p.code}>
-                <button
-                  type="button"
-                  onClick={() => flow.pick(p.code)}
-                  aria-current={active ? 'true' : undefined}
-                  className={`flex w-full flex-col gap-1 rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${active ? 'bg-accent-tint' : 'hover:bg-raised'}`}
-                >
-                  <span className={`truncate font-data text-data text-ink ${active ? 'font-bold' : 'font-semibold'}`}>{p.code}</span>
-                  {p.description && <span className={`line-clamp-2 text-small ${active ? 'text-ink' : 'text-muted'}`}>{p.description}</span>}
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <SourceBadge bundled={p.bundled} />
-                    <span className={quietTag}>{usedByLabel(p)}</span>
-                    {edited && <span className={quietTag}>Edited</span>}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {sections.length > 0 && (
+        <div className="-mx-1 flex max-h-80 flex-col gap-3 overflow-y-auto md:max-h-[70vh]">
+          {sections.map((section) => (
+            <div key={section.category} data-rail-section={section.category} role="group" aria-labelledby={`rail-${section.category}`} className="flex flex-col gap-1">
+              <h3 id={`rail-${section.category}`} className={`${labelType} m-0 px-2.5 text-muted`}>
+                {section.label} · {section.prompts.length}
+              </h3>
+              <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+                {section.prompts.map((p) => (
+                  <RailRow key={p.code} prompt={p} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
 
-      {flow.loaded && shown.length === 0 && query.trim() !== '' && (
+      {flow.loaded && sections.length === 0 && query.trim() !== '' && (
         <div className="rounded-md border border-dashed border-edge bg-sunken">
           <EmptyState
             title={`No prompts match “${query.trim()}”`}
@@ -91,6 +80,30 @@ function PromptRail() {
         </div>
       )}
     </nav>
+  );
+}
+
+function RailRow({ prompt: p }: { prompt: Prompt }) {
+  const flow = usePromptsFlow();
+  const active = flow.selected === p.code;
+  const edited = unsavedChanges(p, flow.draftOf(p)) > 0;
+  return (
+    <li data-prompt={p.code}>
+      <button
+        type="button"
+        onClick={() => flow.pick(p.code)}
+        aria-current={active ? 'true' : undefined}
+        className={`flex w-full flex-col gap-1 rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${active ? 'bg-accent-tint' : 'hover:bg-raised'}`}
+      >
+        <span className={`truncate font-data text-data text-ink ${active ? 'font-bold' : 'font-semibold'}`}>{p.code}</span>
+        {p.description && <span className={`line-clamp-2 text-small ${active ? 'text-ink' : 'text-muted'}`}>{p.description}</span>}
+        <span className="flex flex-wrap items-center gap-1.5">
+          <SourceBadge bundled={p.bundled} />
+          <span className={quietTag}>{usedByLabel(p)}</span>
+          {edited && <span className={quietTag}>Edited</span>}
+        </span>
+      </button>
+    </li>
   );
 }
 

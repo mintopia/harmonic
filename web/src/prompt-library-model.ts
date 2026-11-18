@@ -1,4 +1,4 @@
-import { PROMPT_CODE_PATTERN } from '../../src/domain/prompt-library.js';
+import { PROMPT_CODE_PATTERN, type PromptCategory } from '../../src/domain/prompt-library.js';
 import type { PromptStepKind } from '../../src/execution/prompt-assembly.js';
 import type { Prompt, PromptStepUse, WorkflowLibraryEntry } from './types.js';
 
@@ -8,8 +8,15 @@ export function filterPrompts(prompts: readonly Prompt[], query: string): Prompt
   return prompts.filter((p) => p.code.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
 }
 
-export function visiblePrompts(prompts: readonly Prompt[], includeFragments: boolean): Prompt[] {
-  return includeFragments ? [...prompts] : prompts.filter((p) => p.category !== 'fragment');
+export type RailSection = { category: PromptCategory; label: string; prompts: Prompt[] };
+
+const RAIL_LABELS: Record<PromptCategory, string> = { prompt: 'Prompts', fragment: 'Engine fragments' };
+
+export function railSections(prompts: readonly Prompt[], includeFragments: boolean, query: string): RailSection[] {
+  const matches = filterPrompts(prompts, query);
+  return Object.entries(RAIL_LABELS)
+    .map(([category, label]) => ({ category: category as PromptCategory, label, prompts: matches.filter((p) => p.category === category) }))
+    .filter((s) => s.prompts.length > 0 && (includeFragments || s.category !== 'fragment'));
 }
 
 export function runningNow(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[], workflows: readonly WorkflowLibraryEntry[]): number {
