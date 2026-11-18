@@ -8,6 +8,18 @@ on the canvas.
 
 Light Paper tokens, Global scope, 1440px wide.
 
+## Prompts tab: superseded
+
+The Prompts-tab artboards here (`Prompts.dc.html`, `PromptEdit.dc.html`) and
+their screenshots (`screenshots/verification/*prompts-*`, `pair-Prompts.png`,
+`pair-PromptEdit.png`) show the Find → Edit → Check impact stepper with
+read-only prompts and Duplicate to change. That design is superseded. Do not
+build against it.
+
+The canonical Prompts-tab design is the artifact
+[7pjSax5kUuFbaCqDGNaMRf](https://claude.ai/artifact/7pjSax5kUuFbaCqDGNaMRf),
+tracked by Epic #986.
+
 | File | Screen |
 | --- | --- |
 | `Main.dc.html` | Settings › Running Tickets › 1 Workflow |
@@ -17,8 +29,8 @@ Light Paper tokens, Global scope, 1440px wide.
 | `General.dc.html` | Settings › General (Identity, Access, Chats, Files) |
 | `Integrations.dc.html` | Settings › Integrations (Agents, Updates) |
 | `Archive.dc.html` | Settings › Archive & Export (Keep, Export, Redact, Deliver) |
-| `Prompts.dc.html` | Settings › Prompts › 1 Find (Workspace scope adds step 4, Workspace text) |
-| `PromptEdit.dc.html` | Settings › Prompts › 2 Edit and 3 Check impact |
+| `Prompts.dc.html` | Superseded. Settings › Prompts › 1 Find (Workspace scope adds step 4, Workspace text) |
+| `PromptEdit.dc.html` | Superseded. Settings › Prompts › 2 Edit and 3 Check impact |
 | `Library.dc.html` | Workflows library |
 | `Editor.dc.html` | Workflow editor: Blocks / YAML / Variables with the live diagram |
 
