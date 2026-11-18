@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
-  return { code, description: `${code} description`, text: `Body of ${code}`, bundled: false, resolved: `Body of ${code}`, usedBy: [], usedBySteps: [], updatedAt: null, ...over };
+  return { code, description: `${code} description`, text: `Body of ${code}`, bundled: false, category: 'prompt', resolved: `Body of ${code}`, usedBy: [], usedBySteps: [], updatedAt: null, ...over };
 }
 
 function workflow(name: string, tickets: number, running: number): WorkflowLibraryEntry {
@@ -112,6 +112,18 @@ describe('Prompt Library page', () => {
     expect(host.textContent).toContain('No prompts match “secrity”');
     await click(button(host, 'Clear search'));
     expect(host.querySelector('[data-prompt="implement"]')).not.toBeNull();
+  });
+
+  it('hides engine fragments from the list and search until Include engine fragments is on', async () => {
+    const host = await mountLibrary([...LIB, prompt('criticRole', { bundled: true, category: 'fragment' })]);
+    expect(host.querySelector('[data-prompt="criticRole"]')).toBeNull();
+    await type(host.querySelector('input[type="search"]') as HTMLInputElement, 'critic');
+    expect(host.textContent).toContain('No prompts match “critic”');
+    await click([...host.querySelectorAll('label')].find((l) => l.textContent?.includes('Include engine fragments'))?.querySelector('input'));
+    expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
+    await click(host.querySelector('[data-prompt="criticRole"] button'));
+    await click(button(host, 'To find'));
+    expect(host.querySelector('[data-prompt="criticRole"]')).not.toBeNull();
   });
 
   it('shows the no-own-prompts empty state when only bundled prompts exist', async () => {

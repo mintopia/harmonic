@@ -15,6 +15,8 @@ export interface PromptDraft {
 export interface PromptsFlow {
   prompts: readonly Prompt[];
   loaded: boolean;
+  includeFragments: boolean;
+  setIncludeFragments: (include: boolean) => void;
   error: string | null;
   reload: () => void;
   selected: string | null;
@@ -75,6 +77,7 @@ export function PromptsFlowProvider({
   children?: ReactNode;
 }) {
   const { data, error, reload } = useAsyncResource(active ? () => api.prompts() : null, [active]);
+  const [includeFragments, setIncludeFragments] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Readonly<Record<string, PromptDraft>>>({});
 
@@ -113,6 +116,8 @@ export function PromptsFlowProvider({
   const flow: PromptsFlow = {
     prompts,
     loaded: data !== null,
+    includeFragments,
+    setIncludeFragments,
     error,
     reload,
     selected,

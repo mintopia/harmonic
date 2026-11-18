@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { PROMPT_FILTERS, filterByView, filterCounts, filterPrompts, libraryCounts, usedByLabel, type PromptFilter } from '../../prompt-library-model';
+import { PROMPT_FILTERS, filterByView, filterCounts, filterPrompts, libraryCounts, usedByLabel, visiblePrompts, type PromptFilter } from '../../prompt-library-model';
 import { btnGhost, btnPrimary, labelType, searchField } from '../../ui';
 import { EmptyState } from '../EmptyState';
 import { Icon } from '../Icon';
@@ -35,7 +35,7 @@ export function PromptFind() {
   const flow = usePromptsFlow();
   const [query, setQuery] = useState('');
   const [view, setView] = useState<PromptFilter>('all');
-  const all = flow.prompts;
+  const all = useMemo(() => visiblePrompts(flow.prompts, flow.includeFragments), [flow.prompts, flow.includeFragments]);
   const counts = useMemo(() => filterCounts(all), [all]);
   const { bundled, yours } = libraryCounts(all);
   const shown = useMemo(() => filterPrompts(filterByView(all, view), query), [all, view, query]);
@@ -74,6 +74,10 @@ export function PromptFind() {
                   placeholder="Search by code or description"
                   className={`${searchField} w-full pl-8`}
                 />
+              </label>
+              <label className="flex min-h-9 items-center gap-2 text-body text-muted">
+                <input type="checkbox" checked={flow.includeFragments} onChange={(e) => flow.setIncludeFragments(e.target.checked)} className="accent-accent" />
+                Include engine fragments
               </label>
               <div role="tablist" aria-label="Filter" className="flex gap-0.5 rounded-md bg-hairline p-[3px]">
                 {PROMPT_FILTERS.map((f) => (

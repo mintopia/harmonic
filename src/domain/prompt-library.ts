@@ -1,5 +1,8 @@
 import { DomainError } from './errors.js';
 
+export const PROMPT_CATEGORIES = ['fragment', 'prompt'] as const;
+export type PromptCategory = (typeof PROMPT_CATEGORIES)[number];
+
 export const PROMPT_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 export const INCLUDE = /\$\{\{\s*prompts\.([^\s}]+)\s*\}\}/g;
