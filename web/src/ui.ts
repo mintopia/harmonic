@@ -119,6 +119,8 @@ export const card = 'rounded-lg bg-surface shadow-card';
  * and the token's 0.05em tracking (DESIGN.md § 6: "Small (11px, weight 600)"). */
 export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase';
 
+export const quietTag = 'rounded-full bg-raised px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] text-muted';
+
 /** Inline monospace token (a label, Harness or id) set in running text; pass the tint classes for background and colour. */
 export const codeChip = 'rounded-sm px-1.5 font-data text-small';
 

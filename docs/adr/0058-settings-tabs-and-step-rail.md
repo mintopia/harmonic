@@ -5,6 +5,8 @@ Date: 2026-11-01
 
 Amended 2026-11-18 (#987): Prompts has Find and Edit. Check impact folds into the editor as an inline Used by line.
 
+Amended 2026-11-18 (#989): Prompts has one step and no step rail. It is one two-pane view: a persistent prompt list rail (search, Include engine fragments, rows) beside the in-context editor. A Workspace shows its prompt text overrides below it. A tab with one step shows no step rail.
+
 The Settings tabs become General · Running Tickets · Prompts · Integrations ·
 Archive & Export. Security folds into General as the Access step. Each tab
 with steps shows a left step rail, and the current step, selected by the
@@ -36,7 +38,7 @@ value.
   Limits.
 - **Security folds into General.** Its controls move to the Access step.
 - **Step sets:** General has Identity, Access, Chats and Files. Prompts has
-  Find and Edit. Integrations has Code, Work, Agents and Updates.
+  one step and no rail (#989). Integrations has Code, Work, Agents and Updates.
   Archive & Export has Keep, Export, Redact and Deliver.
 
 ### Step rail

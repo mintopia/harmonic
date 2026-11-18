@@ -12,32 +12,6 @@ export function visiblePrompts(prompts: readonly Prompt[], includeFragments: boo
   return includeFragments ? [...prompts] : prompts.filter((p) => p.category !== 'fragment');
 }
 
-export function libraryCounts(prompts: readonly Prompt[]): { total: number; bundled: number; yours: number } {
-  const bundled = prompts.filter((p) => p.bundled).length;
-  return { total: prompts.length, bundled, yours: prompts.length - bundled };
-}
-
-export type PromptFilter = 'all' | 'yours' | 'unused';
-
-export const PROMPT_FILTERS: readonly { id: PromptFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'yours', label: 'Yours' },
-  { id: 'unused', label: 'Unused' },
-];
-
-const isUnused = (p: Prompt): boolean => p.usedBy.length === 0 && p.usedBySteps.length === 0;
-const isYours = (p: Prompt): boolean => !p.bundled;
-
-export function filterByView(prompts: readonly Prompt[], filter: PromptFilter): Prompt[] {
-  if (filter === 'yours') return prompts.filter(isYours);
-  if (filter === 'unused') return prompts.filter(isUnused);
-  return [...prompts];
-}
-
-export function filterCounts(prompts: readonly Prompt[]): Record<PromptFilter, number> {
-  return { all: prompts.length, yours: prompts.filter(isYours).length, unused: prompts.filter(isUnused).length };
-}
-
 export function runningNow(prompt: Pick<Prompt, 'code' | 'usedBy' | 'usedBySteps'>, prompts: readonly Prompt[], workflows: readonly WorkflowLibraryEntry[]): number {
   const names = new Set(prompt.usedBySteps.map((u) => u.workflow));
   const byCode = new Map(prompts.map((p) => [p.code, p]));

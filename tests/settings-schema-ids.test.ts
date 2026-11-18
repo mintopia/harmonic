@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   SETTINGS_SCHEMA,
   renderSection,
-  sectionsForTab,
   type GlobalRenderCtx,
   type WorkspaceRenderCtx,
   type Surface,
@@ -179,11 +178,10 @@ describe('Settings schema field ids are unique (issue #472)', () => {
     expect(duplicates(ids)).toEqual([]);
   });
 
-  it('declares the prompts settings as two bare full-width steps on both surfaces', () => {
-    const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.step !== 'overrides');
-    expect(sections.map((s) => s.step)).toEqual(['find', 'edit']);
-    for (const section of sections) expect(section).toMatchObject({ bare: true, wide: true, surfaces: ['global', 'workspace'] });
-    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'overrides']);
+  it('declares the prompt library as one bare full-width section on both surfaces', () => {
+    const sections = SETTINGS_SCHEMA.filter((s) => s.tab === 'prompts' && s.surfaces.includes('global'));
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatchObject({ step: 'library', bare: true, wide: true, surfaces: ['global', 'workspace'] });
   });
 
 });

@@ -15,7 +15,7 @@ import {
   type SaveIssue,
   type TextSegment,
 } from '../../prompt-library-model';
-import { btnGhost, btnPrimary, field, labelType } from '../../ui';
+import { btnGhost, btnPrimary, field, labelType, quietTag } from '../../ui';
 import { Icon } from '../Icon';
 import { PromptHeader, SaveAsNewDialog } from './PromptHeader';
 import { usePromptsFlow } from './PromptsFlow';
@@ -211,7 +211,7 @@ function IncludedPrompt({ parent, include }: { parent: Prompt | null; include: P
         <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/include:rotate-0" />
         <span className="font-data font-semibold text-ink">{include.code}</span>
         <SourceBadge bundled={include.bundled} />
-        {dirty && <span className="rounded-full bg-raised px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] text-muted">Edited</span>}
+        {dirty && <span className={quietTag}>Edited</span>}
       </summary>
       <div className="flex flex-col gap-2 pb-3">
         <TextBox
