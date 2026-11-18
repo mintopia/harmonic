@@ -41,6 +41,10 @@ export function resolvePrompt(text: string, lookup: ReadonlyMap<string, string>,
   });
 }
 
+export function renameIncludes(text: string, from: string, to: string): string {
+  return text.replace(INCLUDE, (whole, code: string) => (code === from ? `\${{ prompts.${to} }}` : whole));
+}
+
 export function usedBy(code: string, entries: readonly PromptEntry[]): string[] {
   return entries.filter((e) => e.code !== code && includedCodes(e.text).includes(code)).map((e) => e.code);
 }

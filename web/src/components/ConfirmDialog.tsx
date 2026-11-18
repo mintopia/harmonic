@@ -18,6 +18,7 @@ export function ConfirmDialog({
   tone,
   onConfirm,
   onCancel,
+  confirmDisabled = false,
 }: {
   label: string;
   title: string;
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   tone: ConfirmTone;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmDisabled?: boolean;
 }) {
   return (
     <Modal label={label} onClose={onCancel} className="max-w-md">
@@ -36,7 +38,7 @@ export function ConfirmDialog({
           <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className={CONFIRM_TONE_CLASS[tone]} onClick={onConfirm}>
+          <button type="button" className={CONFIRM_TONE_CLASS[tone]} disabled={confirmDisabled} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

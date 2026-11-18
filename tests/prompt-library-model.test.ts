@@ -12,6 +12,7 @@ import {
   previewTree,
   sendContexts,
   suggestCode,
+  renameRewrites,
   usedByLabel,
   usedByRows,
   validateCode,
@@ -158,5 +159,15 @@ describe('prompt library model', () => {
   it('offers each step that sends the prompt, or a generic agent and critic step when none does', () => {
     expect(sendContexts([{ workflow: 'Default', stepId: 'review', uses: 'critic' }])).toEqual([{ label: 'Default › review', uses: 'critic' }]);
     expect(sendContexts([]).map((c) => c.uses)).toEqual(['agent', 'critic']);
+  });
+});
+
+describe('renameRewrites', () => {
+  it('states how many references a rename rewrites', () => {
+    expect(renameRewrites({ usedBy: [], usedBySteps: [] })).toBe('Nothing references this prompt, so no references will be rewritten.');
+    expect(renameRewrites({ usedBy: ['a'], usedBySteps: [] })).toBe('1 reference will be rewritten: 1 include in another prompt.');
+    expect(renameRewrites({ usedBy: ['a', 'b'], usedBySteps: [{ workflow: 'w', stepId: 's', uses: 'agent' }] })).toBe(
+      '3 references will be rewritten: 2 includes in other prompts and 1 workflow step.',
+    );
   });
 });

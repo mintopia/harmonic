@@ -381,6 +381,7 @@ export const api: typeof RealApi = {
   },
   assemblePrompt: (uses, text) => ok({ segments: assembleStepPrompt(uses, text, bundledEnginePrompts()) }),
   deletePrompt: () => ok({ ok: true as const }),
+  renamePrompt: (code, newCode) => ok({ ...(promptFixtures.find((p) => p.code === code) ?? (promptFixtures[0] as Prompt)), code: newCode, bundled: false }),
   scheduledJobs: () => ok({ jobs: [] }),
   operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),

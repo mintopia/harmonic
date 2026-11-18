@@ -73,6 +73,17 @@ export function usedByLabel(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): str
   return parts.length === 0 ? 'Unused' : parts.join(' · ');
 }
 
+export function renameRewrites(prompt: Pick<Prompt, 'usedBy' | 'usedBySteps'>): string {
+  const total = prompt.usedBy.length + prompt.usedBySteps.length;
+  if (total === 0) return 'Nothing references this prompt, so no references will be rewritten.';
+  const parts = [
+    [prompt.usedBy.length, 'include in another prompt', 'includes in other prompts'],
+    [prompt.usedBySteps.length, 'workflow step', 'workflow steps'],
+  ] as const;
+  const detail = parts.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`).join(' and ');
+  return `${total} reference${total === 1 ? '' : 's'} will be rewritten: ${detail}.`;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function stamp(iso: string | null): string | null {

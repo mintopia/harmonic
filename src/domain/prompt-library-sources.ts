@@ -30,6 +30,8 @@ const SOURCES: readonly PromptSource[] = [
   ...EDITED_TEMPLATES.map((id) => ({ code: id, entry: editedCode(id), description: PROMPT_TEMPLATES[id].help, path: PROMPT_TEMPLATES[id].config })),
 ];
 
+export const LIBRARY_ENTRY_CODES: readonly string[] = SOURCES.map((s) => s.entry);
+
 export const libraryEntryFor = (code: string): string | undefined => SOURCES.find((s) => s.code === code)?.entry;
 
 const readPath = (root: unknown, path: readonly string[]): string => path.reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], root) as string;

@@ -1,11 +1,13 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isPair, isScalar, parseDocument, visit } from 'yaml';
 import { z } from 'zod';
 import { loadBaselineConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { BUNDLED_PROMPTS, BUNDLED_PROMPT_CODES, type EnginePrompts } from './bundled-prompts.js';
+import { LIBRARY_ENTRY_CODES } from './prompt-library-sources.js';
 import { retiredEntryFor } from './retired-settings.js';
-import { PROMPT_CODE_PATTERN, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
+import { PROMPT_CODE_PATTERN, renameIncludes, resolvePrompt, usedBy, validateIncludes, type PromptEntry } from './prompt-library.js';
 import { PROMPT_TEMPLATES, PROMPT_TEMPLATE_IDS } from './prompt-templates.js';
 import { parseWorkflow, type WorkflowStepDefinition } from './workflow.js';
 import type { WorkflowEntry } from './workflow-library-store.js';
@@ -26,19 +28,39 @@ export interface PromptView extends Omit<PromptEntry, 'updatedAt'> {
 
 export interface WorkflowSource {
   list(): WorkflowEntry[];
+  save(name: string, text: string): Promise<unknown>;
 }
+
+const STEP_PROMPT_KEYS = ['prompt', 'continuePrompt'] as const;
 
 function stepsOf(text: string): WorkflowStepDefinition[] {
   const def = parseWorkflow(text);
   return [...def.steps, ...(def.cleanup ?? [])].flatMap((step) => [step, ...(step.parallel ?? [])]);
 }
 
-function promptCodeOf(step: WorkflowStepDefinition): string | undefined {
-  const prompt = step.with?.prompt;
-  return typeof prompt === 'string' ? prompt.trim() : undefined;
+function promptCodesOf(step: WorkflowStepDefinition): string[] {
+  return STEP_PROMPT_KEYS.map((key) => step.with?.[key]).flatMap((p) => (typeof p === 'string' ? [p.trim()] : []));
 }
 
 const promptStepKind = (step: WorkflowStepDefinition): PromptStepKind | undefined => PROMPT_STEP_KINDS.find((kind) => kind === step.uses);
+
+function renameStepPrompts(text: string, from: string, to: string): string | null {
+  const doc = parseDocument(text);
+  let changed = false;
+  visit(doc, {
+    Pair(_, pair, path) {
+      const owner = path[path.length - 2];
+      if (!isPair(owner) || !isScalar(owner.key) || owner.key.value !== 'with') return;
+      if (!isScalar(pair.key) || !(STEP_PROMPT_KEYS as readonly unknown[]).includes(pair.key.value) || !isScalar(pair.value)) return;
+      if (typeof pair.value.value !== 'string' || pair.value.value.trim() !== from) return;
+      pair.value.value = to;
+      changed = true;
+    },
+  });
+  return changed ? doc.toString({ lineWidth: 0 }) : null;
+}
+
+const ENGINE_READ_CODES: ReadonlySet<string> = new Set([...BUNDLED_PROMPT_CODES.map(retiredEntryFor), ...LIBRARY_ENTRY_CODES]);
 
 const fileSchema = z.object({ description: z.string(), text: z.string() });
 
@@ -105,7 +127,7 @@ export class PromptLibrary {
     return (this.workflows?.list() ?? []).flatMap((wf) =>
       stepsOf(wf.text).flatMap((step) => {
         const uses = promptStepKind(step);
-        return uses && promptCodeOf(step) === code ? [{ workflow: wf.name, stepId: step.id, uses }] : [];
+        return uses && promptCodesOf(step).includes(code) ? [{ workflow: wf.name, stepId: step.id, uses }] : [];
       }),
     );
   }
@@ -222,6 +244,29 @@ export class PromptLibrary {
       for (let n = 2; taken.has(target); n++) target = `${code}-copy-${n}`;
     }
     return this.create(target, source.description, source.text);
+  }
+
+  /** The old entry is removed last, so a rename that dies part-way leaves no dangling reference. */
+  async rename(code: string, newCode: string): Promise<PromptView> {
+    const source = await this.get(code);
+    if (source.bundled) throw new DomainError('forbidden', `${code} is a bundled prompt and cannot be renamed; save an edit as a new prompt instead`);
+    if (ENGINE_READ_CODES.has(code)) throw new DomainError('forbidden', `${code} is read by Harmonic under that code and cannot be renamed`);
+    if (!PROMPT_CODE_PATTERN.test(newCode)) throw new DomainError('validation', `${newCode} is not a valid prompt code`);
+    if (newCode === code) throw new DomainError('validation', `${code} already has that code`);
+    if ((await this.all()).some((e) => e.code === newCode)) throw new DomainError('conflict', `A prompt with the code ${newCode} already exists`);
+    await this.save(newCode, source.description, source.text);
+    for (const includer of source.usedBy) {
+      const entry = await this.get(includer);
+      await this.save(includer, entry.description, renameIncludes(entry.text, code, newCode));
+    }
+    for (const wf of this.workflows?.list() ?? []) {
+      const text = renameStepPrompts(wf.text, code, newCode);
+      if (text !== null) await this.workflows!.save(wf.name, text);
+    }
+    await rm(join(this.dir!, `${code}.json`), { force: true });
+    this.operatorCache.delete(code);
+    this.engineCache = null;
+    return this.get(newCode);
   }
 
   async delete(code: string): Promise<void> {
