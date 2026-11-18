@@ -31,9 +31,7 @@ import type { ResolutionRule } from './ResolutionStrip';
 import { WORKSPACE_COLORS } from '../../../src/domain/workspace-colors.js';
 import { ExecutionTargetsPanel } from './ExecutionTargetsSettings';
 import { WorkspaceExecutionTargets } from './WorkspaceExecutionTargets';
-import { PromptEditStep } from './prompt-library/PromptEdit';
-import { PromptFind } from './prompt-library/PromptFind';
-import { PromptImpact } from './prompt-library/PromptImpact';
+import { PromptLibrary } from './prompt-library/PromptLibrary';
 
 export type Surface = 'global' | 'workspace';
 
@@ -1286,38 +1284,18 @@ export const SETTINGS_SCHEMA: SectionNode[] = [
 
   {
     tab: 'prompts',
-    step: 'find',
+    step: 'library',
     surfaces: ['global', 'workspace'],
     bare: true,
     wide: true,
-    title: 'Find a prompt',
+    title: 'Prompt library',
     description: '',
-    body: () => <PromptFind />,
-  },
-  {
-    tab: 'prompts',
-    step: 'edit',
-    surfaces: ['global', 'workspace'],
-    bare: true,
-    wide: true,
-    title: 'Edit a prompt',
-    description: '',
-    body: () => <PromptEditStep />,
-  },
-  {
-    tab: 'prompts',
-    step: 'impact',
-    surfaces: ['global', 'workspace'],
-    bare: true,
-    wide: true,
-    title: 'Prompt impact',
-    description: '',
-    body: () => <PromptImpact />,
+    body: () => <PromptLibrary />,
   },
 
   {
     tab: 'prompts',
-    step: 'overrides',
+    step: 'library',
     surfaces: ['workspace'],
     wide: true,
     title: 'Workspace prompt text',

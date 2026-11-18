@@ -1,17 +1,51 @@
 // @vitest-environment jsdom
 import { act, createElement, useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../web/src/api.js';
+import { PromptsFlowProvider } from '../web/src/components/prompt-library/PromptsFlow.js';
 import { Tabs } from '../web/src/components/Tabs.js';
-import { sectionsForTab } from '../web/src/components/settings-schema.js';
+import { sectionsForTab, stepsForSurface } from '../web/src/components/settings-schema.js';
 import { SettingsForm } from '../web/src/components/SettingsForm.js';
 import { cleanup, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
 
-afterEach(cleanup);
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await cleanup();
+});
 
 describe('settings prompts layout', () => {
-  it('renders the Prompts settings as the Find, Edit and Check impact steps', () => {
-    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact']);
-    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['find', 'edit', 'impact', 'overrides']);
+  it('renders the Prompts settings as one library step with no step wizard', () => {
+    expect(sectionsForTab('global', 'prompts').map((s) => s.step)).toEqual(['library']);
+    expect(sectionsForTab('workspace', 'prompts').map((s) => s.step)).toEqual(['library', 'library']);
+    expect(stepsForSurface('global', 'prompts').map((s) => s.id)).toEqual(['library']);
+    expect(stepsForSurface('workspace', 'prompts').map((s) => s.id)).toEqual(['library']);
+  });
+
+  it('renders the list rail beside the editor panel with no step rail or step navigation', async () => {
+    vi.spyOn(api, 'prompts').mockResolvedValue({ prompts: [], total: 0 });
+    const config = makeConfig();
+    const ctx = { surface: 'global' as const, config, baseline: config, setConfig: () => {}, errors: {}, harnessPermissionModes: {}, channels: { list: [], onToggleEvent: () => {}, onCreated: () => {}, onDeleted: () => {} } };
+    const form = createElement(SettingsForm, {
+      title: 'Settings',
+      intro: '',
+      tabs: [{ id: 'prompts', label: 'Prompts' }],
+      tab: 'prompts',
+      onTab: () => {},
+      step: 'edit',
+      onStep: () => {},
+      ctx,
+      dirty: false,
+      saving: false,
+      error: null,
+      onSave: () => {},
+      onDiscard: () => {},
+    });
+    const host = await mountComponent(createElement(PromptsFlowProvider, { active: true }, form));
+    expect(host.querySelector('nav[aria-label="Changing what agents are told"]')).toBeNull();
+    expect(host.querySelector('nav[aria-label="Prompts"] input[type="search"]')).not.toBeNull();
+    expect(host.textContent).toContain('Include engine fragments');
+    expect(host.textContent).toContain('Pick a prompt from the list');
+    expect(host.textContent).not.toMatch(/Next:|← /);
   });
 });
 

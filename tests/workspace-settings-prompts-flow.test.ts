@@ -9,7 +9,7 @@ const apiMocks = vi.hoisted(() => ({ prompts: vi.fn() }));
 
 vi.mock('../web/src/api.js', () => ({ api: apiMocks }));
 vi.mock('../web/src/useSettingsLocation.js', () => ({
-  useSettingsLocation: () => ({ tab: 'prompts', step: 'find', setTab: vi.fn(), setStep: vi.fn() }),
+  useSettingsLocation: () => ({ tab: 'prompts', step: 'library', setTab: vi.fn(), setStep: vi.fn() }),
 }));
 vi.mock('../web/src/components/SettingsForm.js', () => ({
   SettingsForm: () => createElement('span', { 'data-testid': 'flow' }, useOptionalPromptsFlow() ? 'provided' : 'missing'),
@@ -30,8 +30,8 @@ describe('WorkspaceSettingsPage prompts tab', () => {
 });
 
 describe('Workspace prompts steps', () => {
-  it('offers the three library steps on the workspace surface', async () => {
+  it('offers the library as a single step on the workspace surface', async () => {
     const { stepsForSurface } = await import('../web/src/components/settings-schema.js');
-    expect(stepsForSurface('workspace', 'prompts').map((s) => s.id)).toEqual(['find', 'edit', 'impact', 'overrides']);
+    expect(stepsForSurface('workspace', 'prompts').map((s) => s.id)).toEqual(['library']);
   });
 });

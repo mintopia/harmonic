@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../../api';
 import { renameIncludes } from '../../../../src/domain/prompt-library.js';
-import { unsavedChanges, usedByLabel } from '../../prompt-library-model';
+import { unsavedChanges } from '../../prompt-library-model';
 import type { Prompt } from '../../types';
 import { useAsyncResource } from '../../useAsyncResource';
 
@@ -32,8 +32,6 @@ export interface PromptsFlow {
   discard: () => void;
   pick: (code: string) => void;
   startNew: () => void;
-  goFind: () => void;
-  goStep: (step: string) => void;
   afterSave: (saved: Prompt) => void;
   afterDelete: () => void;
   afterRename: (from: string, renamed: Prompt) => void;
@@ -55,36 +53,7 @@ export function useOptionalPromptsFlow(): PromptsFlow | null {
   return useContext(FlowContext);
 }
 
-export interface PromptsRailState {
-  disabled: ReadonlySet<string>;
-  values: Readonly<Record<string, string | undefined>>;
-  summaries: Readonly<Record<string, string | undefined>>;
-}
-
-export function promptsRailState(flow: PromptsFlow | null): PromptsRailState {
-  const none = !flow || flow.selected === null;
-  const current = flow?.current ?? null;
-  const edit = flow && flow.changes > 0 ? `${flow.changes} unsaved ${flow.changes === 1 ? 'change' : 'changes'}` : 'Change the text';
-  return {
-    disabled: new Set(none ? ['edit', 'impact'] : []),
-    values: { find: flow?.selected ?? undefined },
-    summaries: {
-      find: 'Pick a prompt',
-      edit: none ? 'Pick a prompt first' : edit,
-      impact: none ? 'Pick a prompt first' : current ? usedByLabel(current) : 'A new prompt is unused',
-    },
-  };
-}
-
-export function PromptsFlowProvider({
-  active,
-  onStep,
-  children,
-}: {
-  active: boolean;
-  onStep: (step: string) => void;
-  children?: ReactNode;
-}) {
+export function PromptsFlowProvider({ active, children }: { active: boolean; children?: ReactNode }) {
   const { data, error, reload } = useAsyncResource(active ? () => api.prompts() : null, [active]);
   const [includeFragments, setIncludeFragments] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -116,14 +85,6 @@ export function PromptsFlowProvider({
 
   const forget = useCallback((key: string) => setDrafts(({ [key]: _gone, ...rest }) => rest), []);
 
-  const open = useCallback(
-    (key: string) => {
-      setSelected(key);
-      onStep('edit');
-    },
-    [onStep],
-  );
-
   const flow: PromptsFlow = {
     prompts,
     loaded: data !== null,
@@ -141,10 +102,8 @@ export function PromptsFlowProvider({
     setDraftOf,
     discardOf: (code) => forget(code),
     discard: () => selected !== null && forget(selected),
-    pick: open,
-    startNew: () => open(NEW_PROMPT),
-    goFind: () => onStep('find'),
-    goStep: onStep,
+    pick: setSelected,
+    startNew: () => setSelected(NEW_PROMPT),
     afterSave: (saved) => {
       if (selected !== null) forget(selected);
       forget(saved.code);
@@ -156,13 +115,12 @@ export function PromptsFlowProvider({
       if (selected !== null) forget(selected);
       reload();
       setSelected(null);
-      onStep('find');
     },
     afterRename: (from, renamed) => {
       forget(from);
       setPatched((all) => [...all.filter((p) => p.code !== from && p.code !== renamed.code), renamed]);
       reload();
-      open(renamed.code);
+      setSelected(renamed.code);
     },
     afterIncludeSave: (from, saved, parent) => {
       forget(from);

@@ -7,7 +7,6 @@ export interface StepDef {
   heading: string;
   intro: string;
   nextTitle?: string;
-  backTitle?: string;
   note?: string;
   ownHeader?: boolean;
 }
@@ -62,10 +61,7 @@ export const TAB_STEPS: Record<SettingTab, readonly StepDef[]> = {
     },
   ],
   prompts: [
-    { id: 'find', title: 'Find', summary: 'Pick a prompt', heading: 'Which prompt do you want to change?', intro: '', ownHeader: true },
-    { id: 'edit', title: 'Edit', summary: 'Pick a prompt first', heading: 'Edit the prompt', intro: '', backTitle: 'All prompts', ownHeader: true },
-    { id: 'impact', title: 'Check impact', summary: 'Pick a prompt first', heading: 'Check impact', intro: '', ownHeader: true },
-    { id: 'overrides', title: 'Workspace text', summary: 'Override engine prompts', heading: 'Workspace prompt text', intro: 'Override the engine prompts for this Workspace. Anything left on inherit follows the global text.' },
+    { id: 'library', title: 'Library', summary: 'Prompts', heading: 'Prompts', intro: '', ownHeader: true },
   ],
   integrations: [
     {

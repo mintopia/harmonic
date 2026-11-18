@@ -2,7 +2,7 @@
 import { act, createElement, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OverrideField } from '../web/src/components/settings-override-fields.js';
-import { PROMPT_OVERRIDES, stepsForSurface } from '../web/src/components/settings-schema.js';
+import { PROMPT_OVERRIDES, sectionsForStep } from '../web/src/components/settings-schema.js';
 import { settingsRegistry } from '../src/domain/settings-registry.js';
 import type { Workspace } from '../web/src/types.js';
 import { cleanup, flush, makeConfig, makeWorkspace, mountComponent } from './component-smoke-harness.js';
@@ -30,14 +30,14 @@ function Harness({ onChange }: { onChange: (w: Workspace) => void }) {
 }
 
 describe('Workspace prompt text overrides', () => {
-  it('covers every overridable prompts-tab registry key and adds a rail step', () => {
+  it('covers every overridable prompts-tab registry key and adds a workspace-only section under the library', () => {
     const keys = Object.entries(settingsRegistry)
       .filter(([, spec]) => spec.tab === 'prompts' && spec.scope === 'overridable')
       .map(([key]) => key)
       .sort();
     expect(PROMPT_OVERRIDES.map((d) => d.key).sort()).toEqual(keys);
-    expect(stepsForSurface('workspace', 'prompts').map((s) => s.id)).toContain('overrides');
-    expect(stepsForSurface('global', 'prompts').map((s) => s.id)).not.toContain('overrides');
+    expect(sectionsForStep('workspace', 'prompts', 'library').map((s) => s.title)).toContain('Workspace prompt text');
+    expect(sectionsForStep('global', 'prompts', 'library').map((s) => s.title)).not.toContain('Workspace prompt text');
   });
 
   it('renders one inheriting textarea per key, stores an edit, and reverts to null', async () => {

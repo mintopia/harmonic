@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ApiError, api } from '../../api';
 import { toastError } from '../../toast';
 import { copyCode, parseSaveError, renameRewrites, savedLabel, validateCode, type SaveIssue } from '../../prompt-library-model';
-import { btnGhost, btnPrimary, btnQuietDestructive, field, labelType, panelTitle } from '../../ui';
+import { btnGhost, btnPrimary, btnQuietDestructive, field, labelType, panelTitle, quietTag } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { Modal } from '../Modal';
 import { usePromptsFlow } from './PromptsFlow';
@@ -83,7 +83,7 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="font-data text-display font-semibold text-ink">{isNew ? 'New prompt' : prompt?.code}</h2>
             {prompt && <SourceBadge bundled={prompt.bundled} />}
-            {dirty && !isNew && <span className="rounded-full bg-raised px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] text-muted">Edited</span>}
+            {dirty && !isNew && <span className={quietTag}>Edited</span>}
           </div>
           <p className="text-body text-muted">{subtitle || (isNew ? 'Name it, say what it is for, then write the text.' : '')}</p>
         </div>

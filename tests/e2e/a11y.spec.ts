@@ -57,9 +57,9 @@ test('settings, prompts and workflow editor pass axe wcag2a/aa at 1440 light', a
     await expectNoViolations(page);
   }
 
-  await open(page, '/settings?tab=prompts&step=find');
+  await open(page, '/settings?tab=prompts');
   await expectNoViolations(page);
-  await page.locator('li button, tr button').first().click();
+  await page.locator('nav[aria-label="Prompts"] li button').first().click();
   await expect(page.getByRole('textbox', { name: 'Text' })).toBeVisible();
   await expectNoViolations(page);
 

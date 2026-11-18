@@ -9,14 +9,13 @@ import {
   localIssues,
   malformedReference,
   parseSaveError,
-  previewTree,
+  railSections,
   sendContexts,
   suggestCode,
   renameRewrites,
   usedByLabel,
   usedByRows,
   validateCode,
-  visiblePrompts,
 } from '../web/src/prompt-library-model.js';
 import type { Prompt } from '../web/src/types.js';
 
@@ -27,10 +26,16 @@ function prompt(code: string, over: Partial<Prompt> = {}): Prompt {
 const LIB = [prompt('implement', { bundled: true }), prompt('critic', { bundled: true, description: 'Correctness Critic' }), prompt('team-style')];
 
 describe('prompt library model', () => {
-  it('hides engine fragments unless asked, so a default search skips them', () => {
+  it('groups the rail into Prompts and Engine fragments, the fragments only when asked and filtered by the same search', () => {
     const lib = [...LIB, prompt('criticRole', { bundled: true, category: 'fragment', description: 'critic role' })];
-    expect(filterPrompts(visiblePrompts(lib, false), 'critic').map((p) => p.code)).toEqual(['critic']);
-    expect(filterPrompts(visiblePrompts(lib, true), 'critic').map((p) => p.code)).toEqual(['critic', 'criticRole']);
+    const view = (include: boolean, query: string) => railSections(lib, include, query).map((s) => [s.label, s.prompts.map((p) => p.code)]);
+    expect(view(false, '')).toEqual([['Prompts', ['implement', 'critic', 'team-style']]]);
+    expect(view(false, 'critic')).toEqual([['Prompts', ['critic']]]);
+    expect(view(true, 'critic')).toEqual([
+      ['Prompts', ['critic']],
+      ['Engine fragments', ['criticRole']],
+    ]);
+    expect(view(true, 'role')).toEqual([['Engine fragments', ['criticRole']]]);
   });
 
   it('filters by code or description, case-insensitively', () => {
@@ -130,37 +135,6 @@ describe('prompt library model', () => {
 
   it('applies a suggestion to every reference to the unknown code', () => {
     expect(applySuggestion('${{ prompts.sec }} x ${{prompts.sec}}', 'sec', 'security')).toBe('${{ prompts.security }} x ${{prompts.security}}');
-  });
-
-  it('builds a nested include preview with context values and unknown codes left as written', () => {
-    const lookup = new Map([
-      ['a', 'A body ${{ prompts.b }}'],
-      ['b', 'B body'],
-    ]);
-    expect(previewTree('Hi ${{ ticket.title }} ${{ prompts.a }} ${{ prompts.nope }}', lookup)).toEqual([
-      { kind: 'text', value: 'Hi ' },
-      { kind: 'context', value: 'ticket.title' },
-      { kind: 'text', value: ' ' },
-      {
-        kind: 'include',
-        code: 'a',
-        depth: 1,
-        children: [
-          { kind: 'text', value: 'A body ' },
-          { kind: 'include', code: 'b', depth: 2, children: [{ kind: 'text', value: 'B body' }] },
-        ],
-      },
-      { kind: 'text', value: ' ' },
-      { kind: 'text', value: '${{ prompts.nope }}' },
-    ]);
-  });
-
-  it('marks {field} tokens the engine fills, leaving other braces as text', () => {
-    expect(previewTree('Fix {title} in {"json": 1}', new Map())).toEqual([
-      { kind: 'text', value: 'Fix ' },
-      { kind: 'field', value: 'title' },
-      { kind: 'text', value: ' in {"json": 1}' },
-    ]);
   });
 
   it('offers each step that sends the prompt, or a generic agent and critic step when none does', () => {
