@@ -60,6 +60,16 @@ function bundledEntries(): PromptEntry[] {
     { code: 'implement-ticket-heal', description: 'The mirrored-Ticket opening prompt followed by the self-heal section.', text: '${{ prompts.implement-ticket }}\n\n${{ prompts.selfHeal }}' },
     { code: 'epic-resolve', description: 'Opening prompt for the Epic workflow resolve step after a failed verification.', text: '${{ prompts.epicResolvePrompt }}\n\n${{ prompts.epicFailingVerification }}\n\n${{ prompts.epicResolveSuffix }}' },
     { code: 'criticReview', description: 'Default instruction for the critic review step.', text: 'Review the candidate against the Ticket and judge whether it does what the Ticket asked.' },
+    {
+      code: 'criticEpic',
+      description: 'Default instruction for the Epic workflow critic step, which reviews a whole integration branch rather than a single Ticket.',
+      text: `Review this Epic integration branch and judge whether the integrated result delivers what the Epic asked for.
+
+## Epic #{ref}: {title}
+{description}
+
+This is an Epic, not a single Task: branch \`{branch}\` merges several child Tasks, each with its own ticket, so there is no single candidate diff. Read the referenced Epic ticket ({url}) for the full requirements where it is given, then work out what was integrated by reading the merge history and the files — use read-only git commands such as \`git log --oneline --merges\` to see the child Tasks merged in and \`git diff\` to inspect the change. Judge the integrated whole against the Epic's goals, not any child Task alone: a gap between the pieces, one child's work undoing another's, or a broken build is a fail even when each child passed on its own.`,
+    },
   ].map((entry) => ({ ...entry, bundled: true }));
   return [...enginePieces, ...templates, ...composites];
 }

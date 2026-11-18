@@ -187,7 +187,7 @@ export class EpicWorkflowRunner {
         resolvePrompt: deps.agent.resolvePrompt,
         promptFields: async (task) => {
           const { input } = this.stateOf(task);
-          return { taskId: '', skill: '', ref: String(task.epicRef), url: input.url ?? '', title: `Epic #${task.epicRef}`, description: input.body ?? '', branch: input.integrationBranch };
+          return { taskId: '', skill: '', ref: String(task.epicRef), url: input.url ?? '', title: input.title ?? `Epic #${task.epicRef}`, description: input.body ?? '', branch: input.integrationBranch };
         },
         healFields: (task, heal) => ({
           reason: `${heal.output || heal.reason}${task.feedback ? `\n\n## Operator guidance\n${task.feedback}` : ''}`,

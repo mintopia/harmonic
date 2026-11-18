@@ -106,7 +106,7 @@ steps:
           with:
             harness: claude
             model: claude-sonnet-5-5
-            prompt: criticReview
+            prompt: criticEpic
   - id: merge
     uses: merge
   - id: post-merge-check
