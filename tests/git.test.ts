@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { Git } from '../src/execution/git.js';
+import { Git, isAutostashSaveRace } from '../src/execution/git.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
@@ -8,6 +8,19 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+
+describe('isAutostashSaveRace (rebaseOnto retries a hook-induced autostash-save failure, not a real conflict)', () => {
+  it('matches the autostash save failure a concurrent worktree writer causes', () => {
+    const msg =
+      "git rebase --autostash abc123 failed: error: Entry 'web/src/components/x.tsx' not uptodate. Cannot merge.\nCannot save the current worktree state\nfatal: Cannot autostash";
+    expect(isAutostashSaveRace(msg)).toBe(true);
+  });
+
+  it('does NOT match a genuine rebase conflict, so real conflicts are never retried', () => {
+    const msg = 'git rebase --autostash abc123 failed: CONFLICT (content): Merge conflict in base.txt';
+    expect(isAutostashSaveRace(msg)).toBe(false);
+  });
+});
 
 describe('git-branch', () => {
   const raw = (dir: string, ...args: string[]) =>

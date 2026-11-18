@@ -24,6 +24,15 @@ const WAIT_FOR_REF_LOCK = ['-c', 'core.filesRefLockTimeout=3000'];
 
 const INDEX_LOCK_FAILURE = /index\.lock|Unable to write index/;
 
+// A concurrent writer in the worktree (an agent's reindex or format-on-save hook) can rewrite a
+// file after it was staged, leaving the index out of step with the tree. `rebase --autostash` then
+// can't save the worktree ("Entry '…' not uptodate. Cannot merge. Cannot autostash"). This matches
+// that save-time failure only; a real rebase conflict says "CONFLICT" and must not be retried.
+const AUTOSTASH_SAVE_RACE = /Cannot (?:save the current worktree state|autostash)|not uptodate/i;
+export function isAutostashSaveRace(message: string): boolean {
+  return AUTOSTASH_SAVE_RACE.test(message);
+}
+
 // git has no wait option for index.lock; another git process (an agent, an IDE) may hold it briefly.
 async function retryOnIndexLock<T>(op: () => Promise<T>): Promise<T> {
   const deadline = Date.now() + 3000;
@@ -779,7 +788,14 @@ export const Git = {
           return { ok: false, conflict: true, detail: 'unresolved conflicts from an earlier rebase remain' };
         }
         try {
-          await gitRefWrite(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
+          try {
+            await gitRefWrite(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
+          } catch (err) {
+            if (!isAutostashSaveRace(errorMessage(err))) throw err;
+            await git(worktreeDir, 'rebase', '--abort').catch(() => {});
+            await git(worktreeDir, 'add', '-A');
+            await gitRefWrite(worktreeDir, ...IDENTITY, 'rebase', '--autostash', ontoOid);
+          }
           if (await hasUnmergedPaths()) {
             return { ok: false, conflict: true, detail: 'autostash re-apply conflicted after rebase' };
           }
