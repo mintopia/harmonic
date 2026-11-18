@@ -478,4 +478,99 @@ describe('Prompt Library page', () => {
     await type(host.querySelector('#prompt-description') as HTMLInputElement, 'Changed');
     expect(rail?.summaries.edit).toBe('2 unsaved changes');
   });
+
+  describe('included prompts', () => {
+    const COMPOSED: Prompt[] = [
+      prompt('drivePrompt', { bundled: true, text: 'Drive {ref}.', usedBy: ['implement-ticket', 'my-composite'] }),
+      prompt('selfHeal', { bundled: true, text: 'Heal yourself.', usedBy: ['implement-ticket'] }),
+      prompt('house', { text: 'House rules.', usedBy: ['my-composite'] }),
+      prompt('implement-ticket', { bundled: true, text: '${{ prompts.drivePrompt }}{feedback}\n\n${{ prompts.selfHeal }}' }),
+      prompt('my-composite', { text: '${{ prompts.drivePrompt }}\n${{ prompts.house }}' }),
+    ];
+    const region = (host: HTMLElement, code: string) => host.querySelector(`[data-included-prompt="${code}"]`) as HTMLDetailsElement;
+    const regionText = (host: HTMLElement, code: string) => region(host, code).querySelector('textarea') as HTMLTextAreaElement;
+    const source = (host: HTMLElement) => host.querySelector('#prompt-text') as HTMLTextAreaElement;
+
+    it('renders each include as an expanded, editable region with its own Save, and the source collapsed', async () => {
+      const host = await mountLibrary(COMPOSED);
+      await click(host.querySelector('[data-prompt="implement-ticket"] button'));
+      expect([...host.querySelectorAll('[data-included-prompt]')].map((e) => e.getAttribute('data-included-prompt'))).toEqual(['drivePrompt', 'selfHeal']);
+      expect(region(host, 'drivePrompt').open).toBe(true);
+      expect(regionText(host, 'drivePrompt').value).toBe('Drive {ref}.');
+      expect(button(region(host, 'drivePrompt'), 'Save')?.disabled).toBe(true);
+      const details = source(host).closest('details') as HTMLDetailsElement;
+      expect(details.open).toBe(false);
+      await type(source(host), '${{ prompts.selfHeal }}');
+      expect([...host.querySelectorAll('[data-included-prompt]')].map((e) => e.getAttribute('data-included-prompt'))).toEqual(['selfHeal']);
+    });
+
+    it('forks a bundled include on save and repoints an operator parent at the copy', async () => {
+      const host = await mountLibrary(COMPOSED);
+      const create = vi.spyOn(api, 'createPrompt').mockImplementation(async (body) => prompt(body.code, body));
+      const update = vi.spyOn(api, 'updatePrompt').mockImplementation(async (code, body) => prompt(code, body));
+      await click(host.querySelector('[data-prompt="my-composite"] button'));
+      await type(regionText(host, 'drivePrompt'), 'Drive {ref} carefully.');
+      expect(region(host, 'drivePrompt').textContent).toContain('Edited');
+      await click(button(region(host, 'drivePrompt'), 'Save'));
+      const name = host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement;
+      expect(name.value).toBe('drivePrompt-copy');
+      await type(name, 'my-drive');
+      await click(button(host.ownerDocument.body, 'Save as new prompt'));
+
+      expect(create).toHaveBeenCalledWith({ code: 'my-drive', description: 'drivePrompt description', text: 'Drive {ref} carefully.' });
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenCalledWith('my-composite', { description: 'my-composite description', text: '${{ prompts.my-drive }}\n${{ prompts.house }}' });
+      expect(source(host).value).toBe('${{ prompts.my-drive }}\n${{ prompts.house }}');
+      expect(regionText(host, 'my-drive').value).toBe('Drive {ref} carefully.');
+      expect(region(host, 'drivePrompt')).toBeNull();
+      expect(rail?.summaries.edit).toBe('Change the text');
+    });
+
+    it('forks a bundled include in a bundled parent by repointing the parent draft, leaving both originals unsaved', async () => {
+      const host = await mountLibrary(COMPOSED);
+      vi.spyOn(api, 'createPrompt').mockImplementation(async (body) => prompt(body.code, body));
+      const update = vi.spyOn(api, 'updatePrompt');
+      await click(host.querySelector('[data-prompt="implement-ticket"] button'));
+      await type(regionText(host, 'selfHeal'), 'Heal harder.');
+      await click(button(region(host, 'selfHeal'), 'Save'));
+      await click(button(host.ownerDocument.body, 'Save as new prompt'));
+      expect(update).not.toHaveBeenCalled();
+      expect(source(host).value).toBe('${{ prompts.drivePrompt }}{feedback}\n\n${{ prompts.selfHeal-copy }}');
+      expect(rail?.summaries.edit).toBe('1 unsaved change');
+    });
+
+    it('keeps the copy and repoints the parent draft when storing the parent fails', async () => {
+      const host = await mountLibrary(COMPOSED);
+      vi.spyOn(api, 'createPrompt').mockImplementation(async (body) => prompt(body.code, body));
+      vi.spyOn(api, 'updatePrompt').mockRejectedValue(new ApiError(500, 'disk full', 'internal'));
+      await click(host.querySelector('[data-prompt="my-composite"] button'));
+      await type(regionText(host, 'drivePrompt'), 'Drive carefully.');
+      await click(button(region(host, 'drivePrompt'), 'Save'));
+      await type(host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement, 'my-drive');
+      await click(button(host.ownerDocument.body, 'Save as new prompt'));
+      expect(source(host).value).toBe('${{ prompts.my-drive }}\n${{ prompts.house }}');
+      expect(regionText(host, 'my-drive').value).toBe('Drive carefully.');
+      expect(rail?.summaries.edit).toBe('1 unsaved change');
+    });
+
+    it('opens the collapsed source when it holds an error', async () => {
+      const host = await mountLibrary(COMPOSED);
+      await click(host.querySelector('[data-prompt="my-composite"] button'));
+      await type(source(host), '${{ prompts.house }} ${{ prompts.nope');
+      expect((source(host).closest('details') as HTMLDetailsElement).open).toBe(true);
+    });
+
+    it('saves an operator include in place without touching the parent', async () => {
+      const host = await mountLibrary(COMPOSED);
+      const create = vi.spyOn(api, 'createPrompt');
+      const update = vi.spyOn(api, 'updatePrompt').mockImplementation(async (code, body) => prompt(code, body));
+      await click(host.querySelector('[data-prompt="my-composite"] button'));
+      await type(regionText(host, 'house'), 'Stricter house rules.');
+      await click(button(region(host, 'house'), 'Save'));
+      expect(create).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith('house', { description: 'house description', text: 'Stricter house rules.' });
+      expect(regionText(host, 'house').value).toBe('Stricter house rules.');
+      expect(region(host, 'house').textContent).not.toContain('Edited');
+    });
+  });
 });

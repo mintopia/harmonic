@@ -1,19 +1,26 @@
 import { Fragment, useRef, useState } from 'react';
+import { ApiError, api } from '../../api';
+import { includedCodes, renameIncludes } from '../../../../src/domain/prompt-library.js';
+import { toastError } from '../../toast';
+import type { Prompt } from '../../types';
 import {
   applySuggestion,
   badSpans,
+  copyCode,
   highlightLine,
   localIssues,
+  unsavedChanges,
   validateCode,
   type BadSpan,
   type SaveIssue,
   type TextSegment,
 } from '../../prompt-library-model';
-import { btnGhost, field, labelType } from '../../ui';
+import { btnGhost, btnPrimary, field, labelType } from '../../ui';
 import { Icon } from '../Icon';
-import { PromptHeader } from './PromptHeader';
+import { PromptHeader, SaveAsNewDialog } from './PromptHeader';
 import { usePromptsFlow } from './PromptsFlow';
 import { PromptSends } from './PromptSends';
+import { SourceBadge } from './SourceBadge';
 
 const CHIP_RESET = 'group-focus-within:px-0 group-focus-within:[font:inherit]';
 const INC = `rounded-sm bg-tool-tint px-1 font-data text-[12.5px] text-tool ${CHIP_RESET}`;
@@ -37,13 +44,15 @@ function TextBox({
   invalid,
   areaRef,
   onChange,
+  compact = false,
 }: {
   id: string;
   text: string;
   bad: readonly BadSpan[];
   invalid: boolean;
-  areaRef: React.RefObject<HTMLTextAreaElement | null>;
+  areaRef?: React.RefObject<HTMLTextAreaElement | null>;
   onChange: (text: string) => void;
+  compact?: boolean;
 }) {
   const lines = text.split('\n');
   const last = lines.length - 1;
@@ -51,7 +60,7 @@ function TextBox({
     <div
       className={`group relative grid grid-cols-[36px_1fr] content-start overflow-hidden rounded-md border ${
         invalid ? 'border-fail' : 'border-edge focus-within:border-accent'
-      } min-h-[230px] bg-field`}
+      } ${compact ? 'min-h-[80px]' : 'min-h-[230px]'} bg-field`}
     >
       <div aria-hidden="true" className="absolute inset-y-0 left-0 w-9 border-r border-hairline bg-sunken" />
       {lines.map((l, i) => (
@@ -155,8 +164,105 @@ function ErrorBox({ issue, onFix }: { issue: SaveIssue; onFix?: () => void }) {
   );
 }
 
+const SMALL = '!min-h-0 !px-2.5 !py-1 !text-small';
+const SMALL_BTN = `${btnGhost} ${SMALL}`;
+const DISCLOSURE = 'flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden';
+
+async function repointStoredParentBestEffort(parent: Prompt | null, from: string, to: string): Promise<Prompt | null> {
+  if (!parent || parent.bundled) return null;
+  const text = renameIncludes(parent.text, from, to);
+  if (text === parent.text) return null;
+  try {
+    return await api.updatePrompt(parent.code, { description: parent.description, text });
+  } catch (e) {
+    toastError(e);
+    return null;
+  }
+}
+
+function IncludedPrompt({ parent, include }: { parent: Prompt | null; include: Prompt }) {
+  const flow = usePromptsFlow();
+  const { description, text } = flow.draftOf(include);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [forkCode, setForkCode] = useState<string | null>(null);
+  const dirty = unsavedChanges(include, { description, text }) > 0;
+  const issues = localIssues({ text });
+
+  const save = async (newCode?: string) => {
+    setForkCode(null);
+    setBusy(true);
+    setError(null);
+    try {
+      if (newCode === undefined) return flow.afterIncludeSave(include.code, await api.updatePrompt(include.code, { description, text }), null);
+      const copy = await api.createPrompt({ code: newCode, description, text });
+      flow.afterIncludeSave(include.code, copy, await repointStoredParentBestEffort(parent, include.code, newCode));
+    } catch (e) {
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500) setError(e.message);
+      else toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details open data-included-prompt={include.code} className="group/include rounded-md border border-hairline bg-surface px-3">
+      <summary className={DISCLOSURE}>
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/include:rotate-0" />
+        <span className="font-data font-semibold text-ink">{include.code}</span>
+        <SourceBadge bundled={include.bundled} />
+        {dirty && <span className="rounded-full bg-raised px-2 py-0.5 text-badge font-semibold uppercase tracking-[.06em] text-muted">Edited</span>}
+      </summary>
+      <div className="flex flex-col gap-2 pb-3">
+        <TextBox
+          id={`include-${include.code}`}
+          text={text}
+          bad={badSpans(text, issues)}
+          invalid={issues.length > 0}
+          compact
+          onChange={(next) => {
+            flow.setDraftOf(include, { text: next });
+            setError(null);
+          }}
+        />
+        {issues.map((issue, i) => (
+          <ErrorBox key={i} issue={issue} />
+        ))}
+        {error && (
+          <p role="alert" className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {include.bundled && dirty && <span className="mr-auto text-small text-muted">Bundled: saving keeps your edit as a new prompt and points this one at it.</span>}
+          <button type="button" className={SMALL_BTN} disabled={busy || !dirty} onClick={() => flow.discardOf(include.code)}>
+            Discard
+          </button>
+          <button
+            type="button"
+            className={`${btnPrimary} ${SMALL}`}
+            disabled={busy || !dirty || issues.length > 0}
+            onClick={() => (include.bundled ? setForkCode(copyCode(include.code, flow.prompts)) : void save())}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+      {forkCode !== null && (
+        <SaveAsNewDialog
+          bundled={include.code}
+          code={forkCode}
+          error={validateCode(forkCode, flow.prompts)}
+          onChange={setForkCode}
+          onSave={() => void save(forkCode)}
+          onCancel={() => setForkCode(null)}
+        />
+      )}
+    </details>
+  );
+}
+
 const TICKET_FIELDS = ['title', 'body', 'labels', 'ref', 'origin'] as const;
-const SMALL_BTN = `${btnGhost} !min-h-0 !px-2.5 !py-1 !text-small`;
 
 type Picker = 'include' | 'ticket' | 'variable';
 
@@ -219,6 +325,40 @@ function InsertBar({ codes, onInsert }: { codes: readonly string[]; onInsert: (t
   );
 }
 
+function Source({ composed, failing, editor, insert }: { composed: boolean; failing: boolean; editor: React.ReactNode; insert: React.ReactNode }) {
+  if (!composed) {
+    return (
+      <>
+        <div>
+          <label htmlFor="prompt-text" className={`${labelType} mb-1.5 block text-muted`}>
+            Text
+          </label>
+          {editor}
+        </div>
+        {insert}
+      </>
+    );
+  }
+  return (
+    <details className="group/source" open={failing || undefined}>
+      <summary className={DISCLOSURE}>
+        <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint transition-transform group-open/source:rotate-0" />
+        <span className={`${labelType} text-muted`}>Source</span>
+        <span className="text-small text-muted">Which prompts are included, and their order</span>
+      </summary>
+      <div className="flex flex-col gap-3.5 pb-1">
+        <div>
+          <label htmlFor="prompt-text" className="sr-only">
+            Source
+          </label>
+          {editor}
+        </div>
+        {insert}
+      </div>
+    </details>
+  );
+}
+
 function PromptEditForm() {
   const flow = usePromptsFlow();
   const { current: prompt, isNew, prompts, draft } = flow;
@@ -252,6 +392,7 @@ function PromptEditForm() {
   };
 
   const otherCodes = prompts.filter((p) => p.code !== prompt?.code).map((p) => p.code);
+  const includes = includedCodes(text).flatMap((c) => prompts.filter((p) => p.code === c && c !== prompt?.code));
 
   return (
     <section aria-label={isNew ? 'New prompt' : `Prompt ${prompt?.code ?? ''}`} className="flex min-w-0 flex-col gap-4">
@@ -304,30 +445,40 @@ function PromptEditForm() {
             </div>
           </div>
 
-          <div>
-            <label htmlFor="prompt-text" className={`${labelType} mb-1.5 block text-muted`}>
-              Text
-            </label>
-            <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
-            {textIssues.map((issue, i) => (
-              <ErrorBox
-                key={i}
-                issue={issue}
-                onFix={
-                  issue.kind === 'unknown' && issue.suggestion
-                    ? () => edit({ text: applySuggestion(text, issue.code, issue.suggestion as string) })
-                    : undefined
-                }
-              />
-            ))}
-            {formIssue && <ErrorBox issue={formIssue} />}
-            <p className="mt-1.5 text-micro text-muted">
-              Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
-              <code className="font-data">vars.name</code> fills in when the step runs.
-            </p>
-          </div>
-
-          <InsertBar codes={otherCodes} onInsert={insertToken} />
+          <Source
+            composed={includes.length > 0}
+            failing={textIssues.length > 0 || formIssue !== null}
+            insert={<InsertBar codes={otherCodes} onInsert={insertToken} />}
+            editor={
+              <>
+                <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
+                {textIssues.map((issue, i) => (
+                  <ErrorBox
+                    key={i}
+                    issue={issue}
+                    onFix={
+                      issue.kind === 'unknown' && issue.suggestion
+                        ? () => edit({ text: applySuggestion(text, issue.code, issue.suggestion as string) })
+                        : undefined
+                    }
+                  />
+                ))}
+                {formIssue && <ErrorBox issue={formIssue} />}
+                <p className="mt-1.5 text-micro text-muted">
+                  Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
+                  <code className="font-data">vars.name</code> fills in when the step runs.
+                </p>
+              </>
+            }
+          />
+          {includes.length > 0 && (
+            <div className="flex flex-col gap-2" aria-label="Included prompts">
+              <span className={`${labelType} text-muted`}>Included prompts</span>
+              {includes.map((p) => (
+                <IncludedPrompt key={p.code} parent={prompt} include={p} />
+              ))}
+            </div>
+          )}
           {errorCount > 0 && (
             <p className="text-small text-muted">
               Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.

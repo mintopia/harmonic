@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../../api';
+import { renameIncludes } from '../../../../src/domain/prompt-library.js';
 import { unsavedChanges, usedByLabel } from '../../prompt-library-model';
 import type { Prompt } from '../../types';
 import { useAsyncResource } from '../../useAsyncResource';
@@ -25,6 +26,9 @@ export interface PromptsFlow {
   draft: PromptDraft;
   changes: number;
   setDraft: (patch: Partial<PromptDraft>) => void;
+  draftOf: (prompt: Prompt) => PromptDraft;
+  setDraftOf: (prompt: Prompt, patch: Partial<PromptDraft>) => void;
+  discardOf: (code: string) => void;
   discard: () => void;
   pick: (code: string) => void;
   startNew: () => void;
@@ -33,7 +37,11 @@ export interface PromptsFlow {
   afterSave: (saved: Prompt) => void;
   afterDelete: () => void;
   afterRename: (from: string, renamed: Prompt) => void;
+  /** A different `saved.code` means a bundled include was forked; `parent` is the stored parent once repointed. */
+  afterIncludeSave: (from: string, saved: Prompt, parent: Prompt | null) => void;
 }
+
+const baseOf = (p: Prompt): PromptDraft => ({ code: p.code, description: p.description, text: p.text });
 
 const FlowContext = createContext<PromptsFlow | null>(null);
 
@@ -104,6 +112,8 @@ export function PromptsFlowProvider({
     setDrafts((all) => ({ ...all, [selected]: { ...(all[selected] ?? base), ...patch } }));
   };
 
+  const setDraftOf = (p: Prompt, patch: Partial<PromptDraft>) => setDrafts((all) => ({ ...all, [p.code]: { ...(all[p.code] ?? baseOf(p)), ...patch } }));
+
   const forget = useCallback((key: string) => setDrafts(({ [key]: _gone, ...rest }) => rest), []);
 
   const open = useCallback(
@@ -127,6 +137,9 @@ export function PromptsFlowProvider({
     draft,
     changes,
     setDraft,
+    draftOf: (p) => drafts[p.code] ?? baseOf(p),
+    setDraftOf,
+    discardOf: (code) => forget(code),
     discard: () => selected !== null && forget(selected),
     pick: open,
     startNew: () => open(NEW_PROMPT),
@@ -150,6 +163,17 @@ export function PromptsFlowProvider({
       setPatched((all) => [...all.filter((p) => p.code !== from && p.code !== renamed.code), renamed]);
       reload();
       open(renamed.code);
+    },
+    afterIncludeSave: (from, saved, parent) => {
+      forget(from);
+      setPatched((all) => [...all.filter((p) => p.code !== saved.code && p.code !== parent?.code), saved, ...(parent ? [parent] : [])]);
+      if (saved.code !== from && current) {
+        setDrafts((all) => {
+          const was = all[current.code] ?? baseOf(current);
+          return { ...all, [current.code]: { ...was, text: renameIncludes(was.text, from, saved.code) } };
+        });
+      }
+      reload();
     },
   };
 

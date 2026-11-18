@@ -11,6 +11,8 @@ Amended 2026-11-18 (#984): the editor no longer has a Duplicate step. An operato
 
 Amended 2026-11-18 (#983): an operator entry can be renamed. A prompt's identity is its code, so rename moves the entry and rewrites every `${{ prompts.<code> }}` include and every workflow step `with.prompt` or `with.continuePrompt` naming it. Bundled entries are not renamed (save an edit as a new prompt first), nor are the converted entries the engine reads under a fixed code. Pinned workflow versions keep the old code.
 
+Amended 2026-11-18 (#985): the editor shows a composed prompt's direct includes as editable regions, each with its own Save, and collapses the raw source. Saving an operator include updates it in place. Saving a bundled include creates an operator copy (named as for any bundled save) and repoints the composing prompt's `${{ prompts.<code> }}` at the copy: stored at once for an operator parent, or as an unsaved edit of a bundled parent, which then forks on its own Save. The bundled include is never changed.
+
 Prompts become entries in a **Prompt Library**: named prompts, each with a
 code and a description. A Task Execution Workflow step (ADR-0053) uses a prompt
 by its code or as literal text, and a prompt can include another by code. The
