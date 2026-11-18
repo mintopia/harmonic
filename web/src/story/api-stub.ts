@@ -378,7 +378,6 @@ export const api: typeof RealApi = {
     return ok({ code, ...body, bundled: false, resolved: body.text, usedBy: [], usedBySteps: [], updatedAt: new Date().toISOString() });
   },
   deletePrompt: () => ok({ ok: true as const }),
-  duplicatePrompt: (code, copy) => ok({ ...(promptFixtures.find((p) => p.code === code) ?? (promptFixtures[0] as Prompt)), code: copy ?? `${code}-copy`, bundled: false }),
   scheduledJobs: () => ok({ jobs: [] }),
   operations: () => ok({ operations: [], recent: [] }),
   trackerKinds: () => ok({ kinds: trackerKindFixtures }),

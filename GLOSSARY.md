@@ -861,7 +861,7 @@ The named prompts Harmonic and operators keep, each with a code and a
 description of what it is for. A Task Execution Workflow step uses a prompt
 either by its code or as literal text written into the step. A prompt may
 include another by code, so shared text is defined once. Bundled prompts ship
-read-only and are duplicated to edit. The pieces outside it are the Critic's
+unchanging; saving an edit to one creates an operator prompt under a new code. The pieces outside it are the Critic's
 read-only restraint and verdict contract, which the engine appends because it
 parses the reply.
 _Avoid_: template store, prompt bank, snippets

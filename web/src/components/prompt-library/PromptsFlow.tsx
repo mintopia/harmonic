@@ -30,7 +30,6 @@ export interface PromptsFlow {
   goStep: (step: string) => void;
   afterSave: (saved: Prompt) => void;
   afterDelete: () => void;
-  afterDuplicate: (copy: Prompt) => void;
 }
 
 const FlowContext = createContext<PromptsFlow | null>(null);
@@ -54,7 +53,7 @@ export interface PromptsRailState {
 export function promptsRailState(flow: PromptsFlow | null): PromptsRailState {
   const none = !flow || flow.selected === null;
   const current = flow?.current ?? null;
-  const edit = current?.bundled ? 'Read-only' : flow && flow.changes > 0 ? `${flow.changes} unsaved ${flow.changes === 1 ? 'change' : 'changes'}` : 'Change the text';
+  const edit = flow && flow.changes > 0 ? `${flow.changes} unsaved ${flow.changes === 1 ? 'change' : 'changes'}` : 'Change the text';
   return {
     disabled: new Set(none ? ['edit', 'impact'] : []),
     values: { find: flow?.selected ?? undefined },
@@ -128,8 +127,8 @@ export function PromptsFlowProvider({
     goFind: () => onStep('find'),
     goStep: onStep,
     afterSave: (saved) => {
+      if (selected !== null) forget(selected);
       forget(saved.code);
-      forget(NEW_PROMPT);
       setPatched((all) => [...all.filter((p) => p.code !== saved.code), saved]);
       reload();
       setSelected(saved.code);
@@ -139,10 +138,6 @@ export function PromptsFlowProvider({
       reload();
       setSelected(null);
       onStep('find');
-    },
-    afterDuplicate: (copy) => {
-      reload();
-      open(copy.code);
     },
   };
 

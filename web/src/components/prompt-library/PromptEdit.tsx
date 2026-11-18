@@ -2,7 +2,6 @@ import { Fragment, useRef, useState } from 'react';
 import {
   applySuggestion,
   badSpans,
-  copyCode,
   highlightLine,
   localIssues,
   previewTree,
@@ -38,7 +37,6 @@ function TextBox({
   text,
   bad,
   invalid,
-  readOnly,
   areaRef,
   onChange,
 }: {
@@ -46,7 +44,6 @@ function TextBox({
   text: string;
   bad: readonly BadSpan[];
   invalid: boolean;
-  readOnly: boolean;
   areaRef: React.RefObject<HTMLTextAreaElement | null>;
   onChange: (text: string) => void;
 }) {
@@ -56,9 +53,9 @@ function TextBox({
     <div
       className={`group relative grid grid-cols-[36px_1fr] content-start overflow-hidden rounded-md border ${
         invalid ? 'border-fail' : 'border-edge focus-within:border-accent'
-      } ${readOnly ? 'bg-sunken' : 'min-h-[230px] bg-field'}`}
+      } min-h-[230px] bg-field`}
     >
-      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-9 border-r border-hairline ${readOnly ? 'bg-raised' : 'bg-sunken'}`} />
+      <div aria-hidden="true" className="absolute inset-y-0 left-0 w-9 border-r border-hairline bg-sunken" />
       {lines.map((l, i) => (
         <Fragment key={i}>
           <div
@@ -75,20 +72,16 @@ function TextBox({
           </div>
         </Fragment>
       ))}
-      {readOnly ? (
-        <div id={id} role="textbox" aria-readonly="true" aria-label="Text" className="absolute inset-0" />
-      ) : (
-        <textarea
-          id={id}
-          ref={areaRef}
-          value={text}
-          maxLength={100_000}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={invalid ? true : undefined}
-          spellCheck={false}
-          className={`absolute inset-y-0 left-9 right-0 resize-none overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2.5 text-transparent caret-ink focus:outline-none ${BODY}`}
-        />
-      )}
+      <textarea
+        id={id}
+        ref={areaRef}
+        value={text}
+        maxLength={100_000}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={invalid ? true : undefined}
+        spellCheck={false}
+        className={`absolute inset-y-0 left-9 right-0 resize-none overflow-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2.5 text-transparent caret-ink focus:outline-none ${BODY}`}
+      />
     </div>
   );
 }
@@ -260,7 +253,6 @@ function InsertBar({ codes, onInsert }: { codes: readonly string[]; onInsert: (t
 function PromptEditForm() {
   const flow = usePromptsFlow();
   const { current: prompt, isNew, prompts, draft } = flow;
-  const readOnly = prompt?.bundled === true;
   const { code, description, text } = draft;
   const [serverIssue, setServerIssue] = useState<SaveIssue | null>(null);
   const [codeTouched, setCodeTouched] = useState(false);
@@ -294,22 +286,19 @@ function PromptEditForm() {
     el?.focus();
   };
 
-  const fieldClass = `${readOnly ? `${field} bg-sunken` : field} min-h-11`;
   const otherCodes = prompts.filter((p) => p.code !== prompt?.code).map((p) => p.code);
 
   return (
     <section aria-label={isNew ? 'New prompt' : `Prompt ${prompt?.code ?? ''}`} className="flex min-w-0 flex-col gap-4">
       <PromptHeader blocked={errorCount > 0} onIssue={setServerIssue} onDiscarded={() => { setServerIssue(null); setCodeTouched(false); }} />
 
-      {readOnly && prompt && (
+      {prompt?.bundled && (
         <div className="flex flex-wrap items-center gap-2.5 rounded-md bg-raised px-3 py-2.5">
           <b className="font-semibold">Bundled · ships with Harmonic</b>
-          <span>
-            Read-only. Duplicate it to get an editable copy named <code className="font-data">{copyCode(prompt.code, prompts)}</code>.
-          </span>
+          <span>Edit freely. Saving keeps your edit as a new prompt of your own and leaves this one unchanged.</span>
         </div>
       )}
-      <div className={`grid grid-cols-1 gap-3.5 ${readOnly ? '' : 'xl:grid-cols-2 xl:items-start'}`}>
+      <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-2 xl:items-start">
         <article className="flex flex-col gap-3.5 rounded-lg bg-surface p-[18px] shadow-card">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div>
@@ -332,7 +321,7 @@ function PromptEditForm() {
                   {issueMessage(codeIssue)}
                 </p>
               ) : (
-                !readOnly && <p className="mt-1 text-micro text-muted">Start with a letter; letters, digits, hyphens and underscores</p>
+                <p className="mt-1 text-micro text-muted">Start with a letter; letters, digits, hyphens and underscores</p>
               )}
             </div>
             <div>
@@ -342,12 +331,11 @@ function PromptEditForm() {
               <input
                 id="prompt-description"
                 value={description}
-                readOnly={readOnly}
                 maxLength={500}
                 onChange={(e) => edit({ description: e.target.value })}
-                className={fieldClass}
+                className={`${field} min-h-11`}
               />
-              {!readOnly && <p className="mt-1 text-micro text-muted">Shown in pickers and the list</p>}
+              <p className="mt-1 text-micro text-muted">Shown in pickers and the list</p>
             </div>
           </div>
 
@@ -355,7 +343,7 @@ function PromptEditForm() {
             <label htmlFor="prompt-text" className={`${labelType} mb-1.5 block text-muted`}>
               Text
             </label>
-            <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} readOnly={readOnly} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
+            <TextBox id="prompt-text" text={text} bad={bad} invalid={textIssues.length > 0} areaRef={areaRef} onChange={(next) => edit({ text: next })} />
             {textIssues.map((issue, i) => (
               <ErrorBox
                 key={i}
@@ -368,40 +356,36 @@ function PromptEditForm() {
               />
             ))}
             {formIssue && <ErrorBox issue={formIssue} />}
-            {!readOnly && (
-              <p className="mt-1.5 text-micro text-muted">
-                Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
-                <code className="font-data">vars.name</code> fills in when the step runs.
-              </p>
-            )}
+            <p className="mt-1.5 text-micro text-muted">
+              Include a prompt with <code className="font-data">{'${{ prompts.code }}'}</code>. Context like <code className="font-data">{'${{ ticket.title }}'}</code> and{' '}
+              <code className="font-data">vars.name</code> fills in when the step runs.
+            </p>
           </div>
 
-          {!readOnly && <InsertBar codes={otherCodes} onInsert={insertToken} />}
-          {!readOnly && errorCount > 0 && (
+          <InsertBar codes={otherCodes} onInsert={insertToken} />
+          {errorCount > 0 && (
             <p className="text-small text-muted">
               Save is blocked while an error shows. Fix the {errorCount} {errorCount === 1 ? 'error' : 'errors'} above to enable it.
             </p>
           )}
         </article>
 
-        {!readOnly && (
-          <article aria-label="What the step sends" className="flex flex-col gap-2.5 rounded-lg bg-sunken p-[18px] shadow-card">
-            <div className="flex items-center justify-between">
-              <h3 className="text-title font-semibold text-ink">What a step sends</h3>
-              <span className="text-micro text-muted">read-only</span>
-            </div>
-            <p className="text-small text-muted">This prompt with every include expanded. Updates as you type.</p>
-            <div data-testid="include-preview" className={`rounded-sm border border-hairline bg-surface p-3 ${BODY}`}>
-              <Preview nodes={tree} />
-            </div>
-            <div className="flex flex-wrap gap-3.5 text-micro text-muted">
-              <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-accent-tint shadow-[inset_3px_0_0_var(--color-accent)]" />included prompt</span>
-              <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-await-tint shadow-[inset_3px_0_0_var(--color-await)]" />nested include</span>
-              <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-ready-tint" /><span className="text-ready">blue</span> filled at run time</span>
-            </div>
-            <p className="text-small text-muted">A Critic step also gets the engine’s read-only guard and verdict contract. They aren’t shown here and can’t be edited.</p>
-          </article>
-        )}
+        <article aria-label="What the step sends" className="flex flex-col gap-2.5 rounded-lg bg-sunken p-[18px] shadow-card">
+          <div className="flex items-center justify-between">
+            <h3 className="text-title font-semibold text-ink">What a step sends</h3>
+            <span className="text-micro text-muted">read-only</span>
+          </div>
+          <p className="text-small text-muted">This prompt with every include expanded. Updates as you type.</p>
+          <div data-testid="include-preview" className={`rounded-sm border border-hairline bg-surface p-3 ${BODY}`}>
+            <Preview nodes={tree} />
+          </div>
+          <div className="flex flex-wrap gap-3.5 text-micro text-muted">
+            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-accent-tint shadow-[inset_3px_0_0_var(--color-accent)]" />included prompt</span>
+            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-await-tint shadow-[inset_3px_0_0_var(--color-await)]" />nested include</span>
+            <span><i className="mr-1.5 inline-block size-2.5 rounded-sm bg-ready-tint" /><span className="text-ready">blue</span> filled at run time</span>
+          </div>
+          <p className="text-small text-muted">A Critic step also gets the engine’s read-only guard and verdict contract. They aren’t shown here and can’t be edited.</p>
+        </article>
       </div>
 
     </section>
