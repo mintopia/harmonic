@@ -2,27 +2,35 @@ import { useState } from 'react';
 import { ApiError, api } from '../../api';
 import { toastError } from '../../toast';
 import { copyCode, parseSaveError, savedLabel, validateCode, type SaveIssue } from '../../prompt-library-model';
-import { btnGhost, btnPrimary, btnQuietDestructive } from '../../ui';
+import { btnGhost, btnPrimary, btnQuietDestructive, field, labelType, panelTitle } from '../../ui';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { Modal } from '../Modal';
 import { usePromptsFlow } from './PromptsFlow';
 import { SourceBadge } from './SourceBadge';
 
 export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocked?: boolean; onIssue?: (issue: SaveIssue | null) => void; onDiscarded?: () => void }) {
   const flow = usePromptsFlow();
   const { current: prompt, isNew, prompts, draft } = flow;
-  const readOnly = prompt?.bundled === true;
   const { code, description, text } = draft;
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [forkCode, setForkCode] = useState<string | null>(null);
+  const [forkOpen, setForkOpen] = useState(false);
   const dirty = flow.changes > 0;
   const saveDisabled = busy || blocked || !dirty || (isNew && (code === '' || validateCode(code, prompts) !== null));
 
-  const save = async () => {
+  const save = async (newCode?: string) => {
+    setForkOpen(false);
     setBusy(true);
     onIssue?.(null);
     try {
-      const saved = isNew ? await api.createPrompt({ code, description, text }) : await api.updatePrompt(prompt!.code, { description, text });
+      const saved =
+        newCode !== undefined
+          ? await api.createPrompt({ code: newCode, description, text })
+          : isNew
+            ? await api.createPrompt({ code, description, text })
+            : await api.updatePrompt(prompt!.code, { description, text });
       flow.afterSave(saved);
     } catch (e) {
       if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
@@ -49,19 +57,6 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
     }
   };
 
-  const duplicate = async () => {
-    if (!prompt) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      flow.afterDuplicate(await api.duplicatePrompt(prompt.code, copyCode(prompt.code, prompts)));
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const saved = prompt ? savedLabel(prompt.updatedAt) : null;
   const subtitle = [description, saved].filter(Boolean).join(' · ');
 
@@ -77,40 +72,50 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
           <p className="text-body text-muted">{subtitle || (isNew ? 'Name it, say what it is for, then write the text.' : '')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {prompt && !readOnly && (
+          {prompt && !prompt.bundled && (
             <button type="button" className={btnQuietDestructive} disabled={busy} onClick={() => setConfirmDelete(true)}>
               Delete…
             </button>
           )}
-          {prompt && (
-            <button type="button" className={readOnly ? btnPrimary : btnGhost} disabled={busy} onClick={() => void duplicate()}>
-              Duplicate
-            </button>
-          )}
-          {!readOnly && (
-            <>
-              <button
-                type="button"
-                className={btnGhost}
-                disabled={busy || !dirty}
-                onClick={() => {
-                  flow.discard();
-                  onDiscarded?.();
-                }}
-              >
-                Discard changes
-              </button>
-              <button type="button" className={btnPrimary} disabled={saveDisabled} onClick={() => void save()}>
-                Save
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className={btnGhost}
+            disabled={busy || !dirty}
+            onClick={() => {
+              flow.discard();
+              onDiscarded?.();
+            }}
+          >
+            Discard changes
+          </button>
+          <button
+            type="button"
+            className={btnPrimary}
+            disabled={saveDisabled}
+            onClick={() => {
+              if (!prompt?.bundled) return void save();
+              setForkCode((c) => c ?? copyCode(prompt.code, prompts));
+              setForkOpen(true);
+            }}
+          >
+            Save
+          </button>
         </div>
       </div>
       {actionError && (
         <p role="alert" className="rounded-sm bg-fail-tint px-2.5 py-2 text-small text-fail">
           {actionError}
         </p>
+      )}
+      {forkOpen && forkCode !== null && prompt && (
+        <SaveAsNewDialog
+          bundled={prompt.code}
+          code={forkCode}
+          error={validateCode(forkCode, prompts)}
+          onChange={setForkCode}
+          onSave={() => void save(forkCode)}
+          onCancel={() => setForkOpen(false)}
+        />
       )}
       {confirmDelete && prompt && (
         <ConfirmDialog
@@ -125,5 +130,62 @@ export function PromptHeader({ blocked = false, onIssue, onDiscarded }: { blocke
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+function SaveAsNewDialog({
+  bundled,
+  code,
+  error,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  bundled: string;
+  code: string;
+  error: string | null;
+  onChange: (code: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal label="Save as new prompt" onClose={onCancel} className="max-w-md">
+      <form
+        className="p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!error) onSave();
+        }}
+      >
+        <h2 className={`${panelTitle} mb-2 pr-6`}>Save as a new prompt</h2>
+        <p className="mb-3 text-muted">
+          <code className="font-data">{bundled}</code> ships with Harmonic and stays unchanged. Your edit is saved as a prompt of your own.
+        </p>
+        <label htmlFor="prompt-fork-code" className={`${labelType} mb-1.5 block text-muted`}>
+          Code
+        </label>
+        <input
+          id="prompt-fork-code"
+          value={code}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={error ? true : undefined}
+          className={`${field} min-h-11 w-full font-data ${error ? 'border-fail' : ''}`}
+        />
+        {error && (
+          <p role="alert" className="mt-1 text-small text-fail">
+            {error}
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={`${btnGhost} px-3 py-1.5`} onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className={btnPrimary} disabled={error !== null}>
+            Save as new prompt
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

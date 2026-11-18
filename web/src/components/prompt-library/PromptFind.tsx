@@ -15,7 +15,7 @@ function SourceStrip({ bundled, yours }: { bundled: number; yours: number }) {
       <li className="flex flex-col gap-1.5 rounded-md border border-edge bg-surface p-3">
         <span className={`${labelType} text-muted`}>Bundled · {bundled}</span>
         <span className="font-bold">Ship with Harmonic</span>
-        <span className="text-small text-muted">Read-only. Duplicate to change.</span>
+        <span className="text-small text-muted">Edit one to save your own copy.</span>
       </li>
       <li className="flex flex-col gap-1.5 rounded-md border-2 border-accent bg-surface p-[11px]">
         <span className={`${labelType} text-accent`}>Yours · {yours}</span>
@@ -138,7 +138,7 @@ export function PromptFind() {
                   </button>
                 }
               >
-                Search looks at codes and descriptions. Bundled prompts ship with Harmonic; Duplicate one to edit.
+                Search looks at codes and descriptions. Bundled prompts ship with Harmonic; edit one to save your own copy.
               </EmptyPanel>
             )}
             {shown.length === 0 && query.trim() === '' && view !== 'all' && (
@@ -150,7 +150,7 @@ export function PromptFind() {
                   </button>
                 }
               >
-                {view === 'yours' ? 'Bundled prompts ship with Harmonic. Duplicate one to edit.' : 'Unused prompts are not named by any workflow step or included by another prompt.'}
+                {view === 'yours' ? 'Bundled prompts ship with Harmonic. Edit one to save your own copy.' : 'Unused prompts are not named by any workflow step or included by another prompt.'}
               </EmptyPanel>
             )}
             {shown.length > 0 && noneOfYours && view === 'all' && (
@@ -162,7 +162,7 @@ export function PromptFind() {
                   </button>
                 }
               >
-                Bundled prompts ship with Harmonic. Duplicate one to edit.
+                Bundled prompts ship with Harmonic. Edit one to save your own copy.
               </EmptyPanel>
             )}
           </article>

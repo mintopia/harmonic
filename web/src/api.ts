@@ -190,8 +190,6 @@ export const api = {
   updatePrompt: (code: string, body: { description: string; text: string }) =>
     request<Prompt>('PUT', `/api/prompts/${encodeURIComponent(code)}`, body),
   deletePrompt: (code: string) => request<{ ok: true }>('DELETE', `/api/prompts/${encodeURIComponent(code)}`),
-  duplicatePrompt: (code: string, copyCode?: string) =>
-    request<Prompt>('POST', `/api/prompts/${encodeURIComponent(code)}/duplicate`, copyCode ? { code: copyCode } : {}),
   config: () => request<AppConfig>('GET', '/api/config'),
   globalPause: () => request<{ paused: boolean }>('GET', '/api/global-pause'),
   updateState: () => request<UpdateState>('GET', '/api/update'),

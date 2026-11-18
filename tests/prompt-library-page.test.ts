@@ -115,25 +115,70 @@ describe('Prompt Library page', () => {
     expect(host.textContent).toContain('You have no prompts of your own yet');
   });
 
-  it('renders a bundled entry read-only with Duplicate and no Save or Delete', async () => {
+  it('lets a bundled entry be edited with no Duplicate or Delete', async () => {
     const host = await mountLibrary();
     await click(host.querySelector('[data-prompt="implement"] button'));
     const editor = host.querySelector('section[aria-label="Prompt implement"]') as HTMLElement;
     expect(editor).not.toBeNull();
-    expect(button(editor, 'Duplicate')).toBeDefined();
-    expect(button(editor, 'Save')).toBeUndefined();
+    expect(button(editor, 'Duplicate')).toBeUndefined();
     expect(button(editor, 'Delete…')).toBeUndefined();
-    expect(editor.querySelector('textarea')).toBeNull();
-    expect((editor.querySelector('#prompt-description') as HTMLInputElement).readOnly).toBe(true);
-    expect(editor.textContent).toContain('implement-copy');
+    expect(button(editor, 'Save')).toBeDefined();
+    expect(editor.querySelector('textarea')).not.toBeNull();
+    expect((editor.querySelector('#prompt-description') as HTMLInputElement).readOnly).toBe(false);
   });
 
-  it('duplicates a bundled entry as <code>-copy', async () => {
+  it('saves an edited bundled prompt as a new operator prompt, leaving the original unchanged', async () => {
     const host = await mountLibrary();
-    const dup = vi.spyOn(api, 'duplicatePrompt').mockResolvedValue(prompt('implement-copy'));
+    const create = vi.spyOn(api, 'createPrompt').mockImplementation(async (body) => prompt(body.code, { ...body }));
+    const update = vi.spyOn(api, 'updatePrompt');
     await click(host.querySelector('[data-prompt="implement"] button'));
-    await click(button(host, 'Duplicate'));
-    expect(dup).toHaveBeenCalledWith('implement', 'implement-copy');
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'My own implement.');
+    await click(button(host, 'Save'));
+    expect(create).not.toHaveBeenCalled();
+    const name = host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement;
+    expect(name.value).toBe('implement-copy');
+
+    await type(name, 'team-style');
+    expect(host.ownerDocument.body.textContent).toContain('already exists');
+    expect(button(host.ownerDocument.body, 'Save as new prompt')?.disabled).toBe(true);
+
+    await type(name, 'my-implement');
+    await click(button(host.ownerDocument.body, 'Save as new prompt'));
+    expect(update).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith({ code: 'my-implement', description: 'implement description', text: 'My own implement.' });
+    expect(host.querySelector('section[aria-label="Prompt my-implement"]')).not.toBeNull();
+
+    await click(button(host, 'To find'));
+    await click(host.querySelector('[data-prompt="implement"] button'));
+    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Implement ${{ ticket.title }}.');
+    expect(rail?.summaries.edit).toBe('Change the text');
+  });
+
+  it('keeps the edit and the typed code when the server refuses a bundled save', async () => {
+    const host = await mountLibrary();
+    vi.spyOn(api, 'createPrompt').mockRejectedValue(new ApiError(400, 'Include cycle: my-implement → team-style → my-implement', 'validation'));
+    await click(host.querySelector('[data-prompt="implement"] button'));
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Use ${{ prompts.team-style }}');
+    await click(button(host, 'Save'));
+    await type(host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement, 'my-implement');
+    await click(button(host.ownerDocument.body, 'Save as new prompt'));
+    expect(host.ownerDocument.querySelector('#prompt-fork-code')).toBeNull();
+    expect(host.textContent).toContain('Include cycle');
+    expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Use ${{ prompts.team-style }}');
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Fixed.');
+    await click(button(host, 'Save'));
+    expect((host.ownerDocument.querySelector('#prompt-fork-code') as HTMLInputElement).value).toBe('my-implement');
+  });
+
+  it('saves an operator prompt in place', async () => {
+    const host = await mountLibrary();
+    const update = vi.spyOn(api, 'updatePrompt').mockImplementation(async (code, body) => prompt(code, body));
+    const create = vi.spyOn(api, 'createPrompt');
+    await click(host.querySelector('[data-prompt="security-checklist"] button'));
+    await type(host.querySelector('textarea') as HTMLTextAreaElement, 'Check more secrets.');
+    await click(button(host, 'Save'));
+    expect(update).toHaveBeenCalledWith('security-checklist', { description: 'security-checklist description', text: 'Check more secrets.' });
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('shows an include cycle from a failed save inline and keeps Save disabled', async () => {
@@ -354,11 +399,5 @@ describe('Prompt Library page', () => {
     expect(rail?.summaries.edit).toBe('1 unsaved change');
     await type(host.querySelector('#prompt-description') as HTMLInputElement, 'Changed');
     expect(rail?.summaries.edit).toBe('2 unsaved changes');
-  });
-
-  it('reports Read-only in the rail for a bundled prompt', async () => {
-    const host = await mountLibrary();
-    await click(host.querySelector('[data-prompt="implement"] button'));
-    expect(rail?.summaries.edit).toBe('Read-only');
   });
 });
