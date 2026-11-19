@@ -46,6 +46,7 @@ function setup(over: Partial<WorkspaceProvisionerDeps> = {}, session: { worktree
   });
   const deleteBranch = vi.spyOn(Git, 'deleteBranch').mockImplementation(async () => {
     calls.push('deleteBranch');
+    return '';
   });
   const checkedOutAt = vi.spyOn(Git, 'branchCheckedOutAt').mockResolvedValue(null);
   const branchExists = vi.spyOn(Git, 'branchExists').mockResolvedValue(true);
