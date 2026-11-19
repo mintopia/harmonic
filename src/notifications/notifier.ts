@@ -75,6 +75,41 @@ const summarize = (event: NotificationEvent, task?: TaskRow, context?: NotifyCon
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };
 
+const exportReason = (context: NotifyContext): string => context.reason ?? context.export?.error ?? 'unknown reason';
+const exportDestination = (context: NotifyContext): string | null => context.destination ?? context.export?.destination ?? null;
+
+function storedForEpicExport(event: NotificationEvent, context: NotifyContext): NotificationInput | null {
+  const epicRef = event === 'export.failed' ? context.export?.epicRef : undefined;
+  if (epicRef === undefined) return null;
+  return {
+    workspaceId: context.workspaceId ?? null,
+    taskId: null,
+    severity: 'export',
+    title: `Export failed for Epic #${epicRef} — ${exportReason(context)}`,
+    detail: exportDestination(context),
+  };
+}
+
+function storedForTask(event: NotificationEvent, task: TaskRow, context: NotifyContext): NotificationInput | null {
+  const base = { workspaceId: task.workspaceId, taskId: task.id };
+  const taskTitle = taskDisplayTitle(task) ?? `Task ${task.id}`;
+  switch (event) {
+    case 'task.escalated':
+      return {
+        ...base,
+        severity: 'escalation',
+        title: task.escalationReason ? `Task ${task.id} escalated — ${task.escalationReason}` : `Task ${task.id} escalated`,
+        detail: taskTitle,
+      };
+    case 'task.failed':
+      return { ...base, severity: 'failure', title: `Task ${task.id} failed — ${context.reason ?? 'unknown reason'}`, detail: taskTitle };
+    case 'export.failed':
+      return { ...base, severity: 'export', title: `Export failed for Task ${task.id} — ${exportReason(context)}`, detail: exportDestination(context) };
+    default:
+      return null;
+  }
+}
+
 export class Notifier {
   constructor(
     private readonly channels: ChannelService,
@@ -83,39 +118,7 @@ export class Notifier {
   ) {}
 
   private stored(event: NotificationEvent, task: TaskRow | undefined, context: NotifyContext): NotificationInput | null {
-    if (!task) {
-      const epicRef = event === 'export.failed' ? context.export?.epicRef : undefined;
-      if (epicRef === undefined) return null;
-      return {
-        workspaceId: context.workspaceId ?? null,
-        taskId: null,
-        severity: 'export',
-        title: `Export failed for Epic #${epicRef} — ${context.reason ?? context.export?.error ?? 'unknown reason'}`,
-        detail: context.destination ?? context.export?.destination ?? null,
-      };
-    }
-    const base = { workspaceId: task.workspaceId, taskId: task.id };
-    const taskTitle = taskDisplayTitle(task) ?? `Task ${task.id}`;
-    switch (event) {
-      case 'task.escalated':
-        return {
-          ...base,
-          severity: 'escalation',
-          title: task.escalationReason ? `Task ${task.id} escalated — ${task.escalationReason}` : `Task ${task.id} escalated`,
-          detail: taskTitle,
-        };
-      case 'task.failed':
-        return { ...base, severity: 'failure', title: `Task ${task.id} failed — ${context.reason ?? 'unknown reason'}`, detail: taskTitle };
-      case 'export.failed':
-        return {
-          ...base,
-          severity: 'export',
-          title: `Export failed for Task ${task.id} — ${context.reason ?? context.export?.error ?? 'unknown reason'}`,
-          detail: context.destination ?? context.export?.destination ?? null,
-        };
-      default:
-        return null;
-    }
+    return task ? storedForTask(event, task, context) : storedForEpicExport(event, context);
   }
 
   private async store(label: string, build: () => NotificationInput | null): Promise<void> {
