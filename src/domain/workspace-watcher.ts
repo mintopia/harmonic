@@ -238,6 +238,20 @@ export class WorkspaceWatcher {
       });
     };
 
+    const gitDirs = new Set(gitPaths.map((path) => dirname(path)));
+    const adoptNewChildren = async (dir: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const child = join(dir, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink() && !state.watchers.has(child)) await walk(child);
+      }
+    };
+
     const onEvent = (dir: string, filename: string | null): void => {
       if (state.stopped) return;
       // The watched directory itself was removed or renamed: release it and its descendants.
@@ -257,6 +271,8 @@ export class WorkspaceWatcher {
       else if (!isIgnored(path)) state.fsChanged = true;
       else return;
       this.schedule(workspace.id, workspace.workingDir, state);
+      // Without a filename the new entry is unknown, so look for subdirectories not yet watched.
+      if (filename === null && !gitDirs.has(dir)) this.walks.add(adoptNewChildren(dir), 'workspace watcher rescan');
       if (filename === null || isGitPath(path) || isIgnored(path)) return;
       let isDirectory = false;
       try {

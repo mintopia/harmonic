@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const failure = vi.hoisted(() => ({ after: Number.POSITIVE_INFINITY, calls: 0 }));
+const failure = vi.hoisted(() => ({ after: Number.POSITIVE_INFINITY, calls: 0, dropFilenames: false }));
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -11,7 +11,9 @@ vi.mock('node:fs', async (importOriginal) => {
     ...actual,
     watch: ((...args: Parameters<typeof actual.watch>) => {
       if (failure.calls++ >= failure.after) throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' });
-      return actual.watch(...args);
+      if (!failure.dropFilenames) return actual.watch(...args);
+      const [path, options, listener] = args as unknown as [string, object, (event: string, filename: string | null) => void];
+      return actual.watch(path, options, (event: string) => listener(event, null));
     }) as typeof actual.watch,
   };
 });
@@ -40,6 +42,7 @@ describe('WorkspaceWatcher directory-only watches (issue #880)', () => {
   beforeEach(() => {
     failure.after = Number.POSITIVE_INFINITY;
     failure.calls = 0;
+    failure.dropFilenames = false;
     fsChanged = 0;
     root = mkdtempSync(join(tmpdir(), 'harmonic-dirwatch-'));
     current = workspace();
@@ -103,6 +106,14 @@ describe('WorkspaceWatcher directory-only watches (issue #880)', () => {
     const before = fsChanged;
     writeFileSync(join(root, 'sub', 'new.txt'), 'x');
     await until(() => fsChanged > before);
+  });
+
+  it('adopts a new directory when the platform reports a change without a filename', async () => {
+    failure.dropFilenames = true;
+    await subscribe();
+    expect(watcher.watchCount(7)).toBe(1);
+    mkdirSync(join(root, 'sub'));
+    await until(() => fsChanged >= 1 && watcher.watchCount(7) === 2);
   });
 
   it('releases the watch of a removed directory and its descendants', async () => {
