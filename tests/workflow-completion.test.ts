@@ -47,6 +47,21 @@ describe('completeWorkflow', () => {
     expect(completeWorkflow(text, text.length)).toBeNull();
   });
 
+  it('offers attempts only for a top-level steps list item', () => {
+    const base = ['id', 'uses', 'with', 'if', 'run', 'runs_on', 'image', 'parallel'];
+    expect(labels('steps:\n  - ')).toEqual([...base, 'attempts']);
+    expect(labels('steps:\n  ')).toEqual(base);
+    expect(labels('cleanup:\n  - ')).toEqual(base);
+    expect(labels('steps:\n  - parallel:\n      - ')).toEqual(base);
+    expect(labels('steps:\n  - attempts:\n      steps:\n        - ')).toEqual(base);
+  });
+
+  it('offers nothing under unknown parents or past the root', () => {
+    expect(labels('foo:\n  ')).toBeUndefined();
+    expect(labels('a: 1\n  x')).toBeUndefined();
+    expect(labels('   x')).toBeUndefined();
+  });
+
   it('does not throw on invalid YAML or bad offsets', () => {
     expect(() => completeWorkflow('steps: [\n  - : :\n\t\tuses: c', 20)).not.toThrow();
     expect(completeWorkflow('x', 99)).toBeNull();

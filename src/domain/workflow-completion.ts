@@ -115,6 +115,24 @@ function stepUses(lines: string[], withLine: KeyedLine): string | undefined {
 
 const prefixed = (options: WorkflowCompletionOption[], typed: string): WorkflowCompletionOption[] => options.filter((o) => o.label.startsWith(typed) && o.label !== typed);
 
+const offered = (offset: number, typed: string, options: WorkflowCompletionOption[]): WorkflowCompletion | null =>
+  options.length ? { from: offset - typed.length, options } : null;
+
+const isAgentic = (action: string | undefined): boolean => action === 'agent' || action === 'critic';
+
+const STEP_LIST_PARENTS: ReadonlySet<string> = new Set(['steps', 'cleanup', 'parallel']);
+
+function keyPool(lines: string[], parent: KeyedLine | null, col: number, inListItem: boolean): WorkflowCompletionOption[] {
+  if (!parent) return col === 0 ? TOP_KEYS : [];
+  if (STEP_LIST_PARENTS.has(parent.key)) {
+    const topLevelSteps = parent.key === 'steps' && parentOf(lines, parent.index, parent.col) === null;
+    return topLevelSteps && inListItem ? [...STEP_KEYS, { label: 'attempts', detail: 'retry the enclosed steps' }] : STEP_KEYS;
+  }
+  if (parent.key === 'attempts') return ATTEMPTS_KEYS;
+  if (parent.key === 'with') return isAgentic(stepUses(lines, parent)) ? WITH_KEYS : [];
+  return [];
+}
+
 /** Never throws: indentation-based, so half-typed YAML still completes. */
 export function completeWorkflow(text: string, offset: number, modelOptions: readonly CompletionModelOption[] = []): WorkflowCompletion | null {
   if (offset < 0 || offset > text.length) return null;
@@ -127,7 +145,7 @@ export function completeWorkflow(text: string, offset: number, modelOptions: rea
   if (uses) {
     const typed = uses[1]!;
     const options = [...WORKFLOW_ACTIONS].sort((a, b) => actionRank(a) - actionRank(b)).filter((a) => a.startsWith(typed) && a !== typed).map((label) => ({ label, detail: ACTION_DETAIL[label] }));
-    return options.length ? { from: offset - typed.length, options } : null;
+    return offered(offset, typed, options);
   }
 
   const option = OPTION_LINE.exec(upToCursor);
@@ -135,26 +153,15 @@ export function completeWorkflow(text: string, offset: number, modelOptions: rea
     const typed = option[3]!;
     const parent = parentOf(lines, lineIndex, option[1]!.length + option[2]!.length);
     const action = parent?.key === 'with' ? stepUses(lines, parent) : undefined;
-    if (action !== 'agent' && action !== 'critic') return null;
+    if (!isAgentic(action)) return null;
     const options = modelOptions.filter((o) => o.id.startsWith(typed) && o.id !== typed).map((o) => ({ label: o.id, detail: `${o.harness} · ${o.model} · ${o.description}` }));
-    return options.length ? { from: offset - typed.length, options } : null;
+    return offered(offset, typed, options);
   }
 
   const key = KEY_LINE.exec(upToCursor);
   if (!key) return null;
   const typed = key[3] ?? '';
   const col = key[1]!.length + key[2]!.length;
-  const parent = parentOf(lines, lineIndex, col);
-  let pool: WorkflowCompletionOption[] = [];
-  if (!parent) pool = col === 0 ? TOP_KEYS : [];
-  else if (parent.key === 'steps' || parent.key === 'cleanup' || parent.key === 'parallel') {
-    const grand = parentOf(lines, parent.index, parent.col);
-    pool = parent.key === 'steps' && grand === null && key[2]!.length > 0 ? [...STEP_KEYS, { label: 'attempts', detail: 'retry the enclosed steps' }] : STEP_KEYS;
-  } else if (parent.key === 'attempts') pool = ATTEMPTS_KEYS;
-  else if (parent.key === 'with') {
-    const action = stepUses(lines, parent);
-    pool = action === 'agent' || action === 'critic' ? WITH_KEYS : [];
-  }
-  const options = prefixed(pool, typed);
-  return options.length ? { from: offset - typed.length, options } : null;
+  const pool = keyPool(lines, parentOf(lines, lineIndex, col), col, key[2]!.length > 0);
+  return offered(offset, typed, prefixed(pool, typed));
 }
