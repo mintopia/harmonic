@@ -296,4 +296,26 @@ describe('a workflow whose runs_on names a Kubernetes Execution Target', () => {
     expect(escalations[0]).toContain('lost twice');
     expect(completions).toBe(0);
   });
+
+  it('escalates as a configuration failure when the lost pod cannot be replaced', async () => {
+    let api!: FakePodApi;
+    api = new FakePodApi(scripted((s) => {
+      if (s !== 'echo work') return undefined;
+      api.pods.clear();
+      return ok('', 137);
+    }));
+    const create = api.createPod.bind(api);
+    let creates = 0;
+    api.createPod = async (spec) => {
+      if (++creates > 1) throw new Error('quota exceeded');
+      return create(spec);
+    };
+    const { task, run } = await start(flow('  - id: one\n    run: echo work\n'));
+    await engine(api).run(task, run);
+    expect(creates).toBe(2);
+    expect(escalations).toHaveLength(1);
+    expect(escalations[0]).toMatch(/^workflow step one inconclusive: the pod was lost and could not be replaced: .*quota exceeded/);
+    expect((await stepRows(task.id)).map((r) => [r.stepId, r.outcome])).toEqual([['one', 'inconclusive']]);
+    expect(completions).toBe(0);
+  });
 });
