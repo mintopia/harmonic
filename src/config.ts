@@ -523,46 +523,59 @@ export function baselineConfig(): AppConfig {
   return structuredClone(baseline);
 }
 
+interface LegacyModelData {
+  prices: Record<string, unknown>;
+  modelInfo: Record<string, unknown>;
+}
+
+function legacyFields({ prices, modelInfo }: LegacyModelData, id: string): { price?: unknown; contextWindow?: number } {
+  const info = isRecord(modelInfo[id]) ? modelInfo[id] : {};
+  return {
+    ...(isRecord(prices[id]) ? { price: prices[id] } : {}),
+    ...(typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
+  };
+}
+
+/** Legacy data fills an override catalog's gaps but always replaces the baseline catalog's values. */
+function withLegacyFields(model: unknown, legacy: LegacyModelData, hasOverrideModels: boolean): unknown {
+  const entry = typeof model === 'string' ? { id: model } : model;
+  if (!isRecord(entry) || typeof entry.id !== 'string') return entry;
+  const fillable = Object.entries(legacyFields(legacy, entry.id)).filter(([key]) => !hasOverrideModels || entry[key] === undefined);
+  return { ...entry, ...Object.fromEntries(fillable) };
+}
+
+function migrateHarnessCatalog(
+  models: readonly unknown[],
+  hasOverrideModels: boolean,
+  legacy: LegacyModelData,
+  legacyModelIds: ReadonlySet<string>,
+): { catalog: unknown[]; needsMigration: boolean } {
+  const catalog = models.map((model) => withLegacyFields(model, legacy, hasOverrideModels));
+  for (const modelId of legacyModelIds) {
+    if (catalog.some((entry) => isRecord(entry) && entry.id === modelId)) continue;
+    catalog.push({ id: modelId, ...legacyFields(legacy, modelId) });
+  }
+  const needsMigration =
+    models.some((model) => typeof model === 'string') ||
+    (legacyModelIds.size > 0 && catalog.some((model, index) => model !== models[index]));
+  return { catalog, needsMigration };
+}
+
 function migrateLegacyModelCatalogs(base: AppConfig, overrides: unknown): unknown {
   if (!isRecord(overrides)) return overrides;
   const migrated = structuredClone(overrides);
   const prices = isRecord(migrated.prices) ? migrated.prices : {};
   const modelInfo = isRecord(migrated.modelInfo) ? migrated.modelInfo : {};
+  const legacy: LegacyModelData = { prices, modelInfo };
   const legacyModelIds = new Set([...Object.keys(prices), ...Object.keys(modelInfo)]);
-  const hasLegacyCatalogData = legacyModelIds.size > 0;
   const harnesses = isRecord(migrated.harnesses) ? migrated.harnesses : {};
 
   for (const [id, baseHarness] of Object.entries(base.harnesses)) {
     const override = harnesses[id];
     if (override !== undefined && !isRecord(override)) continue;
     const overrideModels: unknown[] | undefined = Array.isArray(override?.models) ? override.models : undefined;
-    const hasOverrideModels = overrideModels !== undefined;
     const models: readonly unknown[] = overrideModels ?? baseHarness.models;
-    const catalog = models.map((model) => {
-      const entry = typeof model === 'string' ? { id: model } : model;
-      if (!isRecord(entry) || typeof entry.id !== 'string') return entry;
-      const modelInfoEntry = modelInfo[entry.id];
-      const info = isRecord(modelInfoEntry) ? modelInfoEntry : {};
-      return {
-        ...entry,
-        ...((!hasOverrideModels || entry.price === undefined) && isRecord(prices[entry.id]) ? { price: prices[entry.id] } : {}),
-        ...((!hasOverrideModels || entry.contextWindow === undefined) && typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
-      };
-    });
-    if (hasLegacyCatalogData) {
-      for (const modelId of legacyModelIds) {
-        if (catalog.some((entry) => isRecord(entry) && entry.id === modelId)) continue;
-        const modelInfoEntry = modelInfo[modelId];
-        const info = isRecord(modelInfoEntry) ? modelInfoEntry : {};
-        catalog.push({
-          id: modelId,
-          ...(isRecord(prices[modelId]) ? { price: prices[modelId] } : {}),
-          ...(typeof info.contextWindow === 'number' ? { contextWindow: info.contextWindow } : {}),
-        });
-      }
-    }
-    const needsMigration = models.some((model) => typeof model === 'string')
-      || (hasLegacyCatalogData && catalog.some((model, index) => model !== models[index]));
+    const { catalog, needsMigration } = migrateHarnessCatalog(models, overrideModels !== undefined, legacy, legacyModelIds);
     if (needsMigration) harnesses[id] = { ...override, models: catalog };
   }
   if (Object.keys(harnesses).length > 0) migrated.harnesses = harnesses;
