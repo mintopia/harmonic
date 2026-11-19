@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { fillTemplate, promptForTask } from '../src/execution/prompt-template.js';
-import { DEFAULT_TASK_PROMPT } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
+
+const DEFAULT_TASK_PROMPT = baselineConfig().taskPrompt;
 
 const task = (over: Partial<Parameters<typeof promptForTask>[0]> = {}) => ({
   id: 7,

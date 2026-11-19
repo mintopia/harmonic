@@ -518,11 +518,6 @@ export function loadBaselineConfig(path: string = baselinePath): AppConfig {
 const baseline = loadBaselineConfig();
 
 export const AUTO_MODEL_SENTINEL = baseline.harnesses.copilot.defaultModel;
-export const DEFAULT_DRIVE_PROMPT = baseline.drive.prompt;
-export const UNATTENDED_REMINDER = baseline.drive.unattendedReminder;
-export const DEFAULT_CONTINUE_PROMPT = baseline.drive.continuePrompt;
-export const DEFAULT_TASK_PROMPT = baseline.taskPrompt;
-export const DEFAULT_PAUSE_MESSAGE = baseline.pauseMessage;
 
 export function baselineConfig(): AppConfig {
   return structuredClone(baseline);

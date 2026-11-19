@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { driveFields, fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
-import { DEFAULT_DRIVE_PROMPT } from '../src/config.js';
+import { baselineConfig } from '../src/config.js';
 import type { TaskRow } from '../src/db/schema.js';
 import { trackerRef } from '../src/tracker/adapter.js';
 
@@ -23,9 +23,9 @@ describe('fillTemplate (prompt-template.ts)', () => {
   });
 });
 
-describe('DEFAULT_DRIVE_PROMPT', () => {
+describe('baseline drive prompt', () => {
   it('puts the ticket ref on the skill invocation line, so the harness gets it as an argument', () => {
-    expect(DEFAULT_DRIVE_PROMPT.startsWith('{skill} {ref}')).toBe(true);
+    expect(baselineConfig().drive.prompt.startsWith('{skill} {ref}')).toBe(true);
   });
 });
 
