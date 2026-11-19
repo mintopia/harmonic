@@ -58,6 +58,30 @@ interface StderrTail {
   flushed: Promise<void>;
 }
 
+interface TurnContext {
+  task: TaskRow;
+  run: AttemptRow;
+  harness: HarnessConfig;
+  workspace: Workspace;
+  turn: TurnState;
+  driver: AcpDriver;
+  listeners: TurnListeners;
+  guardrails: GuardrailSupervisor;
+  active: ActiveRun;
+  finalize: () => Promise<void>;
+  record: RunEventRecorder;
+}
+
+type DrivenTurn = Awaited<ReturnType<TurnCompletion['drivePromptCycle']>>;
+
+/** Appends the harness's stderr tail, once drained (or after 500ms), to a failed turn's error. */
+async function withStderrTail(err: unknown, stderr: StderrTail): Promise<Error> {
+  const base = err instanceof Error ? err.message : String(err);
+  await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, 500))]);
+  const tail = stderr.tail.trim();
+  return new Error(tail ? `${base}\n\nharness stderr:\n${tail}` : base);
+}
+
 type SpawnTurnResult =
   | { ok: true; workspace: Workspace; mcpServers: unknown[]; child: ChildProcess; stderr: StderrTail }
   | { ok: false };
@@ -149,72 +173,13 @@ export class TurnDriver {
       task, run, harness, workspace, turn, autoDriven, attemptNumber: run.number, record, flushToolCalls, child, stepRunId: req.stepRunId,
     });
 
+    const ctx: TurnContext = { task, run, harness, workspace, turn, driver, listeners, guardrails, active, finalize, record };
     try {
-      const boundary = await this.deps.checkRunBoundary(task.id);
-      if (boundary.stop) {
-        if (boundary.reason !== 'settled') {
-          const reason = boundary.reason === 'global-pause' ? 'global pause' : boundary.pauseReason;
-          const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason } });
-          this.deps.events.onAttemptEvent?.(pausedEvent);
-        }
-        await finalize();
-        return haltResult(boundary.reason === 'settled' ? 'settled' : 'paused');
-      }
-      const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
-        task, run, harness, workspace, mcpServers, turn, driver, listeners, guardrails, autoDriven, continueSessionId, opening: req.prompt, record, stepRunId: req.stepRunId,
-      });
-      const messageStore = this.deps.agentMessages;
-      const driven = await this.completion.drivePromptCycle({
-        driver, active, guardrails, listeners, promptText, operatorSeed, record,
-        onFirstPrompt: messageStore && heldMessages.length > 0 ? () => messageStore.markDelivered(heldMessages, task.id) : undefined,
-      });
-      if (active.externallySettled) {
-        await finalize();
-        return haltResult('settled');
-      }
-
-      if (active.pauseRequested) {
-        // A pause before the first prompt consumed the seed from the pending map; put it back.
-        if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
-          this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
-        }
-        if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
-        await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
-        record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
-        if (!active.pauseFactRecorded) {
-          const pausedEvent = await this.deps.attempts.appendEvent(run.id, {
-            type: 'lifecycle',
-            payload: { event: 'paused', reason: active.pauseReason ?? 'operator request' },
-          });
-          this.deps.events.onAttemptEvent?.(pausedEvent);
-        }
-        await finalize();
-        if (active.globalPauseRequested) await this.deps.onGloballyPaused?.(task.id);
-        return haltResult('paused');
-      }
-
-      record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
-      if (!driven.escalating && !listeners.stoppedShort) {
-        await this.completion.stampVerifiedHead({ run, workspace });
-      }
-      await finalize();
-      await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
-      if (driven.escalating) {
-        record('lifecycle', { event: 'escalated', reason: driven.escalating });
-        return { ...emptyDrive(turn, driver.sessionId), escalate: driven.escalating };
-      }
-      if (listeners.stoppedShort) {
-        record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
-        throw new Error(listeners.stoppedShort);
-      }
-      return emptyDrive(turn, driver.sessionId);
+      return await this.driveSpawnedTurn(ctx, { req, mcpServers, autoDriven, continueSessionId });
     } catch (err) {
       await finalize();
       if (active.externallySettled || this.deps.isShuttingDown()) return haltResult('settled');
-      const base = err instanceof Error ? err.message : String(err);
-      await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, 500))]);
-      const tail = stderr.tail.trim();
-      throw new Error(tail ? `${base}\n\nharness stderr:\n${tail}` : base);
+      throw await withStderrTail(err, stderr);
     } finally {
       guardrails.disarm();
       driver.fail(new Error('run finished'));
@@ -222,6 +187,84 @@ export class TurnDriver {
       this.deps.activeRuns.delete(run.id);
       await finalize();
     }
+  }
+
+  private async driveSpawnedTurn(
+    ctx: TurnContext,
+    opts: { req: AgentDriveRequest; mcpServers: unknown[]; autoDriven: boolean; continueSessionId: string | null },
+  ): Promise<AgentDriveResult> {
+    const { task, run, harness, workspace, turn, driver, listeners, guardrails, active, finalize, record } = ctx;
+    const halted = await this.haltAtSpawnedBoundary(ctx);
+    if (halted) return halted;
+    const { promptText, operatorSeed, heldMessages } = await this.initializeTurn({
+      task, run, harness, workspace, mcpServers: opts.mcpServers, turn, driver, listeners, guardrails, autoDriven: opts.autoDriven,
+      continueSessionId: opts.continueSessionId, opening: opts.req.prompt, record, stepRunId: opts.req.stepRunId,
+    });
+    const messageStore = this.deps.agentMessages;
+    const driven = await this.completion.drivePromptCycle({
+      driver, active, guardrails, listeners, promptText, operatorSeed, record,
+      onFirstPrompt: messageStore && heldMessages.length > 0 ? () => messageStore.markDelivered(heldMessages, task.id) : undefined,
+    });
+    if (active.externallySettled) {
+      await finalize();
+      return haltResult('settled');
+    }
+    if (active.pauseRequested) return this.finishPausedTurn(ctx, driven, operatorSeed);
+    return this.finishCompletedTurn(ctx, driven);
+  }
+
+  /** The run boundary re-checked once the harness is up: a stop finalises the turn and halts it. */
+  private async haltAtSpawnedBoundary(ctx: TurnContext): Promise<AgentDriveResult | null> {
+    const { task, run, finalize } = ctx;
+    const boundary = await this.deps.checkRunBoundary(task.id);
+    if (!boundary.stop) return null;
+    if (boundary.reason !== 'settled') {
+      const reason = boundary.reason === 'global-pause' ? 'global pause' : boundary.pauseReason;
+      const pausedEvent = await this.deps.attempts.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'paused', reason } });
+      this.deps.events.onAttemptEvent?.(pausedEvent);
+    }
+    await finalize();
+    return haltResult(boundary.reason === 'settled' ? 'settled' : 'paused');
+  }
+
+  private async finishPausedTurn(ctx: TurnContext, driven: DrivenTurn, operatorSeed: string | undefined): Promise<AgentDriveResult> {
+    const { task, run, harness, workspace, active, finalize, record } = ctx;
+    // A pause before the first prompt consumed the seed from the pending map; put it back.
+    if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
+      this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
+    }
+    if ((await this.deps.taskService.get(task.id)).state === 'working') await this.deps.taskService.pause(task.id);
+    await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
+    record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
+    if (!active.pauseFactRecorded) {
+      const pausedEvent = await this.deps.attempts.appendEvent(run.id, {
+        type: 'lifecycle',
+        payload: { event: 'paused', reason: active.pauseReason ?? 'operator request' },
+      });
+      this.deps.events.onAttemptEvent?.(pausedEvent);
+    }
+    await finalize();
+    if (active.globalPauseRequested) await this.deps.onGloballyPaused?.(task.id);
+    return haltResult('paused');
+  }
+
+  private async finishCompletedTurn(ctx: TurnContext, driven: DrivenTurn): Promise<AgentDriveResult> {
+    const { task, run, harness, workspace, turn, driver, listeners, finalize, record } = ctx;
+    record('lifecycle', { event: 'finished', stopReason: driven.result.stopReason ?? null });
+    if (!driven.escalating && !listeners.stoppedShort) {
+      await this.completion.stampVerifiedHead({ run, workspace });
+    }
+    await finalize();
+    await this.recordTurnUsage({ task, run, harness, workspace, result: driven.result, record });
+    if (driven.escalating) {
+      record('lifecycle', { event: 'escalated', reason: driven.escalating });
+      return { ...emptyDrive(turn, driver.sessionId), escalate: driven.escalating };
+    }
+    if (listeners.stoppedShort) {
+      record('lifecycle', { event: 'stopped-short', reason: listeners.stoppedShort });
+      throw new Error(listeners.stoppedShort);
+    }
+    return emptyDrive(turn, driver.sessionId);
   }
 
   private async recordTurnUsage(input: {

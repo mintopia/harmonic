@@ -32,7 +32,7 @@ export class TurnCompletion {
     onFirstPrompt?: (() => Promise<void>) | undefined;
   }): Promise<{ result: PromptResult; connectionGone: boolean; escalating: string | null; operatorSeedDelivered: boolean; promptSent: boolean }> {
     const { driver, active, guardrails, listeners, record } = input;
-        let escalating: string | null = null;
+    let escalating: string | null = null;
     // A pause requested before this turn's first prompt: bail before promptText — including
     // input.operatorSeed — ever reaches the harness. The caller must put the seed back rather
     // than treat it as delivered (ADR-0005 §6).
@@ -48,39 +48,39 @@ export class TurnCompletion {
     connectionGone ||= first.connectionGone;
     let result: PromptResult = first.result ?? {};
     active.idle = true;
-    for (; !escalating && !listeners.stoppedShort && !connectionGone; ) {
-      if (active.externallySettled) break;
-      if (active.pauseRequested && active.steerQueue.length === 0) break;
-      if (active.escalateReason) {
-        escalating = `the agent asked for a human: ${active.escalateReason}`;
+    while (!listeners.stoppedShort && !connectionGone) {
+      const boundary = await this.checkBoundary(active, guardrails);
+      if (boundary.stop) {
+        escalating = boundary.escalating;
         break;
       }
-      if (await guardrails.checkProgressAtBoundary()) break;
       const steer = active.steerQueue.shift();
-      if (steer !== undefined) {
-        record('lifecycle', { event: 'steer_delivered', text: steer.text });
-        steer.onDelivered?.();
-        active.idle = false;
-        const turn = await timedPromptTurn(steer.text);
-        connectionGone ||= turn.connectionGone;
-        if (turn.result) result = turn.result;
-        active.idle = true;
-        if (connectionGone) break;
-        continue;
-      }
-      break;
+      if (steer === undefined) break;
+      deliverSteer(steer, record);
+      active.idle = false;
+      const turn = await timedPromptTurn(steer.text);
+      connectionGone ||= turn.connectionGone;
+      if (turn.result) result = turn.result;
+      active.idle = true;
     }
     active.idle = false;
     active.steerable = false;
     while (!connectionGone && !active.externallySettled && !escalating && !listeners.stoppedShort && active.steerQueue.length > 0) {
       const steer = active.steerQueue.shift()!;
-      record('lifecycle', { event: 'steer_delivered', text: steer.text });
-      steer.onDelivered?.();
+      deliverSteer(steer, record);
       const turn = await timedPromptTurn(steer.text);
       connectionGone ||= turn.connectionGone;
       if (turn.result) result = turn.result;
     }
     return { result, connectionGone, escalating, operatorSeedDelivered: input.operatorSeed !== undefined, promptSent: true };
+  }
+
+  /** Whether the idle loop must stop before taking another steer, and any human-escalation reason. */
+  private async checkBoundary(active: ActiveRun, guardrails: GuardrailSupervisor): Promise<{ stop: boolean; escalating: string | null }> {
+    if (active.externallySettled) return { stop: true, escalating: null };
+    if (active.pauseRequested && active.steerQueue.length === 0) return { stop: true, escalating: null };
+    if (active.escalateReason) return { stop: true, escalating: `the agent asked for a human: ${active.escalateReason}` };
+    return { stop: await guardrails.checkProgressAtBoundary(), escalating: null };
   }
 
   async stampVerifiedHead(input: { run: AttemptRow; workspace: Workspace }): Promise<void> {
@@ -138,4 +138,9 @@ export function noteModelMismatch(
 ): void {
   const observed = usage ? observedModelMismatch(task.model, usage.models) : null;
   if (observed) record('lifecycle', { event: 'model_mismatch', expected: task.model, observed });
+}
+
+function deliverSteer(steer: ActiveRun['steerQueue'][number], record: RunEventRecorder): void {
+  record('lifecycle', { event: 'steer_delivered', text: steer.text });
+  steer.onDelivered?.();
 }

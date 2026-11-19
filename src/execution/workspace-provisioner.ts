@@ -57,65 +57,70 @@ export class WorkspaceProvisioner {
    * the tracker issue. Every step is a best-effort output side-effect.
    */
   async cleanupClosed(task: TaskRow, run: AttemptRow | undefined): Promise<void> {
-    if (run) {
-      try {
-        await this.deps.sessionRetirement?.onAttemptSettled(run, 'operator-cancel');
-      } catch (err) {
-        logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
-      }
-      // git refuses to delete a branch a worktree still checks out.
-      const session = run.sessionRowId === null ? null : await this.deps.sessionStore.get(run.sessionRowId).catch(() => null);
-      if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
-        const removedPath = session.worktreePath;
-        const worktree = basename(removedPath);
-        try {
-          await Git.removeWorktree(session.worktreeRepoDir, removedPath);
-          await dropIndexForPath(removedPath);
-          await this.record(run, { event: 'worktree-removed', worktree });
-        } catch (err) {
-          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
-          await this.record(run, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
-        }
-      }
-      if (run.branch && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
-        try {
-          await Git.deleteBranch(task.workingDir, run.branch);
-          await this.record(run, { event: 'branch-deleted', branch: run.branch });
-        } catch (err) {
-          logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`);
-          await this.record(run, { event: 'branch-delete-failed', branch: run.branch, error: errorMessage(err) });
-        }
-      }
-      this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
-    } else {
-      const worktreePath = this.worktreePathForTask(task);
-      if (existsSync(worktreePath)) {
-        const worktree = basename(worktreePath);
-        try {
-          await Git.removeWorktree(task.workingDir, worktreePath);
-          await dropIndexForPath(worktreePath);
-          await this.recordTask(task, { event: 'worktree-removed', worktree });
-        } catch (err) {
-          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
-          await this.recordTask(task, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
-        }
-      }
-      const branch = this.branchForTask(task);
-      if (
-        (await Git.branchExists(task.workingDir, branch).catch(() => false)) &&
-        (await Git.branchCheckedOutAt(task.workingDir, branch).catch(() => null)) === null
-      ) {
-        try {
-          await Git.deleteBranch(task.workingDir, branch);
-          await this.recordTask(task, { event: 'branch-deleted', branch });
-        } catch (err) {
-          logger.error(`task ${task.id} close: branch '${branch}' removal failed: ${String(err)}`);
-          await this.recordTask(task, { event: 'branch-delete-failed', branch, error: errorMessage(err) });
-        }
-      }
-    }
+    if (run) await this.cleanupClosedAttempt(task, run);
+    else await this.cleanupClosedTask(task);
     if (this.deps.autoDrive && !(await this.deps.autoDrive.closeTicket(task, `Closed by a Harmonic operator without merging (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);
+    }
+  }
+
+  private async cleanupClosedAttempt(task: TaskRow, run: AttemptRow): Promise<void> {
+    try {
+      await this.deps.sessionRetirement?.onAttemptSettled(run, 'operator-cancel');
+    } catch (err) {
+      logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
+    }
+    // git refuses to delete a branch a worktree still checks out.
+    const session = run.sessionRowId === null ? null : await this.deps.sessionStore.get(run.sessionRowId).catch(() => null);
+    if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
+      const removedPath = session.worktreePath;
+      const worktree = basename(removedPath);
+      try {
+        await Git.removeWorktree(session.worktreeRepoDir, removedPath);
+        await dropIndexForPath(removedPath);
+        await this.record(run, { event: 'worktree-removed', worktree });
+      } catch (err) {
+        logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
+        await this.record(run, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
+      }
+    }
+    if (run.branch && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
+      try {
+        await Git.deleteBranch(task.workingDir, run.branch);
+        await this.record(run, { event: 'branch-deleted', branch: run.branch });
+      } catch (err) {
+        logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`);
+        await this.record(run, { event: 'branch-delete-failed', branch: run.branch, error: errorMessage(err) });
+      }
+    }
+    this.deps.events.onAttemptFinished?.(await this.deps.attempts.get(run.id));
+  }
+
+  private async cleanupClosedTask(task: TaskRow): Promise<void> {
+    const worktreePath = this.worktreePathForTask(task);
+    if (existsSync(worktreePath)) {
+      const worktree = basename(worktreePath);
+      try {
+        await Git.removeWorktree(task.workingDir, worktreePath);
+        await dropIndexForPath(worktreePath);
+        await this.recordTask(task, { event: 'worktree-removed', worktree });
+      } catch (err) {
+        logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`);
+        await this.recordTask(task, { event: 'worktree-remove-failed', worktree, error: errorMessage(err) });
+      }
+    }
+    const branch = this.branchForTask(task);
+    if (
+      (await Git.branchExists(task.workingDir, branch).catch(() => false)) &&
+      (await Git.branchCheckedOutAt(task.workingDir, branch).catch(() => null)) === null
+    ) {
+      try {
+        await Git.deleteBranch(task.workingDir, branch);
+        await this.recordTask(task, { event: 'branch-deleted', branch });
+      } catch (err) {
+        logger.error(`task ${task.id} close: branch '${branch}' removal failed: ${String(err)}`);
+        await this.recordTask(task, { event: 'branch-delete-failed', branch, error: errorMessage(err) });
+      }
     }
   }
 
