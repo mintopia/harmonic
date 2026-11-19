@@ -15,7 +15,7 @@ import type { EpicBlocker } from '../domain/epic-hold.js';
 import type { EpicBaseGate } from './epic-coordinator.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 import { errorMessage } from '../error-handling.js';
-import { EMPTY_TARGET_GATE, targetWaitReason, type TargetGate, type TargetWaitInfo } from './target-gate.js';
+import { EMPTY_TARGET_GATE, targetWaitReason, type TargetGate, type TargetGateSnapshot, type TargetWaitInfo } from './target-gate.js';
 
 function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId' | 'prompt' | 'trackerTitle'>): Record<string, string | number> {
   const title = task.trackerTitle ?? task.prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? `Task ${task.id}`;
@@ -56,7 +56,20 @@ export interface MirrorClaim {
   advertiseClaim(task: TaskRow): Promise<void>;
 }
 
-type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0], parent?: SpanContext) => Promise<unknown>;
+/** Per-pass inputs to `AutoRunner.holdReasonFor`. */
+interface SkipScan {
+  master: boolean;
+  ceiling: number;
+  workspacesById: Map<number, WorkspaceRow>;
+  gate: TargetGateSnapshot;
+  localRunning: number;
+  runningByWorkspace: Map<number, number>;
+  occupied: Map<string, TaskRow>;
+  dependencyBlocked: Set<number>;
+  missingThisPass: Map<number, number>;
+}
+
+type RunLauncher =(taskId: Parameters<Runner['launchClaimed']>[0], parent?: SpanContext) => Promise<unknown>;
 
 export interface TargetWait extends TargetWaitInfo {
   position: number;
@@ -297,67 +310,10 @@ export class AutoRunner {
       record(task.id, parts.length === 0 ? 'blocked by a dependency' : parts.join('; '));
     });
 
+    const scan: SkipScan = { master, ceiling, workspacesById, gate, localRunning, runningByWorkspace, occupied, dependencyBlocked, missingThisPass };
     await forEachYielding(all, async (task) => {
-      if (task.state !== 'ready') return;
-      if (dependencyBlocked.has(task.id)) return;
-      if (!master) {
-        record(task.id, 'Auto-Runner disabled');
-        return;
-      }
-      const workspace = task.workspaceId == null ? undefined : workspacesById.get(task.workspaceId);
-      if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) {
-        record(task.id, 'workspace disabled');
-        return;
-      }
-      const targetWait = gate.waitInfo(task);
-      if (targetWait !== undefined) {
-        record(task.id, targetWaitReason(targetWait));
-        return;
-      }
-      if (localRunning >= ceiling && gate.targetOf(task) === undefined) {
-        record(task.id, 'at capacity');
-        return;
-      }
-      const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
-      const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0) - (gate.runningKubernetesByWorkspace.get(task.workspaceId) ?? 0);
-      if (workspaceRunning >= cap && gate.targetOf(task) === undefined) {
-        record(task.id, 'at capacity');
-        return;
-      }
-      if (this.gitBreaker && !this.gitBreaker.allows(repoKey(task.workingDir))) {
-        record(task.id, 'git workspace-prep backoff (repeated failures on this repo)');
-        this.recordWaiting(task.id);
-        return;
-      }
-      const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
-      switch (baseGate) {
-        case 'stale':
-          record(task.id, `integration branch ${task.baseBranch} behind its base (refresh pending)`);
-          return;
-        case 'missing':
-          if (hasAssignedEpicBase(task)) {
-            const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
-            if (this.clock() - since >= this.missingEpicBaseGraceMs) {
-              const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
-              await this.runner.escalateUnspawned(task.id, reason);
-              record(task.id, `${reason}, escalated to human`);
-              return;
-            }
-            missingThisPass.set(task.id, since);
-          }
-          record(task.id, 'integration branch missing');
-          return;
-        case 'ready':
-          break;
-        default:
-          baseGate satisfies never;
-      }
-      const key = directContextKey(task);
-      const holder = key ? occupied.get(key) : undefined;
-      if (holder) {
-        record(task.id, `Work Context held by task ${holder.id} (${holder.state})`);
-        this.recordWaiting(task.id);
-      }
+      const reason = await this.holdReasonFor(task, scan);
+      if (reason !== undefined) record(task.id, reason);
     });
     const previous = this.schedulerSkipReasons;
     this.schedulerSkipReasons = next;
@@ -377,6 +333,57 @@ export class AutoRunner {
     await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
       if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
     });
+  }
+
+  /** Why a Ready Task is not starting this pass, or undefined when nothing holds it back. */
+  private async holdReasonFor(task: TaskRow, scan: SkipScan): Promise<string | undefined> {
+    const { master, ceiling, gate } = scan;
+    if (task.state !== 'ready' || scan.dependencyBlocked.has(task.id)) return undefined;
+    if (!master) return 'Auto-Runner disabled';
+    const workspace = task.workspaceId == null ? undefined : scan.workspacesById.get(task.workspaceId);
+    if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return 'workspace disabled';
+    const targetWait = gate.waitInfo(task);
+    if (targetWait !== undefined) return targetWaitReason(targetWait);
+    if (gate.targetOf(task) === undefined) {
+      const cap = resolveCap(workspace?.maxConcurrentAttempts, ceiling);
+      const workspaceRunning = task.workspaceId == null ? 0 : (scan.runningByWorkspace.get(task.workspaceId) ?? 0) - (gate.runningKubernetesByWorkspace.get(task.workspaceId) ?? 0);
+      if (scan.localRunning >= ceiling || workspaceRunning >= cap) return 'at capacity';
+    }
+    if (this.gitBreaker && !this.gitBreaker.allows(repoKey(task.workingDir))) {
+      this.recordWaiting(task.id);
+      return 'git workspace-prep backoff (repeated failures on this repo)';
+    }
+    const baseReason = await this.epicBaseReason(task, scan.missingThisPass);
+    if (baseReason !== undefined) return baseReason;
+    const key = directContextKey(task);
+    const holder = key ? scan.occupied.get(key) : undefined;
+    if (!holder) return undefined;
+    this.recordWaiting(task.id);
+    return `Work Context held by task ${holder.id} (${holder.state})`;
+  }
+
+  /** Skip reason from the Epic integration branch's readiness; escalates once it has been missing past the grace period. */
+  private async epicBaseReason(task: TaskRow, missingThisPass: Map<number, number>): Promise<string | undefined> {
+    const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
+    switch (baseGate) {
+      case 'ready':
+        return undefined;
+      case 'stale':
+        return `integration branch ${task.baseBranch} behind its base (refresh pending)`;
+      case 'missing': {
+        if (!hasAssignedEpicBase(task)) return 'integration branch missing';
+        const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
+        if (this.clock() - since < this.missingEpicBaseGraceMs) {
+          missingThisPass.set(task.id, since);
+          return 'integration branch missing';
+        }
+        const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+        await this.runner.escalateUnspawned(task.id, reason);
+        return `${reason}, escalated to human`;
+      }
+      default:
+        return baseGate satisfies never;
+    }
   }
 
   private async fillSlots(
