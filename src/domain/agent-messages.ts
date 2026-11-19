@@ -74,6 +74,56 @@ export interface AgentMessageThread {
   participants: AgentMessageThreadParticipant[];
 }
 
+interface ThreadBuildContext {
+  taskById: ReadonlyMap<number, { harness: string | null; trackerParent: TrackerRef | null; model: string | null; state: TaskState; workspaceId: number | null } & Parameters<typeof taskDisplayTitle>[0]>;
+  latestAttempt: ReadonlyMap<number | null, { number: number; sends: number }>;
+  running: ReadonlySet<number | null>;
+  lastSent: ReadonlyMap<string, number>;
+  workspaceInfo: ThreadQuery['workspaceInfo'];
+}
+
+type ThreadTask = NonNullable<ReturnType<ThreadBuildContext['taskById']['get']>>;
+
+function taskFields(t: ThreadTask | undefined): Pick<AgentMessageThreadParticipant, 'title' | 'harness' | 'epicId' | 'model' | 'state'> {
+  return {
+    title: t ? taskDisplayTitle(t) : null,
+    harness: t?.harness ?? null,
+    epicId: t?.trackerParent ?? null,
+    model: t?.model ?? null,
+    state: t?.state ?? null,
+  };
+}
+
+function buildParticipant(id: number, threadId: string, threadWorkspace: number, ctx: ThreadBuildContext): AgentMessageThreadParticipant {
+  const t = ctx.taskById.get(id);
+  const attempt = ctx.latestAttempt.get(id);
+  return {
+    taskId: id,
+    ...taskFields(t),
+    deleted: t === undefined,
+    betweenAttempts: t !== undefined && t.state === 'working' && !ctx.running.has(id),
+    attemptNumber: attempt?.number ?? null,
+    sends: attempt?.sends ?? 0,
+    sendCap: ctx.workspaceInfo.get(t?.workspaceId ?? threadWorkspace)?.sendCap ?? 0,
+    lastMessageAt: ctx.lastSent.get(`${threadId}:${id}`) ?? null,
+  };
+}
+
+function buildThread(threadId: string, thread: PresentedAgentMessage[], ctx: ThreadBuildContext): AgentMessageThread {
+  const threadWorkspace = thread[0]?.workspaceId ?? 0;
+  const participantIds = new Set(thread.flatMap((m) => [m.senderTaskId, ...m.recipients.map((r) => r.taskId)]));
+  const participants = [...participantIds].map((id) => buildParticipant(id, threadId, threadWorkspace, ctx));
+  return {
+    threadId,
+    workspaceId: threadWorkspace,
+    workspaceName: ctx.workspaceInfo.get(threadWorkspace)?.name ?? '',
+    latestAt: thread.at(-1)?.createdAt ?? 0,
+    live: participants.some((p) => ctx.running.has(p.taskId)),
+    messages: thread,
+    participants,
+  };
+}
+
 export interface ThreadQuery {
   workspaceIds: readonly number[];
   /** Display name and resolved send cap per Workspace id. */
@@ -259,42 +309,8 @@ export class AgentMessageStore {
       if (list) list.push(m);
       else byThread.set(m.threadId, [m]);
     }
-    const threads = page.map((threadId): AgentMessageThread => {
-      const thread = byThread.get(threadId) ?? [];
-      const seen = new Set<number>();
-      const threadWorkspace = thread[0]?.workspaceId ?? 0;
-      const participants: AgentMessageThreadParticipant[] = [];
-      for (const m of thread) {
-        for (const id of [m.senderTaskId, ...m.recipients.map((r) => r.taskId)]) {
-          if (seen.has(id)) continue;
-          seen.add(id);
-          const t = taskById.get(id);
-          participants.push({
-            taskId: id,
-            title: t ? taskDisplayTitle(t) : null,
-            harness: t?.harness ?? null,
-            epicId: t?.trackerParent ?? null,
-            deleted: t === undefined,
-            model: t?.model ?? null,
-            state: t?.state ?? null,
-            betweenAttempts: t !== undefined && t.state === 'working' && !running.has(id),
-            attemptNumber: latestAttempt.get(id)?.number ?? null,
-            sends: latestAttempt.get(id)?.sends ?? 0,
-            sendCap: query.workspaceInfo.get(t?.workspaceId ?? threadWorkspace)?.sendCap ?? 0,
-            lastMessageAt: lastSent.get(`${threadId}:${id}`) ?? null,
-          });
-        }
-      }
-      return {
-        threadId,
-        workspaceId: threadWorkspace,
-        workspaceName: query.workspaceInfo.get(threadWorkspace)?.name ?? '',
-        latestAt: thread.at(-1)?.createdAt ?? 0,
-        live: participants.some((p) => running.has(p.taskId)),
-        messages: thread,
-        participants,
-      };
-    });
+    const ctx: ThreadBuildContext = { taskById, latestAttempt, running, lastSent, workspaceInfo: query.workspaceInfo };
+    const threads = page.map((threadId) => buildThread(threadId, byThread.get(threadId) ?? [], ctx));
     return { threads, total, totalMessages };
   }
 
