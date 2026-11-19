@@ -654,7 +654,8 @@ describe('escalation-routes', () => {
         expect(closed.body).toMatchObject({ state: 'cancelled', escalationReason: null });
 
         await waitFor(async () => (existsSync(session.worktreePath!) ? undefined : true));
-        expect(git(repoDir, 'branch', '--list', run.branch)).toBe('');
+        // The worktree goes before the branch inside one locked operation, so wait on the branch itself.
+        await waitFor(async () => (git(repoDir, 'branch', '--list', run.branch) === '' ? true : undefined));
         await waitFor(async () => ((await server.app.ctx.sessions.get(run.sessionRowId)).status === 'retired' ? true : undefined));
         expect(git(repoDir, 'status', '--porcelain')).toBe('');
       });

@@ -34,8 +34,13 @@ describe('the bundled workflows', () => {
     const id = created.body.id as number;
     expect((await server.api('POST', `/api/tasks/${id}/run`)).status).toBe(201);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'done');
-    const { body } = await server.api('GET', `/api/tasks/${id}/workflow-steps`);
-    return { id, steps: body.steps };
+    // Cleanup steps run after the Task completes, so `done` alone does not mean the branch is retired yet.
+    let body: { cleanupIds: string[]; steps: { stepId: string; outcome: string | null }[] } = { cleanupIds: [], steps: [] };
+    await waitFor(async () => {
+      body = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body;
+      return body.cleanupIds.every((cleanupId) => body.steps.some((s) => s.stepId === cleanupId && s.outcome !== null));
+    });
+    return { id, steps: body.steps as { stepId: string; outcome: string }[] };
   };
   const outcomes = (steps: { stepId: string; outcome: string }[]): Record<string, string> => Object.fromEntries(steps.map((s) => [s.stepId, s.outcome]));
 
