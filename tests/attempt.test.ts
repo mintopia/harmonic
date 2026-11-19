@@ -12,6 +12,9 @@ import { eq } from 'drizzle-orm';
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resolveGuardrails } from '../src/domain/setting-override.js';
+import { pricesForHarness } from '../src/domain/pricing.js';
+import { failureReasonKey, failuresByReason, isExecutionFailure, type FailedAttempt } from '../src/domain/attempt-failure.js';
 
 describe('attempt-log', () => {
   describe('GET /api/attempts/:id/log (issue #242)', () => {
@@ -385,5 +388,143 @@ describe('attempt-timeline-route', () => {
       expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextTokens: 250_000 });
       for (const removed of ['steps', 'verifierStatuses', 'verifiedSha']) expect(rest.body.attempts[0]).not.toHaveProperty(removed);
     });
+  });
+});
+
+describe('AttemptStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
+  let dir: string;
+  let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
+  let tasks: TaskService;
+  let runStore: AttemptStore;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
+    asyncDb = await openAsyncDb(dir);
+    await seedWorkspace(asyncDb);
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    runStore = new AttemptStore(asyncDb);
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('captures the effective Guardrail config + price table onto the Run at start', async () => {
+    const task = await tasks.create({ prompt: 'snapshot me', state: 'ready' });
+    const config = baselineConfig();
+    const snapshot = {
+      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
+      priceTable: pricesForHarness(config.harnesses.claude),
+    };
+
+    const run = await runStore.create(task.id, { guardrails: snapshot });
+
+    expect(JSON.parse(run.guardrailConfig!).budget.wallClockMinutes).toBe(60);
+    expect(JSON.parse(run.priceTable!)['claude-sonnet-5']).toBeDefined();
+  });
+
+  it('is frozen: a later config change does not retroactively alter the stored snapshot', async () => {
+    const task = await tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
+    const config = baselineConfig();
+    const originalSnapshot = {
+      guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null, toolTimeoutMinutes: null }, config),
+      priceTable: pricesForHarness(config.harnesses.claude),
+    };
+
+    const run = await runStore.create(task.id, { guardrails: originalSnapshot });
+    const originalPriceTable = run.priceTable;
+
+    const laterPrices = { 'claude-sonnet-5': { input: 999, output: 999, cacheRead: 999, cacheWrite: 999 } };
+    expect(laterPrices['claude-sonnet-5']).not.toEqual(pricesForHarness(config.harnesses.claude)['claude-sonnet-5']);
+
+    const refetched = await runStore.get(run.id);
+    expect(refetched.priceTable).toBe(originalPriceTable);
+    expect(JSON.parse(refetched.priceTable!)['claude-sonnet-5']).toEqual(pricesForHarness(config.harnesses.claude)['claude-sonnet-5']);
+  });
+});
+
+describe('AttemptStore.markInterrupted also fails an orphaned attempt\'s still-running steps', () => {
+  let dir: string;
+  let db: AsyncDbHandle;
+  let settingsStore: SettingsStore;
+  let tasks: TaskService;
+  let attempts: AttemptStore;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-steps-'));
+    db = await openAsyncDb(dir);
+    await seedWorkspace(db);
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(db, () => baselineConfig(), allWorkspaces(db, settingsStore));
+    attempts = new AttemptStore(db);
+  });
+
+  afterEach(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('fails the orphaned running attempt', async () => {
+    const task = await tasks.create({ prompt: 'crash mid-implementation', state: 'ready' });
+    const run = await attempts.create(task.id);
+    await attempts.addAgentDuration(run.id, 25);
+
+    const orphans = await attempts.markInterrupted();
+
+    expect(orphans.map((attempt) => attempt.id)).toEqual([run.id]);
+    expect(await attempts.get(run.id)).toMatchObject({ state: 'failed', reason: 'process-death', agentDurationMs: null });
+  });
+});
+
+describe('isExecutionFailure', () => {
+  it('counts a failed Run as an execution failure', () => {
+    expect(isExecutionFailure({ state: 'failed' })).toBe(true);
+  });
+
+  it('does not treat completed, cancelled, or still-running Runs as failures', () => {
+    expect(isExecutionFailure({ state: 'completed' })).toBe(false);
+    expect(isExecutionFailure({ state: 'cancelled' })).toBe(false);
+    expect(isExecutionFailure({ state: 'running' })).toBe(false);
+  });
+});
+
+describe('failureReasonKey', () => {
+  it("uses the Attempt's disposition-kind reason when present (ADR-0001 #388 S-E)", () => {
+    expect(failureReasonKey({ attemptReason: 'escalate', detailReason: 'boom' })).toBe('escalate');
+    expect(failureReasonKey({ attemptReason: 'guardrail-trip', detailReason: null })).toBe('guardrail-trip');
+  });
+
+  it("folds an 'interrupted' reason into process-death when no Attempt disposition exists", () => {
+    expect(failureReasonKey({ attemptReason: null, detailReason: 'interrupted' })).toBe('process-death');
+  });
+
+  it('buckets any other free-text reason as a generic error, and a bare failure as unknown', () => {
+    expect(failureReasonKey({ attemptReason: null, detailReason: 'some unique error message' })).toBe('failed');
+    expect(failureReasonKey({ attemptReason: null, detailReason: null })).toBe('unknown');
+  });
+});
+
+describe('failuresByReason', () => {
+  it('counts execution failures by reason bucket, collapsing free text via the Attempt disposition', () => {
+    const failures: FailedAttempt[] = [
+      { attemptReason: 'failed', detailReason: 'epic branch missing' },
+      { attemptReason: 'failed', detailReason: 'a totally different message' },
+      { attemptReason: 'process-death', detailReason: 'interrupted' },
+      { attemptReason: null, detailReason: 'interrupted' },
+      { attemptReason: 'guardrail-trip', detailReason: 'budget: 60m' },
+      { attemptReason: null, detailReason: null },
+    ];
+    expect(failuresByReason(failures)).toEqual({
+      failed: 2,
+      'process-death': 2,
+      'guardrail-trip': 1,
+      unknown: 1,
+    });
+  });
+
+  it('returns an empty map for no failures', () => {
+    expect(failuresByReason([])).toEqual({});
   });
 });

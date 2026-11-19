@@ -25,24 +25,17 @@ describe('activeExecutionDurationMs', () => {
 });
 
 describe('percentile', () => {
-  it('returns the median (p50) with linear interpolation on an even-length set', () => {
-    expect(percentile([10, 20, 30, 40], 50)).toBe(25);
-  });
-
-  it('returns the middle value on an odd-length set', () => {
-    expect(percentile([10, 20, 30], 50)).toBe(20);
+  it.each([
+    ['returns the median (p50) with linear interpolation on an even-length set', [10, 20, 30, 40], 50, 25],
+    ['returns the middle value on an odd-length set', [10, 20, 30], 50, 20],
+    ['ignores input order', [40, 10, 30, 20], 50, 25],
+    ['returns the sole value for a single-element set', [7], 95, 7],
+  ])('%s', (_name, values, p, expected) => {
+    expect(percentile(values, p)).toBe(expected);
   });
 
   it('interpolates the p95', () => {
     expect(percentile([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 95)).toBeCloseTo(95, 10);
-  });
-
-  it('ignores input order', () => {
-    expect(percentile([40, 10, 30, 20], 50)).toBe(25);
-  });
-
-  it('returns the sole value for a single-element set', () => {
-    expect(percentile([7], 95)).toBe(7);
   });
 });
 
