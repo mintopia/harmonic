@@ -60,13 +60,9 @@ tests/github-deps.test.ts
 tests/graph-layout.test.ts
 tests/graph-model.test.ts
 tests/graph-view.test.ts
-tests/guardrail-budget-model.test.ts
 tests/guardrail-budget.test.ts
 tests/guardrail-config.test.ts
-tests/guardrail-events.test.ts
-tests/guardrail-progress.test.ts
-tests/guardrail-tool-timeout.test.ts
-tests/guardrail-trip-model.test.ts
+tests/guardrail-signals.test.ts
 tests/heatmap-model.test.ts
 tests/id-format.test.ts
 tests/inherit-field-model.test.ts
