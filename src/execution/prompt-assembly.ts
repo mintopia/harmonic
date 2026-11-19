@@ -1,7 +1,7 @@
 import { findInterpolations, interpolate, type ExpressionContext } from '../domain/workflow-expression.js';
 import { CRITIC_VERDICT_CONTRACT, READ_ONLY_RESTRAINT, type EnginePrompts } from '../domain/bundled-prompts.js';
 import type { ClassifierInput } from '../domain/route-classifier.js';
-import { codeIndexRepoGuidance, expandIncludes, fillTemplate, renderPrompt, type DriveFields } from './prompt-template.js';
+import { codeIndexRepoGuidance, expandIncludes, fillTemplate, renderPrompt } from './prompt-template.js';
 
 const criticRole = (prompts: EnginePrompts): string => renderPrompt('criticRole', prompts, { readOnlyRestraint: READ_ONLY_RESTRAINT });
 
@@ -108,62 +108,7 @@ export function renderEpicRefreshPrompt(
   });
 }
 
-export interface BuildCriticPromptArgs {
-  /** The operator's configured critic prompt; supports the Drive Prompt's
-   * `{taskId}/{skill}/{ref}/{url}/{title}/{description}` interpolation. */
-  operatorPrompt: string;
-  fields: DriveFields;
-  /** The candidate revision the worktree is checked out at. */
-  verifiedHeadOid: string;
-  /** The base revision the candidate diverged from; absent ⇒ the critic reviews the candidate alone. */
-  baseOid?: string;
-  /** True when the worktree still carries uncommitted work on top of {@link verifiedHeadOid}, pending a
-   * pre-merge commit — the true candidate is the working tree, not the `verifiedHeadOid` commit alone. */
-  dirty?: boolean;
-  prompts: EnginePrompts;
-}
-
-/** Build the critic's review prompt: operator prompt, revision block, restraint instruction, output contract. Pure, so the settings preview renders the same compiled prompt. */
-export function buildCriticPrompt({
-  operatorPrompt,
-  fields,
-  verifiedHeadOid,
-  baseOid,
-  dirty,
-  prompts,
-}: BuildCriticPromptArgs): string {
-  const hasTicket = fields.ref.trim() !== '' || fields.url.trim() !== '';
-  const interpolated = fillTemplate(expandIncludes(operatorPrompt, prompts), fields);
-  const spec = renderPrompt(hasTicket ? 'criticSpecTicket' : 'criticSpecInstructions', prompts);
-  const ticketFirst = renderPrompt(hasTicket ? 'criticTicketFirst' : 'criticInstructionsFirst', prompts);
-  const workingTreeNote = dirty
-    ? ` ${renderPrompt('criticWorkingTreeNote', prompts, { head: verifiedHeadOid, base: baseOid ?? verifiedHeadOid })}`
-    : '';
-  const revisionCode =
-    baseOid && baseOid === verifiedHeadOid && !dirty
-      ? 'criticRevisionIdentical'
-      : baseOid
-        ? 'criticRevisionDiff'
-        : 'criticRevisionAlone';
-  const revisionBlock = renderPrompt(revisionCode, prompts, {
-    ticketFirst,
-    spec,
-    head: verifiedHeadOid,
-    base: baseOid ?? '',
-    workingTreeNote,
-  });
-  return `${interpolated}
-
-${revisionBlock}
-
-${criticRole(prompts)}
-
-${renderPrompt('criticSecurity', prompts)}
-
-${CRITIC_VERDICT_CONTRACT}`;
-}
-
-const FINDINGS_NOTE = 'You may add an optional "findings" key to that object: an array of short strings, one per concrete problem you found.';
+const FINDINGS_NOTE ='You may add an optional "findings" key to that object: an array of short strings, one per concrete problem you found.';
 
 export const PROMPT_SEGMENT_SOURCES = ['operator', 'engine'] as const;
 

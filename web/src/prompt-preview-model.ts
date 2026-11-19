@@ -1,6 +1,5 @@
-import type { EnginePrompts } from '../../src/domain/bundled-prompts.js';
 import type { ClassifierInput } from '../../src/domain/route-classifier.js';
-import { buildCriticPrompt, renderAgentPrompt } from '../../src/execution/prompt-assembly.js';
+import { renderAgentPrompt } from '../../src/execution/prompt-assembly.js';
 import type { DriveFields } from '../../src/execution/prompt-template.js';
 
 /** Illustrative values for the `{taskId}/{skill}/{ref}/{url}/{title}/{description}` tokens. */
@@ -45,9 +44,6 @@ export interface LabeledPreview {
   text: string;
 }
 
-const SAMPLE_VERIFIED_HEAD_OID = 'ec5ed1f1edead000000000000000000000000000';
-const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
-
 /** One interpolation token a prompt editor offers. `core` tokens — the Task's own
  * identity (`{taskId}`, `{title}`, `{description}`) — are always available on a
  * surface and are grouped first; the rest are context tokens that depend on the
@@ -69,16 +65,6 @@ export const DRIVE_PLACEHOLDERS: Placeholder[] = [
   { token: '{ref}', desc: 'issue number' },
   { token: '{url}', desc: 'issue URL' },
 ];
-
-export function compileEpicCriticPreview(prompt: string, prompts: EnginePrompts): string {
-  return buildCriticPrompt({
-    operatorPrompt: prompt,
-    fields: SAMPLE_DRIVE_FIELDS,
-    verifiedHeadOid: SAMPLE_VERIFIED_HEAD_OID,
-    baseOid: SAMPLE_BASE_OID,
-    prompts,
-  });
-}
 
 export const SAMPLE_CLASSIFIER_INPUT: ClassifierInput = {
   title: SAMPLE_DRIVE_FIELDS.title,

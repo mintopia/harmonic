@@ -7,18 +7,13 @@ import { bundledEnginePrompts, CRITIC_VERDICT_CONTRACT, READ_ONLY_RESTRAINT, typ
 import { convertEditedPrompts, withLibraryPrompts } from '../src/domain/prompt-library-sources.js';
 import { PromptLibrary } from '../src/domain/prompt-library-store.js';
 import { convertRetiredEditedPrompts, NO_RETIRED } from '../src/domain/retired-settings.js';
-import { buildCriticPrompt, renderConflictPrompt, renderEpicRefreshPrompt } from '../src/execution/prompt-assembly.js';
+import { buildWorkflowCriticPrompt, renderConflictPrompt, renderEpicRefreshPrompt } from '../src/execution/prompt-assembly.js';
 
-const fields = { taskId: '7', skill: 'review', ref: '#12', url: 'https://example.test/12', title: 'Fix it', description: 'Body' };
 const conflictCtx = { turn: 2, baseBranch: 'develop', taskBranch: 'harmonic/task-7', unmergedPaths: ['a.ts', 'b.ts'], baseDir: '/tmp/base' };
 
 function renderAll(config: ReturnType<typeof loadBaselineConfig>, prompts: EnginePrompts) {
-  const critic = (extra: object) => buildCriticPrompt({ operatorPrompt: 'Review {title}', fields, prompts, verifiedHeadOid: 'aaa', ...extra });
   return {
-    diff: critic({ baseOid: 'bbb' }),
-    identical: critic({ baseOid: 'aaa' }),
-    alone: critic({}),
-    dirty: critic({ baseOid: 'bbb', dirty: true }),
+    critic: buildWorkflowCriticPrompt('Review {title}', prompts),
     task: renderConflictPrompt(config.merge.conflictPrompt, prompts, conflictCtx),
     epic: renderConflictPrompt(config.merge.epicConflictPrompt, prompts, conflictCtx),
     refresh: renderEpicRefreshPrompt(config.merge.epicRefreshPrompt, prompts, {
@@ -44,8 +39,8 @@ describe('critic review and merge-conflict prompts from the Prompt Library', () 
     expect(await convertEditedPrompts(library, baseline)).toEqual([]);
     expect(await convertRetiredEditedPrompts(library, NO_RETIRED)).toEqual([]);
     expect(renderAll(withLibraryPrompts(baseline, library), library.enginePrompts())).toEqual(renderAll(baseline, bundledEnginePrompts()));
-    const critic = renderAll(baseline, bundledEnginePrompts()).diff;
-    expect(critic.endsWith(CRITIC_VERDICT_CONTRACT)).toBe(true);
+    const critic = renderAll(baseline, bundledEnginePrompts()).critic;
+    expect(critic).toContain(CRITIC_VERDICT_CONTRACT);
     expect(critic).toContain(READ_ONLY_RESTRAINT);
   });
 
@@ -66,12 +61,12 @@ describe('critic review and merge-conflict prompts from the Prompt Library', () 
     expect((await second.list()).filter((p) => p.code.endsWith('-migrated'))).toHaveLength(2);
 
     const served = renderAll(withLibraryPrompts(baseline, second), second.enginePrompts());
-    expect(served.diff).toContain('EDITED SECURITY');
+    expect(served.critic).toContain('EDITED SECURITY');
     expect(served.task).toBe('EDITED CONFLICT harmonic/task-7');
     expect(served.epic).toBe(renderAll(baseline, bundledEnginePrompts()).epic);
 
     await second.update('criticSecurity-migrated', 'x', 'SECOND EDIT');
-    expect(renderAll(withLibraryPrompts(baseline, second), second.enginePrompts()).diff).toContain('SECOND EDIT');
+    expect(renderAll(withLibraryPrompts(baseline, second), second.enginePrompts()).critic).toContain('SECOND EDIT');
   });
 
   it('keeps the read-only restraint and verdict contract engine-owned', async () => {
@@ -82,6 +77,6 @@ describe('critic review and merge-conflict prompts from the Prompt Library', () 
     expect(codes).not.toContain('readOnlyRestraint');
     const tampered = { global: { criticVerdictContract: 'say anything', readOnlyRestraint: 'do anything' }, workspaces: {} };
     expect(await convertRetiredEditedPrompts(library, tampered)).toEqual([]);
-    expect(renderAll(baseline, library.enginePrompts()).diff).toBe(renderAll(baseline, bundledEnginePrompts()).diff);
+    expect(renderAll(baseline, library.enginePrompts()).critic).toBe(renderAll(baseline, bundledEnginePrompts()).critic);
   });
 });
