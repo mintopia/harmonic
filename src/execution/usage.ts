@@ -146,35 +146,50 @@ export function collectUsage(input: CollectUsageInput): AttemptUsage | null {
   });
 
   const hasSubagents = (parsed?.tree.children.length ?? 0) > 0;
-  let models =
-    !hasSubagents && input.promptResult && collector?.modelsFromPromptResult
-      ? collector.modelsFromPromptResult(input.promptResult)
-      : {};
-  if (Object.keys(models).length === 0) {
-    if (parsed && Object.keys(parsed.usage.models).length > 0) {
-      models = parsed.usage.models;
-    } else {
-      const file = sessionLogFile(input);
-      models = collector && file ? collector.modelsFromSessionLog(file, input.sessionId) : {};
-    }
-  }
-  const agents = parsed ? agentsFromTree(parsed.tree) : undefined;
+  const models = selectModels(input, parsed, hasSubagents);
+  const hasModels = Object.keys(models).length > 0;
+  const agents = agentsField(parsed);
   const attribution = parsed?.turns ? attributeTurnTokens(parsed.turns, input.prices) : undefined;
   const toolCalls = tallyToolCalls(input.events ?? [], (payload) => collector?.toolName(payload) ?? null);
 
-  if (!acpTotals && Object.keys(models).length === 0) return null;
+  if (!acpTotals && !hasModels) return null;
   // ACP's prompt-result `usage` sums input+cache across every internal round-trip
   // of an agentic turn, so it over-counts window occupancy on multi-tool turns.
   const contextTokens = parsed?.tree.contextTokens ?? contextInputTokens(input.promptResult?.usage);
   return {
     models,
-    ...(agents && Object.keys(agents).length > 0 ? { agents } : {}),
+    ...agents,
     ...(attribution ?? {}),
     totals: hasSubagents ? sumModels(models) : acpTotals ?? sumModels(models),
     toolCalls,
     ...(contextTokens !== null ? { contextTokens } : {}),
-    source: acpTotals && Object.keys(models).length > 0 ? 'combined' : acpTotals ? 'acp' : 'session-log',
+    source: usageSource(acpTotals !== null, hasModels),
   };
+}
+
+const agentsField = (parsed: ParsedSession | null | undefined): Pick<AttemptUsage, 'agents'> => {
+  const agents = parsed ? agentsFromTree(parsed.tree) : undefined;
+  return agents && hasEntries(agents) ? { agents } : {};
+};
+
+const hasEntries = (models: Record<string, ModelUsage>): boolean => Object.keys(models).length > 0;
+
+/**
+ * Per-model split by authority: the prompt result's own attribution (unless
+ * Subagents ran, which it misses), then the parsed session, then the raw log.
+ */
+function selectModels(input: CollectUsageInput, parsed: ParsedSession | null | undefined, hasSubagents: boolean): Record<string, ModelUsage> {
+  const collector = adapterFor(input.harnessId).usage;
+  const fromPrompt = !hasSubagents && input.promptResult && collector?.modelsFromPromptResult ? collector.modelsFromPromptResult(input.promptResult) : {};
+  if (hasEntries(fromPrompt)) return fromPrompt;
+  if (parsed && hasEntries(parsed.usage.models)) return parsed.usage.models;
+  const file = sessionLogFile(input);
+  return collector && file ? collector.modelsFromSessionLog(file, input.sessionId) : {};
+}
+
+function usageSource(hasAcpTotals: boolean, hasModels: boolean): AttemptUsage['source'] {
+  if (!hasAcpTotals) return 'session-log';
+  return hasModels ? 'combined' : 'acp';
 }
 
 /**
@@ -241,12 +256,7 @@ export function attributeTurnTokens(
 export function agentsFromTree(tree: ProcessNode): Record<string, ModelUsage> {
   const agents: Record<string, ModelUsage> = {};
   const walk = (node: ProcessNode): void => {
-    const bucket = (agents[node.name] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-    bucket.inputTokens += node.usage.inputTokens;
-    bucket.outputTokens += node.usage.outputTokens;
-    bucket.cacheReadTokens += node.usage.cacheReadTokens;
-    bucket.cacheWriteTokens += node.usage.cacheWriteTokens;
-    if (node.usage.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + node.usage.aiUnits;
+    addModelUsage((agents[node.name] ??= emptyModelUsage()), node.usage);
     for (const child of node.children) walk(child);
   };
   walk(tree);
@@ -349,14 +359,8 @@ export function usageFromModels(models: Record<string, ModelUsage>): AttemptUsag
  * when some model reported them; never a fake zero.
  */
 export function foldModels(models: Record<string, ModelUsage>): ModelUsage {
-  const total: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-  for (const u of Object.values(models)) {
-    total.inputTokens += u.inputTokens;
-    total.outputTokens += u.outputTokens;
-    total.cacheReadTokens += u.cacheReadTokens;
-    total.cacheWriteTokens += u.cacheWriteTokens;
-    if (u.aiUnits !== undefined) total.aiUnits = (total.aiUnits ?? 0) + u.aiUnits;
-  }
+  const total = emptyModelUsage();
+  for (const u of Object.values(models)) addModelUsage(total, u);
   return total;
 }
 
@@ -379,15 +383,7 @@ export function dominantModel(models: Record<string, ModelUsage>): string | null
 }
 
 function sumModels(models: Record<string, ModelUsage>): AttemptUsage['totals'] {
-  const totals: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-  for (const usage of Object.values(models)) {
-    totals.inputTokens += usage.inputTokens;
-    totals.outputTokens += usage.outputTokens;
-    totals.cacheReadTokens += usage.cacheReadTokens;
-    totals.cacheWriteTokens += usage.cacheWriteTokens;
-    if (usage.aiUnits !== undefined) totals.aiUnits = (totals.aiUnits ?? 0) + usage.aiUnits;
-  }
-  return { ...totals, totalTokens: null };
+  return { ...foldModels(models), totalTokens: null };
 }
 
 /**
@@ -493,74 +489,54 @@ function addTotals(a: AttemptUsage['totals'], b: AttemptUsage['totals']): Attemp
   return sum;
 }
 
+type UsageTotals = NonNullable<AttemptUsage['totals']>;
+
+const emptyModelUsage = (): ModelUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+
+/** AI Units add only when the source reports them; never a fake zero. */
+function addModelUsage(target: ModelUsage, source: ModelUsage): void {
+  target.inputTokens += source.inputTokens;
+  target.outputTokens += source.outputTokens;
+  target.cacheReadTokens += source.cacheReadTokens;
+  target.cacheWriteTokens += source.cacheWriteTokens;
+  if (source.aiUnits !== undefined) target.aiUnits = (target.aiUnits ?? 0) + source.aiUnits;
+}
+
+function mergeBuckets(target: Record<string, ModelUsage>, source: Record<string, ModelUsage>): void {
+  for (const [key, usage] of Object.entries(source)) addModelUsage((target[key] ??= emptyModelUsage()), usage);
+}
+
+function accumulateTotals(acc: UsageTotals | null, totals: UsageTotals): UsageTotals {
+  const next = acc ?? { ...emptyModelUsage(), totalTokens: 0 };
+  addModelUsage(next, totals);
+  next.totalTokens = totals.totalTokens === null || next.totalTokens === null ? null : next.totalTokens + totals.totalTokens;
+  return next;
+}
+
+/** A cost survives only while every contributing bucket priced it. */
+function mergeAttribution(existing: ToolTokenUsage | undefined, added: ToolTokenUsage): ToolTokenUsage {
+  if (!existing) return { ...added };
+  existing.outputTokens += added.outputTokens;
+  if (existing.cost !== undefined && added.cost !== undefined) existing.cost += added.cost;
+  else if (added.cost === undefined) delete existing.cost;
+  return existing;
+}
+
 /** Merge run usages into one aggregate (task rollups, stats ranges). */
 export function mergeUsage(usages: AttemptUsage[]): AttemptUsage | null {
   if (usages.length === 0) return null;
   const merged: AttemptUsage = { models: {}, totals: null, toolCalls: {}, source: null };
-  let totals: AttemptUsage['totals'] = null;
+  let totals: UsageTotals | null = null;
   for (const usage of usages) {
-    for (const [model, mu] of Object.entries(usage.models)) {
-      const bucket = (merged.models[model] ??= {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-      });
-      bucket.inputTokens += mu.inputTokens;
-      bucket.outputTokens += mu.outputTokens;
-      bucket.cacheReadTokens += mu.cacheReadTokens;
-      bucket.cacheWriteTokens += mu.cacheWriteTokens;
-      if (mu.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + mu.aiUnits;
-    }
-    if (usage.totals) {
-      totals ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 };
-      totals.inputTokens += usage.totals.inputTokens;
-      totals.outputTokens += usage.totals.outputTokens;
-      totals.cacheReadTokens += usage.totals.cacheReadTokens;
-      totals.cacheWriteTokens += usage.totals.cacheWriteTokens;
-      totals.totalTokens =
-        usage.totals.totalTokens === null || totals.totalTokens === null
-          ? null
-          : totals.totalTokens + usage.totals.totalTokens;
-      if (usage.totals.aiUnits !== undefined) totals.aiUnits = (totals.aiUnits ?? 0) + usage.totals.aiUnits;
-    }
-    for (const [tool, count] of Object.entries(usage.toolCalls)) {
-      merged.toolCalls[tool] = (merged.toolCalls[tool] ?? 0) + count;
-    }
-    if (usage.agents) {
-      const agents = (merged.agents ??= {});
-      for (const [name, au] of Object.entries(usage.agents)) {
-        const bucket = (agents[name] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-        bucket.inputTokens += au.inputTokens;
-        bucket.outputTokens += au.outputTokens;
-        bucket.cacheReadTokens += au.cacheReadTokens;
-        bucket.cacheWriteTokens += au.cacheWriteTokens;
-        if (au.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + au.aiUnits;
-      }
-    }
+    mergeBuckets(merged.models, usage.models);
+    if (usage.totals) totals = accumulateTotals(totals, usage.totals);
+    for (const [tool, count] of Object.entries(usage.toolCalls)) merged.toolCalls[tool] = (merged.toolCalls[tool] ?? 0) + count;
+    if (usage.agents) mergeBuckets((merged.agents ??= {}), usage.agents);
     if (usage.toolTokens) {
       const toolTokens = (merged.toolTokens ??= {});
-      for (const [tool, attribution] of Object.entries(usage.toolTokens)) {
-        const bucket = toolTokens[tool];
-        if (!bucket) {
-          toolTokens[tool] = { ...attribution };
-          continue;
-        }
-        bucket.outputTokens += attribution.outputTokens;
-        if (bucket.cost !== undefined && attribution.cost !== undefined) bucket.cost += attribution.cost;
-        else if (attribution.cost === undefined) delete bucket.cost;
-      }
+      for (const [tool, attribution] of Object.entries(usage.toolTokens)) toolTokens[tool] = mergeAttribution(toolTokens[tool], attribution);
     }
-    if (usage.reasoning) {
-      if (!merged.reasoning) {
-        merged.reasoning = { ...usage.reasoning };
-        continue;
-      }
-      const reasoning = merged.reasoning;
-      reasoning.outputTokens += usage.reasoning.outputTokens;
-      if (reasoning.cost !== undefined && usage.reasoning.cost !== undefined) reasoning.cost += usage.reasoning.cost;
-      else if (usage.reasoning.cost === undefined) delete reasoning.cost;
-    }
+    if (usage.reasoning) merged.reasoning = mergeAttribution(merged.reasoning, usage.reasoning);
   }
   merged.totals = totals;
   return merged;
