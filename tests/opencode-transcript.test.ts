@@ -80,4 +80,46 @@ describe('opencode export → transcript events', () => {
     expect(exportEvents({})).toEqual([]);
     expect(exportEvents({ messages: 'nope' })).toEqual([]);
   });
+
+  it('omits ids and uses defaults when the export lacks them', () => {
+    const events = exportEvents({
+      messages: [
+        {
+          info: created(3),
+          parts: [
+            { type: 'tool', state: { status: 'completed', output: 'out' } },
+            { type: 'patch', files: [] },
+            { type: 'patch', files: ['/a/b.ts', 7], id: 4 },
+            { type: 'reasoning', text: '  ' },
+            { type: 'text', text: 5 },
+            { type: 'unknown' },
+            null,
+          ],
+        },
+        null,
+        { info: { role: 'assistant' }, parts: 'nope' },
+        { info: created(8) },
+      ],
+    });
+    expect(events.map((e) => e.payload)).toEqual([
+      {
+        sessionUpdate: 'tool_call',
+        title: 'Tool call',
+        status: 'completed',
+        _meta: { opencode: { toolName: 'Tool call' } },
+        content: [{ type: 'content', content: { type: 'text', text: 'out' } }],
+      },
+      { sessionUpdate: 'tool_call', title: 'patch', status: 'completed', _meta: { opencode: { toolName: 'patch' } } },
+      { sessionUpdate: 'tool_call', title: 'patch b.ts', status: 'completed', _meta: { opencode: { toolName: 'patch' } } },
+    ]);
+    expect(events.map((e) => [e.id, e.ts])).toEqual([[1, 3], [2, 3], [3, 3]]);
+  });
+
+  it('keeps only the most recent 2000 events', () => {
+    const parts = Array.from({ length: 2005 }, (_, i) => ({ type: 'text', text: `t${i}` }));
+    const events = exportEvents({ messages: [{ info: created(1), parts }] });
+    expect(events).toHaveLength(2000);
+    expect(events[0]!.id).toBe(6);
+    expect((events.at(-1)!.payload as any).content.text).toBe('t2004');
+  });
 });
