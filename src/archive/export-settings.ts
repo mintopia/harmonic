@@ -35,19 +35,26 @@ export type ExportWorkspaceOverrides = Pick<
   | 'exportS3SecretAccessKey'
 >;
 
-function resolveS3(global: AppConfig['export']['s3'], workspace: Partial<ExportWorkspaceOverrides> | undefined): ResolvedS3Settings | null {
-  const bucket = workspace?.exportS3Bucket ?? global.bucket;
+function resolveS3Credentials(
+  global: AppConfig['export']['s3'],
+  workspace: Partial<ExportWorkspaceOverrides>,
+): ResolvedS3Settings['credentials'] {
+  const workspaceKeys = (workspace.exportS3AccessKeyId ?? null) !== null || (workspace.exportS3SecretAccessKey ?? null) !== null;
+  const accessKeyId = workspaceKeys ? (workspace.exportS3AccessKeyId ?? null) : global.accessKeyId;
+  const secretAccessKey = workspaceKeys ? (workspace.exportS3SecretAccessKey ?? null) : global.secretAccessKey;
+  return accessKeyId !== null && secretAccessKey !== null ? { accessKeyId, secretAccessKey } : null;
+}
+
+function resolveS3(global: AppConfig['export']['s3'], workspace: Partial<ExportWorkspaceOverrides> = {}): ResolvedS3Settings | null {
+  const bucket = workspace.exportS3Bucket ?? global.bucket;
   if (bucket === null) return null;
-  const workspaceKeys = (workspace?.exportS3AccessKeyId ?? null) !== null || (workspace?.exportS3SecretAccessKey ?? null) !== null;
-  const accessKeyId = workspaceKeys ? (workspace?.exportS3AccessKeyId ?? null) : global.accessKeyId;
-  const secretAccessKey = workspaceKeys ? (workspace?.exportS3SecretAccessKey ?? null) : global.secretAccessKey;
   return {
-    endpoint: workspace?.exportS3Endpoint ?? global.endpoint,
-    region: workspace?.exportS3Region ?? global.region,
+    endpoint: workspace.exportS3Endpoint ?? global.endpoint,
+    region: workspace.exportS3Region ?? global.region,
     bucket,
-    prefix: workspace?.exportS3Prefix ?? global.prefix,
-    forcePathStyle: workspace?.exportS3ForcePathStyle ?? global.forcePathStyle,
-    credentials: accessKeyId !== null && secretAccessKey !== null ? { accessKeyId, secretAccessKey } : null,
+    prefix: workspace.exportS3Prefix ?? global.prefix,
+    forcePathStyle: workspace.exportS3ForcePathStyle ?? global.forcePathStyle,
+    credentials: resolveS3Credentials(global, workspace),
   };
 }
 
