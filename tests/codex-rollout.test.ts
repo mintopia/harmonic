@@ -91,9 +91,9 @@ describe('codex transcript events', () => {
     const response = { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'same' }] } };
     const event = { type: 'event_msg', payload: { type: 'agent_message', message: 'same' } };
     const other = { type: 'event_msg', payload: { type: 'agent_message', message: 'different' } };
-    expect(codex.transcript!.isDuplicateMessage(response, event)).toBe(true);
-    expect(codex.transcript!.isDuplicateMessage(response, other)).toBe(false);
-    expect(codex.transcript!.isDuplicateMessage(event, event)).toBe(false);
+    expect(codex.transcript!.isDuplicateMessage!(response, event)).toBe(true);
+    expect(codex.transcript!.isDuplicateMessage!(response, other)).toBe(false);
+    expect(codex.transcript!.isDuplicateMessage!(event, event)).toBe(false);
   });
 });
 

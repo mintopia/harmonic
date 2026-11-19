@@ -6,7 +6,7 @@ import { dominantModel, foldModels, usageFromModels, type ParsedSession, type Pr
 import { forEachYielding } from '../../reliability/yield.js';
 import { serializedTailReader, type HarnessAdapter, type ModelUsage, type SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
-import { mergeModelUsage, num } from './model-usage.js';
+import { mergeModelUsage, num, usageBucket } from './model-usage.js';
 import { datedLogFiles } from './session-files.js';
 import { asRecord, contentText, oneLine, timestamp, withTarget, type TranscriptLogEvent } from './transcript.js';
 
@@ -28,6 +28,56 @@ interface Rollout {
   scan: RolloutScan;
 }
 
+interface CumulativeTokens {
+  input: number;
+  cached: number;
+  output: number;
+}
+
+/** undefined for a blank or malformed line; a literal JSON `null` is a real (ignorable) entry. */
+function parseRolloutLine(line: string): any {
+  if (!line.trim()) return undefined;
+  try {
+    return JSON.parse(line);
+  } catch (err) {
+    logger.debug('codex: skipping a malformed rollout line', { error: err instanceof Error ? err.message : String(err) });
+    return undefined;
+  }
+}
+
+const turnContextModel = (entry: any): string | null =>
+  entry?.type === 'turn_context' && typeof entry.payload?.model === 'string' ? entry.payload.model : null;
+
+const tokenCountInfo = (entry: any): any => (entry?.type === 'event_msg' && entry.payload?.type === 'token_count' ? entry.payload.info : null);
+
+const isToolCall = (entry: any): boolean =>
+  entry?.type === 'response_item' &&
+  (entry.payload?.type === 'custom_tool_call' || entry.payload?.type === 'function_call') &&
+  typeof entry.payload?.name === 'string';
+
+const cumulativeTokens = (total: any): CumulativeTokens => ({
+  input: num(total.input_tokens),
+  cached: num(total.cached_input_tokens),
+  output: num(total.output_tokens),
+});
+
+/**
+ * One token_count's spend as a ModelUsage. Rollout input includes cached reads,
+ * hence the subtraction. Codex resets the cumulative counter on session resume:
+ * a shrinking counter means the entry is its own delta.
+ */
+function tokenDelta(current: CumulativeTokens, prev: CumulativeTokens): ModelUsage {
+  const reset = current.input < prev.input || current.cached < prev.cached || current.output < prev.output;
+  const base = reset ? { input: 0, cached: 0, output: 0 } : prev;
+  const cached = current.cached - base.cached;
+  return {
+    inputTokens: current.input - base.input - cached,
+    outputTokens: current.output - base.output,
+    cacheReadTokens: cached,
+    cacheWriteTokens: 0,
+  };
+}
+
 /**
  * Codex rollout format: `turn_context` names the model driving the turn;
  * `event_msg/token_count` carries the *cumulative* session usage, so each
@@ -45,7 +95,7 @@ class RolloutAcc implements LineAccumulator {
   private model: string | null = null;
   private contextTokens: number | null = null;
   private lastTool: string | null = null;
-  private prev = { input: 0, cached: 0, output: 0 };
+  private prev: CumulativeTokens = { input: 0, cached: 0, output: 0 };
   private tools: string[] = [];
   private readonly seenToolCalls = new Set<string>();
   readonly turns: UsageTurn[] = [];
@@ -56,83 +106,66 @@ class RolloutAcc implements LineAccumulator {
   }
 
   fold(line: string): void {
-    if (!line.trim()) return;
-    let entry: any;
-    try {
-      entry = JSON.parse(line);
-    } catch (err) {
-      logger.debug('codex: skipping a malformed rollout line', { error: err instanceof Error ? err.message : String(err) });
+    const entry = parseRolloutLine(line);
+    if (entry === undefined) return;
+    if (this.subagent && !this.started) this.foldBeforeStart(entry);
+    else this.foldEntry(entry);
+  }
+
+  /** A forked Subagent rollout replays its parent's history; only the last cumulative count survives as the baseline. */
+  private foldBeforeStart(entry: any): void {
+    const model = turnContextModel(entry);
+    if (model !== null) {
+      this.model = model;
       return;
     }
-    if (this.subagent && !this.started) {
-      if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
-        this.model = entry.payload.model;
-      } else if (entry?.type === 'event_msg' && entry.payload?.type === 'token_count') {
-        const total = entry.payload.info?.total_token_usage;
-        if (total) this.prev = { input: num(total.input_tokens), cached: num(total.cached_input_tokens), output: num(total.output_tokens) };
-      } else if (entry?.type === 'inter_agent_communication_metadata' && entry.payload?.trigger_turn === true) {
-        this.started = true;
-        this.tools = [];
-      }
+    const total = tokenCountInfo(entry)?.total_token_usage;
+    if (total) {
+      this.prev = cumulativeTokens(total);
+    } else if (entry?.type === 'inter_agent_communication_metadata' && entry.payload?.trigger_turn === true) {
+      this.started = true;
+      this.tools = [];
+    }
+  }
+
+  private foldEntry(entry: any): void {
+    const model = turnContextModel(entry);
+    if (model !== null) {
+      this.model = model;
       return;
     }
-    if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
-      this.model = entry.payload.model;
+    if (isToolCall(entry)) {
+      this.recordToolCall(entry.payload);
       return;
     }
-    if (
-      entry?.type === 'response_item' &&
-      (entry.payload?.type === 'custom_tool_call' || entry.payload?.type === 'function_call') &&
-      typeof entry.payload?.name === 'string'
-    ) {
-      const id = entry.payload.call_id ?? entry.payload.id;
-      if (typeof id !== 'string' || !this.seenToolCalls.has(id)) {
-        if (typeof id === 'string') this.seenToolCalls.add(id);
-        const namespace = typeof entry.payload.namespace === 'string' ? entry.payload.namespace : null;
-        const tool = namespace ? `${namespace}.${entry.payload.name}` : entry.payload.name;
-        this.tools.push(tool);
-        this.lastTool = tool;
-      }
-      return;
+    const info = tokenCountInfo(entry);
+    if (info?.total_token_usage) this.recordTokenCount(info);
+  }
+
+  private recordToolCall(payload: any): void {
+    const id = payload.call_id ?? payload.id;
+    if (typeof id === 'string') {
+      if (this.seenToolCalls.has(id)) return;
+      this.seenToolCalls.add(id);
     }
-    const info = entry?.type === 'event_msg' && entry.payload?.type === 'token_count' ? entry.payload.info : null;
-    const total = info?.total_token_usage;
-    if (!total) return;
+    const tool = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${payload.name}` : payload.name;
+    this.tools.push(tool);
+    this.lastTool = tool;
+  }
+
+  private recordTokenCount(info: any): void {
     if (typeof info.last_token_usage?.input_tokens === 'number') this.contextTokens = info.last_token_usage.input_tokens;
-    const input = num(total.input_tokens);
-    const cached = num(total.cached_input_tokens);
-    const output = num(total.output_tokens);
-    // Codex resets the cumulative counter on session resume: a shrinking
-    // counter means the entry is its own delta.
-    const reset = input < this.prev.input || cached < this.prev.cached || output < this.prev.output;
-    const delta = reset
-      ? { input, cached, output }
-      : { input: input - this.prev.input, cached: cached - this.prev.cached, output: output - this.prev.output };
+    const current = cumulativeTokens(info.total_token_usage);
     if (this.model) {
-      const bucket = (this.models[this.model] ??= {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-      });
-      bucket.inputTokens += delta.input - delta.cached;
-      bucket.cacheReadTokens += delta.cached;
-      bucket.outputTokens += delta.output;
-      this.turns.push({
-        model: this.model,
-        usage: {
-          inputTokens: delta.input - delta.cached,
-          outputTokens: delta.output,
-          cacheReadTokens: delta.cached,
-          cacheWriteTokens: 0,
-        },
-        tools: this.tools,
-      });
+      const usage = tokenDelta(current, this.prev);
+      const bucket = usageBucket(this.models, this.model);
+      bucket.inputTokens += usage.inputTokens;
+      bucket.cacheReadTokens += usage.cacheReadTokens;
+      bucket.outputTokens += usage.outputTokens;
+      this.turns.push({ model: this.model, usage, tools: this.tools });
     }
     this.tools = [];
-    this.prev.input = input;
-    this.prev.cached = cached;
-    this.prev.output = output;
+    this.prev = current;
   }
 
   snapshot(): RolloutScan {
@@ -200,6 +233,8 @@ function codexTailReader(input: { sessionLogDir?: string | undefined; cwd: strin
   });
 }
 
+const firstString = (...values: unknown[]): string | undefined => values.find((value): value is string => typeof value === 'string');
+
 function rolloutHeader(file: string): Pick<Rollout, 'id' | 'parentId' | 'name'> | null {
   try {
     const [line] = readFileSync(file, 'utf8').split('\n', 1);
@@ -211,16 +246,7 @@ function rolloutHeader(file: string): Pick<Rollout, 'id' | 'parentId' | 'name'> 
     return {
       id,
       parentId: typeof payload?.parent_thread_id === 'string' ? payload.parent_thread_id : null,
-      name:
-        typeof spawn?.agent_path === 'string'
-          ? spawn.agent_path
-          : typeof payload?.agent_path === 'string'
-            ? payload.agent_path
-            : typeof spawn?.agent_nickname === 'string'
-              ? spawn.agent_nickname
-              : typeof payload?.agent_nickname === 'string'
-                ? payload.agent_nickname
-                : 'subagent',
+      name: firstString(spawn?.agent_path, payload?.agent_path, spawn?.agent_nickname, payload?.agent_nickname) ?? 'subagent',
     };
   } catch (err) {
     logger.debug('codex: rollout header failed to parse', { file, error: err instanceof Error ? err.message : String(err) });
@@ -361,38 +387,52 @@ function codexCallTitle(qualified: string, args: unknown): string {
   return typeof label === 'string' && label ? `${qualified} ${oneLine(label)}` : withTarget(qualified, args);
 }
 
+type SessionUpdate = Record<string, unknown>;
+
+const textChunk = (sessionUpdate: string, text: string): SessionUpdate => ({ sessionUpdate, content: { type: 'text', text } });
+
+function messageUpdates(entry: unknown): SessionUpdate[] {
+  const message = responseMessage(entry) ?? eventMessage(entry);
+  return message === null ? [] : [textChunk('agent_message_chunk', message)];
+}
+
+// Each Codex reasoning summary is a whole markdown block, not a streaming
+// delta; the transcript coalescer concatenates same-variant chunks with no
+// separator, so a trailing blank line keeps consecutive summaries from
+// fusing into one run (`**A****B**`) when rendered as markdown.
+function reasoningUpdates(record: Record<string, unknown>, payload: Record<string, unknown>): SessionUpdate[] {
+  if (record.type !== 'response_item' || payload.type !== 'reasoning' || !Array.isArray(payload.summary)) return [];
+  return payload.summary
+    .map((part) => {
+      const block = asRecord(part);
+      return block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
+    })
+    .filter((text): text is string => typeof text === 'string' && text !== '')
+    .map((text) => textChunk('agent_thought_chunk', `${text}\n\n`));
+}
+
+function toolCallUpdates(record: Record<string, unknown>, payload: Record<string, unknown>): SessionUpdate[] {
+  if (record.type !== 'response_item' || (payload.type !== 'custom_tool_call' && payload.type !== 'function_call')) return [];
+  const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
+  const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
+  const callId = firstString(payload.call_id, payload.id) ?? qualified;
+  const input = payload.input ?? payload.arguments;
+  const title = isExecScript(name, input) ? codexExecTitle(input) : codexCallTitle(qualified, input);
+  return [{ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' }];
+}
+
 function transcriptEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
   const record = asRecord(entry);
   const payload = asRecord(record?.payload);
   if (!record || !payload) return [];
   const ts = timestamp(record.timestamp);
-  const events: TranscriptLogEvent[] = [];
-  const push = (update: Record<string, unknown>) => {
-    const id = firstId + events.length;
-    events.push({ id, seq: id, ts, type: 'session_update', payload: update });
-  };
-  const message = responseMessage(entry) ?? eventMessage(entry);
-  if (message !== null) push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } });
-  if (record.type === 'response_item' && payload.type === 'reasoning' && Array.isArray(payload.summary)) {
-    for (const part of payload.summary) {
-      const block = asRecord(part);
-      const text = block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
-      // Each Codex reasoning summary is a whole markdown block, not a streaming
-      // delta; the transcript coalescer concatenates same-variant chunks with no
-      // separator, so a trailing blank line keeps consecutive summaries from
-      // fusing into one run (`**A****B**`) when rendered as markdown.
-      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: `${text}\n\n` } });
-    }
-  }
-  if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
-    const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
-    const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
-    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : qualified;
-    const input = payload.input ?? payload.arguments;
-    const title = isExecScript(name, input) ? codexExecTitle(input) : codexCallTitle(qualified, input);
-    push({ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' });
-  }
-  return events;
+  return [...messageUpdates(entry), ...reasoningUpdates(record, payload), ...toolCallUpdates(record, payload)].map((update, index) => ({
+    id: firstId + index,
+    seq: firstId + index,
+    ts,
+    type: 'session_update',
+    payload: update,
+  }));
 }
 
 export const codexAdapter: HarnessAdapter = {
