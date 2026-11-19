@@ -156,6 +156,8 @@ const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true, colo
 const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 const workspaceSummariesListResponseSchema = listResponse('workspaces', workspaceSummarySchema);
 
+type WorkspaceUpdate = z.output<typeof updateWorkspaceInputSchema>;
+
 export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<TrackingContext, 'workspaces' | 'settingsStore' | 'trackerManager' | 'workspaceWatcher'> & Pick<AppContext, 'auth' | 'tasks' | 'archive' | 'workflows' | 'routeClassifier' | 'executionTargets'>): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
@@ -176,6 +178,63 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     const locals = overlay.flatMap((entry, index) => (entry.kind === 'local' ? [{ index, option: entry.modelOption }] : []));
     const [first] = modelOptionIssues(locals.map((l) => l.option), ctx.settingsStore.getGlobal().harnesses);
     if (first) throw new DomainError('validation', `modelOptions.${locals[first.index]!.index}.modelOption.${first.field}: ${first.message}`);
+  };
+
+  const assertRoutingLabelOverlay = (overlay: WorkspaceUpdate['routingLabels']) => {
+    if (!overlay) return;
+    const first = routingLabelOverlayIssues(overlay, ctx.settingsStore.getGlobal().routingLabels)[0];
+    if (first) {
+      const entry = overlay[first.index];
+      const label = entry?.kind === 'local' ? entry.routingLabel.label : '';
+      throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${routingLabelIssueMessage(first, label)}`);
+    }
+    const harnesses = ctx.settingsStore.getGlobal().harnesses;
+    overlay.forEach((entry, index) => {
+      if (entry.kind === 'local' && !harnesses[entry.routingLabel.harness]) {
+        throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
+      }
+    });
+  };
+
+  const assertWorkflowReferences = (body: WorkspaceUpdate) => {
+    if (!(body.workflowLabels || body.workflow || body.epicWorkflow)) return;
+    const global = ctx.settingsStore.getGlobal();
+    const first = workflowReferenceProblems(ctx.workflows, { workflow: body.workflow ?? null, epicWorkflow: body.epicWorkflow ?? null, overlay: body.workflowLabels ?? null, globals: global.workflowLabels })[0];
+    if (first) throw new DomainError('validation', first);
+  };
+
+  const assertWorkflowVarOverrides = async (workflowVars: WorkspaceUpdate['workflowVars']) => {
+    if (!workflowVars) return;
+    for (const [name, overrides] of Object.entries(workflowVars)) {
+      const entry = ctx.workflows.list().find((w) => w.name === name);
+      if (!entry) throw new DomainError('validation', `workflowVars.${name}: No workflow is named ${name}`);
+      const defaults = parseWorkflow((await ctx.workflows.getVersion(name, entry.version)).text).vars;
+      const first = validateVarOverrides(defaults, overrides)[0];
+      if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
+    }
+  };
+
+  const assertGuardrailBudget = (budget: WorkspaceUpdate['guardrailBudget']) => {
+    if (!budget) return;
+    const unpriced = unpricedModelsForCostCap(budget, ctx.settingsStore.getGlobal());
+    if (unpriced.length > 0) throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
+  };
+
+  /** The Workspace as it would be after the PATCH, for the cross-field workflow checks. */
+  const assertWorkflowAssignmentRefusals = async (current: WorkspaceRow, body: WorkspaceUpdate) => {
+    const pick = <K extends keyof WorkspaceRow & keyof WorkspaceUpdate>(key: K): WorkspaceRow[K] | NonNullable<WorkspaceUpdate[K]> | null =>
+      body[key] === undefined ? current[key] : (body[key] as NonNullable<WorkspaceUpdate[K]> | null);
+    const workflowLabels = body.workflowLabels === undefined ? current.workflowLabels : body.workflowLabels === null ? null : JSON.stringify(body.workflowLabels);
+    const name = body.name ?? current.name;
+    const global = ctx.settingsStore.getGlobal();
+    const directRefusal = directWorkspaceRefusal(ctx.workflows, { name, isolationMode: pick('isolationMode'), workflow: pick('workflow'), workflowLabels }, global);
+    if (directRefusal) throw new DomainError('validation', directRefusal);
+    const mixedRefusal = await workspaceMixedRefusal(
+      ctx.workflows,
+      { name, workingDir: body.workingDir ?? current.workingDir, codeRepository: pick('codeRepository'), workflow: pick('workflow'), workflowLabels },
+      global,
+    );
+    if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
   };
 
   /** A Workspace row plus its live Resolved Tracker; JSON-text override columns parsed back to the shape a client PATCHes. */
@@ -281,72 +340,18 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
       },
     },
     async (req) => {
-      const harnesses = ctx.settingsStore.getGlobal().harnesses;
-      if (req.body.routingLabels) {
-        const first = routingLabelOverlayIssues(req.body.routingLabels, ctx.settingsStore.getGlobal().routingLabels)[0];
-        if (first) {
-          const entry = req.body.routingLabels[first.index];
-          const label = entry?.kind === 'local' ? entry.routingLabel.label : '';
-          throw new DomainError('validation', `routingLabels.${first.index}.routingLabel.label: ${routingLabelIssueMessage(first, label)}`);
-        }
-        req.body.routingLabels.forEach((entry, index) => {
-          if (entry.kind === 'local' && !harnesses[entry.routingLabel.harness]) {
-            throw new DomainError('validation', `routingLabels.${index}.routingLabel.harness: harness '${entry.routingLabel.harness}' is not configured`);
-          }
-        });
-      }
-      if (req.body.workflowLabels || req.body.workflow || req.body.epicWorkflow) {
-        const global = ctx.settingsStore.getGlobal();
-        const first = workflowReferenceProblems(ctx.workflows, { workflow: req.body.workflow ?? null, epicWorkflow: req.body.epicWorkflow ?? null, overlay: req.body.workflowLabels ?? null, globals: global.workflowLabels })[0];
-        if (first) throw new DomainError('validation', first);
-      }
-      if (req.body.workflowVars) {
-        for (const [name, overrides] of Object.entries(req.body.workflowVars)) {
-          const entry = ctx.workflows.list().find((w) => w.name === name);
-          if (!entry) throw new DomainError('validation', `workflowVars.${name}: No workflow is named ${name}`);
-          const defaults = parseWorkflow((await ctx.workflows.getVersion(name, entry.version)).text).vars;
-          const first = validateVarOverrides(defaults, overrides)[0];
-          if (first) throw new DomainError('validation', `workflowVars.${name}.${first}`);
-        }
-      }
-      if (req.body.modelOptions) {
-        assertModelOptionOverlay(req.body.modelOptions);
-      }
-      if (req.body.guardrailBudget) {
-        const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.settingsStore.getGlobal());
-        if (unpriced.length > 0) {
-          throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
-        }
-      }
-      await assertWorkspaceExecutionTargets(await ctx.workspaces.get(req.params.id), req.body, {
+      const body = req.body;
+      assertRoutingLabelOverlay(body.routingLabels);
+      assertWorkflowReferences(body);
+      await assertWorkflowVarOverrides(body.workflowVars);
+      if (body.modelOptions) assertModelOptionOverlay(body.modelOptions);
+      assertGuardrailBudget(body.guardrailBudget);
+      await assertWorkspaceExecutionTargets(await ctx.workspaces.get(req.params.id), body, {
         targets: ctx.executionTargets,
         globalIsolationMode: ctx.settingsStore.getGlobal().defaults.isolationMode,
       });
-      const current = await ctx.workspaces.get(req.params.id);
-      const directRefusal = directWorkspaceRefusal(
-        ctx.workflows,
-        {
-          name: req.body.name ?? current.name,
-          isolationMode: req.body.isolationMode === undefined ? current.isolationMode : req.body.isolationMode,
-          workflow: req.body.workflow === undefined ? current.workflow : req.body.workflow,
-          workflowLabels: req.body.workflowLabels === undefined ? current.workflowLabels : req.body.workflowLabels === null ? null : JSON.stringify(req.body.workflowLabels),
-        },
-        ctx.settingsStore.getGlobal(),
-      );
-      if (directRefusal) throw new DomainError('validation', directRefusal);
-      const mixedRefusal = await workspaceMixedRefusal(
-        ctx.workflows,
-        {
-          name: req.body.name ?? current.name,
-          workingDir: req.body.workingDir ?? current.workingDir,
-          codeRepository: req.body.codeRepository === undefined ? current.codeRepository : req.body.codeRepository,
-          workflow: req.body.workflow === undefined ? current.workflow : req.body.workflow,
-          workflowLabels: req.body.workflowLabels === undefined ? current.workflowLabels : req.body.workflowLabels === null ? null : JSON.stringify(req.body.workflowLabels),
-        },
-        ctx.settingsStore.getGlobal(),
-      );
-      if (mixedRefusal) throw new DomainError('validation', mixedRefusal);
-      const workspace = await ctx.workspaces.update(req.params.id, req.body);
+      await assertWorkflowAssignmentRefusals(await ctx.workspaces.get(req.params.id), body);
+      const workspace = await ctx.workspaces.update(req.params.id, body);
       await ctx.trackerManager.sync();
       await ctx.workspaceWatcher.sync(await ctx.workspaces.list());
       return serialize(workspace);
