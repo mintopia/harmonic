@@ -1,20 +1,38 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "oxc"],
+  "plugins": [
+    "typescript",
+    "react",
+    "oxc"
+  ],
   "categories": {
     "correctness": "error"
   },
   "rules": {
     "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": ["error", { "additionalHooks": "useLiveEffect" }],
+    "react-hooks/exhaustive-deps": [
+      "error",
+      {
+        "additionalHooks": "useLiveEffect"
+      }
+    ],
     "react/react-in-jsx-scope": "off",
     "react/set-state-in-effect": "off",
-    "no-unused-vars": ["error", {
-      "ignoreRestSiblings": true,
-      "argsIgnorePattern": "^_",
-      "varsIgnorePattern": "^_",
-      "caughtErrorsIgnorePattern": "^_"
-    }]
+    "no-unused-vars": [
+      "error",
+      {
+        "ignoreRestSiblings": true,
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
+    "eslint/complexity": [
+      "error",
+      {
+        "max": 20
+      }
+    ]
   },
   "ignorePatterns": [
     "dist",
@@ -26,16 +44,87 @@
   ],
   "overrides": [
     {
-      "files": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "*.ts"],
-      "env": { "node": true, "es2023": true }
+      "files": [
+        "src/**/*.ts",
+        "scripts/**/*.ts",
+        "tests/**/*.ts",
+        "*.ts"
+      ],
+      "env": {
+        "node": true,
+        "es2023": true
+      }
     },
     {
-      "files": ["web/**/*.{ts,tsx}"],
-      "env": { "browser": true, "es2023": true }
+      "files": [
+        "web/**/*.{ts,tsx}"
+      ],
+      "env": {
+        "browser": true,
+        "es2023": true
+      }
     },
     {
-      "files": ["**/*.test.ts", "**/*.spec.ts", "tests/**"],
-      "env": { "node": true, "vitest": true }
+      "files": [
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "tests/**"
+      ],
+      "env": {
+        "node": true,
+        "vitest": true
+      }
+    },
+    {
+      "files": [
+        "scripts/jev-gate/cli.ts",
+        "scripts/jev-gate/render-html.ts",
+        "tests/app-smoke.test.ts",
+        "tests/helpers/fake-forgejo.ts",
+        "tests/stub-harness.mjs",
+        "tests/tracker-jira.test.ts",
+        "web/src/App.tsx",
+        "web/src/attempt-chat-model.ts",
+        "web/src/components/ActivityView.tsx",
+        "web/src/components/AgentMessagesTab.tsx",
+        "web/src/components/AppContent.tsx",
+        "web/src/components/ArchiveExportSettings.tsx",
+        "web/src/components/Board.tsx",
+        "web/src/components/conversation/Composer.tsx",
+        "web/src/components/ConversationLauncher.tsx",
+        "web/src/components/EpicAttemptView.tsx",
+        "web/src/components/EpicPage.tsx",
+        "web/src/components/ExecutionTargetsSettings.tsx",
+        "web/src/components/FilesPage.tsx",
+        "web/src/components/GlobalDashboard.tsx",
+        "web/src/components/OperatorControls.tsx",
+        "web/src/components/prompt-library/PromptEdit.tsx",
+        "web/src/components/RepositoryProxyKey.tsx",
+        "web/src/components/RetryDialog.tsx",
+        "web/src/components/RouteClassifierSettings.tsx",
+        "web/src/components/settings-schema.tsx",
+        "web/src/components/SettingsForm.tsx",
+        "web/src/components/StatsPage.tsx",
+        "web/src/components/TaskActions.tsx",
+        "web/src/components/TaskForm.tsx",
+        "web/src/components/ticket/ChangesPane.tsx",
+        "web/src/components/ticket/ModelOptionOverrides.tsx",
+        "web/src/components/TicketPage.tsx",
+        "web/src/components/TrackerSettings.tsx",
+        "web/src/components/WorkflowDiagram.tsx",
+        "web/src/event-stream-model.ts",
+        "web/src/lifecycle-timeline-model.ts",
+        "web/src/merge-progress-model.ts",
+        "web/src/openapi-reference.ts",
+        "web/src/router-model.ts",
+        "web/src/task-detail-model.ts",
+        "web/src/tool-diff.ts",
+        "web/src/workflow-diagram-layout.ts",
+        "web/src/worktree-inventory-model.ts"
+      ],
+      "rules": {
+        "eslint/complexity": "off"
+      }
     }
   ]
 }
