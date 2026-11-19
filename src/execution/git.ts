@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, realpathSync, rmSync } from 'node:fs';
 import { access } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
@@ -154,6 +155,16 @@ function warnOnceIfReconcileMergeUnsupported(): void {
     'git is older than 2.38 (no `merge-tree --write-tree`): reconciling a moved base by rebuilding the merge instead (ADR-0040).',
     { code: 'HARMONIC_GIT_TOO_OLD' },
   );
+}
+
+/** Resolves symlinks (e.g. macOS /var -> /private/var) even when the leaf no longer exists. */
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(canonicalPath(parent), basename(path));
+  }
 }
 
 export const Git = {
@@ -378,8 +389,12 @@ export const Git = {
   ) =>
     withRepoLock(dir, async () => {
       if (!(await beforeRemove())) return false;
-      await git(dir, 'worktree', 'remove', '--force', worktreePath);
-      if (branch?.startsWith('harmonic/')) await gitRefWrite(dir, 'branch', '-D', branch);
+      // Session retirement may already have removed the worktree; the branch must still go.
+      const target = canonicalPath(worktreePath);
+      const registered = (await Git.listWorktrees(dir)).some((w) => canonicalPath(w.path) === target);
+      if (registered) await git(dir, 'worktree', 'remove', '--force', worktreePath);
+      else await git(dir, 'worktree', 'prune');
+      if (branch?.startsWith('harmonic/') && (await Git.branchExists(dir, branch))) await gitRefWrite(dir, 'branch', '-D', branch);
       return true;
     }),
 

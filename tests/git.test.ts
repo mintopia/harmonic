@@ -690,5 +690,18 @@ describe('git-operations', () => {
       await Git.removeWorktree(repo, wt);
       expect(existsSync(wt)).toBe(false);
     });
+
+    it('removeWorktreeAndDeleteBranch still deletes the branch when the worktree was already removed', async () => {
+      const repo = makeRepo();
+      const root = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-rmboth-'));
+      tmpDirs.push(root);
+      const wt = join(root, 'task-3');
+      await Git.addWorktree(repo, wt, 'harmonic/task-3', 'main');
+      await Git.removeWorktree(repo, wt);
+
+      expect(await Git.removeWorktreeAndDeleteBranch(repo, wt, 'harmonic/task-3', async () => true)).toBe(true);
+      expect(git(repo, 'branch', '--list', 'harmonic/task-3')).toBe('');
+      expect(await Git.removeWorktreeAndDeleteBranch(repo, wt, 'harmonic/task-3', async () => true)).toBe(true);
+    });
   });
 });
