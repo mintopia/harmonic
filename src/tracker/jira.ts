@@ -106,6 +106,30 @@ const refOf = (i: RawLinkedIssue): TicketRef => ({
   state: i.fields?.status ? stateOf(i.fields.status) : 'open',
 });
 
+function withEpicLabel(f: RawIssue['fields']): string[] {
+  const rawLabels = f.labels ?? [];
+  const isEpic = f.issuetype !== undefined && sameName(f.issuetype.name, 'Epic');
+  return isEpic && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
+}
+
+const isBlocksLink = (link: NonNullable<RawIssue['fields']['issuelinks']>[number]): boolean =>
+  link.type.name === 'Blocks' || link.type.inward === 'is blocked by';
+
+/** Blockers from Jira's native issue links; `seen` carries the keys already claimed. */
+function nativeLinks(raw: RawIssue): { seen: Set<string>; blockedBy: TicketRef[]; blocking: TicketRef[] } {
+  const seen = new Set<string>([raw.key]);
+  const blockedBy: TicketRef[] = [];
+  const blocking: TicketRef[] = [];
+  for (const link of (raw.fields.issuelinks ?? []).filter(isBlocksLink)) {
+    if (link.inwardIssue && !seen.has(link.inwardIssue.key)) {
+      seen.add(link.inwardIssue.key);
+      blockedBy.push(refOf(link.inwardIssue));
+    }
+    if (link.outwardIssue) blocking.push(refOf(link.outwardIssue));
+  }
+  return { seen, blockedBy, blocking };
+}
+
 /** The Jira REST client for one instance: bearer or basic auth over the shared retrying client. */
 export function jiraClient(config: JiraConfig, http: TrackerHttp): RestClient {
   const cloud = config.authMode === 'cloud';
@@ -130,22 +154,9 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
   const normalise = (raw: RawIssue, known: Map<string, TicketRef>): Ticket => {
     const f = raw.fields;
     const desc = f.description ?? '';
-    const rawLabels = f.labels ?? [];
-    const labels =
-      f.issuetype && sameName(f.issuetype.name, 'Epic') && !rawLabels.includes(EPIC_LABEL) ? [...rawLabels, EPIC_LABEL] : rawLabels;
+    const labels = withEpicLabel(f);
+    const { seen, blockedBy, blocking } = nativeLinks(raw);
 
-    const seen = new Set<string>([raw.key]);
-    const blockedBy: TicketRef[] = [];
-    const blocking: TicketRef[] = [];
-    for (const link of f.issuelinks ?? []) {
-      const isBlocks = link.type.name === 'Blocks' || link.type.inward === 'is blocked by';
-      if (!isBlocks) continue;
-      if (link.inwardIssue && !seen.has(link.inwardIssue.key)) {
-        seen.add(link.inwardIssue.key);
-        blockedBy.push(refOf(link.inwardIssue));
-      }
-      if (link.outwardIssue) blocking.push(refOf(link.outwardIssue));
-    }
     const inProject = (key: string): boolean => key.startsWith(`${config.projectKey.toUpperCase()}-`) || known.has(key);
     for (const key of [...parseBlockedByLines(desc, 'jira'), ...parseBlockedBySection(desc, 'jira')]) {
       if (seen.has(key) || !inProject(key)) continue;
