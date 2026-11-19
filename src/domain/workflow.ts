@@ -415,23 +415,47 @@ function allLocated(located: Located[], wf: z.infer<typeof workflowSchema>): Loc
   return [...located, ...(wf.cleanup ?? []).map((step, i) => ({ step, path: ['cleanup', i] as PropertyKey[] }))];
 }
 
+interface StepCheck {
+  step: WorkflowStepDefinition;
+  path: PropertyKey[];
+  group: string | undefined;
+  lenient: boolean;
+}
+
+const hasOneForm = ({ step }: StepCheck): boolean => [step.run, step.uses, step.parallel].filter((form) => form !== undefined).length === 1;
+
+// Applied in order: problem order is part of the refusal message.
+const STEP_RULES: ((check: StepCheck) => Problem[])[] = [
+  (c) => (hasOneForm(c) ? [] : [{ path: c.path, message: `step ${c.step.id} needs exactly one of run, uses or parallel` }]),
+  (c) => (c.step.with !== undefined && c.step.uses === undefined ? [{ path: [...c.path, 'with'], message: 'with is only valid beside uses' }] : []),
+  (c) => (c.step.uses === 'agent' ? withProblems(c.path, agentWithSchema, c.step.with) : []),
+  ({ step, path, group }) =>
+    group !== undefined && step.uses !== undefined && !PARALLEL_ACTIONS.has(step.uses)
+      ? [{ path: [...path, 'uses'], message: `${step.uses} cannot run inside parallel group ${group}: only critic and command steps run together` }]
+      : [],
+  (c) => (c.step.uses === 'critic' ? withProblems(c.path, criticWithSchema, c.step.with) : []),
+  (c) => (!c.lenient && c.step.uses === 'post-merge-check' ? withProblems(c.path, postMergeCheckWithSchema, c.step.with) : []),
+  (c) => (!c.lenient && c.step.uses !== undefined && EMPTY_WITH_ACTIONS.has(c.step.uses) ? withProblems(c.path, emptyWithSchema, c.step.with) : []),
+  optionExclusiveProblems,
+];
+
+function optionExclusiveProblems({ step, path }: StepCheck): Problem[] {
+  if (step.uses !== 'agent' && step.uses !== 'critic') return [];
+  const withBlock = step.with;
+  if (withBlock?.option === undefined) return [];
+  return ['harness', 'model']
+    .filter((key) => withBlock[key] !== undefined)
+    .map((key) => ({ path: [...path, 'with', key], message: `with.option cannot be combined with with.${key}: an option names its own harness and model`, key: true }));
+}
+
 function stepInvariants(located: Located[], wf: z.infer<typeof workflowSchema>, lenient: boolean): Problem[] {
   const problems: Problem[] = [];
   const seen = new Set<string>();
   const check = (step: WorkflowStepDefinition, path: PropertyKey[], group?: string): void => {
     if (seen.has(step.id)) problems.push({ path: [...path, 'id'], message: `duplicate step id: ${step.id}` });
     seen.add(step.id);
-    const forms = [step.run, step.uses, step.parallel].filter((form) => form !== undefined).length;
-    if (forms !== 1) problems.push({ path, message: `step ${step.id} needs exactly one of run, uses or parallel` });
-    if (step.with !== undefined && step.uses === undefined) problems.push({ path: [...path, 'with'], message: 'with is only valid beside uses' });
-    if (step.uses === 'agent') problems.push(...withProblems(path, agentWithSchema, step.with));
-    if (group !== undefined && step.uses !== undefined && !PARALLEL_ACTIONS.has(step.uses)) problems.push({ path: [...path, 'uses'], message: `${step.uses} cannot run inside parallel group ${group}: only critic and command steps run together` });
-    if (step.uses === 'critic') problems.push(...withProblems(path, criticWithSchema, step.with));
-    if (!lenient && step.uses === 'post-merge-check') problems.push(...withProblems(path, postMergeCheckWithSchema, step.with));
-    if (!lenient && step.uses !== undefined && EMPTY_WITH_ACTIONS.has(step.uses)) problems.push(...withProblems(path, emptyWithSchema, step.with));
-    if ((step.uses === 'agent' || step.uses === 'critic') && step.with?.option !== undefined) {
-      for (const key of ['harness', 'model']) if (step.with[key] !== undefined) problems.push({ path: [...path, 'with', key], message: `with.option cannot be combined with with.${key}: an option names its own harness and model`, key: true });
-    }
+    const ctx: StepCheck = { step, path, group, lenient };
+    for (const rule of STEP_RULES) problems.push(...rule(ctx));
   };
   for (const { step, path } of allLocated(located, wf)) {
     check(step, path);
@@ -459,20 +483,30 @@ const TICKET_FIELDS = ['title', 'body', 'labels', 'ref', 'origin'];
 const ATTEMPT_FIELDS = ['number', 'previousVerdict', 'failureReason'];
 const WORKSPACE_FIELDS = ['id', 'name'];
 
+const FLAT_ROOT_FIELDS: ReadonlyMap<string | undefined, string[]> = new Map([
+  ['ticket', TICKET_FIELDS],
+  ['attempt', ATTEMPT_FIELDS],
+  ['workspace', WORKSPACE_FIELDS],
+]);
+const OUTPUT_SUBFIELDS: ReadonlySet<string> = new Set(['stdout', 'exitCode']);
+
+function badStepReference(ref: string[], earlier: Set<string>): string | undefined {
+  const [, name, field, sub] = ref;
+  const unknown = `unknown reference ${ref.join('.')}`;
+  if (name === undefined || !earlier.has(name)) return `steps.${name ?? ''} is not an earlier step`;
+  if (field === 'outcome') return ref.length > 3 ? unknown : undefined;
+  if (field === 'outputs') return ref.length > 4 || (sub !== undefined && !OUTPUT_SUBFIELDS.has(sub)) ? unknown : undefined;
+  return `steps.${name} has outcome and outputs, not ${field ?? ''}`.trimEnd();
+}
+
 function badReference(ref: string[], earlier: Set<string>, declared: Set<string>): string | undefined {
-  const [root, name, field, sub] = ref;
-  const known = (fields: string[]): string | undefined => (name !== undefined && fields.includes(name) && ref.length === 2 ? undefined : `unknown reference ${ref.join('.')}`);
-  if (root === 'ticket') return known(TICKET_FIELDS);
-  if (root === 'attempt') return known(ATTEMPT_FIELDS);
-  if (root === 'workspace') return known(WORKSPACE_FIELDS);
+  const [root, name] = ref;
+  const flat = FLAT_ROOT_FIELDS.get(root);
+  if (flat) return name !== undefined && flat.includes(name) && ref.length === 2 ? undefined : `unknown reference ${ref.join('.')}`;
   if (root === 'vars') return name !== undefined && declared.has(name) && ref.length === 2 ? undefined : `unknown var ${name ?? ''}`.trim();
   if (root === 'secrets') return name !== undefined && ref.length === 2 ? undefined : 'secrets needs a name: secrets.NAME';
-  if (root !== 'steps') return `unknown reference ${ref.join('.')}`;
-  if (name === undefined || !earlier.has(name)) return `steps.${name ?? ''} is not an earlier step`;
-  if (field !== 'outcome' && field !== 'outputs') return `steps.${name} has outcome and outputs, not ${field ?? ''}`.trimEnd();
-  if (field === 'outcome' && ref.length > 3) return `unknown reference ${ref.join('.')}`;
-  if (field === 'outputs' && (ref.length > 4 || (sub !== undefined && sub !== 'stdout' && sub !== 'exitCode'))) return `unknown reference ${ref.join('.')}`;
-  return undefined;
+  if (root === 'steps') return badStepReference(ref, earlier);
+  return `unknown reference ${ref.join('.')}`;
 }
 
 function expressionProblems(located: Located[], wf: z.infer<typeof workflowSchema>, doc: ReturnType<typeof parseDocument>, text: string): Problem[] {
