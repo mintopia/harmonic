@@ -196,12 +196,11 @@ const operation = (over: Partial<OperationSnapshot> = {}): OperationSnapshot => 
 });
 
 describe('summarize', () => {
-  it('takes the first non-empty line, trimmed', () => {
-    expect(summarize('  first line  \nsecond line')).toBe('first line');
-  });
-
-  it('skips leading blank lines', () => {
-    expect(summarize('\n\n   \nreal content\nmore')).toBe('real content');
+  it.each([
+    { name: 'takes the first non-empty line, trimmed', input: '  first line  \nsecond line', expected: 'first line' },
+    { name: 'skips leading blank lines', input: '\n\n   \nreal content\nmore', expected: 'real content' },
+  ])('$name', ({ input, expected }) => {
+    expect(summarize(input)).toBe(expected);
   });
 
   it('truncates a line over 200 chars with an ellipsis', () => {
@@ -213,16 +212,12 @@ describe('summarize', () => {
 });
 
 describe('firstLineTitle', () => {
-  it('returns null for null input', () => {
-    expect(firstLineTitle(null)).toBeNull();
-  });
-
-  it('returns null for blank input', () => {
-    expect(firstLineTitle('   \n  \n')).toBeNull();
-  });
-
-  it('takes the first non-empty line, trimmed', () => {
-    expect(firstLineTitle('\n  Title here  \nbody')).toBe('Title here');
+  it.each<{ name: string; input: string | null; expected: string | null }>([
+    { name: 'returns null for null input', input: null, expected: null },
+    { name: 'returns null for blank input', input: '   \n  \n', expected: null },
+    { name: 'takes the first non-empty line, trimmed', input: '\n  Title here  \nbody', expected: 'Title here' },
+  ])('$name', ({ input, expected }) => {
+    expect(firstLineTitle(input)).toBe(expected);
   });
 
   it('truncates to 80 chars with an ellipsis', () => {
@@ -261,18 +256,17 @@ describe('stepRunToApi', () => {
 });
 
 describe('latestVerifiedRef', () => {
-  it('returns null when run is undefined', () => {
-    expect(latestVerifiedRef(undefined)).toBeNull();
-  });
-
-  it('falls back to branch when verifiedHeadOid and branch are both set', () => {
-    const run = attemptRow({ verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' });
-    expect(latestVerifiedRef(run)).toBe('harmonic/task-1');
-  });
-
-  it('returns null when no verified branch is available', () => {
-    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: null, branch: 'harmonic/task-1' }))).toBeNull();
-    expect(latestVerifiedRef(attemptRow({ verifiedHeadOid: 'abc123', branch: null }))).toBeNull();
+  it.each<{ name: string; run: TaskAttemptRow | undefined; expected: string | null }>([
+    { name: 'returns null when run is undefined', run: undefined, expected: null },
+    {
+      name: 'falls back to branch when verifiedHeadOid and branch are both set',
+      run: attemptRow({ verifiedHeadOid: 'abc123', branch: 'harmonic/task-1' }),
+      expected: 'harmonic/task-1',
+    },
+    { name: 'returns null when verifiedHeadOid is null', run: attemptRow({ verifiedHeadOid: null, branch: 'harmonic/task-1' }), expected: null },
+    { name: 'returns null when branch is null', run: attemptRow({ verifiedHeadOid: 'abc123', branch: null }), expected: null },
+  ])('$name', ({ run, expected }) => {
+    expect(latestVerifiedRef(run)).toBe(expected);
   });
 });
 
@@ -306,11 +300,7 @@ describe('operationsToApi', () => {
       spanContext: { traceId: 't', spanId: 'child-span', traceFlags: 0 },
       parentSpanContext: { traceId: 't', spanId: 'root-span', traceFlags: 0 },
     });
-    const forest = operationsToApi([root, child]);
-    expect(forest).toHaveLength(1);
-    expect(forest[0]!.spanId).toBe('root-span');
-    expect(forest[0]!.children).toHaveLength(1);
-    expect(forest[0]!.children[0]!.spanId).toBe('child-span');
+    expect(operationsToApi([root, child])).toMatchObject([{ spanId: 'root-span', children: [{ spanId: 'child-span' }] }]);
   });
 
   it('treats an orphan (unknown parent) as a root', () => {
@@ -319,10 +309,7 @@ describe('operationsToApi', () => {
       spanContext: { traceId: 't', spanId: 'orphan-span', traceFlags: 0 },
       parentSpanContext: { traceId: 't', spanId: 'missing-span', traceFlags: 0 },
     });
-    const forest = operationsToApi([orphan]);
-    expect(forest).toHaveLength(1);
-    expect(forest[0]!.spanId).toBe('orphan-span');
-    expect(forest[0]!.children).toHaveLength(0);
+    expect(operationsToApi([orphan])).toMatchObject([{ spanId: 'orphan-span', children: [] }]);
   });
 });
 
@@ -332,14 +319,13 @@ describe('attemptToApiSummary', () => {
     expect(attemptToApiSummary(attemptRow(), 0).pullRequestUrl).toBeNull();
   });
 
-  it('collapses passed -> completed and escalated -> failed', () => {
-    expect(attemptToApiSummary(attemptRow({ state: 'passed' }), 0).state).toBe('completed');
-    expect(attemptToApiSummary(attemptRow({ state: 'escalated' }), 0).state).toBe('failed');
-  });
-
-  it('passes running/cancelled through unchanged', () => {
-    expect(attemptToApiSummary(attemptRow({ state: 'running' }), 0).state).toBe('running');
-    expect(attemptToApiSummary(attemptRow({ state: 'cancelled' }), 0).state).toBe('cancelled');
+  it.each<{ name: string; state: TaskAttemptRow['state']; expected: string }>([
+    { name: 'collapses passed -> completed', state: 'passed', expected: 'completed' },
+    { name: 'collapses escalated -> failed', state: 'escalated', expected: 'failed' },
+    { name: 'passes running through unchanged', state: 'running', expected: 'running' },
+    { name: 'passes cancelled through unchanged', state: 'cancelled', expected: 'cancelled' },
+  ])('$name', ({ state, expected }) => {
+    expect(attemptToApiSummary(attemptRow({ state }), 0).state).toBe(expected);
   });
 
   it('reason falls back from detail to the disposition kind', () => {
@@ -353,11 +339,12 @@ describe('attemptToApiSummary', () => {
       usage: JSON.stringify(usage({ toolCalls: { bash: 3 } })),
       cost: JSON.stringify(cost({ totalUsd: 0.5 })),
     });
-    const summary = attemptToApiSummary(run, 7);
-    expect(summary.finishedAt).toBe(2_000);
-    expect(summary.toolCalls).toBe(7);
-    expect(summary.usage).toEqual(usage({ toolCalls: { bash: 3 } }));
-    expect(summary.cost).toEqual(cost({ totalUsd: 0.5 }));
+    expect(attemptToApiSummary(run, 7)).toMatchObject({
+      finishedAt: 2_000,
+      toolCalls: 7,
+      usage: usage({ toolCalls: { bash: 3 } }),
+      cost: cost({ totalUsd: 0.5 }),
+    });
   });
 });
 
@@ -374,29 +361,30 @@ describe('taskToApiDto', () => {
     contextWindow: 200_000,
   };
 
-  it('derives summary from prompt and keeps the full prompt (item-GET shape)', () => {
-    const task = taskWithDeps({ prompt: '  Fix the widget  \nmore detail' });
+  it('derives summary, keeps the full prompt (item-GET shape), narrows workspaceId and passes every resolved field through untouched', () => {
+    const task = taskWithDeps({ prompt: '  Fix the widget  \nmore detail', workspaceId: 3 });
     const dto = taskToApiDto(task, [], resolved);
-    expect(dto.summary).toBe('Fix the widget');
-    expect(dto.prompt).toBe('  Fix the widget  \nmore detail');
-  });
-
-  it('passes every resolved field through untouched', () => {
-    const dto = taskToApiDto(taskWithDeps(), [], resolved);
-    expect(dto.url).toBe(resolved.url);
-    expect(dto.mapTitle).toBe(resolved.mapTitle);
-    expect(dto.trackerLabel).toBe(resolved.trackerLabel);
-    expect(dto.skipReason).toBe(resolved.skipReason);
-    expect(dto.contextWindow).toBe(resolved.contextWindow);
-    expect(dto.toolCount).toBe(resolved.toolCount);
+    expect(dto).toMatchObject({
+      summary: 'Fix the widget',
+      prompt: '  Fix the widget  \nmore detail',
+      workspaceId: 3,
+      url: resolved.url,
+      mapTitle: resolved.mapTitle,
+      trackerLabel: resolved.trackerLabel,
+      skipReason: resolved.skipReason,
+      contextWindow: resolved.contextWindow,
+      toolCount: resolved.toolCount,
+      hasCandidate: resolved.hasCandidate,
+    });
     expect(dto.currentStep).toBe(resolved.currentStep);
-    expect(dto.hasCandidate).toBe(resolved.hasCandidate);
   });
 
-  it('derives mergeStatus merging from a running merge step, else null', () => {
-    expect(taskToApiDto(taskWithDeps(), [], { ...resolved, currentStep: { stepId: 'merge', action: 'merge', kind: 'publish' } }).mergeStatus).toBe('merging');
-    expect(taskToApiDto(taskWithDeps(), [], resolved).mergeStatus).toBeNull();
-    expect(taskToApiDto(taskWithDeps(), [], { ...resolved, currentStep: null }).mergeStatus).toBeNull();
+  it.each<{ name: string; currentStep: Parameters<typeof taskToApiDto>[2]['currentStep']; expected: string | null }>([
+    { name: 'merging from a running merge step', currentStep: { stepId: 'merge', action: 'merge', kind: 'publish' }, expected: 'merging' },
+    { name: 'null for a non-merge step', currentStep: resolved.currentStep, expected: null },
+    { name: 'null with no current step', currentStep: null, expected: null },
+  ])('derives mergeStatus: $name', ({ currentStep, expected }) => {
+    expect(taskToApiDto(taskWithDeps(), [], { ...resolved, currentStep }).mergeStatus).toBe(expected);
   });
 
   it('adds critic cost to the Task cost', () => {
@@ -404,21 +392,22 @@ describe('taskToApiDto', () => {
     expect(taskToApiDto(taskWithDeps(), runs, { ...resolved, criticCost: cost({ totalUsd: 0.25 }) }).cost?.totalUsd).toBe(1.25);
   });
 
-  it('takes attemptId/runStartedAt from the running run', () => {
-    const runs = [
-      attemptRow({ id: 10, number: 1, state: 'passed', startedAt: 1_000 }),
-      attemptRow({ id: 11, number: 2, state: 'running', startedAt: 5_000 }),
-    ];
-    const dto = taskToApiDto(taskWithDeps(), runs, resolved);
-    expect(dto.attemptId).toBe(11);
-    expect(dto.runStartedAt).toBe(5_000);
-  });
-
-  it('has no attemptId/runStartedAt when no run is running', () => {
-    const runs = [attemptRow({ id: 10, number: 1, state: 'passed' })];
-    const dto = taskToApiDto(taskWithDeps(), runs, resolved);
-    expect(dto.attemptId).toBeNull();
-    expect(dto.runStartedAt).toBeNull();
+  it.each<{ name: string; runs: TaskAttemptRow[]; expected: { attemptId: number | null; runStartedAt: number | null } }>([
+    {
+      name: 'takes attemptId/runStartedAt from the running run',
+      runs: [
+        attemptRow({ id: 10, number: 1, state: 'passed', startedAt: 1_000 }),
+        attemptRow({ id: 11, number: 2, state: 'running', startedAt: 5_000 }),
+      ],
+      expected: { attemptId: 11, runStartedAt: 5_000 },
+    },
+    {
+      name: 'has no attemptId/runStartedAt when no run is running',
+      runs: [attemptRow({ id: 10, number: 1, state: 'passed' })],
+      expected: { attemptId: null, runStartedAt: null },
+    },
+  ])('$name', ({ runs, expected }) => {
+    expect(taskToApiDto(taskWithDeps(), runs, resolved)).toMatchObject(expected);
   });
 
   it('strips the durable tracker-fact columns', () => {
@@ -438,11 +427,6 @@ describe('taskToApiDto', () => {
     }
   });
 
-  it('narrows workspaceId to number', () => {
-    const dto = taskToApiDto(taskWithDeps({ workspaceId: 3 }), [], resolved);
-    expect(dto.workspaceId).toBe(3);
-  });
-
   describe('wallClockDeadline', () => {
     const guardrailConfig = JSON.stringify({
       budget: { wallClockMinutes: 60 },
@@ -450,28 +434,33 @@ describe('taskToApiDto', () => {
       toolTimeoutMinutes: 10,
     });
 
-    it('is the running Attempt startedAt plus its wall-clock budget, while the task is working', () => {
-      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })];
-      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
-      expect(dto.wallClockDeadline).toBe(5_000 + 60 * 60_000);
-    });
-
-    it('is null when the task is not working, even with a running-shaped Attempt row', () => {
-      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })];
-      const dto = taskToApiDto(taskWithDeps({ state: 'ready' }), runs, resolved);
-      expect(dto.wallClockDeadline).toBeNull();
-    });
-
-    it('is null when working with no running Attempt', () => {
-      const runs = [attemptRow({ id: 10, number: 1, state: 'passed', guardrailConfig })];
-      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
-      expect(dto.wallClockDeadline).toBeNull();
-    });
-
-    it('is null when the running Attempt carries no guardrail budget', () => {
-      const runs = [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig: null })];
-      const dto = taskToApiDto(taskWithDeps({ state: 'working' }), runs, resolved);
-      expect(dto.wallClockDeadline).toBeNull();
+    it.each<{ name: string; taskState: TaskWithDeps['state']; runs: TaskAttemptRow[]; expected: number | null }>([
+      {
+        name: 'is the running Attempt startedAt plus its wall-clock budget, while the task is working',
+        taskState: 'working',
+        runs: [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })],
+        expected: 5_000 + 60 * 60_000,
+      },
+      {
+        name: 'is null when the task is not working, even with a running-shaped Attempt row',
+        taskState: 'ready',
+        runs: [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig })],
+        expected: null,
+      },
+      {
+        name: 'is null when working with no running Attempt',
+        taskState: 'working',
+        runs: [attemptRow({ id: 10, number: 1, state: 'passed', guardrailConfig })],
+        expected: null,
+      },
+      {
+        name: 'is null when the running Attempt carries no guardrail budget',
+        taskState: 'working',
+        runs: [attemptRow({ id: 11, number: 1, state: 'running', startedAt: 5_000, guardrailConfig: null })],
+        expected: null,
+      },
+    ])('$name', ({ taskState, runs, expected }) => {
+      expect(taskToApiDto(taskWithDeps({ state: taskState }), runs, resolved).wallClockDeadline).toBe(expected);
     });
 
     it('moves forward by N minutes after an extend rewrites the persisted guardrailConfig', () => {
@@ -486,15 +475,18 @@ describe('taskToApiDto', () => {
 });
 
 describe('epicToListRow', () => {
-  it('projects a Ticket onto a list row with isEpic/humanOnly set and identity fields threaded', () => {
+  it('projects a Ticket onto a list row with isEpic/humanOnly set and identity fields threaded; no id, no prompt key', () => {
     const row = epicToListRow(ticket({ ref: trackerRef(42), title: 'The Epic', url: 'https://tracker.example/42' }), 9);
-    expect(row.isEpic).toBe(true);
-    expect(row.humanOnly).toBe(true);
+    expect(row).toMatchObject({
+      isEpic: true,
+      humanOnly: true,
+      trackerRef: '42',
+      summary: 'The Epic',
+      url: 'https://tracker.example/42',
+      workspaceId: 9,
+    });
     expect(row).not.toHaveProperty('id');
-    expect(row.trackerRef).toBe('42');
-    expect(row.summary).toBe('The Epic');
-    expect(row.url).toBe('https://tracker.example/42');
-    expect(row.workspaceId).toBe(9);
+    expect(Object.prototype.hasOwnProperty.call(row, 'prompt')).toBe(false);
   });
 
   it('gives no two Epic rows the same id', () => {
@@ -510,11 +502,6 @@ describe('epicToListRow', () => {
     expect(epicListRowSchema.safeParse({ ...row, id: 0 }).success).toBe(false);
     expect(taskListRowSchema.safeParse(row).success).toBe(false);
   });
-
-  it('has no prompt key — it is a list row', () => {
-    const row = epicToListRow(ticket(), 1);
-    expect(Object.prototype.hasOwnProperty.call(row, 'prompt')).toBe(false);
-  });
 });
 
 describe('conversationToApiDto', () => {
@@ -526,31 +513,28 @@ describe('conversationToApiDto', () => {
     commandPrefix: '$',
   };
 
-  it('parses usage from JSON', () => {
-    const conversation = conversationRow({ usage: JSON.stringify(usage({ toolCalls: { grep: 1 } })) });
-    const dto = conversationToApiDto(conversation, resolved);
-    expect(dto.usage).toEqual(usage({ toolCalls: { grep: 1 } }));
-  });
-
-  it('takes title/cost/contextWindow/cacheWarmSeconds/commandPrefix from resolved', () => {
-    const dto = conversationToApiDto(conversationRow({ title: 'Operator title' }), resolved);
-    expect(dto.title).toBe('Resolved title');
-    expect(dto.cost).toEqual(resolved.cost);
-    expect(dto.contextWindow).toBe(200_000);
-    expect(dto.cacheWarmSeconds).toBe(3600);
-    expect(dto.commandPrefix).toBe('$');
-  });
-
-  it('narrows workspaceId to number', () => {
-    const dto = conversationToApiDto(conversationRow({ workspaceId: 6 }), resolved);
-    expect(dto.workspaceId).toBe(6);
+  it('parses usage from JSON, takes title/cost/contextWindow/cacheWarmSeconds/commandPrefix from resolved and narrows workspaceId', () => {
+    const conversation = conversationRow({
+      title: 'Operator title',
+      workspaceId: 6,
+      usage: JSON.stringify(usage({ toolCalls: { grep: 1 } })),
+    });
+    expect(conversationToApiDto(conversation, resolved)).toMatchObject({
+      usage: usage({ toolCalls: { grep: 1 } }),
+      title: 'Resolved title',
+      cost: resolved.cost,
+      contextWindow: 200_000,
+      cacheWarmSeconds: 3600,
+      commandPrefix: '$',
+      workspaceId: 6,
+    });
   });
 });
 
 describe('attemptProcessToApi', () => {
   const task = { prompt: '', workspaceId: 2, harness: 'claude', model: 'claude-sonnet-5', isolationMode: 'worktree', trackerRef: null, state: 'working' as const };
 
-  it('is type "attempt" with attemptId/taskId set', () => {
+  it('is type "attempt" with attemptId/taskId set, falling back the title to "Task N" when the prompt has no title', () => {
     const result = attemptProcessToApi({
       run: attemptRow({ id: 5, taskId: 8 }),
       task,
@@ -560,23 +544,7 @@ describe('attemptProcessToApi', () => {
       contextWindow: null,
       cost: null,
     });
-    expect(result.type).toBe('attempt');
-    expect(result.attemptId).toBe(5);
-    expect(result.taskId).toBe(8);
-    expect(result.conversationId).toBeNull();
-  });
-
-  it('falls back the title to "Task N" when the prompt has no title', () => {
-    const result = attemptProcessToApi({
-      run: attemptRow({ taskId: 8 }),
-      task,
-      snapshot: null,
-      workspaceName: 'Default',
-      trackerUrl: null,
-      contextWindow: null,
-      cost: null,
-    });
-    expect(result.title).toBe('Task 8');
+    expect(result).toMatchObject({ type: 'attempt', attemptId: 5, taskId: 8, conversationId: null, title: 'Task 8' });
   });
 
   it('threads the live snapshot\'s usage/contextTokens/activity/tree', () => {
@@ -606,7 +574,7 @@ describe('attemptProcessToApi', () => {
 });
 
 describe('conversationProcessToApi', () => {
-  it('is type "chat" with conversationId set and attempt-only fields null', () => {
+  it('is type "chat" with conversationId set, attempt-only fields null and the given title threaded straight through', () => {
     const result = conversationProcessToApi({
       conversation: conversationRow({ id: 9 }),
       title: 'Conversation #9',
@@ -614,25 +582,17 @@ describe('conversationProcessToApi', () => {
       contextWindow: null,
       cost: null,
     });
-    expect(result.type).toBe('chat');
-    expect(result.conversationId).toBe(9);
-    expect(result.attemptId).toBeNull();
-    expect(result.taskId).toBeNull();
-    expect(result.trackerRef).toBeNull();
-    expect(result.trackerUrl).toBeNull();
-    expect(result.escalated).toBe(false);
-    expect(result.activity).toBeNull();
-    expect(result.tree).toBeNull();
-  });
-
-  it('threads the given title straight through', () => {
-    const result = conversationProcessToApi({
-      conversation: conversationRow(),
+    expect(result).toMatchObject({
+      type: 'chat',
+      conversationId: 9,
+      attemptId: null,
+      taskId: null,
+      trackerRef: null,
+      trackerUrl: null,
+      escalated: false,
+      activity: null,
+      tree: null,
       title: 'Conversation #9',
-      workspaceName: 'Default',
-      contextWindow: null,
-      cost: null,
     });
-    expect(result.title).toBe('Conversation #9');
   });
 });
