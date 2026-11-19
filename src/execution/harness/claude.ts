@@ -24,6 +24,21 @@ interface Transcript {
   turns: UsageTurn[];
 }
 
+const turnUsage = (u: any): ModelUsage => ({
+  inputTokens: num(u.input_tokens),
+  outputTokens: num(u.output_tokens),
+  cacheReadTokens: num(u.cache_read_input_tokens),
+  cacheWriteTokens: num(u.cache_creation_input_tokens),
+});
+
+function toolNames(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block: unknown) => (block as { type?: unknown })?.type === 'tool_use')
+    .map((block: unknown) => (block as { name?: unknown }).name)
+    .filter((name: unknown): name is string => typeof name === 'string');
+}
+
 class TranscriptAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private readonly seen = new Set<string>();
@@ -51,30 +66,20 @@ class TranscriptAcc implements LineAccumulator {
     const key = typeof message.id === 'string' ? message.id : line;
     if (this.seen.has(key)) return;
     this.seen.add(key);
-    const u = message.usage;
+    this.recordTurn(message);
+  }
+
+  private recordTurn(message: any): void {
+    const usage = turnUsage(message.usage);
     const bucket = (this.models[message.model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-    bucket.inputTokens += num(u.input_tokens);
-    bucket.outputTokens += num(u.output_tokens);
-    bucket.cacheReadTokens += num(u.cache_read_input_tokens);
-    bucket.cacheWriteTokens += num(u.cache_creation_input_tokens);
-    this.contextTokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
-    const tools = Array.isArray(message.content)
-      ? message.content
-          .filter((block: unknown) => (block as { type?: unknown })?.type === 'tool_use')
-          .map((block: unknown) => (block as { name?: unknown }).name)
-          .filter((name: unknown): name is string => typeof name === 'string')
-      : [];
+    bucket.inputTokens += usage.inputTokens;
+    bucket.outputTokens += usage.outputTokens;
+    bucket.cacheReadTokens += usage.cacheReadTokens;
+    bucket.cacheWriteTokens += usage.cacheWriteTokens;
+    this.contextTokens = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+    const tools = toolNames(message.content);
     this.lastTool = tools.at(-1) ?? this.lastTool;
-    this.turns.push({
-      model: message.model,
-      usage: {
-        inputTokens: num(u.input_tokens),
-        outputTokens: num(u.output_tokens),
-        cacheReadTokens: num(u.cache_read_input_tokens),
-        cacheWriteTokens: num(u.cache_creation_input_tokens),
-      },
-      tools,
-    });
+    this.turns.push({ model: message.model, usage, tools });
   }
 
   snapshot(): Transcript {

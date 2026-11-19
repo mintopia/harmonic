@@ -223,6 +223,53 @@ function toolTitle(tool: string, input: unknown): string {
   return filePath ? `${tool} ${filePath}` : withTarget(tool, input);
 }
 
+type SessionUpdate = Record<string, unknown>;
+
+const hasText = (part: JsonRecord): part is JsonRecord & { text: string } => typeof part.text === 'string' && part.text.trim() !== '';
+
+const withId = (key: string, id: unknown): SessionUpdate => (typeof id === 'string' ? { [key]: id } : {});
+
+function toolPartUpdate(part: JsonRecord): SessionUpdate {
+  const state = isRecord(part.state) ? part.state : {};
+  const tool = typeof part.tool === 'string' ? part.tool : 'Tool call';
+  const output = typeof state.output === 'string' && state.output.trim() ? state.output : null;
+  return {
+    sessionUpdate: 'tool_call',
+    ...withId('toolCallId', part.callID),
+    title: toolTitle(tool, state.input),
+    status: state.status === 'error' ? 'failed' : 'completed',
+    _meta: { opencode: { toolName: tool } },
+    ...(output ? { content: [{ type: 'content', content: { type: 'text', text: output } }] } : {}),
+  };
+}
+
+function patchPartUpdate(part: JsonRecord): SessionUpdate {
+  const files = Array.isArray(part.files) ? part.files.filter((f): f is string => typeof f === 'string') : [];
+  return {
+    sessionUpdate: 'tool_call',
+    ...withId('toolCallId', part.id),
+    title: files.length ? `patch ${files.map((file) => basename(file)).join(', ')}` : 'patch',
+    status: 'completed',
+    _meta: { opencode: { toolName: 'patch' } },
+  };
+}
+
+/** The ACP update for one export part, or null for parts the transcript omits. */
+function partUpdate(part: JsonRecord): SessionUpdate | null {
+  switch (part.type) {
+    case 'text':
+      return hasText(part) ? { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: part.text } } : null;
+    case 'reasoning':
+      return hasText(part) ? { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: part.text } } : null;
+    case 'tool':
+      return toolPartUpdate(part);
+    case 'patch':
+      return patchPartUpdate(part);
+    default:
+      return null;
+  }
+}
+
 /**
  * Map one `opencode export` message part to an ACP `session/update` payload the
  * transcript renderer already understands (agent text, reasoning as thought,
@@ -234,43 +281,14 @@ export function exportEvents(json: unknown): TranscriptLogEvent[] {
   const root = isRecord(json) ? json : null;
   const messages = root && Array.isArray(root.messages) ? root.messages : [];
   const events: TranscriptLogEvent[] = [];
-  const push = (ts: number, payload: Record<string, unknown>): void => {
-    const id = events.length + 1;
-    events.push({ id, seq: id, ts, type: 'session_update', payload });
-  };
   for (const message of messages) {
-    const record = isRecord(message) ? message : null;
-    if (!record || !isRecord(record.info) || record.info.role !== 'assistant') continue;
-    const ts = messageCreatedAt(record.info);
-    for (const part of Array.isArray(record.parts) ? record.parts : []) {
-      const value = isRecord(part) ? part : null;
-      if (!value) continue;
-      if (value.type === 'text' && typeof value.text === 'string' && value.text.trim()) {
-        push(ts, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value.text } });
-      } else if (value.type === 'reasoning' && typeof value.text === 'string' && value.text.trim()) {
-        push(ts, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: value.text } });
-      } else if (value.type === 'tool') {
-        const state = isRecord(value.state) ? value.state : {};
-        const tool = typeof value.tool === 'string' ? value.tool : 'Tool call';
-        const output = typeof state.output === 'string' && state.output.trim() ? state.output : null;
-        push(ts, {
-          sessionUpdate: 'tool_call',
-          ...(typeof value.callID === 'string' ? { toolCallId: value.callID } : {}),
-          title: toolTitle(tool, state.input),
-          status: state.status === 'error' ? 'failed' : 'completed',
-          _meta: { opencode: { toolName: tool } },
-          ...(output ? { content: [{ type: 'content', content: { type: 'text', text: output } }] } : {}),
-        });
-      } else if (value.type === 'patch') {
-        const files = Array.isArray(value.files) ? value.files.filter((f): f is string => typeof f === 'string') : [];
-        push(ts, {
-          sessionUpdate: 'tool_call',
-          ...(typeof value.id === 'string' ? { toolCallId: value.id } : {}),
-          title: files.length ? `patch ${files.map((file) => basename(file)).join(', ')}` : 'patch',
-          status: 'completed',
-          _meta: { opencode: { toolName: 'patch' } },
-        });
-      }
+    if (!isRecord(message) || !isRecord(message.info) || message.info.role !== 'assistant') continue;
+    const ts = messageCreatedAt(message.info);
+    for (const part of Array.isArray(message.parts) ? message.parts : []) {
+      const payload = isRecord(part) ? partUpdate(part) : null;
+      if (payload === null) continue;
+      const id = events.length + 1;
+      events.push({ id, seq: id, ts, type: 'session_update', payload });
     }
   }
   return events.slice(-EXPORT_MAX_EVENTS);
