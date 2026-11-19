@@ -28,11 +28,27 @@ function originMismatch(
   }
 }
 
+function isGatedPath(path: string): boolean {
+  return (path.startsWith('/api') || path.startsWith('/mcp')) && !PUBLIC_API_PATHS.has(path);
+}
+
+function wsSubprotocolToken(path: string, header: string | undefined): string | undefined {
+  return path === '/api/ws' ? header?.split(',')[0]?.trim() : undefined;
+}
+
+type KeyVerdict = 'allowed' | 'scope-rejected' | 'invalid';
+
+async function judgeKey(auth: AuthService, token: string, scopeAllows: (scope: string) => boolean): Promise<KeyVerdict> {
+  const key = await auth.verifyKey(token);
+  if (!key) return 'invalid';
+  return scopeAllows(key.scope) ? 'allowed' : 'scope-rejected';
+}
+
 export function registerAuthHook(app: App, auth: AuthService): void {
   app.addHook('onRequest', async (req, reply) => {
     const path = req.routeOptions.url ?? req.url.split('?')[0] ?? req.url;
     if (isPreflight(req)) return;
-    if ((!path.startsWith('/api') && !path.startsWith('/mcp')) || PUBLIC_API_PATHS.has(path)) return;
+    if (!isGatedPath(path)) return;
 
     if (!(await auth.hasPassword())) return;
 
@@ -50,11 +66,9 @@ export function registerAuthHook(app: App, auth: AuthService): void {
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     let scopedKeyRejected = false;
     if (bearer) {
-      const key = await auth.verifyKey(bearer);
-      if (key) {
-        if (scopeAllows(key.scope)) return;
-        scopedKeyRejected = true;
-      }
+      const verdict = await judgeKey(auth, bearer, scopeAllows);
+      if (verdict === 'allowed') return;
+      scopedKeyRejected = verdict === 'scope-rejected';
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) {
       if (originMismatch(req.headers.origin, req.headers.host, req.headers['x-forwarded-host'])) {
@@ -62,16 +76,12 @@ export function registerAuthHook(app: App, auth: AuthService): void {
       }
       return;
     }
-    if (path === '/api/ws') {
-      const wsToken = req.headers['sec-websocket-protocol']?.split(',')[0]?.trim();
-      if (wsToken) {
-        if (auth.validateSession(wsToken)) return;
-        const key = await auth.verifyKey(wsToken);
-        if (key) {
-          if (scopeAllows(key.scope)) return;
-          scopedKeyRejected = true;
-        }
-      }
+    const wsToken = wsSubprotocolToken(path, req.headers['sec-websocket-protocol']);
+    if (wsToken) {
+      if (auth.validateSession(wsToken)) return;
+      const verdict = await judgeKey(auth, wsToken, scopeAllows);
+      if (verdict === 'allowed') return;
+      scopedKeyRejected ||= verdict === 'scope-rejected';
     }
 
     if (scopedKeyRejected) return forbidden();
