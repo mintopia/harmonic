@@ -240,6 +240,17 @@ export class WorkspaceWatcher {
 
     const onEvent = (dir: string, filename: string | null): void => {
       if (state.stopped) return;
+      // The watched directory itself was removed or renamed: release it and its descendants.
+      // macOS may report this only as a null-filename event on the directory's own watcher,
+      // with the parent's child event coalesced away, so this is the sole reliable prune signal.
+      try {
+        if (!lstatSync(dir).isDirectory()) throw new Error('not a directory');
+      } catch {
+        state.fsChanged = true;
+        this.schedule(workspace.id, workspace.workingDir, state);
+        unwatch(dir);
+        return;
+      }
       const path = filename === null ? dir : join(dir, filename);
       if (!isGitPath(path) && relative(root, path).startsWith('..')) return;
       if (isGitPath(path)) state.gitChanged = true;
