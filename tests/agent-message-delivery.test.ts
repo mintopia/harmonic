@@ -1,13 +1,20 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
-import { tasks, agentMessages, type AgentMessageRecipient } from '../src/db/schema.js';
-import { startServer, stubHarness, waitFor, type TestServer, withArchivedPrompt } from './helpers.js';
+import { eq, sql } from 'drizzle-orm';
+import { tasks, agentMessages, type AgentMessageRecipient, type AgentMessageRow } from '../src/db/schema.js';
+import { startServer, stubHarness, waitFor, type TestServer, withArchivedPrompt, allWorkspaces, makeSettingsStore, seedWorkspace } from './helpers.js';
 import { trackerRef } from '../src/tracker/adapter.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
+import { baselineConfig } from '../src/config.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
+import { TaskService } from '../src/domain/tasks.js';
+import { AgentMessageStore } from '../src/domain/agent-messages.js';
+import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
+import { deliverAgentMessage, type AgentMessageRunner } from '../src/execution/agent-message-delivery.js';
 
 const EPIC = 500;
 const parse = (result: any) => JSON.parse(result.content[0].text);
@@ -251,5 +258,252 @@ describe('agent message delivery (stub Harness, run-control seam)', () => {
     const mentionsMessage = (p: Record<string, unknown>) => String(p.text).includes('while you are paused');
     expect((await lifecycle(b, 'steer_injected')).filter(mentionsMessage)).toEqual([]);
     expect((await lifecycle(b, 'steer_queued')).filter(mentionsMessage)).toEqual([]);
+  });
+});
+
+describe('Agent Message deletion rules (#763)', () => {
+  let dataDir: string;
+  let asyncDb: AsyncDbHandle;
+  let workspaces: WorkspaceService;
+  let tasks: TaskService;
+  let store: AgentMessageStore;
+  let workspaceId: number;
+
+  beforeEach(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), 'harmonic-am-del-'));
+    asyncDb = await openAsyncDb(dataDir);
+    workspaceId = await seedWorkspace(asyncDb);
+    const settingsStore = await makeSettingsStore(dataDir);
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    store = new AgentMessageStore(asyncDb);
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const send = (senderTaskId: number, recipientIds: number[], threadId: string | null = null) =>
+    store.create({
+      workspaceId,
+      text: 'hello',
+      replyTo: null,
+      threadId,
+      senderTaskId,
+      senderAttemptId: 1,
+      recipients: recipientIds.map((taskId) => ({ taskId, receipt: 'queued' as const })),
+    });
+
+  it('deletes a Workspace together with its Agent Messages', async () => {
+    const a = await tasks.create({ prompt: 'a' });
+    const b = await tasks.create({ prompt: 'b' });
+    await send(a.id, [b.id]);
+    expect(await asyncDb.read((d) => d.select().from(agentMessages).all())).toHaveLength(1);
+
+    await workspaces.delete(workspaceId);
+
+    expect(await asyncDb.read((d) => d.select().from(agentMessages).all())).toHaveLength(0);
+  });
+
+  it('keeps the Thread when a participant Task is deleted and marks that side deleted', async () => {
+    const a = await tasks.create({ prompt: 'a' });
+    const b = await tasks.create({ prompt: 'b' });
+    const root = await send(a.id, [b.id]);
+    await send(b.id, [a.id], root.threadId);
+
+    await tasks.delete(b.id);
+
+    const seen = await store.presentedForTask(workspaceId, a.id);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ senderTaskId: a.id, senderDeleted: false, recipients: [{ taskId: b.id, deleted: true }] });
+    expect(seen[1]).toMatchObject({ senderTaskId: b.id, senderDeleted: true, recipients: [{ taskId: a.id, deleted: false }] });
+    expect(new Set(seen.map((m) => m.threadId))).toEqual(new Set([root.threadId]));
+  });
+});
+
+const DEFAULT_PROMPTS = bundledEnginePrompts();
+
+describe('deliverAgentMessage — a next-turn steer dropped when the run ends', () => {
+  it('returns the queued receipt to held so it is redelivered later', async () => {
+    const receipts: Partial<AgentMessageRecipient>[] = [];
+    const store = { updateRecipient: vi.fn(async (_m: string, _t: number, patch: Partial<AgentMessageRecipient>) => void receipts.push(patch)) };
+    let drop: (() => void) | undefined;
+    const pending: Array<Promise<unknown>> = [];
+    const runner: AgentMessageRunner = {
+      hasLiveAgent: () => true,
+      trackBackground: (op) => void pending.push(op()),
+      runControl: {
+        steerWithMode: async (_t, _text, _onDelivered, onDropped) => {
+          drop = onDropped;
+          return 'next-turn';
+        },
+      },
+    };
+    const row = { id: 'm1', senderTaskId: 1, recipients: [{ taskId: 2, receipt: 'held' }], parts: [{ text: 'hi' }] } as unknown as AgentMessageRow;
+
+    await deliverAgentMessage({ store: store as unknown as AgentMessageStore, runner, prompts: { ...DEFAULT_PROMPTS } }, row, { id: 1, harness: 'claude' });
+    expect(receipts.at(-1)).toMatchObject({ receipt: 'queued' });
+
+    drop!();
+    await Promise.all(pending);
+    expect(receipts.at(-1)).toMatchObject({ receipt: 'held' });
+  });
+});
+
+describe('Agent Messages on the Task timeline API', () => {
+  let server: TestServer;
+  let sender: number;
+  let recipient: number;
+  let attemptId: number;
+  let workspaceId: number;
+
+  const agentRows = async (taskId: number) => {
+    const { body } = await server.api('GET', `/api/tasks/${taskId}/timeline`);
+    return body.events.filter((e: any) => e.kind === 'agent-message').map((e: any) => e.data);
+  };
+
+  beforeAll(async () => {
+    server = await startServer(stubHarness());
+    sender = (await server.api('POST', '/api/tasks', { prompt: 'sender' })).body.id;
+    recipient = (await server.api('POST', '/api/tasks', { prompt: 'recipient' })).body.id;
+    attemptId = (await server.api('POST', `/api/tasks/${sender}/run`)).body.id;
+    workspaceId = (await server.app.ctx.tasks.get(sender)).workspaceId!;
+    const send = (text: string, recipients: any[], replyTo: string | null = null, threadId: string | null = null) =>
+      server.app.ctx.agentMessages.create({ workspaceId, text, replyTo, threadId, senderTaskId: sender, senderAttemptId: attemptId, recipients });
+    const root = await send('hello', [{ taskId: recipient, receipt: 'held' }]);
+    await send('again', [{ taskId: recipient, receipt: 'delivered', deliveredAt: 1 }], root.id, root.threadId);
+    await send('nope', [{ taskId: recipient, receipt: 'refused', reason: 'recipient is done' }]);
+  });
+  afterAll(async () => { await server.close(); });
+
+  it('emits a sent row per recipient on the sender, carrying receipt, preview and Thread id, including the refusal', async () => {
+    const rows = await agentRows(sender);
+    expect(rows.map((r: any) => [r.direction, r.receipt, r.preview, r.peerTaskId, r.isReply])).toEqual([
+      ['sent', 'held', 'hello', recipient, false],
+      ['sent', 'delivered', 'again', recipient, true],
+      ['sent', 'refused', 'nope', recipient, false],
+    ]);
+    expect(rows.map((r: any) => r.sendNumber)).toEqual([1, 2, 3]);
+    expect(rows[1].threadId).toBe(rows[0].threadId);
+    expect(rows[2].reason).toBe('recipient is done');
+  });
+
+  it('emits received rows on the recipient but hides the refused send', async () => {
+    const rows = await agentRows(recipient);
+    expect(rows.map((r: any) => [r.direction, r.receipt, r.preview, r.peerTaskId])).toEqual([
+      ['received', 'held', 'hello', sender],
+      ['received', 'delivered', 'again', sender],
+    ]);
+  });
+});
+
+describe('agent_messages_changed notification', () => {
+  let dataDir: string;
+  let asyncDb: AsyncDbHandle;
+  let tasks: TaskService;
+  let store: AgentMessageStore;
+  let workspaceId: number;
+  const changed: number[] = [];
+
+  beforeEach(async () => {
+    changed.length = 0;
+    dataDir = mkdtempSync(join(tmpdir(), 'harmonic-am-evt-'));
+    asyncDb = await openAsyncDb(dataDir);
+    workspaceId = await seedWorkspace(asyncDb);
+    const settingsStore = await makeSettingsStore(dataDir);
+    tasks = new TaskService(asyncDb, () => baselineConfig(), allWorkspaces(asyncDb, settingsStore));
+    store = new AgentMessageStore(asyncDb, (id) => changed.push(id));
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('fires when a message is created and when a receipt changes', async () => {
+    const a = await tasks.create({ prompt: 'a' });
+    const b = await tasks.create({ prompt: 'b' });
+    const row = await store.create({
+      workspaceId,
+      text: 'hi',
+      replyTo: null,
+      threadId: null,
+      senderTaskId: a.id,
+      senderAttemptId: 1,
+      recipients: [{ taskId: b.id, receipt: 'queued' }],
+    });
+    expect(changed).toEqual([workspaceId]);
+
+    await store.updateRecipient(row.id, b.id, { receipt: 'held' });
+    expect(changed).toEqual([workspaceId, workspaceId]);
+
+    await store.markDelivered(await store.listHeld(b.id), b.id);
+    expect(changed).toHaveLength(3);
+
+    await store.updateRecipient('missing', b.id, { receipt: 'held' });
+    expect(changed).toHaveLength(3);
+  });
+});
+
+describe('agent message recipient index', () => {
+  let server: TestServer;
+  let dataDir = '';
+
+  afterEach(async () => {
+    await server?.close();
+    if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+    dataDir = '';
+  });
+
+  async function boot() {
+    dataDir ||= mkdtempSync(join(tmpdir(), 'am-index-'));
+    server = await startServer(stubHarness(), { dataDir });
+  }
+
+  async function seed(recipients: AgentMessageRecipient[]) {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'sender' });
+    const task = await server.app.ctx.tasks.get(created.body.id);
+    const started = await server.api('POST', `/api/tasks/${task.id}/run`);
+    const row = await server.app.ctx.agentMessages.create({
+      workspaceId: task.workspaceId!,
+      text: 'hello',
+      replyTo: null,
+      threadId: null,
+      senderTaskId: task.id,
+      senderAttemptId: started.body.id,
+      recipients,
+    });
+    return { row, workspaceId: task.workspaceId! };
+  }
+
+  const plan = async (query: ReturnType<typeof sql>) =>
+    (await server.app.ctx.asyncDb.read((d) => d.all<{ detail: string }>(query))).map((r) => r.detail).join('\n');
+
+  it('searches the recipient index instead of scanning agent_messages JSON', async () => {
+    await boot();
+    const detail = await plan(
+      sql`explain query plan select * from agent_messages where id in (select message_id from agent_message_recipients where task_id = 7 and receipt = 'held')`,
+    );
+    expect(detail).toMatch(/SEARCH .*agent_message_recipients.* USING (COVERING )?INDEX/);
+    expect(detail).not.toMatch(/json_each/);
+  });
+
+  it('keeps the index in step with receipt changes', async () => {
+    await boot();
+    const { row } = await seed([{ taskId: 9001, receipt: 'held' }]);
+    const store = server.app.ctx.agentMessages;
+    expect((await store.listHeld(9001)).map((m) => m.id)).toEqual([row.id]);
+    await store.markDelivered([row], 9001);
+    expect(await store.listHeld(9001)).toEqual([]);
+    await store.updateRecipient(row.id, 9001, { receipt: 'held' });
+    expect((await store.listHeld(9001)).map((m) => m.id)).toEqual([row.id]);
+  });
+
+  it('backfills the index for messages stored before it existed', async () => {
+    await boot();
+    const { row } = await seed([{ taskId: 9002, receipt: 'held' }]);
+    await server.app.ctx.asyncDb.write((d) => d.run(sql`delete from agent_message_recipients`));
+    await server.app.close();
+    await boot();
+    expect((await server.app.ctx.agentMessages.listHeld(9002)).map((m) => m.id)).toEqual([row.id]);
   });
 });
