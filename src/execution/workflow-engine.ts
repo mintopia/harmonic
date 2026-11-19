@@ -177,6 +177,45 @@ interface GitMark {
   commits: number;
 }
 
+type OkRoute = Extract<ResolvedRoute, { ok: true }>;
+
+interface AttemptedStep {
+  result: StepResult;
+  pod: PodSession | undefined;
+  ownPod: PodSession | undefined;
+}
+
+interface PlacedPod<S extends EngineSubject> {
+  pod: PodSession | undefined;
+  ownPod: PodSession | undefined;
+  stepCtx: RunContext<S>;
+}
+
+/** Everything an agent or critic drive needs about where and how it runs. */
+interface AgentSite<S extends EngineSubject> {
+  ctx: RunContext<S>;
+  step: WorkflowStepDefinition;
+  stepRunId: number;
+  pass: number | null;
+  pod: PodSession | undefined;
+  route: OkRoute;
+  cwd: string;
+}
+
+const maskerFor = (secrets: string[]) => (text: string): string => maskSecrets(text, secrets);
+
+const inconclusiveStep = (summary: string, mask: (text: string) => string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
+
+const gitMarkMoved = (before: GitMark, after: GitMark): boolean =>
+  before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits;
+
+function criticVerdict(rawOutput: string, output: string, mask: (text: string) => string): StepResult {
+  const parsed = parseCriticOutput(rawOutput);
+  if (!parsed.ok) return { outcome: 'inconclusive', summary: mask(parsed.reason), stdout: output, exitCode: null, output, outputs: { verdict: 'inconclusive', reason: mask(parsed.reason) } };
+  const { verdict, summary, findings } = parsed.value;
+  return { outcome: verdict, summary: mask(summary), stdout: output, exitCode: null, output, outputs: { verdict, reason: mask(summary), findings: (findings ?? []).map(mask) } };
+}
+
 const stepIds = (steps: readonly WorkflowStepDefinition[]): string[] => steps.flatMap((step) => [step.id, ...(step.parallel ?? []).map((child) => child.id)]);
 
 export function parseWorkflowRef(ref: string): { name: string; version: number } {
@@ -396,76 +435,98 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   }
 
   private async runStep(ctx: RunContext<S>, step: WorkflowStepDefinition, position: number, attempt: number | null, groupCondition?: string): Promise<FailedStep | null> {
-    const { task, run, ref, secrets, latest, stepsContext, context } = ctx;
-    const mask = (text: string): string => maskSecrets(text, secrets);
+    const { task, run, ref, latest, stepsContext } = ctx;
     const prior = latest.get(step.id)?.outcome;
     if (prior === 'pass' || prior === 'skipped') return null;
     const action = step.run !== undefined ? 'run' : step.uses!;
     const row = await this.deps.stepRuns.start({ ...stepRunOwner(task), workflowRef: ref, stepId: step.id, position, action, attempt, attemptId: run.id });
     this.deps.onStepChanged?.(stepRunOwner(task));
-    let result: StepResult;
-    let losses = 0;
-    for (;;) {
-      let pod: PodSession | undefined;
-      let ownPod: PodSession | undefined;
-      let lost = false;
-      try {
-        const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, context));
-        if (falsy !== undefined) {
-          result = { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' };
-        } else {
-          const [resolved, env] = resolveStep(step, context);
-          let stepCtx = ctx;
-          if (ctx.mixed) {
-            await this.relocate(ctx, resolved);
-            pod = this.podFor(ctx, resolved);
-          } else if (this.opensOwnPod(resolved)) {
-            if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
-            pod = ownPod = await this.deps.pods.open(task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
-            secrets.push(...ownPod.credentialValues);
-            stepCtx = { ...ctx, podTarget: resolved.runs_on!, agentState: {}, coldPod: true };
-          } else {
-            pod = this.podFor(ctx, resolved);
-          }
-          result =
-            resolved.uses === 'agent'
-              ? await this.executeAgent(stepCtx, resolved, row.id, attempt, pod)
-              : resolved.uses === 'critic'
-                ? await this.executeCritic(stepCtx, resolved, row.id, attempt, pod)
-                : await this.execute(task, run, resolved, env, secrets, { pass: attempt, stepId: step.id, stepRunId: row.id }, pod);
-        }
-      } catch (error) {
-        result = { outcome: 'inconclusive', summary: mask(errorMessage(error)), stdout: '', exitCode: null, output: '' };
-      }
-      try {
-        if (result.halt) {
-          ctx.halted = true;
-          return null;
-        }
-        if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
-        lost = pod !== undefined && result.outcome !== 'pass' && result.outcome !== 'skipped' && (await pod.isLost());
-        if (!lost && ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
-      } finally {
-        await ownPod?.dispose();
-      }
-      if (!lost) break;
-      losses++;
-      if (losses > 1) {
-        result = { ...result, outcome: 'inconclusive', summary: 'the pod was lost twice during this step: permanent infrastructure failure', configFailure: true };
-        break;
-      }
-      try {
-        if (!ownPod) await this.replaceWorkflowPod(ctx);
-      } catch (error) {
-        result = { outcome: 'inconclusive', summary: mask(`the pod was lost and could not be replaced: ${errorMessage(error)}`), stdout: '', exitCode: null, output: '', configFailure: true };
-        break;
-      }
-    }
+    const result = await this.runUntilSettled(ctx, step, row.id, attempt, groupCondition);
+    if (result === null) return null;
     const outputs: WorkflowStepOutputs = { stdout: result.stdout, exitCode: result.exitCode, ...result.outputs };
     await this.deps.stepRuns.finish(row.id, { outcome: result.outcome, outputs, summary: result.summary });
     stepsContext[step.id] = { outcome: result.outcome, outputs: outputs as unknown as Value };
     this.deps.onStepChanged?.(stepRunOwner(task));
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
+  }
+
+  /** Runs a step until its result stands; a pod lost mid-step is replaced and the step retried once. Null when the turn halted. */
+  private async runUntilSettled(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, attempt: number | null, groupCondition?: string): Promise<StepResult | null> {
+    const mask = maskerFor(ctx.secrets);
+    let losses = 0;
+    for (;;) {
+      const attempted = await this.attemptStep(ctx, step, stepRunId, attempt, groupCondition);
+      const settled = await this.settleAttempt(ctx, attempted, mask);
+      if (settled === null) return null;
+      if (!settled.lost) return settled.result;
+      losses++;
+      if (losses > 1) {
+        return { ...settled.result, outcome: 'inconclusive', summary: 'the pod was lost twice during this step: permanent infrastructure failure', configFailure: true };
+      }
+      try {
+        if (!attempted.ownPod) await this.replaceWorkflowPod(ctx);
+      } catch (error) {
+        return { ...inconclusiveStep(`the pod was lost and could not be replaced: ${errorMessage(error)}`, mask), configFailure: true };
+      }
+    }
+  }
+
+  /** One attempt at a step: its `if` guards, pod placement and dispatch. Failures become an inconclusive result. */
+  private async attemptStep(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, attempt: number | null, groupCondition?: string): Promise<AttemptedStep> {
+    let placed: PlacedPod<S> | undefined;
+    try {
+      const falsy = [groupCondition, step.if].find((condition) => condition !== undefined && !evaluateCondition(condition, ctx.context));
+      if (falsy !== undefined) {
+        return { result: { outcome: 'skipped', summary: `if: ${falsy.trim()} was false`, stdout: '', exitCode: null, output: '' }, pod: undefined, ownPod: undefined };
+      }
+      const [resolved, env] = resolveStep(step, ctx.context);
+      placed = await this.placeStepPod(ctx, resolved);
+      const result = await this.dispatchStep(placed.stepCtx, resolved, env, stepRunId, attempt, placed.pod);
+      return { result, pod: placed.pod, ownPod: placed.ownPod };
+    } catch (error) {
+      return { result: inconclusiveStep(errorMessage(error), maskerFor(ctx.secrets)), pod: placed?.pod, ownPod: placed?.ownPod };
+    }
+  }
+
+  private async placeStepPod(ctx: RunContext<S>, resolved: WorkflowStepDefinition): Promise<PlacedPod<S>> {
+    if (ctx.mixed) {
+      await this.relocate(ctx, resolved);
+      return { pod: this.podFor(ctx, resolved), ownPod: undefined, stepCtx: ctx };
+    }
+    if (!this.opensOwnPod(resolved)) return { pod: this.podFor(ctx, resolved), ownPod: undefined, stepCtx: ctx };
+    if (!this.deps.pods) throw new Error(`step runs_on ${resolved.runs_on} needs a Kubernetes Execution Target, which this engine cannot start`);
+    const ownPod = await this.deps.pods.open(ctx.task, { runsOn: resolved.runs_on!, image: resolved.image, source: 'workflow' });
+    ctx.secrets.push(...ownPod.credentialValues);
+    return { pod: ownPod, ownPod, stepCtx: { ...ctx, podTarget: resolved.runs_on!, agentState: {}, coldPod: true } };
+  }
+
+  private async dispatchStep(ctx: RunContext<S>, resolved: WorkflowStepDefinition, env: Record<string, string>, stepRunId: number, attempt: number | null, pod: PodSession | undefined): Promise<StepResult> {
+    switch (resolved.uses) {
+      case 'agent':
+        return this.executeAgent(ctx, resolved, stepRunId, attempt, pod);
+      case 'critic':
+        return this.executeCritic(ctx, resolved, stepRunId, attempt, pod);
+      default:
+        return this.execute(ctx.task, ctx.run, resolved, env, ctx.secrets, { pass: attempt, stepId: resolved.id, stepRunId }, pod);
+    }
+  }
+
+  /** Checkpoints and loss-checks an attempt's pod, disposing a step-owned pod. Null when the agent halted. */
+  private async settleAttempt(ctx: RunContext<S>, attempted: AttemptedStep, mask: (text: string) => string): Promise<{ result: StepResult; lost: boolean } | null> {
+    const { pod, ownPod } = attempted;
+    let result = attempted.result;
+    try {
+      if (result.halt) {
+        ctx.halted = true;
+        return null;
+      }
+      if (pod && result.outcome !== 'skipped') result = await this.checkpointed(pod, result, mask);
+      const lost = pod !== undefined && result.outcome !== 'pass' && result.outcome !== 'skipped' && (await pod.isLost());
+      if (!lost && ownPod && ctx.pod && result.outcome !== 'skipped') result = await this.resyncWorkflowPod(ctx.pod, result, mask);
+      return { result, lost };
+    } finally {
+      await ownPod?.dispose();
+    }
   }
 
   private async replaceWorkflowPod(ctx: RunContext<S>): Promise<void> {
@@ -528,62 +589,76 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   }
 
   private async executeCritic(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, pass: number | null, pod?: PodSession): Promise<StepResult> {
-    const { task, secrets, context } = ctx;
-    const mask = (text: string): string => maskSecrets(text, secrets);
-    const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
+    const { task, context } = ctx;
+    const mask = maskerFor(ctx.secrets);
     try {
       const options = criticStepWith(step.with);
-      if (!options) return inconclusive('invalid critic step options: a critic needs its own prompt and either an option or a harness and model');
+      if (!options) return inconclusiveStep('invalid critic step options: a critic needs its own prompt and either an option or a harness and model', mask);
       const { agent } = this.deps;
-      let route: ResolvedRoute;
-      if (options.option !== undefined) {
-        const picked = await this.optionRoute(task, options.option, step.id);
-        if ('failure' in picked) return { ...picked.failure, summary: mask(picked.failure.summary) };
-        route = picked.route;
-      } else {
-        route = resolveRoute(agent.getConfig(), options.harness!, options.model!, null);
-      }
-      if (!route.ok) return inconclusive(route.reason);
-      const missing = this.missingCredential(pod, ctx.podTarget, route.harness);
-      if (missing) return missing;
+      const routed = await this.stepRoute(ctx, step, options.option, pod, async () => resolveRoute(agent.getConfig(), options.harness!, options.model!, null));
+      if ('failure' in routed) return routed.failure;
+      const { route } = routed;
       const cwd = pod ? pod.repoDir : this.deps.cwdFor(task);
       const prompt = buildWorkflowCriticPrompt(await this.renderPrompt(options.prompt, await this.promptFields(task, context, route, cwd), context), agent.prompts());
-      await this.deps.stepRuns.setResolvedPrompt(stepRunId, mask(prompt));
-      this.deps.onStepChanged?.(stepRunOwner(task));
-      await this.deps.stepRuns.setSession(stepRunId, { harness: route.harness, model: route.model });
+      await this.recordStepPrompt(ctx, stepRunId, route, prompt);
       const before = await markGit(cwd, pod);
       const dirtyBefore = await isDirty(cwd, pod);
-      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run: ctx.run, harnessId: route.harness, model: route.model, cwd, kind: 'critic', stepId: step.id, stepRunId, pass }) : undefined;
-      let result: CriticDriveResult;
-      try {
-        result = await agent.drive.run({
-          harness: route.config,
-          harnessId: route.harness,
-          model: route.model,
-          cwd,
-          prompt,
-          timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
-          readOnly: true,
-          ...(pod ? { pod } : {}),
-          onSessionCreated: transcript?.onSessionCreated ?? (async (harnessSessionId, initialize) => {
-            const sessionRowId = await this.deps.recordSession?.(task, { harness: route.config, harnessId: route.harness, model: route.model, cwd, harnessSessionId, initialize });
-            if (sessionRowId != null) await this.deps.stepRuns.setSession(stepRunId, { sessionRowId });
-          }),
-        });
-      } finally {
-        await transcript?.finish();
-      }
+      const result = await this.driveCritic({ ctx, step, stepRunId, pass, pod, route, cwd }, prompt);
       if (result.usage) await this.deps.stepRuns.setUsage(stepRunId, usageFromAcp(result.usage, route.model));
       const output = mask(result.output);
       const after = await markGit(cwd, pod);
-      const changed = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits || (!dirtyBefore && (await isDirty(cwd, pod)));
+      const changed = gitMarkMoved(before, after) || (!dirtyBefore && (await isDirty(cwd, pod)));
       if (changed) return { outcome: 'fail', summary: CRITIC_CHANGED_THE_WORK, stdout: output, exitCode: null, output, outputs: { verdict: 'fail', reason: CRITIC_CHANGED_THE_WORK } };
-      const parsed = parseCriticOutput(result.output);
-      if (!parsed.ok) return { outcome: 'inconclusive', summary: mask(parsed.reason), stdout: output, exitCode: null, output, outputs: { verdict: 'inconclusive', reason: mask(parsed.reason) } };
-      const { verdict, summary, findings } = parsed.value;
-      return { outcome: verdict, summary: mask(summary), stdout: output, exitCode: null, output, outputs: { verdict, reason: mask(summary), findings: (findings ?? []).map(mask) } };
+      return criticVerdict(result.output, output, mask);
     } catch (error) {
-      return inconclusive(errorMessage(error));
+      return inconclusiveStep(errorMessage(error), mask);
+    }
+  }
+
+  /** Resolves a step's route from its model option, else `otherwise`, and checks the pod holds the Harness's credential. */
+  private async stepRoute(ctx: RunContext<S>, step: WorkflowStepDefinition, option: string | undefined, pod: PodSession | undefined, otherwise: () => Promise<ResolvedRoute>): Promise<{ route: OkRoute } | { failure: StepResult }> {
+    const mask = maskerFor(ctx.secrets);
+    let route: ResolvedRoute;
+    if (option === undefined) {
+      route = await otherwise();
+    } else {
+      const picked = await this.optionRoute(ctx.task, option, step.id);
+      if ('failure' in picked) return { failure: { ...picked.failure, summary: mask(picked.failure.summary) } };
+      route = picked.route;
+    }
+    if (!route.ok) return { failure: inconclusiveStep(route.reason, mask) };
+    const missing = this.missingCredential(pod, ctx.podTarget, route.harness);
+    return missing ? { failure: missing } : { route };
+  }
+
+  private async recordStepPrompt(ctx: RunContext<S>, stepRunId: number, route: OkRoute, prompt: string): Promise<void> {
+    await this.deps.stepRuns.setResolvedPrompt(stepRunId, maskerFor(ctx.secrets)(prompt));
+    this.deps.onStepChanged?.(stepRunOwner(ctx.task));
+    await this.deps.stepRuns.setSession(stepRunId, { harness: route.harness, model: route.model });
+  }
+
+  private async driveCritic(site: AgentSite<S>, prompt: string): Promise<CriticDriveResult> {
+    const { ctx, step, stepRunId, pass, pod, route, cwd } = site;
+    const { task } = ctx;
+    const { agent } = this.deps;
+    const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run: ctx.run, harnessId: route.harness, model: route.model, cwd, kind: 'critic', stepId: step.id, stepRunId, pass }) : undefined;
+    try {
+      return await agent.drive.run({
+        harness: route.config,
+        harnessId: route.harness,
+        model: route.model,
+        cwd,
+        prompt,
+        timeoutMs: agent.criticTimeoutMs ?? DEFAULT_CRITIC_TIMEOUT_MS,
+        readOnly: true,
+        ...(pod ? { pod } : {}),
+        onSessionCreated: transcript?.onSessionCreated ?? (async (harnessSessionId, initialize) => {
+          const sessionRowId = await this.deps.recordSession?.(task, { harness: route.config, harnessId: route.harness, model: route.model, cwd, harnessSessionId, initialize });
+          if (sessionRowId != null) await this.deps.stepRuns.setSession(stepRunId, { sessionRowId });
+        }),
+      });
+    } finally {
+      await transcript?.finish();
     }
   }
 
@@ -691,79 +766,83 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
   }
 
   private async executeAgent(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, pass: number | null, pod?: PodSession): Promise<StepResult> {
-    const { task, run, secrets, agentState: state, context } = ctx;
-    const mask = (text: string): string => maskSecrets(text, secrets);
-    const inconclusive = (summary: string): StepResult => ({ outcome: 'inconclusive', summary: mask(summary), stdout: '', exitCode: null, output: '' });
+    const { task, context } = ctx;
+    const mask = maskerFor(ctx.secrets);
     try {
       const options = agentStepWith(step.with);
-      if (!options) return inconclusive('invalid agent step options');
-      const { agent } = this.deps;
-      let route: ResolvedRoute;
-      if (options.option !== undefined) {
-        const picked = await this.optionRoute(task, options.option, step.id);
-        if ('failure' in picked) return { ...picked.failure, summary: mask(picked.failure.summary) };
-        route = picked.route;
-      } else if (options.harness === undefined && options.model === undefined) {
-        state.route ??= agent.route(task);
-        route = await state.route;
-      } else {
-        const needsRoute = options.harness === undefined || options.model === undefined;
-        const implicit = needsRoute ? await (state.route ??= agent.route(task)) : undefined;
-        if (implicit && !implicit.ok) return inconclusive(implicit.reason);
-        const harness = options.harness ?? implicit!.harness;
-        const model = options.model ?? (implicit && options.harness === undefined ? implicit.model : harnessConfig(agent.getConfig(), harness)?.defaultModel ?? '');
-        route = resolveRoute(agent.getConfig(), harness, model, null);
-      }
-      if (!route.ok) return inconclusive(route.reason);
-      const missing = this.missingCredential(pod, ctx.podTarget, route.harness);
-      if (missing) return missing;
+      if (!options) return inconclusiveStep('invalid agent step options', mask);
+      const routed = await this.stepRoute(ctx, step, options.option, pod, () => this.implicitAgentRoute(ctx, options));
+      if ('failure' in routed) return routed.failure;
+      const { route } = routed;
       const cwd = pod ? pod.repoDir : this.deps.cwdFor(task);
       const fields = await this.promptFields(task, context, route, cwd);
-      const prompt = options.prompt === undefined ? await agent.resolvePrompt(task.prompt) : await this.renderPrompt(options.prompt, fields, context);
-      await this.deps.stepRuns.setResolvedPrompt(stepRunId, mask(prompt));
-      this.deps.onStepChanged?.(stepRunOwner(task));
-      await this.deps.stepRuns.setSession(stepRunId, { harness: route.harness, model: route.model });
-      const key = `${route.harness}\u0000${route.model}`;
-      let output = '';
-      let text = prompt;
-      const nudges = options.continueAttempts ?? 0;
-      const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run, harnessId: route.harness, model: route.model, cwd, kind: 'agent', stepId: step.id, stepRunId, pass }) : undefined;
-      try {
-        for (let turn = 0; ; turn++) {
-          const result = await agent.drive.run({
-            harness: route.config,
-            harnessId: route.harness,
-            model: route.model,
-            cwd,
-            prompt: text,
-            timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
-            task,
-            run,
-            stepRunId,
-            stepId: step.id,
-            pass,
-            ...(pod ? { pod } : {}),
-            ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
-            ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}),
-          });
-          if (result.sessionId) {
-            state.session = { key, id: result.sessionId };
-            if (!ctx.coldPod) this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
-          }
-          if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
-          if (result.escalate !== undefined) return { ...inconclusive(result.escalate), configFailure: true };
-          output += result.output;
-          if (!(await isDirty(cwd, pod).catch(() => false))) break;
-          if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
-          text = options.continuePrompt === undefined ? DEFAULT_CONTINUE_PROMPT : await this.renderPrompt(options.continuePrompt, fields, context);
-        }
-      } finally {
-        await transcript?.finish();
-      }
-      return { outcome: 'pass', summary: `agent turn finished on ${route.harness}/${route.model}`, stdout: mask(output), exitCode: null, output: mask(output) };
+      const prompt = options.prompt === undefined ? await this.deps.agent.resolvePrompt(task.prompt) : await this.renderPrompt(options.prompt, fields, context);
+      await this.recordStepPrompt(ctx, stepRunId, route, prompt);
+      return await this.driveAgentTurns({ ctx, step, stepRunId, pass, pod, route, cwd }, options, fields, prompt);
     } catch (error) {
-      return inconclusive(errorMessage(error));
+      return inconclusiveStep(errorMessage(error), mask);
     }
+  }
+
+  /** The route for an agent step without a model option: the Task's route, with any explicit harness or model overriding it. */
+  private async implicitAgentRoute(ctx: RunContext<S>, options: NonNullable<ReturnType<typeof agentStepWith>>): Promise<ResolvedRoute> {
+    const { agent } = this.deps;
+    const state = ctx.agentState;
+    if (options.harness === undefined && options.model === undefined) {
+      state.route ??= agent.route(ctx.task);
+      return state.route;
+    }
+    const needsRoute = options.harness === undefined || options.model === undefined;
+    const implicit = needsRoute ? await (state.route ??= agent.route(ctx.task)) : undefined;
+    if (implicit && !implicit.ok) return implicit;
+    const harness = options.harness ?? implicit!.harness;
+    const model = options.model ?? (implicit && options.harness === undefined ? implicit.model : harnessConfig(agent.getConfig(), harness)?.defaultModel ?? '');
+    return resolveRoute(agent.getConfig(), harness, model, null);
+  }
+
+  /** Drives the agent, re-prompting up to `continueAttempts` times while it leaves uncommitted changes. */
+  private async driveAgentTurns(site: AgentSite<S>, options: NonNullable<ReturnType<typeof agentStepWith>>, fields: Record<string, string | number>, prompt: string): Promise<StepResult> {
+    const { ctx, step, stepRunId, pass, pod, route, cwd } = site;
+    const { task, run, agentState: state, context } = ctx;
+    const mask = maskerFor(ctx.secrets);
+    const { agent } = this.deps;
+    const key = `${route.harness}\u0000${route.model}`;
+    let output = '';
+    let text = prompt;
+    const nudges = options.continueAttempts ?? 0;
+    const transcript = pod ? this.deps.podTranscripts?.begin({ pod, task, run, harnessId: route.harness, model: route.model, cwd, kind: 'agent', stepId: step.id, stepRunId, pass }) : undefined;
+    const request = {
+      harness: route.config,
+      harnessId: route.harness,
+      model: route.model,
+      cwd,
+      timeoutMs: agent.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+      task,
+      run,
+      stepRunId,
+      stepId: step.id,
+      pass,
+      ...(pod ? { pod } : {}),
+      ...(transcript ? { onSessionCreated: transcript.onSessionCreated } : {}),
+    };
+    try {
+      for (let turn = 0; ; turn++) {
+        const result = await agent.drive.run({ ...request, prompt: text, ...(state.session?.key === key ? { continueSessionId: state.session.id } : {}) });
+        if (result.sessionId) {
+          state.session = { key, id: result.sessionId };
+          if (!ctx.coldPod) this.warmSessions.set(stepRunOwnerKey(stepRunOwner(task)), state.session);
+        }
+        if (result.halt) return { outcome: 'inconclusive', summary: `agent turn ${result.halt}`, stdout: '', exitCode: null, output: '', halt: true };
+        if (result.escalate !== undefined) return { ...inconclusiveStep(result.escalate, mask), configFailure: true };
+        output += result.output;
+        if (!(await isDirty(cwd, pod).catch(() => false))) break;
+        if (turn >= nudges) return { outcome: 'fail', summary: UNCOMMITTED_AFTER_AGENT, stdout: mask(output), exitCode: null, output: mask(output) };
+        text = options.continuePrompt === undefined ? DEFAULT_CONTINUE_PROMPT : await this.renderPrompt(options.continuePrompt, fields, context);
+      }
+    } finally {
+      await transcript?.finish();
+    }
+    return { outcome: 'pass', summary: `agent turn finished on ${route.harness}/${route.model}`, stdout: mask(output), exitCode: null, output: mask(output) };
   }
 
   private async postMergeCheck(task: S, run: AttemptRow, step: WorkflowStepDefinition, env: Record<string, string>, secrets: string[]): Promise<StepResult> {
@@ -822,7 +901,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     });
     const after = await markGit(cwd);
     const verdict = exitCodeToVerdict(result);
-    const moved = before.head !== after.head || before.branch !== after.branch || before.branchOid !== after.branchOid || before.commits !== after.commits;
+    const moved = gitMarkMoved(before, after);
     return {
       outcome: moved ? 'fail' : verdict.verdict,
       summary: moved ? ONLY_THE_AGENT_COMMITS : mask(verdict.summary),
