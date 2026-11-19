@@ -780,7 +780,6 @@ export class EpicLifecycle {
     await this.integrateClosedEpics(tickets, readinessByRef, mirrored, byRef);
   }
 
-  /** Derives the open leaf Epics and records which have ready members; a human-only Task due to run now counts as ready. */
   private async deriveReadyEpics(tickets: Ticket[], mirrored: TaskRow[]): Promise<{
     epics: DerivedEpic[];
     readinessByRef: Map<TrackerRef, { agentWorkable: boolean }>;
@@ -797,16 +796,15 @@ export class EpicLifecycle {
     this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
     const byRef = new Map<TrackerRef, TaskRow>();
     for (const task of mirrored) if (task.trackerRef != null) byRef.set(task.trackerRef, task);
-    const isRunNowOnly = (t: (typeof mirroredWithDeps)[number]) => t.humanOnly && t.openBlockerCount === 0 && t.state === 'ready' && t.trackerRef !== null;
-    const runNowOnlyRefs = new Set(mirroredWithDeps.filter(isRunNowOnly).map((t) => t.trackerRef));
-    for (const epic of epics) epic.ready = epic.members.filter((ref) => epic.ready.includes(ref) || runNowOnlyRefs.has(ref));
+    const isHumanOnlyDueNow = (t: (typeof mirroredWithDeps)[number]) => t.humanOnly && t.openBlockerCount === 0 && t.state === 'ready' && t.trackerRef !== null;
+    const humanOnlyDueNowRefs = new Set(mirroredWithDeps.filter(isHumanOnlyDueNow).map((t) => t.trackerRef));
+    for (const epic of epics) epic.ready = epic.members.filter((ref) => epic.ready.includes(ref) || humanOnlyDueNowRefs.has(ref));
     const readyRefs = new Set<TrackerRef>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     this.readyMemberRefs = readyRefs;
     return { epics, readinessByRef, byRef };
   }
 
-  /** Worktree members branch from the Epic's integration branch (cut on demand); direct members must not point at it. */
   private async syncMemberBases(epic: DerivedEpic, byRef: ReadonlyMap<TrackerRef, TaskRow>, defaultBranch: string): Promise<void> {
     const branch = integrationBranchName(epic.ref);
     const readyWorktreeRefs = epic.ready.filter((ref) => byRef.get(ref)?.isolationMode === 'worktree');
@@ -843,13 +841,6 @@ export class EpicLifecycle {
     }
   }
 
-  // Closed-but-unintegrated Epics: a leaf Epic whose ticket was closed while its
-  // integration branch still holds unmerged work would otherwise strand forever
-  // (the open-only derivation never surfaces it). Offer any closed leaf
-  // with a live integration branch to the same integrate; the whole-Epic verify
-  // gate inside `submit` is what protects against folding abandoned or broken
-  // work: an already-merged branch short-circuits to integrated, an
-  // unverifiable one escalates.
   private async integrateClosedEpics(
     tickets: Ticket[],
     readinessByRef: ReadonlyMap<TrackerRef, { agentWorkable: boolean }>,

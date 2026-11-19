@@ -388,12 +388,14 @@ export const Git = {
     beforeRemove: () => Promise<boolean>,
   ) =>
     withRepoLock(dir, async () => {
+      const removeWorktreeIfRegistered = async (): Promise<void> => {
+        const target = canonicalPath(worktreePath);
+        const registered = (await Git.listWorktrees(dir)).some((w) => canonicalPath(w.path) === target);
+        if (registered) await git(dir, 'worktree', 'remove', '--force', worktreePath);
+        else await git(dir, 'worktree', 'prune');
+      };
       if (!(await beforeRemove())) return false;
-      // Session retirement may already have removed the worktree; the branch must still go.
-      const target = canonicalPath(worktreePath);
-      const registered = (await Git.listWorktrees(dir)).some((w) => canonicalPath(w.path) === target);
-      if (registered) await git(dir, 'worktree', 'remove', '--force', worktreePath);
-      else await git(dir, 'worktree', 'prune');
+      await removeWorktreeIfRegistered();
       if (branch?.startsWith('harmonic/') && (await Git.branchExists(dir, branch))) await gitRefWrite(dir, 'branch', '-D', branch);
       return true;
     }),

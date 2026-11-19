@@ -220,18 +220,22 @@ export async function workspaceRoutes(fastify: FastifyInstance, ctx: Pick<Tracki
     if (unpriced.length > 0) throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
   };
 
-  /** The Workspace as it would be after the PATCH, for the cross-field workflow checks. */
-  const assertWorkflowAssignmentRefusals = async (current: WorkspaceRow, body: WorkspaceUpdate) => {
+  const mergedWorkspace = (current: WorkspaceRow, body: WorkspaceUpdate) => {
     const pick = <K extends keyof WorkspaceRow & keyof WorkspaceUpdate>(key: K): WorkspaceRow[K] | NonNullable<WorkspaceUpdate[K]> | null =>
       body[key] === undefined ? current[key] : (body[key] as NonNullable<WorkspaceUpdate[K]> | null);
+    return { isolationMode: pick('isolationMode'), workflow: pick('workflow'), codeRepository: pick('codeRepository') };
+  };
+
+  const assertWorkflowAssignmentRefusals = async (current: WorkspaceRow, body: WorkspaceUpdate) => {
+    const merged = mergedWorkspace(current, body);
     const workflowLabels = body.workflowLabels === undefined ? current.workflowLabels : body.workflowLabels === null ? null : JSON.stringify(body.workflowLabels);
     const name = body.name ?? current.name;
     const global = ctx.settingsStore.getGlobal();
-    const directRefusal = directWorkspaceRefusal(ctx.workflows, { name, isolationMode: pick('isolationMode'), workflow: pick('workflow'), workflowLabels }, global);
+    const directRefusal = directWorkspaceRefusal(ctx.workflows, { name, isolationMode: merged.isolationMode, workflow: merged.workflow, workflowLabels }, global);
     if (directRefusal) throw new DomainError('validation', directRefusal);
     const mixedRefusal = await workspaceMixedRefusal(
       ctx.workflows,
-      { name, workingDir: body.workingDir ?? current.workingDir, codeRepository: pick('codeRepository'), workflow: pick('workflow'), workflowLabels },
+      { name, workingDir: body.workingDir ?? current.workingDir, codeRepository: merged.codeRepository, workflow: merged.workflow, workflowLabels },
       global,
     );
     if (mixedRefusal) throw new DomainError('validation', mixedRefusal);

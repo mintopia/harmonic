@@ -185,13 +185,14 @@ interface AttemptedStep {
   ownPod: PodSession | undefined;
 }
 
+const MAX_POD_LOSS_RETRIES = 1;
+
 interface PlacedPod<S extends EngineSubject> {
   pod: PodSession | undefined;
   ownPod: PodSession | undefined;
   stepCtx: RunContext<S>;
 }
 
-/** Everything an agent or critic drive needs about where and how it runs. */
 interface AgentSite<S extends EngineSubject> {
   ctx: RunContext<S>;
   step: WorkflowStepDefinition;
@@ -450,7 +451,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return result.outcome === 'pass' || result.outcome === 'skipped' ? null : { stepId: step.id, ...result };
   }
 
-  /** Runs a step until its result stands; a pod lost mid-step is replaced and the step retried once. Null when the turn halted. */
   private async runUntilSettled(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, attempt: number | null, groupCondition?: string): Promise<StepResult | null> {
     const mask = maskerFor(ctx.secrets);
     let losses = 0;
@@ -460,7 +460,7 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
       if (settled === null) return null;
       if (!settled.lost) return settled.result;
       losses++;
-      if (losses > 1) {
+      if (losses > MAX_POD_LOSS_RETRIES) {
         return { ...settled.result, outcome: 'inconclusive', summary: 'the pod was lost twice during this step: permanent infrastructure failure', configFailure: true };
       }
       try {
@@ -471,7 +471,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     }
   }
 
-  /** One attempt at a step: its `if` guards, pod placement and dispatch. Failures become an inconclusive result. */
   private async attemptStep(ctx: RunContext<S>, step: WorkflowStepDefinition, stepRunId: number, attempt: number | null, groupCondition?: string): Promise<AttemptedStep> {
     let placed: PlacedPod<S> | undefined;
     try {
@@ -511,7 +510,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     }
   }
 
-  /** Checkpoints and loss-checks an attempt's pod, disposing a step-owned pod. Null when the agent halted. */
   private async settleAttempt(ctx: RunContext<S>, attempted: AttemptedStep, mask: (text: string) => string): Promise<{ result: StepResult; lost: boolean } | null> {
     const { pod, ownPod } = attempted;
     let result = attempted.result;
@@ -615,7 +613,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     }
   }
 
-  /** Resolves a step's route from its model option, else `otherwise`, and checks the pod holds the Harness's credential. */
   private async stepRoute(ctx: RunContext<S>, step: WorkflowStepDefinition, option: string | undefined, pod: PodSession | undefined, otherwise: () => Promise<ResolvedRoute>): Promise<{ route: OkRoute } | { failure: StepResult }> {
     const mask = maskerFor(ctx.secrets);
     let route: ResolvedRoute;
@@ -784,7 +781,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     }
   }
 
-  /** The route for an agent step without a model option: the Task's route, with any explicit harness or model overriding it. */
   private async implicitAgentRoute(ctx: RunContext<S>, options: NonNullable<ReturnType<typeof agentStepWith>>): Promise<ResolvedRoute> {
     const { agent } = this.deps;
     const state = ctx.agentState;
@@ -800,7 +796,6 @@ export class WorkflowEngine<S extends EngineSubject = TaskRow> {
     return resolveRoute(agent.getConfig(), harness, model, null);
   }
 
-  /** Drives the agent, re-prompting up to `continueAttempts` times while it leaves uncommitted changes. */
   private async driveAgentTurns(site: AgentSite<S>, options: NonNullable<ReturnType<typeof agentStepWith>>, fields: Record<string, string | number>, prompt: string): Promise<StepResult> {
     const { ctx, step, stepRunId, pass, pod, route, cwd } = site;
     const { task, run, agentState: state, context } = ctx;

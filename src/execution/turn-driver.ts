@@ -74,10 +74,11 @@ interface TurnContext {
 
 type DrivenTurn = Awaited<ReturnType<TurnCompletion['drivePromptCycle']>>;
 
-/** Appends the harness's stderr tail, once drained (or after 500ms), to a failed turn's error. */
+const STDERR_DRAIN_TIMEOUT_MS = 500;
+
 async function withStderrTail(err: unknown, stderr: StderrTail): Promise<Error> {
   const base = err instanceof Error ? err.message : String(err);
-  await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, 500))]);
+  await Promise.race([stderr.flushed, new Promise((r) => setTimeout(r, STDERR_DRAIN_TIMEOUT_MS))]);
   const tail = stderr.tail.trim();
   return new Error(tail ? `${base}\n\nharness stderr:\n${tail}` : base);
 }
@@ -213,7 +214,6 @@ export class TurnDriver {
     return this.finishCompletedTurn(ctx, driven);
   }
 
-  /** The run boundary re-checked once the harness is up: a stop finalises the turn and halts it. */
   private async haltAtSpawnedBoundary(ctx: TurnContext): Promise<AgentDriveResult | null> {
     const { task, run, finalize } = ctx;
     const boundary = await this.deps.checkRunBoundary(task.id);
@@ -229,7 +229,6 @@ export class TurnDriver {
 
   private async finishPausedTurn(ctx: TurnContext, driven: DrivenTurn, operatorSeed: string | undefined): Promise<AgentDriveResult> {
     const { task, run, harness, workspace, active, finalize, record } = ctx;
-    // A pause before the first prompt consumed the seed from the pending map; put it back.
     if (operatorSeed !== undefined && !driven.operatorSeedDelivered) {
       this.deps.activeRuns.setPendingOperatorSeed(task.id, operatorSeed);
     }

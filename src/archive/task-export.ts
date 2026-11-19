@@ -565,9 +565,9 @@ export class TaskExporter {
       await this.recordEpicStep(owner, { step: 'export-built', disposition, name, bytes, partial });
       ({ outcomes, retryable } = await this.deliverAll(built, destinations, { where, disposition, retryAt }));
     }
-    const { nextRetryAt, written } = await this.scheduleRetry({ owner, disposition, built, retryable, retryAt, retry, firstFailedAt, destinations, manual, prior, where });
+    const { nextRetryAt, pendingPathAttempted } = await this.scheduleRetry({ owner, disposition, built, retryable, retryAt, retry, firstFailedAt, destinations, manual, prior, where });
     if (built !== null && nextRetryAt === null) await rm(built.staged, { force: true }).catch(() => undefined);
-    if (prior !== undefined && (nextRetryAt === null || written !== prior.sidecar)) await rm(prior.sidecar, { force: true }).catch(() => undefined);
+    if (prior !== undefined && (nextRetryAt === null || pendingPathAttempted !== prior.sidecar)) await rm(prior.sidecar, { force: true }).catch(() => undefined);
     for (const outcome of outcomes) await this.record(owner, disposition, outcome, at, retry, built?.meta, nextRetryAt);
     for (const outcome of outcomes) {
       if (outcome.status !== 'failed') continue;
@@ -617,7 +617,6 @@ export class TaskExporter {
     return { outcomes, retryable };
   }
 
-  /** `written` is set even if the write then fails, so the prior sidecar's cleanup stays accurate. */
   private async scheduleRetry(plan: {
     owner: ExportOwner;
     disposition: ExportDisposition;
@@ -630,25 +629,25 @@ export class TaskExporter {
     manual: ManualExportOptions | undefined;
     prior: PriorAttempt | undefined;
     where: Record<string, unknown>;
-  }): Promise<{ nextRetryAt: string | null; written: string | null }> {
+  }): Promise<{ nextRetryAt: string | null; pendingPathAttempted: string | null }> {
     const { owner, disposition, built, retryable, retryAt, retry, firstFailedAt, destinations, manual, prior } = plan;
     let nextRetryAt: string | null = null;
-    let written: string | null = null;
+    let pendingPathAttempted: string | null = null;
     try {
       if (built !== null && retryable.length > 0) {
-        written = pendingPath(built.staged);
-        await this.writePending(written, { owner, disposition, firstFailedAt, destinations: retryable, meta: built.meta });
+        pendingPathAttempted = pendingPath(built.staged);
+        await this.writePending(pendingPathAttempted, { owner, disposition, firstFailedAt, destinations: retryable, meta: built.meta });
         nextRetryAt = retryAt;
       } else if (built === null && retryAt !== null) {
-        written = prior?.sidecar ?? (await this.rebuildSidecarPath(owner));
+        pendingPathAttempted = prior?.sidecar ?? (await this.rebuildSidecarPath(owner));
         const rebuild = { retries: retry, nextRetryAt: retryAt, destinations: destinations.map((d) => d.destination), forcePartial: manual?.forcePartial === true };
-        await this.writePending(written, { owner, disposition, firstFailedAt, destinations: [], rebuild });
+        await this.writePending(pendingPathAttempted, { owner, disposition, firstFailedAt, destinations: [], rebuild });
         nextRetryAt = retryAt;
       }
     } catch (err) {
       logger.warn('export: retry not scheduled', { ...plan.where, error: message(err) });
     }
-    return { nextRetryAt, written };
+    return { nextRetryAt, pendingPathAttempted };
   }
 
   private async rebuildSidecarPath(owner: ExportOwner): Promise<string> {

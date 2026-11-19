@@ -34,14 +34,13 @@ interface CumulativeTokens {
   output: number;
 }
 
-/** undefined for a blank or malformed line; a literal JSON `null` is a real (ignorable) entry. */
-function parseRolloutLine(line: string): any {
-  if (!line.trim()) return undefined;
+function parseRolloutLine(line: string): { entry: any } | null {
+  if (!line.trim()) return null;
   try {
-    return JSON.parse(line);
+    return { entry: JSON.parse(line) };
   } catch (err) {
     logger.debug('codex: skipping a malformed rollout line', { error: err instanceof Error ? err.message : String(err) });
-    return undefined;
+    return null;
   }
 }
 
@@ -106,8 +105,9 @@ class RolloutAcc implements LineAccumulator {
   }
 
   fold(line: string): void {
-    const entry = parseRolloutLine(line);
-    if (entry === undefined) return;
+    const parsed = parseRolloutLine(line);
+    if (parsed === null) return;
+    const { entry } = parsed;
     if (this.subagent && !this.started) this.foldBeforeStart(entry);
     else this.foldEntry(entry);
   }
@@ -396,10 +396,8 @@ function messageUpdates(entry: unknown): SessionUpdate[] {
   return message === null ? [] : [textChunk('agent_message_chunk', message)];
 }
 
-// Each Codex reasoning summary is a whole markdown block, not a streaming
-// delta; the transcript coalescer concatenates same-variant chunks with no
-// separator, so a trailing blank line keeps consecutive summaries from
-// fusing into one run (`**A****B**`) when rendered as markdown.
+const asStandaloneMarkdownBlock = (text: string): string => `${text}\n\n`;
+
 function reasoningUpdates(record: Record<string, unknown>, payload: Record<string, unknown>): SessionUpdate[] {
   if (record.type !== 'response_item' || payload.type !== 'reasoning' || !Array.isArray(payload.summary)) return [];
   return payload.summary
@@ -408,7 +406,7 @@ function reasoningUpdates(record: Record<string, unknown>, payload: Record<strin
       return block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
     })
     .filter((text): text is string => typeof text === 'string' && text !== '')
-    .map((text) => textChunk('agent_thought_chunk', `${text}\n\n`));
+    .map((text) => textChunk('agent_thought_chunk', asStandaloneMarkdownBlock(text)));
 }
 
 function toolCallUpdates(record: Record<string, unknown>, payload: Record<string, unknown>): SessionUpdate[] {

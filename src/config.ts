@@ -536,21 +536,22 @@ function legacyFields({ prices, modelInfo }: LegacyModelData, id: string): { pri
   };
 }
 
-/** Legacy data fills an override catalog's gaps but always replaces the baseline catalog's values. */
-function withLegacyFields(model: unknown, legacy: LegacyModelData, hasOverrideModels: boolean): unknown {
+type LegacyMergeMode = 'fill-gaps' | 'replace';
+
+function withLegacyFields(model: unknown, legacy: LegacyModelData, mode: LegacyMergeMode): unknown {
   const entry = typeof model === 'string' ? { id: model } : model;
   if (!isRecord(entry) || typeof entry.id !== 'string') return entry;
-  const fillable = Object.entries(legacyFields(legacy, entry.id)).filter(([key]) => !hasOverrideModels || entry[key] === undefined);
+  const fillable = Object.entries(legacyFields(legacy, entry.id)).filter(([key]) => mode === 'replace' || entry[key] === undefined);
   return { ...entry, ...Object.fromEntries(fillable) };
 }
 
 function migrateHarnessCatalog(
   models: readonly unknown[],
-  hasOverrideModels: boolean,
+  mode: LegacyMergeMode,
   legacy: LegacyModelData,
   legacyModelIds: ReadonlySet<string>,
 ): { catalog: unknown[]; needsMigration: boolean } {
-  const catalog = models.map((model) => withLegacyFields(model, legacy, hasOverrideModels));
+  const catalog = models.map((model) => withLegacyFields(model, legacy, mode));
   for (const modelId of legacyModelIds) {
     if (catalog.some((entry) => isRecord(entry) && entry.id === modelId)) continue;
     catalog.push({ id: modelId, ...legacyFields(legacy, modelId) });
@@ -575,7 +576,7 @@ function migrateLegacyModelCatalogs(base: AppConfig, overrides: unknown): unknow
     if (override !== undefined && !isRecord(override)) continue;
     const overrideModels: unknown[] | undefined = Array.isArray(override?.models) ? override.models : undefined;
     const models: readonly unknown[] = overrideModels ?? baseHarness.models;
-    const { catalog, needsMigration } = migrateHarnessCatalog(models, overrideModels !== undefined, legacy, legacyModelIds);
+    const { catalog, needsMigration } = migrateHarnessCatalog(models, overrideModels !== undefined ? 'fill-gaps' : 'replace', legacy, legacyModelIds);
     if (needsMigration) harnesses[id] = { ...override, models: catalog };
   }
   if (Object.keys(harnesses).length > 0) migrated.harnesses = harnesses;

@@ -174,10 +174,6 @@ const agentsField = (parsed: ParsedSession | null | undefined): Pick<AttemptUsag
 
 const hasEntries = (models: Record<string, ModelUsage>): boolean => Object.keys(models).length > 0;
 
-/**
- * Per-model split by authority: the prompt result's own attribution (unless
- * Subagents ran, which it misses), then the parsed session, then the raw log.
- */
 function selectModels(input: CollectUsageInput, parsed: ParsedSession | null | undefined, hasSubagents: boolean): Record<string, ModelUsage> {
   const collector = adapterFor(input.harnessId).usage;
   const fromPrompt = !hasSubagents && input.promptResult && collector?.modelsFromPromptResult ? collector.modelsFromPromptResult(input.promptResult) : {};
@@ -493,13 +489,16 @@ type UsageTotals = NonNullable<AttemptUsage['totals']>;
 
 const emptyModelUsage = (): ModelUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
 
-/** AI Units add only when the source reports them; never a fake zero. */
+const addIfReported = (total: number | undefined, reported: number | undefined): number | undefined =>
+  reported === undefined ? total : (total ?? 0) + reported;
+
 function addModelUsage(target: ModelUsage, source: ModelUsage): void {
   target.inputTokens += source.inputTokens;
   target.outputTokens += source.outputTokens;
   target.cacheReadTokens += source.cacheReadTokens;
   target.cacheWriteTokens += source.cacheWriteTokens;
-  if (source.aiUnits !== undefined) target.aiUnits = (target.aiUnits ?? 0) + source.aiUnits;
+  const aiUnits = addIfReported(target.aiUnits, source.aiUnits);
+  if (aiUnits !== undefined) target.aiUnits = aiUnits;
 }
 
 function mergeBuckets(target: Record<string, ModelUsage>, source: Record<string, ModelUsage>): void {
@@ -513,11 +512,14 @@ function accumulateTotals(acc: UsageTotals | null, totals: UsageTotals): UsageTo
   return next;
 }
 
-/** A cost survives only while every contributing bucket priced it. */
+const sumIfAllPriced = (a: number | undefined, b: number | undefined): number | undefined =>
+  a === undefined || b === undefined ? undefined : a + b;
+
 function mergeAttribution(existing: ToolTokenUsage | undefined, added: ToolTokenUsage): ToolTokenUsage {
   if (!existing) return { ...added };
   existing.outputTokens += added.outputTokens;
-  if (existing.cost !== undefined && added.cost !== undefined) existing.cost += added.cost;
+  const cost = sumIfAllPriced(existing.cost, added.cost);
+  if (cost !== undefined) existing.cost = cost;
   else if (added.cost === undefined) delete existing.cost;
   return existing;
 }

@@ -75,7 +75,6 @@ export class TurnCompletion {
     return { result, connectionGone, escalating, operatorSeedDelivered: input.operatorSeed !== undefined, promptSent: true };
   }
 
-  /** Whether the idle loop must stop before taking another steer, and any human-escalation reason. */
   private async checkBoundary(active: ActiveRun, guardrails: GuardrailSupervisor): Promise<{ stop: boolean; escalating: string | null }> {
     if (active.externallySettled) return { stop: true, escalating: null };
     if (active.pauseRequested && active.steerQueue.length === 0) return { stop: true, escalating: null };

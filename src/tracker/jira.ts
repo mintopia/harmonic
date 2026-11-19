@@ -115,19 +115,18 @@ function withEpicLabel(f: RawIssue['fields']): string[] {
 const isBlocksLink = (link: NonNullable<RawIssue['fields']['issuelinks']>[number]): boolean =>
   link.type.name === 'Blocks' || link.type.inward === 'is blocked by';
 
-/** Blockers from Jira's native issue links; `seen` carries the keys already claimed. */
-function nativeLinks(raw: RawIssue): { seen: Set<string>; blockedBy: TicketRef[]; blocking: TicketRef[] } {
-  const seen = new Set<string>([raw.key]);
+function nativeLinks(raw: RawIssue): { claimedKeys: Set<string>; blockedBy: TicketRef[]; blocking: TicketRef[] } {
+  const claimedKeys = new Set<string>([raw.key]);
   const blockedBy: TicketRef[] = [];
   const blocking: TicketRef[] = [];
   for (const link of (raw.fields.issuelinks ?? []).filter(isBlocksLink)) {
-    if (link.inwardIssue && !seen.has(link.inwardIssue.key)) {
-      seen.add(link.inwardIssue.key);
+    if (link.inwardIssue && !claimedKeys.has(link.inwardIssue.key)) {
+      claimedKeys.add(link.inwardIssue.key);
       blockedBy.push(refOf(link.inwardIssue));
     }
     if (link.outwardIssue) blocking.push(refOf(link.outwardIssue));
   }
-  return { seen, blockedBy, blocking };
+  return { claimedKeys, blockedBy, blocking };
 }
 
 /** The Jira REST client for one instance: bearer or basic auth over the shared retrying client. */
@@ -155,12 +154,12 @@ export function jiraAdapter(config: JiraConfig, client: RestClient, triageLabels
     const f = raw.fields;
     const desc = f.description ?? '';
     const labels = withEpicLabel(f);
-    const { seen, blockedBy, blocking } = nativeLinks(raw);
+    const { claimedKeys, blockedBy, blocking } = nativeLinks(raw);
 
     const inProject = (key: string): boolean => key.startsWith(`${config.projectKey.toUpperCase()}-`) || known.has(key);
     for (const key of [...parseBlockedByLines(desc, 'jira'), ...parseBlockedBySection(desc, 'jira')]) {
-      if (seen.has(key) || !inProject(key)) continue;
-      seen.add(key);
+      if (claimedKeys.has(key) || !inProject(key)) continue;
+      claimedKeys.add(key);
       blockedBy.push(known.get(key) ?? { ref: trackerRef(key), title: key, state: 'open' });
     }
 

@@ -254,7 +254,6 @@ function patchPartUpdate(part: JsonRecord): SessionUpdate {
   };
 }
 
-/** The ACP update for one export part, or null for parts the transcript omits. */
 function partUpdate(part: JsonRecord): SessionUpdate | null {
   switch (part.type) {
     case 'text':

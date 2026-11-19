@@ -56,7 +56,6 @@ export interface MirrorClaim {
   advertiseClaim(task: TaskRow): Promise<void>;
 }
 
-/** Per-pass inputs to `AutoRunner.holdReasonFor`. */
 interface SkipScan {
   master: boolean;
   ceiling: number;
@@ -335,7 +334,6 @@ export class AutoRunner {
     });
   }
 
-  /** Why a Ready Task is not starting this pass, or undefined when nothing holds it back. */
   private async holdReasonFor(task: TaskRow, scan: SkipScan): Promise<string | undefined> {
     const { master, ceiling, gate } = scan;
     if (task.state !== 'ready' || scan.dependencyBlocked.has(task.id)) return undefined;
@@ -362,7 +360,6 @@ export class AutoRunner {
     return `Work Context held by task ${holder.id} (${holder.state})`;
   }
 
-  /** Skip reason from the Epic integration branch's readiness; escalates once it has been missing past the grace period. */
   private async epicBaseReason(task: TaskRow, missingThisPass: Map<number, number>): Promise<string | undefined> {
     const baseGate = (await this.epicBaseNotReady?.(task)) ?? 'ready';
     switch (baseGate) {
@@ -370,20 +367,22 @@ export class AutoRunner {
         return undefined;
       case 'stale':
         return `integration branch ${task.baseBranch} behind its base (refresh pending)`;
-      case 'missing': {
-        if (!hasAssignedEpicBase(task)) return 'integration branch missing';
-        const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
-        if (this.clock() - since < this.missingEpicBaseGraceMs) {
-          missingThisPass.set(task.id, since);
-          return 'integration branch missing';
-        }
-        const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
-        await this.runner.escalateUnspawned(task.id, reason);
-        return `${reason}, escalated to human`;
-      }
+      case 'missing':
+        return hasAssignedEpicBase(task) ? this.escalateIfMissingPastGrace(task, missingThisPass) : 'integration branch missing';
       default:
         return baseGate satisfies never;
     }
+  }
+
+  private async escalateIfMissingPastGrace(task: TaskRow, missingThisPass: Map<number, number>): Promise<string> {
+    const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
+    if (this.clock() - since < this.missingEpicBaseGraceMs) {
+      missingThisPass.set(task.id, since);
+      return 'integration branch missing';
+    }
+    const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+    await this.runner.escalateUnspawned(task.id, reason);
+    return `${reason}, escalated to human`;
   }
 
   private async fillSlots(
