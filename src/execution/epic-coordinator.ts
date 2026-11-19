@@ -756,6 +756,36 @@ export class EpicLifecycle {
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    const { epics, readinessByRef, byRef } = await this.deriveReadyEpics(tickets, mirrored);
+
+    let cachedDefault: string | null | undefined;
+    const defaultBranchOnce = async (): Promise<string | null> => {
+      if (cachedDefault === undefined) cachedDefault = await this.git.symbolicBranch(this.workingDir);
+      return cachedDefault;
+    };
+    if (this.epicRefresh) {
+      const defaultBranch = await defaultBranchOnce();
+      if (defaultBranch !== null) await this.refreshDriftedEpics(defaultBranch, epics);
+    }
+    if (this.readyMemberRefs.size === 0 && this.epicIntegrate === undefined) return;
+
+    const defaultBranch = await defaultBranchOnce();
+    if (defaultBranch === null) return;
+
+    for (const epic of epics) {
+      const inPlace = this.isInPlace(epic.ref, mirrored, epic.members);
+      if (!inPlace) await this.syncMemberBases(epic, byRef, defaultBranch);
+      await this.submitWholeEpicIntegrate(epic, byRef, inPlace);
+    }
+    await this.integrateClosedEpics(tickets, readinessByRef, mirrored, byRef);
+  }
+
+  /** Derives the open leaf Epics and records which have ready members; a human-only Task due to run now counts as ready. */
+  private async deriveReadyEpics(tickets: Ticket[], mirrored: TaskRow[]): Promise<{
+    epics: DerivedEpic[];
+    readinessByRef: Map<TrackerRef, { agentWorkable: boolean }>;
+    byRef: Map<TrackerRef, TaskRow>;
+  }> {
     this.staleByEpic.clear();
     this.latestTickets = tickets;
     const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
@@ -773,74 +803,67 @@ export class EpicLifecycle {
     const readyRefs = new Set<TrackerRef>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     this.readyMemberRefs = readyRefs;
+    return { epics, readinessByRef, byRef };
+  }
 
-    let cachedDefault: string | null | undefined;
-    const defaultBranchOnce = async (): Promise<string | null> => {
-      if (cachedDefault === undefined) cachedDefault = await this.git.symbolicBranch(this.workingDir);
-      return cachedDefault;
-    };
-    if (this.epicRefresh) {
-      const defaultBranch = await defaultBranchOnce();
-      if (defaultBranch !== null) await this.refreshDriftedEpics(defaultBranch, epics);
+  /** Worktree members branch from the Epic's integration branch (cut on demand); direct members must not point at it. */
+  private async syncMemberBases(epic: DerivedEpic, byRef: ReadonlyMap<TrackerRef, TaskRow>, defaultBranch: string): Promise<void> {
+    const branch = integrationBranchName(epic.ref);
+    const readyWorktreeRefs = epic.ready.filter((ref) => byRef.get(ref)?.isolationMode === 'worktree');
+    if (readyWorktreeRefs.length > 0) await this.cutAndAssignBranch(epic, readyWorktreeRefs, byRef, defaultBranch);
+    for (const memberRef of epic.members) {
+      const task = byRef.get(memberRef);
+      if (!task || task.isolationMode !== 'direct') continue;
+      const live = await this.tasks.get(task.id);
+      if (PRE_SPAWN.has(live.state) && live.baseBranch === branch) await this.tasks.setBaseBranch(live.id, null);
     }
-    if (readyRefs.size === 0 && this.epicIntegrate === undefined) return;
+  }
 
-    const defaultBranch = await defaultBranchOnce();
-    if (defaultBranch === null) return;
+  private async cutAndAssignBranch(epic: DerivedEpic, memberRefs: readonly TrackerRef[], byRef: ReadonlyMap<TrackerRef, TaskRow>, defaultBranch: string): Promise<void> {
+    const branch = integrationBranchName(epic.ref);
+    try {
+      await this.operations.run({
+        repoDir: this.workingDir,
+        epicRef: epic.ref,
+        epicTitle: epic.title,
+        type: 'cut',
+        attributes: { 'epic.integration_branch': branch },
+        work: () => this.ensureIntegrationBranch(branch, defaultBranch),
+      });
+      for (const memberRef of memberRefs) {
+        const task = byRef.get(memberRef);
+        if (!task) continue;
+        const live = await this.tasks.get(task.id);
+        if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) await this.tasks.setBaseBranch(live.id, branch);
+      }
+    } catch (err) {
+      const reason = `integration branch reconcile failed: ${String(err)}`;
+      this.operations.fail({ repoDir: this.workingDir, epicRef: epic.ref, reason });
+      this.onError(`epic ${epic.ref} ${reason}`);
+    }
+  }
 
-    for (const epic of epics) {
-      const branch = integrationBranchName(epic.ref);
+  // Closed-but-unintegrated Epics: a leaf Epic whose ticket was closed while its
+  // integration branch still holds unmerged work would otherwise strand forever
+  // (the open-only derivation never surfaces it). Offer any closed leaf
+  // with a live integration branch to the same integrate; the whole-Epic verify
+  // gate inside `submit` is what protects against folding abandoned or broken
+  // work: an already-merged branch short-circuits to integrated, an
+  // unverifiable one escalates.
+  private async integrateClosedEpics(
+    tickets: Ticket[],
+    readinessByRef: ReadonlyMap<TrackerRef, { agentWorkable: boolean }>,
+    mirrored: TaskRow[],
+    byRef: ReadonlyMap<TrackerRef, TaskRow>,
+  ): Promise<void> {
+    if (!this.epicIntegrate) return;
+    const closed = deriveLeafEpics(tickets, readinessByRef, { includeClosed: true }).filter(
+      (epic) => !this.leafEpicRefs.has(epic.ref),
+    );
+    for (const epic of closed) {
       const inPlace = this.isInPlace(epic.ref, mirrored, epic.members);
-      if (!inPlace) {
-        const readyWorktreeRefs = epic.ready.filter((ref) => byRef.get(ref)?.isolationMode === 'worktree');
-        if (readyWorktreeRefs.length > 0) {
-          try {
-            await this.operations.run({
-              repoDir: this.workingDir,
-              epicRef: epic.ref,
-              epicTitle: epic.title,
-              type: 'cut',
-              attributes: { 'epic.integration_branch': branch },
-              work: () => this.ensureIntegrationBranch(branch, defaultBranch),
-            });
-            for (const memberRef of readyWorktreeRefs) {
-              const task = byRef.get(memberRef);
-              if (!task) continue;
-              const live = await this.tasks.get(task.id);
-              if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) await this.tasks.setBaseBranch(live.id, branch);
-            }
-          } catch (err) {
-            const reason = `integration branch reconcile failed: ${String(err)}`;
-            this.operations.fail({ repoDir: this.workingDir, epicRef: epic.ref, reason });
-            this.onError(`epic ${epic.ref} ${reason}`);
-          }
-        }
-        for (const memberRef of epic.members) {
-          const task = byRef.get(memberRef);
-          if (!task || task.isolationMode !== 'direct') continue;
-          const live = await this.tasks.get(task.id);
-          if (PRE_SPAWN.has(live.state) && live.baseBranch === branch) await this.tasks.setBaseBranch(live.id, null);
-        }
-      }
+      if (!inPlace && !(await this.git.branchExists(this.workingDir, integrationBranchName(epic.ref)))) continue;
       await this.submitWholeEpicIntegrate(epic, byRef, inPlace);
-    }
-
-    // Closed-but-unintegrated Epics: a leaf Epic whose ticket was closed while its
-    // integration branch still holds unmerged work would otherwise strand forever
-    // (the open-only derivation above never surfaces it). Offer any closed leaf
-    // with a live integration branch to the same integrate; the whole-Epic verify
-    // gate inside `submit` is what protects against folding abandoned or broken
-    // work — an already-merged branch short-circuits to integrated, an
-    // unverifiable one escalates.
-    if (this.epicIntegrate) {
-      const closed = deriveLeafEpics(tickets, readinessByRef, { includeClosed: true }).filter(
-        (epic) => !this.leafEpicRefs.has(epic.ref),
-      );
-      for (const epic of closed) {
-        const inPlace = this.isInPlace(epic.ref, mirrored, epic.members);
-        if (!inPlace && !(await this.git.branchExists(this.workingDir, integrationBranchName(epic.ref)))) continue;
-        await this.submitWholeEpicIntegrate(epic, byRef, inPlace);
-      }
     }
   }
 
