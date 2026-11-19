@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, waitForCleanupSteps, type TestServer } from './helpers.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -34,12 +34,7 @@ describe('the bundled workflows', () => {
     const id = created.body.id as number;
     expect((await server.api('POST', `/api/tasks/${id}/run`)).status).toBe(201);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${id}`)).body.state === 'done');
-    // Cleanup steps run after the Task completes, so `done` alone does not mean the branch is retired yet.
-    let body: { cleanupIds: string[]; steps: { stepId: string; outcome: string | null }[] } = { cleanupIds: [], steps: [] };
-    await waitFor(async () => {
-      body = (await server.api('GET', `/api/tasks/${id}/workflow-steps`)).body;
-      return body.cleanupIds.every((cleanupId) => body.steps.some((s) => s.stepId === cleanupId && s.outcome !== null));
-    });
+    const body = await waitForCleanupSteps(server, id);
     return { id, steps: body.steps as { stepId: string; outcome: string }[] };
   };
   const outcomes = (steps: { stepId: string; outcome: string }[]): Record<string, string> => Object.fromEntries(steps.map((s) => [s.stepId, s.outcome]));

@@ -3,7 +3,7 @@ import { type AppConfig, type DeepPartial } from '../src/config.js';
 import type { Task } from '../web/src/types.js';
 import { Git } from '../src/execution/git.js';
 import { type Ticket, trackerRef } from '../src/tracker/adapter.js';
-import { startServer, stubHarness, type TestServer, waitFor, withArchivedPrompt } from './helpers.js';
+import { startServer, stubHarness, type TestServer, waitFor, waitForCleanupSteps, withArchivedPrompt } from './helpers.js';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -510,11 +510,7 @@ describe('task-list-branch', () => {
         async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
       await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
-      // Cleanup steps keep calling Git after `done`; let them finish so the spies see only the list request.
-      await waitFor(async () => {
-        const { body } = await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`);
-        return body.cleanupIds.every((id: string) => body.steps.some((s: { stepId: string; outcome: string | null }) => s.stepId === id && s.outcome !== null));
-      });
+      await waitForCleanupSteps(server, created.body.id);
       await server.app.ctx.reconcileWorktrees();
 
       const gitSpies = Object.keys(Git).map((method) => vi.spyOn(Git as any, method));

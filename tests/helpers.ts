@@ -266,6 +266,13 @@ export async function waitForTaskDone(server: TestServer, taskId: number): Promi
   });
 }
 
+export async function waitForCleanupSteps(server: TestServer, taskId: number): Promise<{ cleanupIds: string[]; steps: { stepId: string; outcome: string | null }[] }> {
+  return waitFor(async () => {
+    const { body } = await server.api('GET', `/api/tasks/${taskId}/workflow-steps`);
+    return body.cleanupIds.every((id: string) => body.steps.some((s: { stepId: string; outcome: string | null }) => s.stepId === id && s.outcome !== null)) ? body : undefined;
+  });
+}
+
 export interface FirehoseClient {
   messages: any[];
   send: (message: unknown) => void;

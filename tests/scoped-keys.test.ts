@@ -233,13 +233,12 @@ describe('websocket heartbeat', () => {
 
   it('terminates a client that misses a pong, and clears the timer when the socket closes', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    // Track the heartbeat timer itself: the server's scheduler can register its own intervals while boot work settles.
     const created = vi.spyOn(globalThis, 'setInterval');
     const cleared = vi.spyOn(globalThis, 'clearInterval');
-    const heartbeats = () => created.mock.calls.flatMap((call, i) => (call[1] === WS_HEARTBEAT_INTERVAL_MS ? [created.mock.results[i]?.value] : []));
+    const heartbeatTimers = () => created.mock.calls.flatMap((call, i) => (call[1] === WS_HEARTBEAT_INTERVAL_MS ? [created.mock.results[i]?.value] : []));
     const client = await openSilentClient();
-    expect(heartbeats()).toHaveLength(1);
-    const [heartbeat] = heartbeats();
+    expect(heartbeatTimers()).toHaveLength(1);
+    const [heartbeat] = heartbeatTimers();
     vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
     vi.advanceTimersByTime(WS_HEARTBEAT_INTERVAL_MS);
     await client.closed;

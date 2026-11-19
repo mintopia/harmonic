@@ -90,8 +90,7 @@ describe('PodTranscriptMirror', () => {
     expect(recorded[0]?.transcriptPath).toBe(mirrorFile());
     expect(updates[0]).toEqual({ sessionId: SESSION, sessionRowId: 7 });
     expect(stepLinks[0]).toEqual({ id: 3, sessionRowId: 7 });
-    // Binding happens once the tail starts; the file's bytes reach the mirror through the pipe after that.
-    await until(() => mirrored().toString('utf8').includes('live'), 'the existing line to reach the live mirror');
+    await until(() => mirrored().toString('utf8').includes('live'), 'the existing line to reach the live mirror once the tail starts');
     await transcript.finish();
   });
 
