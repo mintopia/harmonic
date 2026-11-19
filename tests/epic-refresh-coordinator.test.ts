@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EpicRefresh, type EpicRefreshOutcome } from '../src/execution/epic-coordinator.js';
-import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
+import { type MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { baselineConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -14,14 +14,14 @@ import { Runner } from '../src/execution/runner.js';
 import { TrackerEpicService } from '../src/tracker/epic-service.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { type Ticket, trackerRef, type TrackerRef } from '../src/tracker/adapter.js';
-import type { CriticDriveRequest } from '../src/verification/critic.js';
-import type { SettingsStore } from '../src/server/settings-store.js';
+import { type CriticDriveRequest } from '../src/verification/critic.js';
+import { type SettingsStore } from '../src/server/settings-store.js';
 import { TaskArchive } from '../src/archive/task-archive.js';
 import { EpicMergeEventStore } from '../src/domain/epic-merge-events.js';
-import { readFileSync } from 'node:fs';
 import { executionPlumbing, allWorkspaces, makeSettingsStore, waitFor, seedWorkspace } from './helpers.js';
 import { bundledEnginePrompts } from '../src/domain/bundled-prompts.js';
 import { engineWiring, epicWorkflow, WORKFLOW_NAME } from './fixtures/epic-engine-harness.js';
+import { epicRefreshWorktreePath, sweepOrphanedEpicRefreshWorktrees } from '../src/execution/epic-refresh-sweep.js';
 
 const fakeGit = { revParse: async () => 'develop-tip' };
 
@@ -794,5 +794,71 @@ describe('epic refresh corrective turn (issue #315)', () => {
 
     expect(existsSync(stale)).toBe(false);
     expect(git(repo, 'worktree', 'list')).not.toContain(stale);
+  });
+});
+
+describe('epic refresh worktree sweep', () => {
+  const tmpDirs: string[] = [];
+
+  const git = (dir: string, ...args: string[]) =>
+    execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
+
+  function makeFixture(): { repo: string; worktreesDir: string } {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'harmonic-refresh-sweep-')));
+    tmpDirs.push(root);
+    const repo = join(root, 'repo');
+    const worktreesDir = join(root, 'worktrees');
+    mkdirSync(repo);
+    mkdirSync(worktreesDir);
+    git(repo, 'init', '-b', 'develop');
+    git(repo, 'config', 'user.name', 'Test');
+    git(repo, 'config', 'user.email', 'test@example.com');
+    writeFileSync(join(repo, 'shared.txt'), 'base\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'init');
+    git(repo, 'branch', 'epic/5');
+    git(repo, 'branch', 'epic/6');
+    git(repo, 'checkout', 'epic/5');
+    writeFileSync(join(repo, 'shared.txt'), 'epic side\n');
+    git(repo, 'commit', '-am', 'epic side');
+    git(repo, 'checkout', 'develop');
+    writeFileSync(join(repo, 'shared.txt'), 'develop side\n');
+    git(repo, 'commit', '-am', 'develop side');
+    git(repo, 'checkout', '--detach');
+    return { repo, worktreesDir };
+  }
+
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  describe('sweepOrphanedEpicRefreshWorktrees', () => {
+    it('removes an epic-refresh worktree left with an in-progress merge and prunes its registration', async () => {
+      const { repo, worktreesDir } = makeFixture();
+      const orphan = epicRefreshWorktreePath(worktreesDir, trackerRef(5));
+      git(repo, 'worktree', 'add', orphan, 'epic/5');
+      expect(() => git(orphan, 'merge', 'develop')).toThrow();
+      expect(git(orphan, 'status', '--porcelain')).toContain('UU shared.txt');
+
+      await expect(sweepOrphanedEpicRefreshWorktrees(repo, worktreesDir)).resolves.toEqual([orphan]);
+
+      expect(existsSync(orphan)).toBe(false);
+      expect(git(repo, 'worktree', 'list').split('\n').filter(Boolean)).toHaveLength(1);
+      expect(git(repo, 'branch', '--list', 'epic/5')).toContain('epic/5');
+    });
+
+    it('leaves task worktrees and epic-refresh-named worktrees outside the managed directory alone', async () => {
+      const { repo, worktreesDir } = makeFixture();
+      const task = join(worktreesDir, 'task-12');
+      const foreign = join(realpathSync(tmpdir()), `epic-refresh-foreign-${process.pid}`);
+      tmpDirs.push(foreign);
+      git(repo, 'worktree', 'add', task, 'epic/6');
+      git(repo, 'worktree', 'add', '--detach', foreign, 'develop');
+
+      await expect(sweepOrphanedEpicRefreshWorktrees(repo, worktreesDir)).resolves.toEqual([]);
+
+      expect(existsSync(task)).toBe(true);
+      expect(existsSync(foreign)).toBe(true);
+    });
   });
 });
