@@ -424,7 +424,6 @@ interface StepCheck {
 
 const hasOneForm = ({ step }: StepCheck): boolean => [step.run, step.uses, step.parallel].filter((form) => form !== undefined).length === 1;
 
-// Applied in order: problem order is part of the refusal message.
 const STEP_RULES: ((check: StepCheck) => Problem[])[] = [
   (c) => (hasOneForm(c) ? [] : [{ path: c.path, message: `step ${c.step.id} needs exactly one of run, uses or parallel` }]),
   (c) => (c.step.with !== undefined && c.step.uses === undefined ? [{ path: [...c.path, 'with'], message: 'with is only valid beside uses' }] : []),

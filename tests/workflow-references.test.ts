@@ -62,3 +62,13 @@ describe('step invariants', () => {
     expect(refusal(steps)).toContain(message);
   });
 });
+
+describe('step rule order', () => {
+  it('reports a step’s problems in rule order', () => {
+    const message = refusal('  - id: x\n    run: echo\n    uses: verify\n    with:\n      foo: 1\n');
+    const form = message.indexOf('step x needs exactly one of run, uses or parallel');
+    const key = message.indexOf('foo');
+    expect(form).toBeGreaterThanOrEqual(0);
+    expect(key).toBeGreaterThan(form);
+  });
+});
