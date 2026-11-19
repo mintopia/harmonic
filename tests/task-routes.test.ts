@@ -510,6 +510,11 @@ describe('task-list-branch', () => {
         async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
       await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
+      // Cleanup steps keep calling Git after `done`; let them finish so the spies see only the list request.
+      await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${created.body.id}/workflow-steps`);
+        return body.cleanupIds.every((id: string) => body.steps.some((s: { stepId: string; outcome: string | null }) => s.stepId === id && s.outcome !== null));
+      });
       await server.app.ctx.reconcileWorktrees();
 
       const gitSpies = Object.keys(Git).map((method) => vi.spyOn(Git as any, method));
