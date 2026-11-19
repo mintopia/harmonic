@@ -24,20 +24,40 @@ export type CliDispatch =
   | { kind: 'start'; values: ServeValues }
   | { kind: 'install'; values: ServeValues };
 
+const OPTIONAL_SERVE_KEYS = [
+  'data-dir',
+  'user',
+  'password',
+  'otel-endpoint',
+  'otel-headers',
+  'otel-export',
+  'otel-metric-export-interval',
+  'otel-stdout-log-level',
+] as const;
+
+const DATA_DIR_COMMANDS = ['status', 'stop', 'restart', 'uninstall'] as const;
+const SERVE_COMMANDS = ['serve', 'start', 'install'] as const;
+const VERSION_FLAGS = ['version', '--version', '-v'] as const;
+const HELP_REQUESTS = [undefined, 'help', '--help'];
+
+function isOneOf<T extends string>(list: readonly T[], value: string | undefined): value is T {
+  return value !== undefined && (list as readonly string[]).includes(value);
+}
+
 export function dispatchCli(argv: string[]): CliDispatch {
   const [command, ...rest] = argv;
 
-  if (command === 'version' || command === '--version' || command === '-v') {
+  if (isOneOf(VERSION_FLAGS, command)) {
     return { kind: 'version' };
   }
 
-  if (command === 'status' || command === 'stop' || command === 'restart' || command === 'uninstall') {
+  if (isOneOf(DATA_DIR_COMMANDS, command)) {
     const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
     return { kind: command, dataDir: values['data-dir'] };
   }
 
-  if (command !== 'serve' && command !== 'start' && command !== 'install') {
-    return { kind: 'help', exitCode: command === undefined || command === 'help' || command === '--help' ? 0 : 1 };
+  if (!isOneOf(SERVE_COMMANDS, command)) {
+    return { kind: 'help', exitCode: HELP_REQUESTS.includes(command) ? 0 : 1 };
   }
 
   if (command === 'install' && rest.includes('--help')) return { kind: 'help', exitCode: 0 };
@@ -62,17 +82,9 @@ export function dispatchCli(argv: string[]): CliDispatch {
     port: values.port ?? '4700',
     host: values.host ?? '0.0.0.0',
   };
-  if (values['data-dir'] !== undefined) serveValues['data-dir'] = values['data-dir'];
-  if (values.user !== undefined) serveValues.user = values.user;
-  if (values.password !== undefined) serveValues.password = values.password;
-  if (values['otel-endpoint'] !== undefined) serveValues['otel-endpoint'] = values['otel-endpoint'];
-  if (values['otel-headers'] !== undefined) serveValues['otel-headers'] = values['otel-headers'];
-  if (values['otel-export'] !== undefined) serveValues['otel-export'] = values['otel-export'];
-  if (values['otel-metric-export-interval'] !== undefined) {
-    serveValues['otel-metric-export-interval'] = values['otel-metric-export-interval'];
-  }
-  if (values['otel-stdout-log-level'] !== undefined) {
-    serveValues['otel-stdout-log-level'] = values['otel-stdout-log-level'];
+  for (const key of OPTIONAL_SERVE_KEYS) {
+    const value = values[key];
+    if (value !== undefined) serveValues[key] = value;
   }
   return { kind: command, values: serveValues };
 }
