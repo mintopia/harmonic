@@ -86,11 +86,7 @@ export function costOfUsages(usages: (AttemptUsage | null)[], prices: PriceTable
   for (const usage of present) {
     if (Object.keys(usage.models).length === 0) incomplete = true;
     for (const [model, mu] of Object.entries(usage.models)) {
-      const bucket = (merged[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-      bucket.inputTokens += mu.inputTokens;
-      bucket.outputTokens += mu.outputTokens;
-      bucket.cacheReadTokens += mu.cacheReadTokens;
-      bucket.cacheWriteTokens += mu.cacheWriteTokens;
+      addModelUsage(merged, model, mu);
     }
   }
 
@@ -107,6 +103,30 @@ export function costOfUsages(usages: (AttemptUsage | null)[], prices: PriceTable
     totalUsd = (totalUsd ?? 0) + usd;
   }
   return { totalUsd, byModel, incomplete };
+}
+
+function addModelUsage(into: Record<string, ModelUsage>, model: string, mu: ModelUsage): void {
+  const bucket = (into[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  bucket.inputTokens += mu.inputTokens;
+  bucket.outputTokens += mu.outputTokens;
+  bucket.cacheReadTokens += mu.cacheReadTokens;
+  bucket.cacheWriteTokens += mu.cacheWriteTokens;
+}
+
+function criticCost(critics: { usage: AttemptUsage; prices: PriceTable }[]): { total: number | null; incomplete: boolean } {
+  let total: number | null = null;
+  let incomplete = false;
+  for (const critic of critics) {
+    const cc = costOfUsages([critic.usage], critic.prices);
+    if (!cc) {
+      incomplete = true;
+      continue;
+    }
+    incomplete ||= cc.incomplete;
+    if (cc.totalUsd !== null) total = (total ?? 0) + cc.totalUsd;
+    else incomplete = true;
+  }
+  return { total, incomplete };
 }
 
 /**
@@ -129,29 +149,14 @@ export function withCriticContribution(
   for (const [model, mu] of Object.entries(usage?.models ?? {})) models[model] = { ...mu };
   for (const critic of critics) {
     for (const [model, mu] of Object.entries(critic.usage.models)) {
-      const bucket = (models[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-      bucket.inputTokens += mu.inputTokens;
-      bucket.outputTokens += mu.outputTokens;
-      bucket.cacheReadTokens += mu.cacheReadTokens;
-      bucket.cacheWriteTokens += mu.cacheWriteTokens;
+      addModelUsage(models, model, mu);
     }
   }
   const mergedUsage: AttemptUsage = usage
     ? { ...usage, models }
     : { models, totals: null, toolCalls: {}, source: 'session-log' };
 
-  let criticTotal: number | null = null;
-  let criticIncomplete = false;
-  for (const critic of critics) {
-    const cc = costOfUsages([critic.usage], critic.prices);
-    if (!cc) {
-      criticIncomplete = true;
-      continue;
-    }
-    criticIncomplete ||= cc.incomplete;
-    if (cc.totalUsd !== null) criticTotal = (criticTotal ?? 0) + cc.totalUsd;
-    else criticIncomplete = true;
-  }
+  const { total: criticTotal, incomplete: criticIncomplete } = criticCost(critics);
 
   const byModel: Record<string, number | null> = { ...(cost?.byModel ?? {}), critic: criticTotal };
   let totalUsd: number | null = null;
