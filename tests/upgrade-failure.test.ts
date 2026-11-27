@@ -10,7 +10,7 @@ describe('failed idle upgrade', () => {
     server = await startServer(undefined, {
       version: '2.0.0',
       onUpgradeIdle: async () => { throw new Error('npm install failed'); },
-      updateCheckLatest: async () => '2.6.0',
+      updateCheckPublished: async () => ['2.6.0'],
     });
     const initialAutoRunner = server.app.ctx.settingsStore.getGlobal().autoRunner.enabled;
     await server.app.ctx.updateCheck.run();

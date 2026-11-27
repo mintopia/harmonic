@@ -309,7 +309,7 @@ const refuseDowngradeWithoutSnapshot = (dependencies: ServiceManagerDependencies
   if (installed === undefined) return;
   const comparison = compareStableVersions(installed, version);
   if (comparison !== null && comparison > 0) {
-    throw new Error(`The installed service is version ${installed}, newer than this CLI (${version}); run \`npm i -g @mintopia/harmonic@latest\` first.`);
+    throw new Error(`The installed service is version ${installed}, newer than this CLI (${version}); run \`npm i -g @mintopia/harmonic@${installed}\` first.`);
   }
 };
 

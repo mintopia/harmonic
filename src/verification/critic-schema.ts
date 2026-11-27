@@ -68,11 +68,19 @@ function lastFencedJsonBlock(text: string): string | null {
   return tail ? tail[1]!.trim() : null;
 }
 
+const REPLY_TAIL_CHARS = 200;
+
+function quotedReplyTail(text: string): string {
+  const flat = text.trim().replace(/\s+/g, ' ');
+  return JSON.stringify(flat.length > REPLY_TAIL_CHARS ? `…${flat.slice(-REPLY_TAIL_CHARS)}` : flat);
+}
+
 /** Extract and validate the critic's verdict: a fenced ```json block, else the last balanced `{...}`. Every failure resolves to `inconclusive`; never throws. */
 export function parseCriticOutput(raw: string): ParseCriticOutputResult {
+  if (raw.trim() === '') return { ok: false, verdict: 'inconclusive', reason: 'critic produced no reply text' };
   const candidate = lastFencedJsonBlock(raw) ?? lastBalancedObject(raw);
   if (!candidate) {
-    return { ok: false, verdict: 'inconclusive', reason: 'no JSON object found in critic output' };
+    return { ok: false, verdict: 'inconclusive', reason: `no JSON object found in critic output: ${quotedReplyTail(raw)}` };
   }
 
   let parsed: unknown;

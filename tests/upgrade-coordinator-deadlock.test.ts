@@ -15,7 +15,7 @@ describe('upgrade coordinator does not block requests for the whole idle handoff
     server = await startServer(undefined, {
       version: '2.0.0',
       distributionMode: 'packaged',
-      updateCheckLatest: async () => '2.6.0',
+      updateCheckPublished: async () => ['2.6.0'],
       onUpgradeIdle: async () => { await swapPaused; },
     });
 

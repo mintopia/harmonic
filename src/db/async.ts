@@ -1,4 +1,5 @@
-import { createClient, type Client } from '@libsql/client';
+import type { Client } from '@libsql/client';
+import { harmonicDbPath, openHarmonicDbClient } from './client.js';
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -135,7 +136,7 @@ export async function openAsyncDb(
       `${incomplete.reason} Refusing to open ${join(dataDir, 'harmonic.db')} until ${join(dataDir, 'app', 'database-incomplete.json')} is resolved and removed.`,
     );
   }
-  const dbPath = join(dataDir, 'harmonic.db');
+  const dbPath = harmonicDbPath(dataDir);
   if (!existsSync(dbPath) && existsSync(`${dbPath}-wal`)) {
     throw new Error(
       `${dbPath} is missing but ${dbPath}-wal exists. Refusing to open it: that would create a fresh, empty database next to an orphaned WAL ` +
@@ -145,7 +146,7 @@ export async function openAsyncDb(
   }
   touchStartupProgress(dataDir);
   // An open transaction takes over the client's connection and libsql lazily opens a fresh one, which defaults to `foreign_keys = ON`; no other per-connection pragma is relied on.
-  const client = createClient({ url: `file:${dbPath}` });
+  const client = openHarmonicDbClient(dataDir);
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA foreign_keys = OFF');
   const db = drizzle(client, { schema });

@@ -1,7 +1,6 @@
-import { createClient } from '@libsql/client';
+import { openHarmonicDbClient } from './client.js';
 import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { join } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { totalsForRange } from '../domain/tool-call-aggregates.js';
 import { aggregateStats } from '../domain/stats-computation.js';
@@ -22,7 +21,7 @@ if (!workerData || typeof workerData !== 'object' || !('dataDir' in workerData) 
 }
 
 const port = parentPort;
-const client = createClient({ url: `file:${join(workerData.dataDir, 'harmonic.db')}` });
+const client = openHarmonicDbClient(workerData.dataDir);
 const db = drizzle(client, { schema });
 
 async function readStats({ from, to, workspaceId, epicRef }: StatsRange): Promise<StatsReadResult> {

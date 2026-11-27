@@ -54,7 +54,7 @@ describe('UpdateCheck.run interleaved with an arm', () => {
       return realWrite(fn, opts);
     });
 
-    const updateCheck = new UpdateCheck({ version: '2.0.0', latest: async () => '2.7.0', store: updateCheckStore });
+    const updateCheck = new UpdateCheck({ version: '2.0.0', published: async () => ['2.7.0'], store: updateCheckStore });
     await updateCheck.run();
 
     const finalState = await coordinator.state();

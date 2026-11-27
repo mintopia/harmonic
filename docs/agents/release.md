@@ -28,8 +28,9 @@ accrues on `develop`. To ship what's on `develop`:
 To publish the current `develop` as a prerelease: `gh workflow run release.yml --ref develop`.
 It runs the CI matrix, then publishes `X.Y.(Z+1)-develop.<run>.g<sha>` to the
 `develop` dist-tag; it never moves `latest`. Users install it with
-`npm i @mintopia/harmonic@develop`. Self-upgrade only follows `latest`
-(`src/upgrade/update-check.ts`), so existing installs do not pick it up.
+`npm i @mintopia/harmonic@develop`. Self-upgrade only offers the newest stable
+release in the running major (`src/upgrade/update-check.ts`), so existing
+installs do not pick up prereleases or a new major.
 
 ## Gotchas
 

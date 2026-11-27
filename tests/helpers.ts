@@ -349,7 +349,7 @@ export async function startServer(
     /** Test-only metrics-summary Scheduler Job wiring, forwarded to `buildApp`. */
     metricsSummary?: { intervalMs: number; flush: () => Promise<void> } | undefined;
     distributionMode?: DistributionMode | undefined;
-    updateCheckLatest?: (() => Promise<string>) | undefined;
+    updateCheckPublished?: (() => Promise<readonly string[]>) | undefined;
     version?: string | undefined;
     onUpgradeIdle?: ((version: string) => Promise<void> | void) | undefined;
     migrationRequired?: boolean | undefined;
@@ -373,7 +373,7 @@ export async function startServer(
     scheduledJobRegistrations: opts.scheduledJobRegistrations,
     metricsSummary: opts.metricsSummary,
     distributionMode: opts.distributionMode,
-    updateCheckLatest: opts.updateCheckLatest,
+    updateCheckPublished: opts.updateCheckPublished,
     version: opts.version,
     onUpgradeIdle: opts.onUpgradeIdle,
     migrationRequired: opts.migrationRequired,

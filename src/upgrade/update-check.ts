@@ -4,18 +4,22 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { settings } from '../db/schema.js';
-import { compareStableVersions } from '../domain/stable-version.js';
+import { compareStableVersions, isStableVersion, newestStableInMajor } from '../domain/stable-version.js';
 
 const execFileAsync = promisify(execFile);
 
-const prereleaseVersion = /^(?:v)?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const npmDistTagsObject = z.object({ latest: z.string() });
-// npm 12 made `npm view --json` always wrap its result in an array.
-const npmDistTags = z.union([npmDistTagsObject, z.tuple([npmDistTagsObject]).transform(([tags]) => tags)]);
+const npmVersionList = z.array(z.string()).nonempty();
+// npm 12 made `npm view --json` always wrap its result in an array; npm 10 prints a lone version as a bare string.
+const npmVersions = z.union([
+  z.string().transform((version) => [version]),
+  npmVersionList,
+  z.tuple([npmVersionList]).transform(([versions]) => versions),
+]);
 
 export interface UpdateCheckOptions {
   version: string;
-  latest: () => Promise<string>;
+  /** Every version published to npm, prereleases included. */
+  published: () => Promise<readonly string[]>;
   store: UpdateAvailabilityStore;
 }
 
@@ -137,35 +141,36 @@ export class UpdateCheck {
     return this.options.store.get();
   }
 
+  /** Never offers a later major: moving to one is a deliberate manual install. */
   async run(): Promise<void> {
-    const latest = await this.options.latest();
-    if (prereleaseVersion.test(latest) || prereleaseVersion.test(this.options.version)) return;
-    const comparison = compareStableVersions(latest, this.options.version);
-    if (comparison === null) throw new Error(`npm registry returned an invalid latest version: ${latest}`);
-    await this.options.store.set(comparison > 0 ? latest : null);
+    const published = await this.options.published();
+    if (!isStableVersion(this.options.version)) return;
+    const newest = newestStableInMajor(published, this.options.version);
+    const newer = newest !== null && (compareStableVersions(newest, this.options.version) ?? 0) > 0;
+    await this.options.store.set(newer ? newest : null);
   }
 }
 
-/** Goes through `npm view` rather than a direct registry fetch, so it resolves the same
+/** Goes through `npm view`, not a direct registry fetch, so it resolves the same
  * registry/auth config as the actual install in `version-install.ts`. */
-export async function fetchLatestVersion(): Promise<string> {
+export async function fetchPublishedVersions(): Promise<readonly string[]> {
   let stdout: string;
   try {
-    ({ stdout } = await execFileAsync('npm', ['view', '@mintopia/harmonic', 'dist-tags', '--json'], { timeout: 15_000 }));
+    ({ stdout } = await execFileAsync('npm', ['view', '@mintopia/harmonic', 'versions', '--json'], { timeout: 15_000 }));
   } catch (error) {
     throw new Error(`npm registry request failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return parseLatestDistTag(stdout);
+  return parsePublishedVersions(stdout);
 }
 
-export function parseLatestDistTag(stdout: string): string {
+export function parsePublishedVersions(stdout: string): readonly string[] {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
   } catch {
     throw new Error('npm registry response was not valid JSON');
   }
-  const parsed = npmDistTags.safeParse(json);
-  if (!parsed.success) throw new Error('npm registry response has no latest dist-tag');
-  return parsed.data.latest;
+  const parsed = npmVersions.safeParse(json);
+  if (!parsed.success) throw new Error('npm registry response has no version list');
+  return parsed.data;
 }

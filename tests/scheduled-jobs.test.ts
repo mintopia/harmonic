@@ -147,7 +147,7 @@ describe('Scheduled Job registry', () => {
     server = await startServer(undefined, {
       version: '2.0.0',
       distributionMode: 'packaged',
-      updateCheckLatest: async () => '2.6.0',
+      updateCheckPublished: async () => ['2.6.0'],
     });
 
     const jobs = await waitFor(async () => {
@@ -167,7 +167,7 @@ describe('Scheduled Job registry', () => {
     server = await startServer(undefined, {
       version: '2.0.0',
       distributionMode: 'packaged',
-      updateCheckLatest: async () => '2.6.0',
+      updateCheckPublished: async () => ['2.6.0'],
     });
     await waitFor(() => server!.app.ctx.updateCheck.getAvailableVersion().then((version) => version === '2.6.0' ? version : undefined));
     const dataDir = server.dataDir;
@@ -179,7 +179,7 @@ describe('Scheduled Job registry', () => {
       dataDir,
       version: '2.0.0',
       distributionMode: 'packaged',
-      updateCheckLatest: async () => { throw new Error('npm unavailable'); },
+      updateCheckPublished: async () => { throw new Error('npm unavailable'); },
     });
     await waitFor(async () => {
       const jobs = (await server!.api('GET', '/api/scheduled-jobs')).body.jobs;

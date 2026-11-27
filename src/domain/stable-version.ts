@@ -32,3 +32,19 @@ export function compareStableVersions(left: string, right: string): number | nul
   }
   return 0;
 }
+
+export function isStableVersion(version: string): boolean {
+  return parseStableVersion(version) !== null;
+}
+
+/** The newest stable entry of `published` that shares `running`'s major, or null when none does. */
+export function newestStableInMajor(published: readonly string[], running: string): string | null {
+  const major = parseStableVersion(running)?.[0];
+  if (major === undefined) return null;
+  let newest: string | null = null;
+  for (const candidate of published) {
+    if (parseStableVersion(candidate)?.[0] !== major) continue;
+    if (newest === null || (compareStableVersions(candidate, newest) ?? 0) > 0) newest = candidate;
+  }
+  return newest;
+}
