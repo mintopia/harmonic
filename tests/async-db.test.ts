@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -507,5 +509,29 @@ describe('openAsyncDb guards against an incomplete live database', () => {
       });
       await expect(handle.write((db) => db.run(orphanInsert))).rejects.toSatisfy(isForeignKeyFailure);
     });
+  });
+});
+
+describe('openAsyncDb lock waits', () => {
+  it('waits out a brief lock held by another process instead of failing SQLITE_BUSY', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-busy-'));
+    try {
+      const dbPath = join(dir, 'harmonic.db');
+      const holder = spawn(process.execPath, ['-e', `
+        const Database = require('libsql');
+        const db = new Database(${JSON.stringify(dbPath)});
+        db.exec('PRAGMA journal_mode = DELETE; CREATE TABLE held (x); BEGIN EXCLUSIVE; INSERT INTO held VALUES (1);');
+        process.stdout.write('locked\\n');
+        setTimeout(() => { db.exec('COMMIT'); db.close(); }, 100);
+      `], { stdio: ['ignore', 'pipe', 'inherit'] });
+      const exited = once(holder, 'exit');
+      await once(holder.stdout, 'data');
+
+      const handle = await openAsyncDb(dir);
+      await handle.close();
+      await exited;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

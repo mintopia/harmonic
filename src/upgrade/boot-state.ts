@@ -1,4 +1,4 @@
-import { createClient } from '@libsql/client';
+import { openHarmonicDbClient } from '../db/client.js';
 import * as fs from 'node:fs';
 import {
   existsSync,
@@ -111,7 +111,7 @@ function readJson<T>(path: string, schema: z.ZodType<T>): T | null {
 export async function snapshotDatabase({ dataDir, version }: { dataDir: string; version: string }): Promise<string> {
   const snapshotPath = join(dataDir, 'app', `pre-${version}.db`);
   rmSync(snapshotPath, { force: true });
-  const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+  const client = openHarmonicDbClient(dataDir);
   try {
     await client.execute(`VACUUM INTO '${snapshotPath.replaceAll("'", "''")}'`);
   } finally {
