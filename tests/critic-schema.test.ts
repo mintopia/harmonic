@@ -60,12 +60,29 @@ describe('parseCriticOutput (issue #136)', () => {
     if (!result.ok) expect(result.verdict).toBe('inconclusive');
   });
 
-  it('resolves inconclusive on an empty string', () => {
-    expect(parseCriticOutput('')).toEqual({
+  it.each(['', '  \n\t'])('reports an empty critic reply distinctly from non-JSON text (%j)', (raw) => {
+    expect(parseCriticOutput(raw)).toEqual({
       ok: false,
       verdict: 'inconclusive',
-      reason: 'no JSON object found in critic output',
+      reason: 'critic produced no reply text',
     });
+  });
+
+  it('quotes the reply when it has no JSON object, so a harness error shows up', () => {
+    expect(parseCriticOutput('Error: Execution failed: Model "gpt-5-mini" is not available.\n')).toEqual({
+      ok: false,
+      verdict: 'inconclusive',
+      reason: 'no JSON object found in critic output: "Error: Execution failed: Model \\"gpt-5-mini\\" is not available."',
+    });
+  });
+
+  it('quotes only the tail of a long reply with no JSON object', () => {
+    const result = parseCriticOutput(`${'x'.repeat(500)}\n\nthe end`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/^no JSON object found in critic output: "…x+ the end"$/);
+      expect(result.reason.length).toBeLessThan(260);
+    }
   });
 
   it("takes the agent's own trailing object over an earlier embedded/injected one (last-object rule)", () => {
