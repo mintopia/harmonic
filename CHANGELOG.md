@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.27.1](https://github.com/mintopia/harmonic/compare/v2.27.0...v2.27.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* critic reply on missing verdict; 2.x-only self-upgrade; DB lock wait ([e77eade](https://github.com/mintopia/harmonic/commit/e77eade5d19495b6e41d3f5e636e7cb3b082da2e))
+* **critic:** quote the reply when a critic returns no JSON verdict ([d58bdae](https://github.com/mintopia/harmonic/commit/d58bdae00c069c5bbb867858e3e8535fc3c97644)), closes [#1040](https://github.com/mintopia/harmonic/issues/1040)
+* **db:** wait up to 250 ms for a held lock instead of failing SQLITE_BUSY ([1b507b4](https://github.com/mintopia/harmonic/commit/1b507b475751873c865013006c1484c27510577c))
+* **upgrade:** only offer updates within the running major version ([1e65f6d](https://github.com/mintopia/harmonic/commit/1e65f6dc6d37a413eb18260c142a6762527c8578))
+
 ## [2.27.0](https://github.com/mintopia/harmonic/compare/v2.26.1...v2.27.0) (2026-10-10)
 
 
