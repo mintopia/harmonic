@@ -7,7 +7,7 @@ import { EventBus } from './bus.js';
 import { operationRegistry } from '../telemetry/operations.js';
 import { Scheduler } from '../scheduler/scheduler.js';
 import { detectDistributionMode } from '../distribution-mode.js';
-import { fetchLatestVersion, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
+import { fetchPublishedVersions, SettingsUpdateAvailabilityStore, UpdateCheck } from '../upgrade/update-check.js';
 import { readPackageManifest } from './routes/openapi.js';
 import { createStores } from './app-stores.js';
 import { createWorktreeServices } from './app-worktrees.js';
@@ -54,7 +54,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runningVersion = opts.version ?? readPackageManifest().version;
   const updateCheck = new UpdateCheck({
     version: runningVersion,
-    latest: opts.updateCheckLatest ?? fetchLatestVersion,
+    published: opts.updateCheckPublished ?? fetchPublishedVersions,
     store: new SettingsUpdateAvailabilityStore(asyncDb),
   });
   operationRegistry.setBus(bus);

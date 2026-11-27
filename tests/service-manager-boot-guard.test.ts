@@ -290,7 +290,7 @@ describe('systemd unit (real filesystem)', () => {
     await expect(manager.install({
       startSelfManaged: async () => {},
       serve: { port: '9000', host: '127.0.0.1', dataDir },
-    })).rejects.toThrow('npm i -g @mintopia/harmonic@latest');
+    })).rejects.toThrow('npm i -g @mintopia/harmonic@2.26.0');
 
     expect(readlinkSync(join(appDir, 'current'))).toBe('versions/2.26.0');
     expect(run).not.toHaveBeenCalled();

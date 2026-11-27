@@ -86,9 +86,11 @@ harmonic start --password ''
 ## Staying up to date
 
 Harmonic checks npm once an hour (and once at startup) using your npm
-config, so a private registry or mirror works. When a newer release is out,
-a banner appears in the app. Dismiss it to hide a version you're not ready
-for; the next release brings it back.
+config, so a private registry or mirror works. When a newer release of your
+major version is out, a banner appears in the app. Dismiss it to hide a
+version you're not ready for; the next release brings it back. A new major
+version (2.x to 3.x, say) is never offered: install it by hand when you're
+ready.
 
 Installed as an OS service (`harmonic install`, systemd or init.d),
 Harmonic upgrades itself. Click Upgrade and, the next time your fleet is

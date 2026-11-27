@@ -61,7 +61,7 @@ export interface AppOptions {
   /** Test-only distribution mode override. */
   distributionMode?: DistributionMode | undefined;
   /** Test-only npm registry lookup override for the Update Check Job. */
-  updateCheckLatest?: (() => Promise<string>) | undefined;
+  updateCheckPublished?: (() => Promise<readonly string[]>) | undefined;
   /** Test-only running-version override, so Update Check tests don't track the release version. */
   version?: string | undefined;
   onUpgradeIdle?: ((version: string, cancellation: UpgradeCancellation) => Promise<UpgradeIdleHandoffOutcome | void> | UpgradeIdleHandoffOutcome | void) | undefined;

@@ -13,7 +13,7 @@ describe('Update routes (issue #638)', () => {
     server = await startServer(undefined, {
       distributionMode: 'packaged',
       version: '1.2.3',
-      updateCheckLatest: async () => '1.2.3',
+      updateCheckPublished: async () => ['1.2.3'],
     });
 
     const res = await server.api('GET', '/api/update');
@@ -27,7 +27,7 @@ describe('Update routes (issue #638)', () => {
       distributionMode: 'packaged',
       version: '1.0.0',
       guardMissing: true,
-      updateCheckLatest: async () => '1.1.0',
+      updateCheckPublished: async () => ['1.1.0'],
     });
     await server.api('POST', '/api/update/check');
 
@@ -43,7 +43,7 @@ describe('Update routes (issue #638)', () => {
       distributionMode: 'packaged',
       version: '1.0.0',
       migrationRequired: true,
-      updateCheckLatest: async () => '1.1.0',
+      updateCheckPublished: async () => ['1.1.0'],
     });
 
     expect((await server.api('GET', '/api/update')).body).toMatchObject({ migrationRequired: true });
@@ -56,7 +56,7 @@ describe('Update routes (issue #638)', () => {
     server = await startServer(undefined, {
       distributionMode: 'packaged',
       version: '1.0.0',
-      updateCheckLatest: async () => '1.1.0',
+      updateCheckPublished: async () => ['1.1.0'],
       installMode: { kind: 'external', subkind: 'npm-global', instructionFor: (version) => ({ kind: 'command', command: `npm i -g @mintopia/harmonic@${version}` }) },
     });
     await server.api('POST', '/api/update/check');
@@ -73,7 +73,7 @@ describe('Update routes (issue #638)', () => {
     server = await startServer(undefined, {
       distributionMode: 'packaged',
       version: '1.0.0',
-      updateCheckLatest: async () => '1.1.0',
+      updateCheckPublished: async () => ['1.1.0'],
     });
 
     const checked = await server.api('POST', '/api/update/check');
